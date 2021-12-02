@@ -1,0 +1,2 @@
+ipywidgets==7.6.5
+shiny
