@@ -7,14 +7,10 @@ import shutil
 import glob
 
 for file in glob.glob(r'js/dist/*'):
-    print(file)
     shutil.copy(file, "ipyshiny/static/")
 
-with open('README.rst') as readme_file:
+with open('README.md') as readme_file:
     readme = readme_file.read()
-
-with open('HISTORY.rst') as history_file:
-    history = history_file.read()
 
 requirements = [ ]
 
@@ -37,7 +33,7 @@ setup(
     description="Render ipywidgets inside PyShiny",
     install_requires=requirements,
     license="MIT license",
-    long_description=readme + '\n\n' + history,
+    long_description=readme,
     include_package_data=True,
     keywords='ipyshiny',
     name='ipyshiny',

@@ -18,7 +18,7 @@ import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shi
 //}
 
 // Whenever the ipywidget's state changes, let Shiny know about it
-class ShinyHTMLManager extends HTMLManager {
+class OutputManager extends HTMLManager {
   input_id: string = null;
 
   constructor(options, input_id) {
@@ -26,6 +26,8 @@ class ShinyHTMLManager extends HTMLManager {
     this.input_id = input_id;
   }
 
+  // TODO: consider overriding display_view() instead 
+  // and subscribing to change:state (similar to what we do for inputs)
   set_state(state): ReturnType<typeof HTMLManager.prototype.set_state> {
     // Make each model's state a bit more human-readable before sending it to Shiny
     const shinyState = {};
@@ -38,11 +40,15 @@ class ShinyHTMLManager extends HTMLManager {
     return super.set_state(state);
   }
 
+  clear_state(): ReturnType<typeof HTMLManager.prototype.clear_state> {
+    window.Shiny.setInputValue(this.input_id, null);
+    return super.clear_state();
+  }
+
 }
 
-// Ideally IPyWidgetBinding would extend HTMLOutputBinding,
-// but the implementation isn't exported
-class IPyWidgetBinding extends window.Shiny.OutputBinding {
+// Ideally we'd extend HTMLOutputBinding, but the implementation isn't exported
+class IPyWidgetOutput extends window.Shiny.OutputBinding {
   find(scope: HTMLElement): JQuery<HTMLElement> {
     return $(scope).find(".shiny-ipywidget-output");
   }
@@ -52,8 +58,8 @@ class IPyWidgetBinding extends window.Shiny.OutputBinding {
   }
   renderValue(el: HTMLElement, data: Parameters<typeof renderContent>[1]): void {
     window.Shiny.renderContent(el, data);
-    renderWidgets(() => new ShinyHTMLManager({ loader: requireLoader }, el.id), el);
+    renderWidgets(() => new OutputManager({ loader: requireLoader }, el.id), el);
   }
 }
 
-window.Shiny.outputBindings.register(new IPyWidgetBinding(), "shiny.ipywidget");
+window.Shiny.outputBindings.register(new IPyWidgetOutput(), "shiny.IPyWidgetOutput");

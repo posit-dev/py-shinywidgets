@@ -4,73 +4,78 @@ import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 // on the page first, which is why that comes in as a
 import { renderWidgets } from '@jupyter-widgets/html-manager/lib/libembed';
 
-
-interface InputState {
-  value: any;
-  [key: string]: any;
+// Let the world know about a change in the input value of this widget
+// so that we can subscribe to it in the binding.
+class InputManager extends HTMLManager {
+  display_view(msg, view, options): ReturnType<typeof HTMLManager.prototype.display_view> {
+    console.log("Display view", view);
+    const evt = jQuery.Event('IPyWidgetInputValueChange');
+    view.model.on('change:value', () => {
+      console.log("change!!!");
+      view.$el.trigger(evt);
+    });
+    return super.display_view(msg, view, options)
+  }
 }
+
+// Each widget has multiple "models", and each model has a state.
+// For an input widget, it seems reasonable to assume there is only one model
+// state that contains the value, so we search the collection of model
+// states for one with a value property, and return that (otherwise, error)
+function getValue(states: object): any {
+  const vals = [];
+  Object.entries(states).forEach(([key, st]) => {
+    // @ts-ignore: I don't think ipywidgets provides types for this
+    if (st.hasOwnProperty('value')) vals.push(st.value);
+  });
+  if (vals.length > 1) {
+    console.error("Expected there to be exactly one model state with a value property, but found", vals.length);
+  }
+  return vals[0];
+}
+
+function getStates(el: HTMLElement): object {
+  const el_state = el.querySelector('script[type="application/vnd.jupyter.widget-state+json"]');
+  return JSON.parse(el_state.textContent).state;
+}
+
+window.addEventListener("load", () => {
+  renderWidgets(() => new InputManager({ loader: requireLoader }));
+});
 
 class IPyWidgetInput extends window.Shiny.InputBinding {
   find(scope: HTMLElement): JQuery<HTMLElement> {
-    var inputs = $(scope).find(".shiny-ipywidget-input");
-    this._render();
-    return inputs;
+    return $(scope).find(".shiny-ipywidget-input");
   }
   getValue(el: HTMLElement): any {
-    return this.getState(el).value;
+    return getValue(getStates(el));
   }
   setValue(el: HTMLElement, value: any): void {
-    let state = this.getState(el);
-    state.value = value;
+    let states = getStates(el);
+    Object.entries(states).forEach(([key, st]) => {
+      if (st.hasOwnProperty('value')) {
+        states[key].value = value;
+      }
+    });
     let el_state = el.querySelector('script[type="application/vnd.jupyter.widget-state+json"]');
-    el_state.textContent = JSON.stringify(state);
-    this._render();
+    el_state.textContent = JSON.stringify(states);
+    // Re-render the widget with the new state
+    // Unfortunately renderWidgets() doesn't clear out the div.widget-subarea,
+    // so repeated calls to renderWidgets() will render multiple views
+    el.querySelector('.widget-subarea').remove();
+    renderWidgets(() => new InputManager({ loader: requireLoader }), el)
   }
-  getState(el: HTMLElement): InputState {
-    const el_state = el.querySelector('script[type="application/vnd.jupyter.widget-state+json"]');
-    const state = JSON.parse(el_state.textContent).state;
-    // I think state should just have one key, since input widgets
-    // should only have one value/model??
-    const model_ids = Object.keys(state);
-    if (model_ids.length != 1) {
-      console.warn("Expected exactly one model id, but found", model_ids);
-    }
-    const st = state[model_ids[0]];
-    if (!st.hasOwnProperty("value")) {
-      console.warn("Model id ", model_ids[0], " doesn't have a value");
-    }
-    return st;
+  subscribe(el: HTMLElement, callback: (x: boolean) => void): void {
+    // TODO: get this working!
+    $(el).on("IPyWidgetInputValueChange", function () {
+      console.log("change??????");
+      callback(true);
+    });
   }
-  _render() {
-    // TODO: use a custom HTMLManager that triggers an event when the state is set
-    // (so we can subscribe to it)
-    //renderWidgets(() => new ShinyHTMLManager({ loader: requireLoader }, null));
-    renderWidgets(() => new HTMLManager());
+  unsubscribe(el: HTMLElement): void {
+    $(el).off("IPyWidgetInputValueChange");
   }
-  // It doesn't seem possible to subscribe to changes without a reference to the
-  // underlying Backbone model. Perhaps there is a way to query it from the state object?
-
-  //subscribe(el: HTMLElement, callback: (x: boolean) => void): void {
-  //  $(el).on("change.checkboxInputBinding", function () {
-  //    callback(true);
-  //  });
-  //}
-  //unsubscribe(el: HTMLElement): void {
-  //  $(el).off(".checkboxInputBinding");
-  //}
-  //receiveMessage(
-  //  el: CheckedHTMLElement,
-  //  data: CheckboxReceiveMessageData
-  //): void {
-  //  if (hasOwnProperty(data, "value")) el.checked = data.value;
-  //
-  //  // checkboxInput()'s label works different from other
-  //  // input labels...the label container should always exist
-  //  if (hasOwnProperty(data, "label"))
-  //    $(el).parent().find("span").text(data.label);
-  //
-  //  $(el).trigger("change");
-  //}
+  // TODO: implement receiveMessage
 }
 
-window.Shiny.inputBindings.register(new IPyWidgetInput(), "shiny.ipywidget_input");
+window.Shiny.inputBindings.register(new IPyWidgetInput(), "shiny.IPyWidgetInput");
