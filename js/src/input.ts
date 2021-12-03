@@ -12,21 +12,23 @@ window.addEventListener("load", () => {
   renderWidgets(() => new InputManager({ loader: requireLoader }));
 });
 
-const EVENT_NAME = 'IPyWidgetInputValueChange'
 
 // Let the world know about a value change so the Shiny input binding 
 // can subscribe to it (and thus call getValue() whenever that happens)
 class InputManager extends HTMLManager {
   display_view(msg, view, options): ReturnType<typeof HTMLManager.prototype.display_view> {
-    view.model.on('change:value', (x) => {
-      const evt = jQuery.Event(EVENT_NAME, { value: x.attributes.value });
-      $(document).trigger(evt);
+    return super.display_view(msg, view, options).then((view) => {
+      view.model.on('change:value', (x) => {
+        // TODO: scope the event to the relevant DOM element
+        const evt = jQuery.Event(CHANGE_EVENT_NAME, { value: x.attributes.value });
+        $(document).trigger(evt);
+      });
     });
-    return super.display_view(msg, view, options)
   }
 }
 
-class IPyWidgetInput extends window.Shiny.InputBinding {
+
+class IPyWidgetInput extends Shiny.InputBinding {
   find(scope: HTMLElement): JQuery<HTMLElement> {
     return $(scope).find(".shiny-ipywidget-input");
   }
@@ -35,17 +37,18 @@ class IPyWidgetInput extends window.Shiny.InputBinding {
   _clientValue = undefined;
   getValue(el: HTMLElement): any {
     return (this._clientValue === undefined) ? 
-      getValue(getStates(el)) : 
+      _getValue(_getStates(el)) : 
       this._clientValue;
   }
+  // TODO: verify this actually works
   setValue(el: HTMLElement, value: any): void {
-    let states = getStates(el);
+    let states = _getStates(el);
     Object.entries(states).forEach(([key, val]) => {
       if (val.state && val.state.hasOwnProperty('value')) {
         states[key].state.value = value;
       }
     });
-    let el_state = el.querySelector('script[type="application/vnd.jupyter.widget-state+json"]');
+    let el_state = el.querySelector(WIDGET_STATE_SELECTOR);
     el_state.textContent = JSON.stringify(states);
     // Re-render the widget with the new state
     // Unfortunately renderWidgets() doesn't clear out the div.widget-subarea,
@@ -55,14 +58,14 @@ class IPyWidgetInput extends window.Shiny.InputBinding {
   }
   subscribe(el: HTMLElement, callback: (x: boolean) => void): void {
     let that = this;
-    $(document).on(EVENT_NAME, function (x) {
+    $(document).on(CHANGE_EVENT_NAME, function (x) {
       // @ts-ignore: TODO: provide a type for this event
       that._clientValue = x.value;
       callback(true);
     });
   }
   unsubscribe(el: HTMLElement): void {
-    $(document).off(EVENT_NAME);
+    $(document).off(CHANGE_EVENT_NAME);
   }
   getRatePolicy(el: HTMLElement): { policy: RatePolicyModes; delay: number } {
     const policy = el.attributes.getNamedItem('data-rate-policy');
@@ -76,14 +79,14 @@ class IPyWidgetInput extends window.Shiny.InputBinding {
   // TODO: implement receiveMessage
 }
 
-window.Shiny.inputBindings.register(new IPyWidgetInput(), "shiny.IPyWidgetInput");
+Shiny.inputBindings.register(new IPyWidgetInput(), "shiny.IPyWidgetInput");
 
 
 // Each widget has multiple "models", and each model has a state.
 // For an input widget, it seems reasonable to assume there is only one model
 // state that contains the value, so we search the collection of model
 // states for one with a value property, and return that (otherwise, error)
-function getValue(states: object): any {
+function _getValue(states: object): any {
   const vals = [];
   Object.entries(states).forEach(([key, val]) => {
     if (val.state && val.state.hasOwnProperty('value')) {
@@ -96,7 +99,10 @@ function getValue(states: object): any {
   return vals[0];
 }
 
-function getStates(el: HTMLElement): object {
-  const el_state = el.querySelector('script[type="application/vnd.jupyter.widget-state+json"]');
+function _getStates(el: HTMLElement): object {
+  const el_state = el.querySelector(WIDGET_STATE_SELECTOR);
   return JSON.parse(el_state.textContent).state;
 }
+
+const CHANGE_EVENT_NAME = 'IPyWidgetInputValueChange'
+const WIDGET_STATE_SELECTOR = 'script[type="application/vnd.jupyter.widget-state+json"]';

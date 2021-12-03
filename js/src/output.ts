@@ -19,47 +19,36 @@ import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shi
 
 // Whenever the ipywidget's state changes, let Shiny know about it
 class OutputManager extends HTMLManager {
-  input_id: string = null;
-
-  constructor(options, input_id) {
-    super(options);
-    this.input_id = input_id;
-  }
-
-  // TODO: consider overriding display_view() instead 
-  // and subscribing to change:state (similar to what we do for inputs)
-  set_state(state): ReturnType<typeof HTMLManager.prototype.set_state> {
-    // Make each model's state a bit more human-readable before sending it to Shiny
-    const shinyState = {};
-    Object.entries(state.state).forEach(([key, value]) => {
-      // @ts-ignore: I don't think ipywidgets provides a type for this
-      shinyState[value.model_name] = value.state;
+  display_view(msg, view, options): ReturnType<typeof HTMLManager.prototype.display_view> {
+    return super.display_view(msg, view, options).then((view) => {
+      const id = view.$el.parents(OUTPUT_SELECTOR).attr('id');
+      _sendInputVal(id, view.model);
+      view.model.on('change', (x) => _sendInputVal(id, x.model)); // TODO: verify this actually works
     });
-    window.Shiny.setInputValue(this.input_id, JSON.stringify(shinyState, null, 2));
-
-    return super.set_state(state);
   }
+}
 
-  clear_state(): ReturnType<typeof HTMLManager.prototype.clear_state> {
-    window.Shiny.setInputValue(this.input_id, null);
-    return super.clear_state();
-  }
-
+function _sendInputVal(id, model) {
+  const attrs = Object.assign({}, model.attributes);
+  const val = model.serialize(attrs);
+  Shiny.setInputValue(id, val);
 }
 
 // Ideally we'd extend HTMLOutputBinding, but the implementation isn't exported
-class IPyWidgetOutput extends window.Shiny.OutputBinding {
+class IPyWidgetOutput extends Shiny.OutputBinding {
   find(scope: HTMLElement): JQuery<HTMLElement> {
-    return $(scope).find(".shiny-ipywidget-output");
+    return $(scope).find(OUTPUT_SELECTOR);
   }
   onValueError(el: HTMLElement, err: ErrorsMessageValue): void {
-    window.Shiny.unbindAll(el);
+    Shiny.unbindAll(el);
     this.renderError(el, err);
   }
   renderValue(el: HTMLElement, data: Parameters<typeof renderContent>[1]): void {
-    window.Shiny.renderContent(el, data);
-    renderWidgets(() => new OutputManager({ loader: requireLoader }, el.id), el);
+    Shiny.renderContent(el, data);
+    renderWidgets(() => new OutputManager({ loader: requireLoader }), el);
   }
 }
 
-window.Shiny.outputBindings.register(new IPyWidgetOutput(), "shiny.IPyWidgetOutput");
+Shiny.outputBindings.register(new IPyWidgetOutput(), "shiny.IPyWidgetOutput");
+
+const OUTPUT_SELECTOR = ".shiny-ipywidget-output";
