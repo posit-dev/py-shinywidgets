@@ -7,7 +7,7 @@ import json
 import re
 from shiny.render import RenderFunction, RenderFunctionAsync
 from shiny.utils import run_coro_sync, wrap_async, process_deps
-from typing import List, Dict, Callable, Awaitable, Union, Any, cast
+from typing import List, Dict, Callable, Awaitable, Literal, Union, Optional, Any, cast
 from .__init__ import __version__
 
 html_manager_version = re.sub("^\\D*", "", __html_manager_version__)
@@ -41,8 +41,7 @@ class IPyWidget(RenderFunction):
 
     async def run(self) -> object:
         widget: DOMWidget = await self._fn()
-        ui = _get_ipywidget_html(widget)
-        return process_deps(ui, self._session)
+        return process_deps(widget, self._session)
 
 
 class IPyWidgetAsync(RenderFunctionAsync):
@@ -56,7 +55,7 @@ class IPyWidgetAsync(RenderFunctionAsync):
     async def __call__(self) -> object:
         return await self.run()
 
-
+# TODO: could this just be a simple wrapper around render_ui()?
 def render_ipywidget():
     def wrapper(fn: Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]) -> DOMWidget:
         if inspect.iscoroutinefunction(fn):
@@ -68,7 +67,7 @@ def render_ipywidget():
 
     return wrapper
 
-def input_ipywidget(id: str, widget: object) -> Tag:
+def input_ipywidget(id: str, widget: object, rate_policy: Literal["debounce", "throttle"]="debounce", rate_policy_delay=200) -> Tag:
     if not isinstance(widget, DOMWidget):
         raise TypeError("widget must be a DOMWidget")
     if not hasattr(widget, "value"):
@@ -82,10 +81,12 @@ def input_ipywidget(id: str, widget: object) -> Tag:
         _ipywidget_input_dep(),
         id=id,
         class_="shiny-ipywidget-input",
+        data_rate_policy=rate_policy,
+        data_rate_delay=rate_policy_delay,
     )
 
 
-# TODO: create these automatically when 
+# TODO: create these automatically as a part of the build script 
 def _ipywidget_embed_deps() -> List[HTMLDependency]:
     return [
         HTMLDependency(
