@@ -21,9 +21,14 @@ import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shi
 class OutputManager extends HTMLManager {
   display_view(msg, view, options): ReturnType<typeof HTMLManager.prototype.display_view> {
     return super.display_view(msg, view, options).then((view) => {
-      const id = view.$el.parents(OUTPUT_SELECTOR).attr('id');
+      const id = view.$el.parents(OUTPUT_SELECTOR).attr('id') + ":ipyshiny.ipywidget";
       _sendInputVal(id, view.model);
-      view.model.on('change', (x) => _sendInputVal(id, x.model)); // TODO: verify this actually works
+      view.model.on('change', (x) => {
+        x.widget_manager.get_model(x.model_id).then((model) => {
+          // TODO: should this be debounced?
+          _sendInputVal(id, model);
+        })
+      }); 
     });
   }
 }

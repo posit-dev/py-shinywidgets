@@ -1,10 +1,13 @@
 from htmltools import tags, Tag, TagList, HTMLDependency
 import inspect
+from ipywidgets import widget_serialization
 from ipywidgets.widgets import DOMWidget
 from ipywidgets.embed import embed_data, dependency_state
 from ipywidgets._version import __html_manager_version__
 import json
 import re
+from shiny import ShinySession
+from shiny.input_handlers import InputHandlers
 from shiny.render import RenderFunction, RenderFunctionAsync
 from shiny.utils import run_coro_sync, wrap_async, process_deps
 from typing import List, Dict, Callable, Awaitable, Literal, Union, Optional, Any, cast
@@ -141,3 +144,9 @@ def _get_ipywidget_html(widget: DOMWidget) -> TagList:
     )
 
 setattr(DOMWidget, "tagify", _get_ipywidget_html)
+
+# https://ipywidgets.readthedocs.io/en/7.6.5/examples/Widget%20Low%20Level.html#Serialization-of-widget-attributes
+def _input_handler(value: int, session: ShinySession, name: str):
+  return widget_serialization["from_json"](value, dict())
+
+InputHandlers.register("ipyshiny.ipywidget", _input_handler)

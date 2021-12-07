@@ -58,6 +58,7 @@ def server(ss: ShinySession):
     @ss.output("state")
     @render_ui()
     def _():
+        #breakpoint()
         return tags.pre(HTML(ss.input[ss.input["framework"]]))
 
     @ss.output("ipyleaflet")
