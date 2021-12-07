@@ -12,13 +12,19 @@ sys.path.insert(0, shiny_module_dir)
 ui = page_fluid(
     input_ipywidget(
         "widget",
-        ipy.Button(
-            description='Click me',
+        # TODO: jquery-ui slider bug?
+        ipy.IntRangeSlider(
+            value=[5, 7],
+            min=0,
+            max=10,
+            step=1,
+            description='Test:',
             disabled=False,
-            button_style='',  # 'success', 'info', 'warning', 'danger' or ''
-            tooltip='Click me',
-            icon='check'
-        ),
+            continuous_update=False,
+            orientation='horizontal',
+            readout=True,
+            readout_format='d',
+        )
     ),
     output_ui("value")
 )
