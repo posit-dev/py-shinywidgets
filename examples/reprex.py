@@ -12,14 +12,13 @@ sys.path.insert(0, shiny_module_dir)
 ui = page_fluid(
     input_ipywidget(
         "widget",
-        ipy.ToggleButton(
-            value=False,
+        ipy.Button(
             description='Click me',
             disabled=False,
             button_style='',  # 'success', 'info', 'warning', 'danger' or ''
-            tooltip='Description',
+            tooltip='Click me',
             icon='check'
-        )
+        ),
     ),
     output_ui("value")
 )

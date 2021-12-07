@@ -294,17 +294,16 @@ ui = page_fluid(
         description='Some HTML',
     ),
     tags.h3("Buttons"),
-    # TODO: doesn't have a value attribute?
-    #input_ipywidget(
-    #    "Button",
-    #    ipy.Button(
-    #        description='Click me',
-    #        disabled=False,
-    #        button_style='',  # 'success', 'info', 'warning', 'danger' or ''
-    #        tooltip='Click me',
-    #        icon='check'
-    #    ),
-    #),
+    input_ipywidget(
+        "Button",
+        ipy.Button(
+            description='Click me',
+            disabled=False,
+            button_style='',  # 'success', 'info', 'warning', 'danger' or ''
+            tooltip='Click me',
+            icon='check'
+        ),
+    ),
     input_ipywidget(
       "Play",
         ipy.Play(

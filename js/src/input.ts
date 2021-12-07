@@ -29,22 +29,35 @@ class InputManager extends HTMLManager {
         return;
       }
 
-      // Some widgets (e.g., RadioButtons) represent their "current value" using the
-      // index (rather than the value) property.
+      // Most "input-like" widgets use the value property to encode their current value,
+      // but some multiple selection widgets (e.g., RadioButtons) use the index property 
+      // instead.
       let val = view.model.get("value");
       if (val === undefined) {
         val = view.model.get("index");
       }
+
       // Checkbox() apparently doesn't have a value/index property
-      // on the model on the initial render (but does in the change event???)
+      // on the model on the initial render (but does in the change event, 
+      // so this seems like an ipywidgets bug???)
       if (val === undefined && view.hasOwnProperty("checkbox")) {
         val = view.checkbox.checked;
       }
 
-      // Mock a change event now so that we know Shiny binging has a chance to
-      // read it. The reason this is done on the next tick is because the
+      // Button() doesn't have a value/index property, and clicking it doesn't trigger
+      // a change event, so we do that ourselves
+      if (val === undefined && view.tagName === "button") {
+        val = 0;
+        view.$el[0].addEventListener("click", () => {
+          val++;
+          _doChangeEvent($el_input[0], val);
+        });
+      }
+
+      // Mock a change event now so that we know Shiny binding has a chance to
+      // read the initial value. Also, do it on the next tick since the
       // binding hasn't had a chance to subscribe to the change event yet.
-      setTimeout(() => _doChangeEvent($el_input[0], val), 0);
+      setTimeout(() => { _doChangeEvent($el_input[0], val) }, 0);
 
       // Relay changes to the model to the Shiny input binding 
       view.model.on('change', (x) => {

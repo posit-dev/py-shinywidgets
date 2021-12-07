@@ -74,10 +74,12 @@ def input_ipywidget(id: str, widget: object, rate_policy: Literal["debounce", "t
     if not isinstance(widget, DOMWidget):
         raise TypeError("widget must be a DOMWidget")
     if not hasattr(widget, "value"):
-        raise RuntimeError(
-            "widget must have a value property to be treated as an input. "
-            + "Do you want to render this widget as an output (i.e., output_ipywidget())?"
-        )
+        # ipy.Button() don't inherently have value, but we create one that acts like actionButton() 
+        if 'Button' != widget.__class__.__name__:
+          raise RuntimeError(
+              "widget must have a value property to be treated as an input. "
+              + "Do you want to render this widget as an output (i.e., output_ipywidget())?"
+          )
     return tags.div(
         widget,
         _ipywidget_embed_deps(),
