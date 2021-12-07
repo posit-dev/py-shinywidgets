@@ -305,7 +305,6 @@ ui = page_fluid(
     #        icon='check'
     #    ),
     #),
-    # TODO: doesn't fire a value in change event
     input_ipywidget(
       "Play",
         ipy.Play(
@@ -316,7 +315,8 @@ ui = page_fluid(
             step=1,
             description="Press play",
             disabled=False
-        )
+        ),
+        rate_policy_delay=1
     ),
     output_ui("buttons"),
     tags.h3("Pickers"),

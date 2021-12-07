@@ -49,12 +49,12 @@ class InputManager extends HTMLManager {
       // Relay changes to the model to the Shiny input binding 
       view.model.on('change', (x) => {
         let val;
-        if (x.changed.hasOwnProperty("value")) {
-          val = x.changed.value;
-        } else if (x.changed.hasOwnProperty("index")) {
-          val = x.changed.index;
+        if (x.attributes.hasOwnProperty("value")) {
+          val = x.attributes.value;
+        } else if (x.attributes.hasOwnProperty("index")) {
+          val = x.attributes.index;
         } else {
-          throw new Error("Unknown change event" +  JSON.stringify(x.changed));
+          throw new Error("Unknown change event" +  JSON.stringify(x.attributes));
         }
         _doChangeEvent($el_input[0], val);
       });
