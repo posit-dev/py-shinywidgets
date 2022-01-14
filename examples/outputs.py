@@ -1,18 +1,9 @@
-# This will load the ipyshiny module dynamically, without having to install it.
-# This makes the debug/run cycle quicker.
-import os
-import sys
-
-shiny_module_dir = os.path.dirname(os.path.dirname(__file__))
-sys.path.insert(0, shiny_module_dir)
-
 from shiny import *
 from ipyshiny import *
 import numpy as np
 
 #import ipywidgets as ipy
 #input_ipywidget("IntSlider", ipy.IntSlider(value=4))
-
 
 ui = page_fluid(
     panel_title("A demo of ipywidgets in prism"),
@@ -39,15 +30,6 @@ ui = page_fluid(
         ),
     ),
 )
-
-# TODO: tab input value not working??
-# navs_tab_card(
-#    nav("ipyleaflet", output_ipywidget("ipyleaflet")),
-#    nav("plotly", output_ipywidget("plotly")),
-#    id="framework",
-#    footer=output_ui("widget_state"),
-# )
-
 
 def server(ss: ShinySession):
     @ss.output("figure")

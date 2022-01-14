@@ -1,12 +1,3 @@
-# This will load the ipyshiny module dynamically, without having to install it.
-# This makes the debug/run cycle quicker.
-import os
-import sys
-
-shiny_module_dir = os.path.dirname(os.path.dirname(__file__))
-sys.path.insert(0, shiny_module_dir)
-
-
 import ipywidgets as ipy
 from shiny import *
 from htmltools import *

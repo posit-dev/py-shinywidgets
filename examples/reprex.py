@@ -2,11 +2,6 @@ from ipyshiny import *
 from htmltools import *
 from shiny import *
 import ipywidgets as ipy
-import os
-import sys
-
-shiny_module_dir = os.path.dirname(os.path.dirname(__file__))
-sys.path.insert(0, shiny_module_dir)
 
 
 ui = page_fluid(
