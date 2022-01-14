@@ -1,3 +1,8 @@
+import pandas as pd
+import qgrid
+from vega.widget import VegaWidget
+from ipywidgets.embed import embed_minimal_html
+from vega_datasets import data
 from shiny import *
 from ipyshiny import *
 import numpy as np
@@ -13,7 +18,9 @@ ui = page_fluid(
                 "framework",
                 "Choose an ipywidget package",
                 [
+                    "qgrid",
                     "ipyleaflet",
+                    "altair",
                     "plotly",
                     "bqplot",
                     "ipychart",
@@ -43,14 +50,42 @@ def server(ss: ShinySession):
         #breakpoint()
         return tags.pre(HTML(ss.input[ss.input["framework"]]))
 
+    @ss.output("qgrid")
+    @render_ipywidget()
+    def _():
+      randn = np.random.randn
+      df_types = pd.DataFrame({
+          'A': pd.Series(['2013-01-01', '2013-01-02', '2013-01-03', '2013-01-04',
+                          '2013-01-05', '2013-01-06', '2013-01-07', '2013-01-08', '2013-01-09'], index=list(range(9)), dtype='datetime64[ns]'),
+          'B': pd.Series(randn(9), index=list(range(9)), dtype='float32'),
+          'C': pd.Categorical(["washington", "adams", "washington", "madison", "lincoln", "jefferson", "hamilton", "roosevelt", "kennedy"]),
+          'D': ["foo", "bar", "buzz", "bippity", "boppity", "foo", "foo", "bar", "zoo"]})
+      df_types['E'] = df_types['D'] == 'foo'
+      return qgrid.show_grid(df_types, show_toolbar=True)
+
     @ss.output("ipyleaflet")
-    @render_ui()
+    @render_ipywidget()
     def _():
         from ipyleaflet import Map, Marker
 
         m = Map(center=(52.204793, 360.121558), zoom=4)
         m.add_layer(Marker(location=(52.204793, 360.121558)))
         return m
+
+    @ss.output("altair")
+    @render_ipywidget()
+    def _():
+        import altair as alt
+        p = (
+            alt.Chart(data.cars())
+            .mark_point()
+            .encode(
+                x="Horsepower",
+                y="Miles_per_Gallon",
+                color="Origin",
+            )
+        )
+        return VegaWidget(p.to_dict())
 
     @ss.output("plotly")
     @render_ipywidget()

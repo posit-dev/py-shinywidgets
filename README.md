@@ -40,7 +40,7 @@ If you want to do development, run:
 
 ```sh
 cd js && yarn run build && cd ..
-make install
+pip3 install -e .
 ```
 
 Additionally, you can install pre-commit hooks which will automatically reformat and lint the code when you make a commit:
