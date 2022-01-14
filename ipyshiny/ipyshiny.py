@@ -1,16 +1,21 @@
-from htmltools import tags, Tag, TagList, HTMLDependency
 import inspect
+import json
+import re
+from typing import List, Dict, Callable, Awaitable, Literal, Union, Optional, Any, cast
+
+from htmltools import tags, Tag, TagList, HTMLDependency
+
 from ipywidgets import widget_serialization
 from ipywidgets.widgets import DOMWidget
 from ipywidgets.embed import embed_data, dependency_state
 from ipywidgets._version import __html_manager_version__
-import json
-import re
+
 from shiny import ShinySession
-from shiny.input_handlers import InputHandlers
+from shiny.input_handlers import input_handlers
 from shiny.render import RenderFunction, RenderFunctionAsync
-from shiny.utils import run_coro_sync, wrap_async, process_deps
-from typing import List, Dict, Callable, Awaitable, Literal, Union, Optional, Any, cast
+from shiny.shinysession import _process_deps
+from shiny.utils import run_coro_sync, wrap_async
+
 from .__init__ import __version__
 
 html_manager_version = re.sub("^\\D*", "", __html_manager_version__)
@@ -20,7 +25,6 @@ __all__ = [
   "render_ipywidget",
   "input_ipywidget",
 ]
-
 
 def output_ipywidget(id: str) -> Tag:
     return tags.div(
@@ -44,7 +48,7 @@ class IPyWidget(RenderFunction):
 
     async def run(self) -> object:
         widget: DOMWidget = await self._fn()
-        return process_deps(widget, self._session)
+        return _process_deps(widget, self._session)
 
 
 class IPyWidgetAsync(RenderFunctionAsync):
@@ -148,7 +152,8 @@ def _get_ipywidget_html(widget: DOMWidget) -> TagList:
 setattr(DOMWidget, "tagify", _get_ipywidget_html)
 
 # https://ipywidgets.readthedocs.io/en/7.6.5/examples/Widget%20Low%20Level.html#Serialization-of-widget-attributes
-def _input_handler(value: int, session: ShinySession, name: str):
-  return widget_serialization["from_json"](value, dict())
 
-InputHandlers.register("ipyshiny.ipywidget", _input_handler)
+
+@input_handlers.add("ipyshiny.ipywidget")
+def _(value: int, session: ShinySession, name: str):
+  return widget_serialization["from_json"](value, dict())
