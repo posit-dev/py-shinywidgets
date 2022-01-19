@@ -44,6 +44,17 @@ class IPyWidget(RenderFunction):
     async def run(self) -> object:
         widget: DOMWidget = await self._fn()
         widget_pkg = widget.__module__.split(".")[0]
+        
+        # altair objects aren't directly renderable as an ipywidget,
+        # but we can still render them as an ipywidget via ipyvega
+        if widget_pkg == "altair":
+            try:
+              from vega.widget import VegaWidget
+              widget = VegaWidget(widget.to_dict())
+              widget_pkg = widget.__module__.split(".")[0]
+            except ImportError:
+              raise ImportError("ipyvega is required to render altair charts")
+
         deps = dependencies._require_deps(widget_pkg)
         return _process_deps(TagList(deps, widget), self._session)
 

@@ -3,6 +3,7 @@ import json
 import os
 import re
 import sys
+from warnings import warn
 from types import ModuleType
 from typing import List, Dict, Optional, TypedDict
 from typing_extensions import NotRequired
@@ -50,63 +51,43 @@ def _input_binding() -> HTMLDependency:
 
 # Both the source location of static files and the target requirejs module are configurable
 # https://github.com/jupyter-widgets/widget-cookiecutter/blob/master/%7B%7Bcookiecutter.github_project_name%7D%7D/%7B%7Bcookiecutter.python_package_name%7D%7D/__init__.py
-def _require_deps(pkg: str) -> Optional[List[HTMLDependency]]:
-    paths = _get_nb_paths(pkg)
-    if not _has_src_paths(paths, pkg):
-        return None
-    
-    version = getattr(sys.modules[pkg], "__version__", "0.1")
+class _Paths(TypedDict):
+  src: str
+  dest: str
 
-    deps: List[HTMLDependency] = []
+def _require_deps(pkg: str) -> List[HTMLDependency]:
+    # Approximates what jupyter does to find the source location of static files for a package
+    # https://github.com/jupyterlab/jupyterlab/blob/ea1529b/jupyterlab/federated_labextensions.py#L374-L380
+    mod = importlib.import_module(pkg)
+    paths: _Paths = []
+    if hasattr(mod, '_jupyter_nbextension_paths'):
+        paths = mod._jupyter_nbextension_paths()
+    elif hasattr(mod, '_jupyter_labextension_paths'):
+        paths = mod._jupyter_labextension_paths()
+    else:
+        warn(f"Unable to locally serve JS/CSS assets for ipywidget package '{pkg}'".format(pkg))
+        return []
+
+    # TODO: we should verify that the jupyter paths are actually well defined.
+    # For example, ipyleaflet has a _jupyter_labextension_paths() that returns
+    # points to a labextension/ src, but that folder doesn't actually contain an 
+    # index (I think it that case, Jupyter must fallback to the nbextension path)
+
+    version = getattr(mod, "__version__", "0.1")
+    deps = []
     for p in paths:
-        name = f"ipyshiny-{pkg}-{p['src']}-config" 
-        src = {"package": pkg, "subdir": p["src"]}
+        src = p["src"]
+        name = f"ipyshiny-{pkg}-{src}-config" 
+        source = {"package": pkg, "subdir": src}
         # Get the location where the dependency files will be mounted by shiny
         # and use that to inform the requirejs import path
-        dep = HTMLDependency(name, version, source=src)
+        dep = HTMLDependency(name, version, source=source)
         href = dep.source_path_map()["href"]
-        # Based on https://github.com/jupyter-widgets/widget-cookiecutter/blob/969471848/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js#L13-L19
-        config = {
-            "map": {
-                "*": {
-                    p["dest"]: os.path.join(href, "index")
-                }
-            }
-        }
+        config = {"paths": {p["dest"]: os.path.join(href, "index")}}
         dep = HTMLDependency(
-          name, version, 
-          source=src,
-          all_files=True,
+          name, version, source=source, all_files=True,
           head=HTML(f"<script>window.require.config({json.dumps(config)})</script>")
         )
         deps.append(dep)
 
     return deps
-
-
-class _requirePaths(TypedDict):
-    src: str
-    dest: str
-
-def _get_nb_paths(pkg: str) -> _requirePaths:
-    defaults = {'src': 'nbextension', 'dest': pkg}
-    try:
-        return sys.modules[pkg]._jupyter_nbextension_paths()
-    except:
-        return [defaults]
-
-# TODO: I'm not sure yet if we can reliably support jupyterlab extensions
-# since more of the configuration/registration happens in JS 
-#def _get_lab_paths(pkg: str) -> _requirePaths:
-#  defaults = {'src': 'labextension', 'dest': pkg}
-#  try:
-#      return sys.modules[pkg]._jupyter_labextension_paths()
-#  except:
-#      return [defaults]
-
-def _has_src_paths(paths: _requirePaths, package: str) -> bool:
-    for x in paths:
-        src = os.path.join(package_dir(package), x["src"])
-        if not os.path.exists(src):
-            return False
-    return True

@@ -1,7 +1,7 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 // N.B. for this to work properly, it seems we must include
 // https://unpkg.com/@jupyter-widgets/html-manager@*/dist/libembed-amd.js
-// on the page first, which is why that comes in as a
+// on the page first, which is why that comes in as an external HTMLDependency()
 import { renderWidgets } from '@jupyter-widgets/html-manager/lib/libembed';
 
 import type { renderContent } from 'rstudio-shiny/srcts/types/src/shiny/render';

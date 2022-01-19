@@ -1,6 +1,5 @@
 import pandas as pd
 import qgrid
-from vega.widget import VegaWidget
 from ipywidgets.embed import embed_minimal_html
 from vega_datasets import data
 from shiny import *
@@ -18,7 +17,8 @@ ui = page_fluid(
                 "framework",
                 "Choose an ipywidget package",
                 [
-                    "qgrid",
+                    # TODO: investigate why qgrid doesn't work outside of notebook
+                    #"qgrid",
                     "ipyleaflet",
                     "altair",
                     "plotly",
@@ -27,6 +27,7 @@ ui = page_fluid(
                     "ipywebrtc",
                     "ipyvolume",
                 ],
+                selected="altair"
             )
         ),
         panel_main(
@@ -50,6 +51,15 @@ def server(ss: ShinySession):
         #breakpoint()
         return tags.pre(HTML(ss.input[ss.input["framework"]]))
 
+    @ss.output("ipyleaflet")
+    @render_ipywidget()
+    def _():
+        from ipyleaflet import Map, Marker
+
+        m = Map(center=(52.204793, 360.121558), zoom=4)
+        m.add_layer(Marker(location=(52.204793, 360.121558)))
+        return m
+
     @ss.output("qgrid")
     @render_ipywidget()
     def _():
@@ -63,20 +73,11 @@ def server(ss: ShinySession):
       df_types['E'] = df_types['D'] == 'foo'
       return qgrid.show_grid(df_types, show_toolbar=True)
 
-    @ss.output("ipyleaflet")
-    @render_ipywidget()
-    def _():
-        from ipyleaflet import Map, Marker
-
-        m = Map(center=(52.204793, 360.121558), zoom=4)
-        m.add_layer(Marker(location=(52.204793, 360.121558)))
-        return m
-
     @ss.output("altair")
     @render_ipywidget()
     def _():
         import altair as alt
-        p = (
+        return (
             alt.Chart(data.cars())
             .mark_point()
             .encode(
@@ -85,7 +86,6 @@ def server(ss: ShinySession):
                 color="Origin",
             )
         )
-        return VegaWidget(p.to_dict())
 
     @ss.output("plotly")
     @render_ipywidget()
@@ -191,8 +191,7 @@ def server(ss: ShinySession):
     #    p = figure(title="Simple line example", x_axis_label="x", y_axis_label="y")
     #    p.line(x, y, legend_label="Temp.", line_width=2)
     #    return BokehModel(p)
-
-
+  
 app = ShinyApp(ui, server)
 if __name__ == "__main__":
     app.run()
