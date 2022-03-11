@@ -1,24 +1,18 @@
 import inspect
 import json
-import re
-from typing import List, Dict, Callable, Awaitable, Literal, Union, Optional, Any, cast
+from typing import Dict, Callable, Awaitable, Literal, Union, Any, cast
 
-from htmltools import tags, Tag, TagList, HTMLDependency
-
+from htmltools import tags, Tag, TagList
 from ipywidgets import widget_serialization
 from ipywidgets.widgets import DOMWidget
 from ipywidgets.embed import embed_data, dependency_state
-from ipywidgets._version import __html_manager_version__
-
 from shiny import ShinySession
 from shiny.input_handlers import input_handlers
 from shiny.render import RenderFunction, RenderFunctionAsync
 from shiny.shinysession import _process_deps
 from shiny.utils import run_coro_sync, wrap_async
 
-from .__init__ import __version__
-
-html_manager_version = re.sub("^\\D*", "", __html_manager_version__)
+from . import dependencies
 
 __all__ = [
   "output_ipywidget",
@@ -26,10 +20,11 @@ __all__ = [
   "input_ipywidget",
 ]
 
+
 def output_ipywidget(id: str) -> Tag:
     return tags.div(
-        _ipywidget_embed_deps(),
-        _ipywidget_output_dep(),
+        dependencies._core(),
+        dependencies._output_binding(),
         id=id,
         class_="shiny-ipywidget-output",
     )
@@ -48,7 +43,20 @@ class IPyWidget(RenderFunction):
 
     async def run(self) -> object:
         widget: DOMWidget = await self._fn()
-        return _process_deps(widget, self._session)
+        widget_pkg = widget.__module__.split(".")[0]
+        
+        # altair objects aren't directly renderable as an ipywidget,
+        # but we can still render them as an ipywidget via ipyvega
+        if widget_pkg == "altair":
+            try:
+              from vega.widget import VegaWidget
+              widget = VegaWidget(widget.to_dict())
+              widget_pkg = widget.__module__.split(".")[0]
+            except ImportError:
+              raise ImportError("ipyvega is required to render altair charts")
+
+        deps = dependencies._require_deps(widget_pkg)
+        return _process_deps(TagList(deps, widget), self._session)
 
 
 class IPyWidgetAsync(RenderFunctionAsync):
@@ -86,8 +94,8 @@ def input_ipywidget(id: str, widget: object, rate_policy: Literal["debounce", "t
           )
     return tags.div(
         widget,
-        _ipywidget_embed_deps(),
-        _ipywidget_input_dep(),
+        dependencies._core(),
+        dependencies._input_binding(),
         id=id,
         class_="shiny-ipywidget-input",
         data_rate_policy=rate_policy,
@@ -95,43 +103,6 @@ def input_ipywidget(id: str, widget: object, rate_policy: Literal["debounce", "t
     )
 
 
-# TODO: create these automatically as a part of the build script 
-def _ipywidget_embed_deps() -> List[HTMLDependency]:
-    return [
-        HTMLDependency(
-            name="requirejs",
-            version="2.3.4",
-            source={"package": "ipyshiny", "subdir": "static"},
-            script={"src": "require.min.js"},
-        ),
-        HTMLDependency(
-            name="ipywidget-libembed-amd",
-            version=html_manager_version,
-            source={"package": "ipyshiny", "subdir": "static"},
-            script={"src": "libembed-amd.js"},
-        ),
-    ]
-
-
-def _ipywidget_output_dep() -> HTMLDependency:
-    return HTMLDependency(
-        name="ipywidget-output-binding",
-        version=__version__,
-        source={"package": "ipyshiny", "subdir": "static"},
-        script={"src": "output.js"},
-    )
-
-
-def _ipywidget_input_dep() -> HTMLDependency:
-    return HTMLDependency(
-        name="ipywidget-input-binding",
-        version=__version__,
-        source={"package": "ipyshiny", "subdir": "static"},
-        script={"src": "input.js"},
-    )
-
-
-# TODO: allow a way to customize the CDN
 def _get_ipywidget_html(widget: DOMWidget) -> TagList:
     dat: Dict[str, Any] = embed_data(
         views=[widget], state=dependency_state(widgets=[widget])
