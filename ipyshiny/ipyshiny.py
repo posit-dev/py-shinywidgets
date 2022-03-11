@@ -6,11 +6,11 @@ from htmltools import tags, Tag, TagList
 from ipywidgets import widget_serialization
 from ipywidgets.widgets import DOMWidget
 from ipywidgets.embed import embed_data, dependency_state
-from shiny import ShinySession
-from shiny.input_handlers import input_handlers
+from shiny import Session
+from shiny.input_handler import input_handlers
 from shiny.render import RenderFunction, RenderFunctionAsync
-from shiny.shinysession import _process_deps
-from shiny.utils import run_coro_sync, wrap_async
+from shiny._utils import run_coro_sync, wrap_async
+
 
 from . import dependencies
 
@@ -56,7 +56,7 @@ class IPyWidget(RenderFunction):
               raise ImportError("ipyvega is required to render altair charts")
 
         deps = dependencies._require_deps(widget_pkg)
-        return _process_deps(TagList(deps, widget), self._session)
+        return self._session._process_ui(TagList(deps, widget))
 
 
 class IPyWidgetAsync(RenderFunctionAsync):
@@ -123,8 +123,6 @@ def _get_ipywidget_html(widget: DOMWidget) -> TagList:
 setattr(DOMWidget, "tagify", _get_ipywidget_html)
 
 # https://ipywidgets.readthedocs.io/en/7.6.5/examples/Widget%20Low%20Level.html#Serialization-of-widget-attributes
-
-
 @input_handlers.add("ipyshiny.ipywidget")
-def _(value: int, session: ShinySession, name: str):
+def _(value: int, session: Session, name: str):
   return widget_serialization["from_json"](value, dict())

@@ -4,7 +4,7 @@ from shiny import *
 import ipywidgets as ipy
 
 
-ui = page_fluid(
+app_ui = ui.page_fluid(
     input_ipywidget(
         "widget",
         # TODO: jquery-ui slider bug?
@@ -21,15 +21,13 @@ ui = page_fluid(
             readout_format='d',
         )
     ),
-    output_ui("value")
+    ui.output_ui("value")
 )
 
-def server(ss: ShinySession):
-    @ss.output("value")
+def server(input, output, session: Session):
+    @output(name="value")
     @render_ui()
     def _():
-        return ss.input["widget"]
+        return input.widget()
 
-app = ShinyApp(ui, server)
-if __name__ == "__main__":
-    app.run()
+app = App(app_ui, server)

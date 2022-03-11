@@ -10,7 +10,7 @@ from typing_extensions import NotRequired
 
 from htmltools import HTMLDependency, HTML
 from ipywidgets._version import __html_manager_version__
-from shiny.utils import package_dir
+from shiny._utils import package_dir
 
 from .__init__ import __version__
 

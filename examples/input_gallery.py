@@ -1,15 +1,18 @@
+import datetime
+from typing import List
+
 import ipywidgets as ipy
 from shiny import *
 from htmltools import *
 from ipyshiny import *
-import datetime
+
 
 
 dates = [datetime.date(2015, i, 1) for i in range(1, 13)]
 rng_slider_options = [(i.strftime('%b'), i) for i in dates]
 
 
-ui = page_fluid(
+ui = ui.page_fluid(
     tags.h3("Sliders"),
     input_ipywidget(
       "IntSlider", 
@@ -83,7 +86,7 @@ ui = page_fluid(
     #        readout_format='.1f',
     #    )
     #),
-    output_ui("sliders"),
+    ui.output_ui("sliders"),
     tags.h3("Progress"),
     input_ipywidget(
       "IntProgress",
@@ -109,7 +112,7 @@ ui = page_fluid(
             orientation='horizontal'
         )
     ),
-    output_ui("progress"),
+    ui.output_ui("progress"),
     tags.h3("Numeric"),
     input_ipywidget(
         "BoundedFloatText",
@@ -138,7 +141,7 @@ ui = page_fluid(
             disabled=False
         )
     ),
-    output_ui("numeric"),
+    ui.output_ui("numeric"),
     tags.h3("Boolean"),
     input_ipywidget(
         "Checkbox",
@@ -166,7 +169,7 @@ ui = page_fluid(
           description='Valid!',
       )
     ),
-    output_ui("boolean"),
+    ui.output_ui("boolean"),
     tags.h3("Selection"),
     input_ipywidget(
         "Dropdown",
@@ -241,7 +244,7 @@ ui = page_fluid(
             disabled=False
         )
     ),
-    output_ui("selection"),
+    ui.output_ui("selection"),
     tags.h3("String widgets"),
     input_ipywidget(
         "Text",
@@ -271,7 +274,7 @@ ui = page_fluid(
             disabled=False
         )
     ),
-    output_ui("string"),
+    ui.output_ui("string"),
     tags.h3("HTML"),
     ipy.HTML(
         value="Hello <b>World</b>",
@@ -308,7 +311,7 @@ ui = page_fluid(
         ),
         rate_policy_delay=1
     ),
-    output_ui("buttons"),
+    ui.output_ui("buttons"),
     tags.h3("Pickers"),
     input_ipywidget(
       "DatePicker",
@@ -339,16 +342,17 @@ ui = page_fluid(
     #  "Controller",
     #  ipy.Controller(index=0)
     #),
-    output_ui("pickers")
+    ui.output_ui("pickers")
 )
 
-def server(ss: ShinySession):
+
+def server(input, output, session: Session):
 
     def display_values(ids: List[str]) -> TagList:
-      inputs = [tags.p(ss.input[id]) for id in ids]
+      inputs = [tags.p(input[id]()) for id in ids]
       return TagList(tags.br(), tags.p(tags.b("Values:")), *inputs)
 
-    @ss.output("sliders")
+    @output(name="sliders")
     @render_ui()
     def _():
       return display_values([
@@ -359,12 +363,12 @@ def server(ss: ShinySession):
           "FloatRangeSlider"
       ])
 
-    @ss.output("progress")
+    @output(name="progress")
     @render_ui()
     def _():
         return display_values(["IntProgress", "FloatProgress"])
 
-    @ss.output("numeric")
+    @output(name="numeric")
     @render_ui()
     def _():
         return display_values([
@@ -373,7 +377,7 @@ def server(ss: ShinySession):
             "IntText",
         ])
 
-    @ss.output("boolean")
+    @output(name="boolean")
     @render_ui()
     def _():
         return display_values([
@@ -382,7 +386,7 @@ def server(ss: ShinySession):
                 "Valid",
             ])
 
-    @ss.output("selection")
+    @output(name="selection")
     @render_ui()
     def _():
         return display_values([
@@ -395,7 +399,7 @@ def server(ss: ShinySession):
             "SelectMultiple",
         ])
 
-    @ss.output("string")
+    @output(name="string")
     @render_ui()
     def _():
         return display_values([
@@ -404,12 +408,12 @@ def server(ss: ShinySession):
             "Combobox",
         ])
 
-    @ss.output("buttons")
+    @output(name="buttons")
     @render_ui()
     def _():
         return display_values(["Button", "Play"])
 
-    @ss.output("pickers")
+    @output(name="pickers")
     @render_ui()
     def _():
         return display_values([
@@ -419,6 +423,4 @@ def server(ss: ShinySession):
             "Controller",
         ])
 
-app = ShinyApp(ui, server)
-if __name__ == "__main__":
-    app.run()
+app = App(ui, server)

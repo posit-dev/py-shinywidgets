@@ -9,16 +9,16 @@ import numpy as np
 #import ipywidgets as ipy
 #input_ipywidget("IntSlider", ipy.IntSlider(value=4))
 
-ui = page_fluid(
-    panel_title("A demo of ipywidgets in prism"),
-    layout_sidebar(
-        panel_sidebar(
-            input_radio_buttons(
+app_ui = ui.page_fluid(
+    ui.panel_title("A demo of ipywidgets in prism"),
+    ui.layout_sidebar(
+        ui.panel_sidebar(
+            ui.input_radio_buttons(
                 "framework",
                 "Choose an ipywidget package",
                 [
                     # TODO: investigate why qgrid doesn't work outside of notebook
-                    #"qgrid",
+                    "qgrid",
                     "ipyleaflet",
                     "altair",
                     "plotly",
@@ -27,31 +27,32 @@ ui = page_fluid(
                     "ipywebrtc",
                     "ipyvolume",
                 ],
-                selected="altair"
+                selected="qgrid"
             )
         ),
-        panel_main(
-            TagList(
-                output_ui("figure"),
-                output_ui("state"),
+        ui.panel_main(
+            ui.TagList(
+                ui.output_ui("figure"),
+                ui.output_ui("state"),
             )
         ),
     ),
 )
 
-def server(ss: ShinySession):
-    @ss.output("figure")
+def server(input: Inputs, output: Outputs, session: Session):
+    @output(name="figure")
     @render_ui()
     def _():
-        return output_ipywidget(ss.input["framework"])
+        return output_ipywidget(input.framework())
 
-    @ss.output("state")
+    @output(name="state")
     @render_ui()
     def _():
         #breakpoint()
-        return tags.pre(HTML(ss.input[ss.input["framework"]]))
+        f = input.framework()
+        return ui.tags.pre(ui.HTML(input[f]()))
 
-    @ss.output("ipyleaflet")
+    @output(name="ipyleaflet")
     @render_ipywidget()
     def _():
         from ipyleaflet import Map, Marker
@@ -60,7 +61,7 @@ def server(ss: ShinySession):
         m.add_layer(Marker(location=(52.204793, 360.121558)))
         return m
 
-    @ss.output("qgrid")
+    @output(name="qgrid")
     @render_ipywidget()
     def _():
       randn = np.random.randn
@@ -73,7 +74,7 @@ def server(ss: ShinySession):
       df_types['E'] = df_types['D'] == 'foo'
       return qgrid.show_grid(df_types, show_toolbar=True)
 
-    @ss.output("altair")
+    @output(name="altair")
     @render_ipywidget()
     def _():
         import altair as alt
@@ -87,7 +88,7 @@ def server(ss: ShinySession):
             )
         )
 
-    @ss.output("plotly")
+    @output(name="plotly")
     @render_ipywidget()
     def _():
         import plotly.graph_objects as go
@@ -97,7 +98,7 @@ def server(ss: ShinySession):
             layout_title_text="A Figure Displayed with fig.show()",
         )
 
-    @ss.output("bqplot")
+    @output(name="bqplot")
     @render_ipywidget()
     def _():
         from bqplot import OrdinalScale, LinearScale, Bars, Lines, Axis, Figure
@@ -138,7 +139,7 @@ def server(ss: ShinySession):
             ],
         )
 
-    @ss.output("ipychart")
+    @output(name="ipychart")
     @render_ipywidget()
     def _():
         from ipychart import Chart
@@ -159,7 +160,7 @@ def server(ss: ShinySession):
 
         return Chart(data=dataset, kind="bar")
 
-    @ss.output("ipywebrtc")
+    @output(name="ipywebrtc")
     @render_ipywidget()
     def _():
         from ipywebrtc import CameraStream
@@ -172,7 +173,7 @@ def server(ss: ShinySession):
             }
         )
 
-    @ss.output("ipyvolume")
+    @output(name="ipyvolume")
     @render_ipywidget()
     def _():
         from ipyvolume import quickquiver
@@ -180,7 +181,7 @@ def server(ss: ShinySession):
         x, y, z, u, v, w = np.random.random((6, 1000)) * 2 - 1
         return quickquiver(x, y, z, u, v, w, size=5)
 
-    # @ss.output("bokeh")
+    # @output(name="bokeh")
     # @render_ipywidget()
     # def _():
     #    from bokeh.plotting import figure
@@ -192,6 +193,4 @@ def server(ss: ShinySession):
     #    p.line(x, y, legend_label="Temp.", line_width=2)
     #    return BokehModel(p)
   
-app = ShinyApp(ui, server)
-if __name__ == "__main__":
-    app.run()
+app = App(app_ui, server)
