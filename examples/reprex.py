@@ -24,7 +24,7 @@ app_ui = ui.page_fluid(
     ui.output_ui("value")
 )
 
-def server(input, output, session: Session):
+def server(input, output, session):
     @output(name="value")
     @render_ui()
     def _():

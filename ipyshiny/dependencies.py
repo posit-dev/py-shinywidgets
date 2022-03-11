@@ -2,15 +2,11 @@ import importlib
 import json
 import os
 import re
-import sys
 from warnings import warn
-from types import ModuleType
-from typing import List, Dict, Optional, TypedDict
-from typing_extensions import NotRequired
+from typing import List, TypedDict
 
 from htmltools import HTMLDependency, HTML
 from ipywidgets._version import __html_manager_version__
-from shiny._utils import package_dir
 
 from .__init__ import __version__
 
