@@ -3,44 +3,29 @@ ipyshiny
 
 Render [ipywidgets](https://github.com/jupyter-widgets/ipywidgets) inside a [PyShiny](https://github.com/rstudio/prism) app 
 
+## Installation
+
+```sh
+pip install ipywidgets
+pip install shiny==0.0.0.9001 --extra-index-url=https://rstudio.github.io/pyshiny-site/pypi
+pip install -e .
+```
+
 ## Usage
 
-First, you'll need to install `htmltools` and `shiny`, then `ipyshiny` by hand
+Coming soon. For now, see/run the `examples/`:
 
 ```sh
-git clone https://github.com/rstudio/py-htmltools.git
-cd py-htmltools
-pip install -r requirements.txt
-make install
-cd ..
-
-git clone https://github.com/rstudio/prism.git
-cd prism
-pip install -r requirements.txt
-make install
-cd ..
-
-git clone https://github.com/rstudio/ipyshiny.git
-cd ipyshiny
-pip install -r requirements.txt
-make install
+shiny run examples.outputs
 ```
-
-To run an example app:
-
-```sh
-python3 examples/01_hello.py
-```
-
-Then visit the app by pointing a web browser to http://localhost:8000/.
 
 ## Development
 
 If you want to do development, run:
 
 ```sh
-cd js && yarn run build && cd ..
-pip3 install -e .
+pip install -e .
+cd js && yarn watch
 ```
 
 Additionally, you can install pre-commit hooks which will automatically reformat and lint the code when you make a commit:

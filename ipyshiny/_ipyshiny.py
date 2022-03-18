@@ -1,0 +1,219 @@
+__all__ = (
+    "output_ipywidget",
+    "render_ipywidget",
+)
+
+import copy
+import inspect
+import json
+import os
+from typing import Dict, Callable, Awaitable, Union, Any, cast, List
+from uuid import uuid4
+from weakref import WeakSet
+
+from ipywidgets.widgets import DOMWidget, Widget
+from ipywidgets.widgets.widget import _remove_buffers
+from ipywidgets._version import __protocol_version__
+
+from htmltools import tags, Tag, TagList
+from htmltools._util import _package_dir
+from shiny import event
+from shiny.http_staticfiles import StaticFiles
+from shiny.session import get_current_session
+from shiny.render import RenderFunction, RenderFunctionAsync
+from shiny.reactive import Effect
+from shiny._utils import run_coro_sync, wrap_async
+
+from . import _dependencies
+from ._comm import ShinyComm, ShinyCommManager
+
+def output_ipywidget(id: str) -> Tag:
+    return tags.div(
+        _dependencies.core(),
+        _dependencies.output_binding(),
+        id=id,
+        class_="shiny-ipywidget-output",
+    )
+
+# --------------------------------------------------------------------------------------------
+# When a widget is initialized, also initialize a communication channel (via the Shiny session).
+# Note that when the comm is initialized, it also sends the initial state of the widget.
+# --------------------------------------------------------------------------------------------
+
+def add_shiny_comm(w: Widget):
+    session = get_current_session()
+    if session is None:
+        raise RuntimeError(
+          "ipyshiny requires that all ipywidgets be constructed within an active Shiny session"
+        )
+
+    # `Widget` has `comm = Instance('ipykernel.comm.Comm')` which means we'd get a
+    # runtime error if we try to set this attribute to a different class, but
+    # fortunately this hack provides a workaround. 
+    # TODO: find a better way to do this (maybe send a PR to ipywidgets?) or at least clean up after ourselves
+    # https://github.com/jupyter-widgets/ipywidgets/blob/88cec8b/python/ipywidgets/ipywidgets/widgets/widget.py#L424
+    old_comm_klass = copy.copy(Widget.comm.klass)
+    Widget.comm.klass = object
+
+    # Get the initial state of the widget
+    state, buffer_paths, buffers = _remove_buffers(w.get_state())
+
+    # Make sure window.require() calls made by 3rd party widgets
+    # (via handle_comm_open() -> new_model() -> loadClass() -> requireLoader())
+    # actually point to directories served locally by shiny
+    deps = _dependencies.require_deps(_widget_pkg(w), session)
+
+    # By the time we get here, the user has already had an opportunity to specify a model_id,
+    # so it isn't yet populated, generate a random one so we can assign the same id to the comm
+    if w._model_id is None:
+        w._model_id = uuid4().hex
+
+    # Initialize the comm...this will also send the initial state of the widget
+    w.comm = ShinyComm(
+      comm_id=w._model_id,
+      comm_manager=COMM_MANAGER,
+      target_name='jupyter.widgets',
+      data={'state': state, 'buffer_paths': buffer_paths},
+      buffers=buffers,
+      # TODO: should this be hard-coded?
+      metadata={'version': __protocol_version__},
+      html_deps=session._process_ui(TagList(deps))["deps"]
+    )
+
+    # Some widget's JS make external requests for static files (e.g.,
+    # ipyleaflet markers) under this resource path. Note that this assumes that
+    # we're setting the data-base-url attribute on the <body> (which we should
+    # be doing on load in js/src/output.ts)
+    # https://github.com/jupyter-widgets/widget-cookiecutter/blob/9694718/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js#L8
+    for dep in deps:
+      session.app._dependency_handler.mount(
+          f"/nbextensions/{dep.name}",
+          StaticFiles(directory=dep.source["subdir"]),
+          name=f"{dep.name}-nbextension-static-resources",
+      )
+
+    # everything after this point should be done once per session
+    if session in SESSIONS:
+        return
+    SESSIONS.add(session)
+
+    # Somewhere inside ipywidgets, it makes requests for static files
+    # under the publicPath set by the webpack.config.js file. 
+    session.app._dependency_handler.mount(
+        "/dist/",
+        StaticFiles(directory=os.path.join(_package_dir("ipyshiny"), "static")),
+        name="ipyshiny-static-resources",
+    )
+
+    # Handle messages from the client. Note that widgets like qgrid send client->server messages
+    # to figure out things like what filter to be shown in the table.
+    @Effect()
+    @event(session.input["ipyshiny_comm_send"])
+    def _():
+        msg_txt = session.input["ipyshiny_comm_send"]()
+        msg = json.loads(msg_txt)
+        comm_id = msg["content"]["comm_id"]
+        COMM_MANAGER.comms[comm_id].handle_msg(msg)
+
+    def _restore_state():
+      Widget.comm.klass = old_comm_klass
+
+    session.on_ended(_restore_state)
+
+
+
+# TODO: can we restore the widget constructor in a sensible way?
+Widget.on_widget_constructed(add_shiny_comm)
+
+# Use WeakSet() over Set() so that the session can be garbage collected
+SESSIONS = WeakSet()
+COMM_MANAGER = ShinyCommManager()
+
+
+# --------------------------------------------------------------------------------------------
+# Implement @render_ipywidget()
+# TODO: shiny should probably make this simpler
+# --------------------------------------------------------------------------------------------
+
+IPyWidgetRenderFunc = Callable[[], DOMWidget]
+IPyWidgetRenderFuncAsync = Callable[[], Awaitable[DOMWidget]]
+
+class IPyWidget(RenderFunction):
+    def __init__(self, fn: IPyWidgetRenderFunc) -> None:
+        self._fn: IPyWidgetRenderFuncAsync = wrap_async(fn)
+
+    def __call__(self) -> object:
+        return run_coro_sync(self.run())
+
+    async def run(self) -> object:
+        widget: DOMWidget = await self._fn()
+        
+        # altair objects aren't directly renderable as an ipywidget,
+        # but we can still render them as an ipywidget via ipyvega
+        # TODO: we should probably do this for bokeh, pydeck, and probably others as well
+        if _widget_pkg(widget) == "altair":
+            try:
+              from vega.widget import VegaWidget
+              widget = VegaWidget(widget.to_dict())
+            except ImportError:
+              raise ImportError("ipyvega is required to render altair charts")
+
+        return {"model_id": widget.model_id}
+
+class IPyWidgetAsync(RenderFunctionAsync):
+    def __init__(self, fn: IPyWidgetRenderFuncAsync) -> None:
+        if not inspect.iscoroutinefunction(fn):
+            raise TypeError("IPyWidgetAsync requires an async function")
+
+        super().__init__(lambda: None)
+        self._fn: IPyWidgetRenderFuncAsync = fn
+
+    async def __call__(self) -> object:
+        return await self.run()
+
+
+def render_ipywidget():
+    def wrapper(fn: Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]) -> DOMWidget:
+        if inspect.iscoroutinefunction(fn):
+            fn = cast(IPyWidgetRenderFuncAsync, fn)
+            return IPyWidgetAsync(fn)
+        else:
+            fn = cast(IPyWidgetRenderFunc, fn)
+            return IPyWidget(fn)
+
+    return wrapper
+
+
+def _widget_pkg(w: Widget) -> str:
+    return w.__module__.split(".")[0]
+
+
+
+
+# It doesn't, at the moment, seem feasible to establish a comm with statically rendered widgets, 
+# and partially for this reason, it may not be sensible to provide an input-like API for them.
+
+# def input_ipywidget(id: str, widget: object, rate_policy: Literal["debounce", "throttle"]="debounce", rate_policy_delay=200) -> Tag:
+#     if not isinstance(widget, DOMWidget):
+#         raise TypeError("widget must be a DOMWidget")
+#     if not hasattr(widget, "value"):
+#         # ipy.Button() don't inherently have value, but we create one that acts like actionButton() 
+#         if 'Button' != widget.__class__.__name__:
+#           raise RuntimeError(
+#               "widget must have a value property to be treated as an input. "
+#               + "Do you want to render this widget as an output (i.e., output_ipywidget())?"
+#           )
+#     return tags.div(
+#         widget,
+#         dependencies._core(),
+#         dependencies._input_binding(),
+#         id=id,
+#         class_="shiny-ipywidget-input",
+#         data_rate_policy=rate_policy,
+#         data_rate_delay=rate_policy_delay,
+#     )
+# 
+# # https://ipywidgets.readthedocs.io/en/7.6.5/examples/Widget%20Low%20Level.html#Serialization-of-widget-attributes
+# @input_handlers.add("ipyshiny.ipywidget")
+# def _(value: int, session: Session, name: str):
+#     return widget_serialization["from_json"](value, dict())

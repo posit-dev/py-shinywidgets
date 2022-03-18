@@ -4,4 +4,4 @@ __author__ = """Carson Sievert"""
 __email__ = 'carson@rstudio.com'
 __version__ = '0.1.0'
 
-from .ipyshiny import *
+from ._ipyshiny import *

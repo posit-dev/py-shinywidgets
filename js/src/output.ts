@@ -1,59 +1,99 @@
-import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 // N.B. for this to work properly, it seems we must include
 // https://unpkg.com/@jupyter-widgets/html-manager@*/dist/libembed-amd.js
-// on the page first, which is why that comes in as an external HTMLDependency()
-import { renderWidgets } from '@jupyter-widgets/html-manager/lib/libembed';
-
-import type { renderContent } from 'rstudio-shiny/srcts/types/src/shiny/render';
+import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
+import { ShinyComm } from './comm';
+import { jsonParse } from './utils';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
-//if (window.require) {
-//  console.log("require")
-//  // @ts-ignore: this is a dynamic import
-//  window.require.config({
-//    paths: {
-//      '@jupyter-widgets/base': 'https://unpkg.com/@jupyter-widgets/base@4.0.0/lib/index.js'
-//    }
-//  });
-//}
+/******************************************************************************
+ * Define a custom HTMLManager for use with Shiny
+ ******************************************************************************/
 
-// Whenever the ipywidget's state changes, let Shiny know about it
 class OutputManager extends HTMLManager {
-  display_view(msg, view, options): ReturnType<typeof HTMLManager.prototype.display_view> {
-    return super.display_view(msg, view, options).then((view) => {
-      const id = view.$el.parents(OUTPUT_SELECTOR).attr('id') + ":ipyshiny.ipywidget";
-      _sendInputVal(id, view.model);
-      view.model.on('change', (x) => {
-        x.widget_manager.get_model(x.model_id).then((model) => {
-          // TODO: should this be debounced?
-          _sendInputVal(id, model);
-        })
-      }); 
-    });
+  // In a soon-to-be-released version of @jupyter-widgets/html-manager,  
+  // display_view()'s first "dummy" argument will be removed... this shim simply
+  // makes it so that our manager can work with either version
+  // https://github.com/jupyter-widgets/ipywidgets/commit/159bbe4#diff-45c126b24c3c43d2cee5313364805c025e911c4721d45ff8a68356a215bfb6c8R42-R43
+  async display_view(view: any, options: { el: HTMLElement; }): Promise<any> {
+    const n_args = super.display_view.length
+    if (n_args === 3) {
+      return super.display_view({}, view, options)
+    } else {
+      // @ts-ignore
+      return super.display_view(view, options)
+    }
   }
 }
 
-function _sendInputVal(id, model) {
-  const attrs = Object.assign({}, model.attributes);
-  const val = model.serialize(attrs);
-  Shiny.setInputValue(id, val);
-}
+const manager = new OutputManager({ loader: requireLoader });
 
-// Ideally we'd extend HTMLOutputBinding, but the implementation isn't exported
+
+/******************************************************************************
+* Define the Shiny binding
+******************************************************************************/
+
+// Ideally we'd extend Shiny's HTMLOutputBinding, but the implementation isn't exported
 class IPyWidgetOutput extends Shiny.OutputBinding {
   find(scope: HTMLElement): JQuery<HTMLElement> {
-    return $(scope).find(OUTPUT_SELECTOR);
+    return $(scope).find(".shiny-ipywidget-output");
   }
   onValueError(el: HTMLElement, err: ErrorsMessageValue): void {
     Shiny.unbindAll(el);
     this.renderError(el, err);
   }
-  renderValue(el: HTMLElement, data: Parameters<typeof renderContent>[1]): void {
-    Shiny.renderContent(el, data);
-    renderWidgets(() => new OutputManager({ loader: requireLoader }), el);
+  renderValue(el: HTMLElement, data): void {
+    const model = manager.get_model(data.model_id);
+    if (!model) {
+      throw new Error(`No model found for id ${data.model_id}`);
+    }
+    model.then((m) => {
+      const view = manager.create_view(m, {});
+      view.then((v) => manager.display_view(v, {el: el}));
+    });
   }
 }
 
 Shiny.outputBindings.register(new IPyWidgetOutput(), "shiny.IPyWidgetOutput");
 
-const OUTPUT_SELECTOR = ".shiny-ipywidget-output";
+
+/******************************************************************************
+* Handle messages from the server-side Widget 
+******************************************************************************/
+
+// Initialize the comm and model when a new widget is created
+// This is basically our version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1144-L1176
+Shiny.addCustomMessageHandler("ipyshiny_comm_open", (msg_txt) => {
+  setBaseURL();
+  const msg = jsonParse(msg_txt);
+  Shiny.renderDependencies(msg.content.html_deps);
+  const comm = new ShinyComm(msg.content.comm_id);
+  manager.handle_comm_open(comm, msg);
+});
+
+// Handle any mutation of the model (e.g., add a marker to a map, without a full redraw)
+// Basically out version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1200-L1215
+Shiny.addCustomMessageHandler("ipyshiny_comm_msg", (msg_txt) => {
+  const msg = jsonParse(msg_txt);
+  manager.get_model(msg.content.comm_id).then(m => {
+    // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
+    m.comm.handle_msg(msg)
+  });
+});
+
+// TODO: test that this actually works
+Shiny.addCustomMessageHandler("ipyshiny_comm_close", (msg_txt) => {
+  const msg = jsonParse(msg_txt);
+  manager.get_model(msg.content.comm_id).then(m => {
+    // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
+    m.comm.handle_close(msg)
+  });
+});
+
+
+// Our version of https://github.com/jupyter-widgets/widget-cookiecutter/blob/9694718/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js#L8
+function setBaseURL(x: string = '') {
+  const base_url = document.querySelector('body').getAttribute('data-base-url');
+  if (!base_url) {
+    document.querySelector('body').setAttribute('data-base-url', x);
+  }
+}
