@@ -5,29 +5,18 @@ import ipywidgets as ipy
 
 
 app_ui = ui.page_fluid(
-    input_ipywidget(
-        "widget",
-        # TODO: jquery-ui slider bug?
-        ipy.IntRangeSlider(
-            value=[5, 7],
-            min=0,
-            max=10,
-            step=1,
-            description='Test:',
-            disabled=False,
-            continuous_update=False,
-            orientation='horizontal',
-            readout=True,
-            readout_format='d',
-        )
-    ),
-    ui.output_ui("value")
+    output_ipywidget("value")
 )
 
 def server(input, output, session):
+    d = ipy.DatePicker(
+        description='Pick a Date',
+        disabled=False
+    )
+
     @output(name="value")
-    @render_ui()
+    @render_ipywidget()
     def _():
-        return input.widget()
+        return d
 
 app = App(app_ui, server)

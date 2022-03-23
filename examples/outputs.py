@@ -1,6 +1,5 @@
 import pandas as pd
 import qgrid
-from ipywidgets.embed import embed_minimal_html
 from vega_datasets import data
 from shiny import *
 from ipyshiny import *
@@ -10,18 +9,20 @@ import numpy as np
 #input_ipywidget("IntSlider", ipy.IntSlider(value=4))
 
 app_ui = ui.page_fluid(
-    ui.panel_title("A demo of ipywidgets in prism"),
     ui.layout_sidebar(
         ui.panel_sidebar(
             ui.input_radio_buttons(
                 "framework",
                 "Choose an ipywidget package",
                 [
-                    # TODO: investigate why qgrid doesn't work outside of notebook
                     "qgrid",
                     "ipyleaflet",
+                    "pydeck",
                     "altair",
                     "plotly",
+                    # TODO: fix me
+                    #"bokeh",
+                    # TODO: fix me
                     "bqplot",
                     "ipychart",
                     "ipywebrtc",
@@ -37,6 +38,7 @@ app_ui = ui.page_fluid(
             )
         ),
     ),
+    title="ipywidgets in Shiny"
 )
 
 def server(input: Inputs, output: Outputs, session: Session):
@@ -48,7 +50,6 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output(name="state")
     @render_ui()
     def _():
-        #breakpoint()
         f = input.framework()
         return ui.tags.pre(ui.HTML(input[f]()))
 
@@ -181,16 +182,54 @@ def server(input: Inputs, output: Outputs, session: Session):
         x, y, z, u, v, w = np.random.random((6, 1000)) * 2 - 1
         return quickquiver(x, y, z, u, v, w, size=5)
 
-    # @output(name="bokeh")
-    # @render_ipywidget()
-    # def _():
-    #    from bokeh.plotting import figure
-    #    from jupyter_bokeh import BokehModel
-    #
-    #    x = [1, 2, 3, 4, 5]
-    #    y = [6, 7, 2, 4, 5]
-    #    p = figure(title="Simple line example", x_axis_label="x", y_axis_label="y")
-    #    p.line(x, y, legend_label="Temp.", line_width=2)
-    #    return BokehModel(p)
+    @output(name="pydeck")
+    @render_ipywidget()
+    def _():
+      import pydeck as pdk
+
+      UK_ACCIDENTS_DATA = 'https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/3d-heatmap/heatmap-data.csv'
+
+      layer = pdk.Layer(
+          'HexagonLayer',  # `type` positional argument is here
+          UK_ACCIDENTS_DATA,
+          get_position=['lng', 'lat'],
+          auto_highlight=True,
+          elevation_scale=50,
+          pickable=True,
+          elevation_range=[0, 3000],
+          extruded=True,
+          coverage=1
+      )
+
+      # Set the viewport location
+      view_state = pdk.ViewState(
+          longitude=-1.415,
+          latitude=52.2323,
+          zoom=6,
+          min_zoom=5,
+          max_zoom=15,
+          pitch=40.5,
+          bearing=-27.36)
+
+      # Combined all of it and render a viewport
+      w = pdk.widget.DeckGLWidget()
+      w.json_input = pdk.Deck(layers=[layer], initial_view_state=view_state).to_json()
+      return w
+
+    @output(name="bokeh")
+    @render_ipywidget()
+    def _():
+       from bokeh.plotting import figure
+       from jupyter_bokeh import BokehModel
+
+       # TODO: figure out what this does and try to replicate it
+       import bokeh.io
+       bokeh.io.output_notebook()
+    
+       x = [1, 2, 3, 4, 5]
+       y = [6, 7, 2, 4, 5]
+       p = figure(title="Simple line example", x_axis_label="x", y_axis_label="y")
+       p.line(x, y, legend_label="Temp.", line_width=2)
+       return BokehModel(p)
   
 app = App(app_ui, server)
