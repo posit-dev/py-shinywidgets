@@ -17,7 +17,7 @@ from . import __version__
 # TODO: scripts/static_download.R should produce/update these
 def core() -> List[HTMLDependency]:
     return [
-        # Load 3rd party widget dependencies at runtime via requirejs. One of the benefits of doing it 
+        # Load 3rd party widget dependencies at runtime via requirejs. One of the benefits of doing it
         # this way is that for whatever reason, if we can't find the widgets statically assets locally,
         # the requireLoader we use client side will fallback to loading the dependencies from a CDN.
         HTMLDependency(
@@ -26,14 +26,14 @@ def core() -> List[HTMLDependency]:
             source={"package": "ipyshiny", "subdir": "static"},
             script={"src": "require.min.js"},
         ),
-        # Jupyter Notebook/Lab both come "preloaded" with several @jupyter-widgets packages 
+        # Jupyter Notebook/Lab both come "preloaded" with several @jupyter-widgets packages
         # (i.e., base, controls, output), all of which are bundled into this extension.js file
         # provided by the widgetsnbextension package, which is a dependency of ipywidgets.
         # https://github.com/nteract/nes/tree/master/portable-widgets
         # https://github.com/jupyter-widgets/ipywidgets/blob/88cec8/packages/html-manager/src/htmlmanager.ts#L115-L120
         #
         # Unfortunately, I don't think there is a good way for us to "pre-bundle" these dependencies
-        # since they could change depending on the version of ipywidgets (and ipywidgets itself 
+        # since they could change depending on the version of ipywidgets (and ipywidgets itself
         # doesn't include these dependencies in such a way that require("@jupyter-widget/base") would
         # work robustly when used in other 3rd party widgets). Moreover, I don't think we can simply
         # have @jupyter-widget/base point to https://unpkg.com/@jupyter-widgets/base@__version__/lib/index.js
@@ -43,45 +43,47 @@ def core() -> List[HTMLDependency]:
         # stuff we need to render widgets outside of the notebook.
         HTMLDependency(
             name="ipywidget-libembed-amd",
-            version=re.sub("^\\D*", "", __html_manager_version__),
+            version=re.sub("^\\D*", "", __html_manager_version__),  # type: ignore
             source={"package": "ipyshiny", "subdir": "static"},
             script={"src": "libembed-amd.js"},
-        )
+        ),
     ]
 
 
 def output_binding() -> HTMLDependency:
-  return HTMLDependency(
-      name="ipywidget-output-binding",
-      version=__version__,
-      source={"package": "ipyshiny", "subdir": "static"},
-      script={"src": "output.js"},
-  )
+    return HTMLDependency(
+        name="ipywidget-output-binding",
+        version=__version__,
+        source={"package": "ipyshiny", "subdir": "static"},
+        script={"src": "output.js"},
+    )
 
 
 def require_deps(pkg: str, session: Session) -> List[HTMLDependency]:
     # ipywidgets dependencies come with libembed-amd.js (i.e., _core() dependencies)
-    if pkg == "ipywidgets": 
+    if pkg == "ipywidgets":
         return []
 
     mod = importlib.import_module(pkg)
     paths = get_paths(mod)
 
-    deps = []
+    deps: List[HTMLDependency] = []
     for p in paths:
         dep = require_dependency(
             module_name=p["dest"],
             module_version=getattr(mod, "__version__", "0.1"),
             pkg_source={"package": None, "subdir": p["src"]},
-            session=session
+            session=session,
         )
         deps.append(dep)
 
     return deps
 
+
 class Path(TypedDict):
-  src: str
-  dest: str
+    src: str
+    dest: str
+
 
 # Approximates what `jupyter nbextension install` does to discover and copy source files for the extension.
 # https://github.com/jupyter-server/jupyter_server/blob/e70e7be/notebook/nbextensions.py#L211-L212
@@ -93,9 +95,9 @@ class Path(TypedDict):
 def get_paths(mod: ModuleType) -> List[Path]:
     paths = []
 
-    if hasattr(mod, '_jupyter_nbextension_paths'):
+    if hasattr(mod, "_jupyter_nbextension_paths"):
         paths = _index_paths(mod._jupyter_nbextension_paths(), mod)
-    
+
     if not paths:
         paths = _index_paths([{"src": "nbextension", "dest": mod.__name__}], mod)
 
@@ -105,25 +107,38 @@ def get_paths(mod: ModuleType) -> List[Path]:
 
     return paths
 
+
 # Return only the path configs point to an existant directory with an index.js file
-# (If the paths config doesn't satisfy this requirement, there's no way it'll work 
+# (If the paths config doesn't satisfy this requirement, there's no way it'll work
 # in the browser with the default requireLoader).
 def _index_paths(paths: List[Path], mod: ModuleType) -> List[Path]:
-    res = []
+    if mod.__file__ is None:
+        raise RuntimeError(f"Module {mod.__name__} has no __file__ attribute")
+
     base_path = os.path.split(mod.__file__)[0]
 
+    res: List[Path] = []
     for p in paths:
-      p["src"] = os.path.join(base_path, p["src"])
-      if not os.path.exists(p["src"]):
-          continue
-      index = [f for f in os.listdir(p["src"]) if f.startswith("index") and f.endswith(".js")]
-      if len(index) > 0:
-          res.append(p)
+        p["src"] = os.path.join(base_path, p["src"])
+        if not os.path.exists(p["src"]):
+            continue
+        index = [
+            f
+            for f in os.listdir(p["src"])
+            if f.startswith("index") and f.endswith(".js")
+        ]
+        if len(index) > 0:
+            res.append(p)
 
     return res
 
 
-def require_dependency(module_name: str, module_version: str, pkg_source: PackageHTMLDependencySource, session: Session) -> HTMLDependency:
+def require_dependency(
+    module_name: str,
+    module_version: str,
+    pkg_source: PackageHTMLDependencySource,
+    session: Session,
+) -> HTMLDependency:
     dep = HTMLDependency(name=module_name, version=module_version, source=pkg_source)
     # Get the location where the dependency files will be mounted by the shiny app
     # and use that to inform the requirejs import path
@@ -132,9 +147,13 @@ def require_dependency(module_name: str, module_version: str, pkg_source: Packag
     # Basically our equivalent of the extension.js file provided by the cookiecutter
     # https://github.com/jupyter-widgets/widget-cookiecutter/blob/master/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js
     return HTMLDependency(
-      module_name, module_version, source=pkg_source, all_files=True,
-      head=tags.script(f"window.require.config({json.dumps(config)})")
+        module_name,
+        module_version,
+        source=pkg_source,
+        all_files=True,
+        head=tags.script(f"window.require.config({json.dumps(config)})"),
     )
+
 
 # -----------------------------------------------------------------------------
 # Note to future self:

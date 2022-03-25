@@ -107,3 +107,6 @@ ENV/
 
 
 js/node_modules
+typings/
+sandbox/
+Untitled*.ipynb

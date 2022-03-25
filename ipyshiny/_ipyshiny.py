@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 __all__ = (
     "output_ipywidget",
     "render_ipywidget",
@@ -7,7 +9,7 @@ import copy
 import inspect
 import json
 import os
-from typing import Dict, Callable, Awaitable, Union, Any, cast, List
+from typing import Callable, Awaitable, Union, cast
 from uuid import uuid4
 from weakref import WeakSet
 
@@ -25,7 +27,7 @@ from shiny.reactive import Effect
 from shiny._utils import run_coro_sync, wrap_async
 
 from . import _dependencies
-from ._comm import ShinyComm, ShinyCommManager
+from ._comm import ShinyComm, ShinyCommManager, BufferType
 
 
 def output_ipywidget(
@@ -43,28 +45,29 @@ def output_ipywidget(
         ),
     )
 
-# --------------------------------------------------------------------------------------------
-# When a widget is initialized, also initialize a communication channel (via the Shiny session).
-# Note that when the comm is initialized, it also sends the initial state of the widget.
-# --------------------------------------------------------------------------------------------
 
-def add_shiny_comm(w: Widget):
+# --------------------------------------------------------------------------------------------
+# When a widget is initialized, also initialize a communication channel (via the Shiny
+# session). Note that when the comm is initialized, it also sends the initial state of
+# the widget.
+# --------------------------------------------------------------------------------------------
+def init_shiny_widget(w: Widget):
     session = get_current_session()
     if session is None:
         raise RuntimeError(
-          "ipyshiny requires that all ipywidgets be constructed within an active Shiny session"
+            "ipyshiny requires that all ipywidgets be constructed within an active Shiny session"
         )
 
     # `Widget` has `comm = Instance('ipykernel.comm.Comm')` which means we'd get a
     # runtime error if we try to set this attribute to a different class, but
-    # fortunately this hack provides a workaround. 
+    # fortunately this hack provides a workaround.
     # TODO: find a better way to do this (maybe send a PR to ipywidgets?) or at least clean up after ourselves
     # https://github.com/jupyter-widgets/ipywidgets/blob/88cec8b/python/ipywidgets/ipywidgets/widgets/widget.py#L424
-    old_comm_klass = copy.copy(Widget.comm.klass)
-    Widget.comm.klass = object
+    old_comm_klass = copy.copy(Widget.comm.klass)  # type: ignore
+    Widget.comm.klass = object  # type: ignore
 
     # Get the initial state of the widget
-    state, buffer_paths, buffers = _remove_buffers(w.get_state())
+    state, buffer_paths, buffers = _remove_buffers(w.get_state())  # type: ignore
 
     # Make sure window.require() calls made by 3rd party widgets
     # (via handle_comm_open() -> new_model() -> loadClass() -> requireLoader())
@@ -73,19 +76,19 @@ def add_shiny_comm(w: Widget):
 
     # By the time we get here, the user has already had an opportunity to specify a model_id,
     # so it isn't yet populated, generate a random one so we can assign the same id to the comm
-    if w._model_id is None:
-        w._model_id = uuid4().hex
+    if getattr(w, "_model_id", None) is None:
+        setattr(w, "_model_id", uuid4().hex)
 
     # Initialize the comm...this will also send the initial state of the widget
     w.comm = ShinyComm(
-      comm_id=w._model_id,
-      comm_manager=COMM_MANAGER,
-      target_name='jupyter.widgets',
-      data={'state': state, 'buffer_paths': buffer_paths},
-      buffers=buffers,
-      # TODO: should this be hard-coded?
-      metadata={'version': __protocol_version__},
-      html_deps=session._process_ui(TagList(deps))["deps"]
+        comm_id=getattr(w, "_model_id"),
+        comm_manager=COMM_MANAGER,
+        target_name="jupyter.widgets",
+        data={"state": state, "buffer_paths": buffer_paths},
+        buffers=cast(BufferType, buffers),
+        # TODO: should this be hard-coded?
+        metadata={"version": __protocol_version__},
+        html_deps=session._process_ui(TagList(*deps))["deps"],
     )
 
     # Some widget's JS make external requests for static files (e.g.,
@@ -94,19 +97,21 @@ def add_shiny_comm(w: Widget):
     # be doing on load in js/src/output.ts)
     # https://github.com/jupyter-widgets/widget-cookiecutter/blob/9694718/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js#L8
     for dep in deps:
-      session.app._dependency_handler.mount(
-          f"/nbextensions/{dep.name}",
-          StaticFiles(directory=dep.source["subdir"]),
-          name=f"{dep.name}-nbextension-static-resources",
-      )
+        if not dep.source:
+            continue
+        session.app._dependency_handler.mount(
+            f"/nbextensions/{dep.name}",
+            StaticFiles(directory=dep.source["subdir"]),
+            name=f"{dep.name}-nbextension-static-resources",
+        )
 
     # everything after this point should be done once per session
     if session in SESSIONS:
         return
-    SESSIONS.add(session)
+    SESSIONS.add(session)  # type: ignore
 
     # Somewhere inside ipywidgets, it makes requests for static files
-    # under the publicPath set by the webpack.config.js file. 
+    # under the publicPath set by the webpack.config.js file.
     session.app._dependency_handler.mount(
         "/dist/",
         StaticFiles(directory=os.path.join(_package_dir("ipyshiny"), "static")),
@@ -121,20 +126,21 @@ def add_shiny_comm(w: Widget):
         msg_txt = session.input["ipyshiny_comm_send"]()
         msg = json.loads(msg_txt)
         comm_id = msg["content"]["comm_id"]
-        COMM_MANAGER.comms[comm_id].handle_msg(msg)
+        comm: ShinyComm = COMM_MANAGER.comms[comm_id]
+        comm.handle_msg(msg)
 
     def _restore_state():
-      Widget.comm.klass = old_comm_klass
+        Widget.comm.klass = old_comm_klass  # type: ignore
+        SESSIONS.remove(session)  # type: ignore
 
     session.on_ended(_restore_state)
 
 
-
 # TODO: can we restore the widget constructor in a sensible way?
-Widget.on_widget_constructed(add_shiny_comm)
+Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
 
 # Use WeakSet() over Set() so that the session can be garbage collected
-SESSIONS = WeakSet()
+SESSIONS = WeakSet()  # type: ignore
 COMM_MANAGER = ShinyCommManager()
 
 
@@ -146,6 +152,7 @@ COMM_MANAGER = ShinyCommManager()
 IPyWidgetRenderFunc = Callable[[], Widget]
 IPyWidgetRenderFuncAsync = Callable[[], Awaitable[Widget]]
 
+
 class IPyWidget(RenderFunction):
     def __init__(self, fn: IPyWidgetRenderFunc) -> None:
         super().__init__(fn)
@@ -155,20 +162,9 @@ class IPyWidget(RenderFunction):
         return run_coro_sync(self.run())
 
     async def run(self) -> object:
-        widget: Widget = await self._fn()
-
-        # altair objects aren't directly renderable as an ipywidget,
-        # but we can still render them as an ipywidget via ipyvega
-        # TODO: we should probably do this for bokeh, pydeck, and probably others as well
-        if _widget_pkg(widget) == "altair":
-            try:
-              from vega.widget import VegaWidget
-              widget = VegaWidget(widget.to_dict())
-            except ImportError:
-              raise ImportError("ipyvega is required to render altair charts")
-
-        return {"model_id": widget.model_id}
-
+        x = await self._fn()
+        widget = _as_widget(x)
+        return {"model_id": widget.model_id}  # type: ignore
 
 
 class IPyWidgetAsync(IPyWidget, RenderFunctionAsync):
@@ -182,7 +178,7 @@ class IPyWidgetAsync(IPyWidget, RenderFunctionAsync):
 
 
 def render_ipywidget():
-    def wrapper(fn: Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]) -> Widget:
+    def wrapper(fn: Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]) -> IPyWidget:
         if inspect.iscoroutinefunction(fn):
             fn = cast(IPyWidgetRenderFuncAsync, fn)
             return IPyWidgetAsync(fn)
@@ -193,7 +189,27 @@ def render_ipywidget():
     return wrapper
 
 
-def _widget_pkg(w: Widget) -> str:
+# altair objects aren't directly renderable as an ipywidget,
+# but we can still render them as an ipywidget via ipyvega
+# TODO: we should probably do this for bokeh, pydeck, and probably others as well
+def _as_widget(x: object) -> Widget:
+    if _widget_pkg(x) == "altair":
+        try:
+            import altair
+            from vega.widget import VegaWidget
+
+            x = cast(altair.Chart, x)
+            x = VegaWidget(x.to_dict())  # type: ignore
+        except ImportError:
+            raise ImportError("ipyvega is required to render altair charts")
+
+    if isinstance(x, Widget):
+        return x
+    else:
+        raise TypeError(f"{x} is not a coerce-able to a ipywidget.Widget object")
+
+
+def _widget_pkg(w: object) -> str:
     return w.__module__.split(".")[0]
 
 

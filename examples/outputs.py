@@ -5,9 +5,6 @@ from shiny import *
 from ipyshiny import *
 import numpy as np
 
-#import ipywidgets as ipy
-#input_ipywidget("IntSlider", ipy.IntSlider(value=4))
-
 app_ui = ui.page_fluid(
     ui.layout_sidebar(
         ui.panel_sidebar(
@@ -21,14 +18,13 @@ app_ui = ui.page_fluid(
                     "altair",
                     "plotly",
                     # TODO: fix me
-                    #"bokeh",
-                    # TODO: fix me
+                    # "bokeh",
                     "bqplot",
                     "ipychart",
                     "ipywebrtc",
                     "ipyvolume",
                 ],
-                selected="qgrid"
+                selected="qgrid",
             )
         ),
         ui.panel_main(
@@ -38,8 +34,9 @@ app_ui = ui.page_fluid(
             )
         ),
     ),
-    title="ipywidgets in Shiny"
+    title="ipywidgets in Shiny",
 )
+
 
 def server(input: Inputs, output: Outputs, session: Session):
     @output(name="figure")
@@ -65,20 +62,59 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output(name="qgrid")
     @render_ipywidget()
     def _():
-      randn = np.random.randn
-      df_types = pd.DataFrame({
-          'A': pd.Series(['2013-01-01', '2013-01-02', '2013-01-03', '2013-01-04',
-                          '2013-01-05', '2013-01-06', '2013-01-07', '2013-01-08', '2013-01-09'], index=list(range(9)), dtype='datetime64[ns]'),
-          'B': pd.Series(randn(9), index=list(range(9)), dtype='float32'),
-          'C': pd.Categorical(["washington", "adams", "washington", "madison", "lincoln", "jefferson", "hamilton", "roosevelt", "kennedy"]),
-          'D': ["foo", "bar", "buzz", "bippity", "boppity", "foo", "foo", "bar", "zoo"]})
-      df_types['E'] = df_types['D'] == 'foo'
-      return qgrid.show_grid(df_types, show_toolbar=True)
+        randn = np.random.randn
+        df_types = pd.DataFrame(
+            {
+                "A": pd.Series(
+                    [
+                        "2013-01-01",
+                        "2013-01-02",
+                        "2013-01-03",
+                        "2013-01-04",
+                        "2013-01-05",
+                        "2013-01-06",
+                        "2013-01-07",
+                        "2013-01-08",
+                        "2013-01-09",
+                    ],
+                    index=list(range(9)),
+                    dtype="datetime64[ns]",
+                ),
+                "B": pd.Series(randn(9), index=list(range(9)), dtype="float32"),
+                "C": pd.Categorical(
+                    [
+                        "washington",
+                        "adams",
+                        "washington",
+                        "madison",
+                        "lincoln",
+                        "jefferson",
+                        "hamilton",
+                        "roosevelt",
+                        "kennedy",
+                    ]
+                ),
+                "D": [
+                    "foo",
+                    "bar",
+                    "buzz",
+                    "bippity",
+                    "boppity",
+                    "foo",
+                    "foo",
+                    "bar",
+                    "zoo",
+                ],
+            }
+        )
+        df_types["E"] = df_types["D"] == "foo"
+        return qgrid.show_grid(df_types, show_toolbar=True)
 
     @output(name="altair")
     @render_ipywidget()
     def _():
         import altair as alt
+
         return (
             alt.Chart(data.cars())
             .mark_point()
@@ -185,51 +221,54 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output(name="pydeck")
     @render_ipywidget()
     def _():
-      import pydeck as pdk
+        import pydeck as pdk
 
-      UK_ACCIDENTS_DATA = 'https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/3d-heatmap/heatmap-data.csv'
+        UK_ACCIDENTS_DATA = "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/3d-heatmap/heatmap-data.csv"
 
-      layer = pdk.Layer(
-          'HexagonLayer',  # `type` positional argument is here
-          UK_ACCIDENTS_DATA,
-          get_position=['lng', 'lat'],
-          auto_highlight=True,
-          elevation_scale=50,
-          pickable=True,
-          elevation_range=[0, 3000],
-          extruded=True,
-          coverage=1
-      )
+        layer = pdk.Layer(
+            "HexagonLayer",  # `type` positional argument is here
+            UK_ACCIDENTS_DATA,
+            get_position=["lng", "lat"],
+            auto_highlight=True,
+            elevation_scale=50,
+            pickable=True,
+            elevation_range=[0, 3000],
+            extruded=True,
+            coverage=1,
+        )
 
-      # Set the viewport location
-      view_state = pdk.ViewState(
-          longitude=-1.415,
-          latitude=52.2323,
-          zoom=6,
-          min_zoom=5,
-          max_zoom=15,
-          pitch=40.5,
-          bearing=-27.36)
+        # Set the viewport location
+        view_state = pdk.ViewState(
+            longitude=-1.415,
+            latitude=52.2323,
+            zoom=6,
+            min_zoom=5,
+            max_zoom=15,
+            pitch=40.5,
+            bearing=-27.36,
+        )
 
-      # Combined all of it and render a viewport
-      w = pdk.widget.DeckGLWidget()
-      w.json_input = pdk.Deck(layers=[layer], initial_view_state=view_state).to_json()
-      return w
+        # Combined all of it and render a viewport
+        w = pdk.widget.DeckGLWidget()
+        w.json_input = pdk.Deck(layers=[layer], initial_view_state=view_state).to_json()
+        return w
 
     @output(name="bokeh")
     @render_ipywidget()
     def _():
-       from bokeh.plotting import figure
-       from jupyter_bokeh import BokehModel
+        from bokeh.plotting import figure
+        from jupyter_bokeh import BokehModel
 
-       # TODO: figure out what this does and try to replicate it
-       import bokeh.io
-       bokeh.io.output_notebook()
-    
-       x = [1, 2, 3, 4, 5]
-       y = [6, 7, 2, 4, 5]
-       p = figure(title="Simple line example", x_axis_label="x", y_axis_label="y")
-       p.line(x, y, legend_label="Temp.", line_width=2)
-       return BokehModel(p)
-  
+        # TODO: figure out what this does and try to replicate it
+        import bokeh.io
+
+        bokeh.io.output_notebook()
+
+        x = [1, 2, 3, 4, 5]
+        y = [6, 7, 2, 4, 5]
+        p = figure(title="Simple line example", x_axis_label="x", y_axis_label="y")
+        p.line(x, y, legend_label="Temp.", line_width=2)
+        return BokehModel(p)
+
+
 app = App(app_ui, server)
