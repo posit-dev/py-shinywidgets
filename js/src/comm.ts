@@ -9,7 +9,7 @@ export class ShinyComm {
   constructor(model_id: string) {
     this.comm_id = model_id;
   }
-  
+
   // This might not be needed
   get target_name(): string {
     return "jupyter.widgets";
@@ -25,7 +25,7 @@ export class ShinyComm {
     buffers?: ArrayBuffer[] | ArrayBufferView[]
   ): string {
     const msg = {
-      content: {comm_id: this.comm_id, data: data}, 
+      content: {comm_id: this.comm_id, data: data},
       metadata: metadata,
       buffers: buffers || [],
       // this doesn't seem relevant to the widget?
@@ -46,11 +46,6 @@ export class ShinyComm {
         const msg = {content: {execution_state: "idle"}};
         callbacks.iopub.status(msg);
       }, 0);
-    } else {
-      throw new Error(
-        "Expected the caller of ShinyComm.send(), WidgetModel.send_sync_message(), " +
-        "to supply callbacks.iopub.status"
-      );
     }
 
     return this.comm_id;
