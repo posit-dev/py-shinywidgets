@@ -41,8 +41,11 @@ export class ShinyComm {
     // updates. To make sense of this, see
     // https://github.com/jupyter-widgets/ipywidgets/blob/88cec8b/packages/base/src/widget.ts#L550-L557
     if (callbacks && callbacks.iopub && callbacks.iopub.status) {
-      const msg = {content: {execution_state: "idle"}};
-      callbacks.iopub.status(msg);
+      setTimeout(() => {
+        // TODO: Call this when Shiny reports that it is idle?
+        const msg = {content: {execution_state: "idle"}};
+        callbacks.iopub.status(msg);
+      }, 0);
     } else {
       throw new Error(
         "Expected the caller of ShinyComm.send(), WidgetModel.send_sync_message(), " +
