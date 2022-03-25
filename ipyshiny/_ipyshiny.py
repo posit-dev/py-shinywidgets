@@ -14,9 +14,10 @@ from weakref import WeakSet
 from ipywidgets.widgets.widget import Widget, _remove_buffers
 from ipywidgets._version import __protocol_version__
 
-from htmltools import tags, Tag, TagList
+from htmltools import tags, Tag, TagList, css
 from htmltools._util import _package_dir
 from shiny import event
+
 from shiny.http_staticfiles import StaticFiles
 from shiny.session import get_current_session
 from shiny.render import RenderFunction, RenderFunctionAsync
@@ -26,12 +27,20 @@ from shiny._utils import run_coro_sync, wrap_async
 from . import _dependencies
 from ._comm import ShinyComm, ShinyCommManager
 
-def output_ipywidget(id: str) -> Tag:
+
+def output_ipywidget(
+    id: str, *, width: str = "100%", height: str = "400px", inline: bool = False
+) -> Tag:
+    # TODO: we should probably have a way to customize the container tag, like you can
+    # in htmlwidgets
     return tags.div(
-        _dependencies.core(),
+        *_dependencies.core(),
         _dependencies.output_binding(),
         id=id,
         class_="shiny-ipywidget-output",
+        style=css(
+            width=width, height=height, display="inline-block" if inline else None
+        ),
     )
 
 # --------------------------------------------------------------------------------------------
