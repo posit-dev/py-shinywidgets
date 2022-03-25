@@ -20,7 +20,7 @@ export class ShinyComm {
 
   send(
     data: any,
-    callbacks: any, // TODO: to we need to call these?
+    callbacks: any,
     metadata?: any,
     buffers?: ArrayBuffer[] | ArrayBufferView[]
   ): string {
@@ -31,9 +31,28 @@ export class ShinyComm {
       // this doesn't seem relevant to the widget?
       header: {}
     };
-    // A short-term solution to passing buffers (i.e. binary data)
     const msg_txt = JSON.stringify(msg);
     Shiny.setInputValue("ipyshiny_comm_send", msg_txt, {priority: "event"});
+
+    // When client-side changes happen to the WidgetModel, this send method
+    // won't get called for _every_  change (just the first one). The
+    // expectation is that this method will eventually end up calling itself
+    // (via callbacks) when the server is ready (i.e., idle) to receive more
+    // updates. To make sense of this, see
+    // https://github.com/jupyter-widgets/ipywidgets/blob/88cec8b/packages/base/src/widget.ts#L550-L557
+    if (callbacks && callbacks.iopub && callbacks.iopub.status) {
+      setTimeout(() => {
+        // TODO: Call this when Shiny reports that it is idle?
+        const msg = {content: {execution_state: "idle"}};
+        callbacks.iopub.status(msg);
+      }, 0);
+    } else {
+      throw new Error(
+        "Expected the caller of ShinyComm.send(), WidgetModel.send_sync_message(), " +
+        "to supply callbacks.iopub.status"
+      );
+    }
+
     return this.comm_id;
   }
 
