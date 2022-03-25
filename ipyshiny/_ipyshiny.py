@@ -11,8 +11,7 @@ from typing import Dict, Callable, Awaitable, Union, Any, cast, List
 from uuid import uuid4
 from weakref import WeakSet
 
-from ipywidgets.widgets import DOMWidget, Widget
-from ipywidgets.widgets.widget import _remove_buffers
+from ipywidgets.widgets.widget import Widget, _remove_buffers
 from ipywidgets._version import __protocol_version__
 
 from htmltools import tags, Tag, TagList
@@ -135,8 +134,8 @@ COMM_MANAGER = ShinyCommManager()
 # TODO: shiny should probably make this simpler
 # --------------------------------------------------------------------------------------------
 
-IPyWidgetRenderFunc = Callable[[], DOMWidget]
-IPyWidgetRenderFuncAsync = Callable[[], Awaitable[DOMWidget]]
+IPyWidgetRenderFunc = Callable[[], Widget]
+IPyWidgetRenderFuncAsync = Callable[[], Awaitable[Widget]]
 
 class IPyWidget(RenderFunction):
     def __init__(self, fn: IPyWidgetRenderFunc) -> None:
@@ -147,8 +146,8 @@ class IPyWidget(RenderFunction):
         return run_coro_sync(self.run())
 
     async def run(self) -> object:
-        widget: DOMWidget = await self._fn()
-        
+        widget: Widget = await self._fn()
+
         # altair objects aren't directly renderable as an ipywidget,
         # but we can still render them as an ipywidget via ipyvega
         # TODO: we should probably do this for bokeh, pydeck, and probably others as well
@@ -174,7 +173,7 @@ class IPyWidgetAsync(IPyWidget, RenderFunctionAsync):
 
 
 def render_ipywidget():
-    def wrapper(fn: Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]) -> DOMWidget:
+    def wrapper(fn: Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]) -> Widget:
         if inspect.iscoroutinefunction(fn):
             fn = cast(IPyWidgetRenderFuncAsync, fn)
             return IPyWidgetAsync(fn)
@@ -189,16 +188,14 @@ def _widget_pkg(w: Widget) -> str:
     return w.__module__.split(".")[0]
 
 
-
-
-# It doesn't, at the moment, seem feasible to establish a comm with statically rendered widgets, 
+# It doesn't, at the moment, seem feasible to establish a comm with statically rendered widgets,
 # and partially for this reason, it may not be sensible to provide an input-like API for them.
 
 # def input_ipywidget(id: str, widget: object, rate_policy: Literal["debounce", "throttle"]="debounce", rate_policy_delay=200) -> Tag:
-#     if not isinstance(widget, DOMWidget):
-#         raise TypeError("widget must be a DOMWidget")
+#     if not isinstance(widget, Widget):
+#         raise TypeError("widget must be a Widget")
 #     if not hasattr(widget, "value"):
-#         # ipy.Button() don't inherently have value, but we create one that acts like actionButton() 
+#         # ipy.Button() don't inherently have value, but we create one that acts like actionButton()
 #         if 'Button' != widget.__class__.__name__:
 #           raise RuntimeError(
 #               "widget must have a value property to be treated as an input. "
@@ -213,7 +210,7 @@ def _widget_pkg(w: Widget) -> str:
 #         data_rate_policy=rate_policy,
 #         data_rate_delay=rate_policy_delay,
 #     )
-# 
+#
 # # https://ipywidgets.readthedocs.io/en/7.6.5/examples/Widget%20Low%20Level.html#Serialization-of-widget-attributes
 # @input_handlers.add("ipyshiny.ipywidget")
 # def _(value: int, session: Session, name: str):
