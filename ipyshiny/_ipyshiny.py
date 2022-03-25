@@ -140,6 +140,7 @@ IPyWidgetRenderFuncAsync = Callable[[], Awaitable[DOMWidget]]
 
 class IPyWidget(RenderFunction):
     def __init__(self, fn: IPyWidgetRenderFunc) -> None:
+        super().__init__(fn)
         self._fn: IPyWidgetRenderFuncAsync = wrap_async(fn)
 
     def __call__(self) -> object:
@@ -160,13 +161,13 @@ class IPyWidget(RenderFunction):
 
         return {"model_id": widget.model_id}
 
-class IPyWidgetAsync(RenderFunctionAsync):
+
+
+class IPyWidgetAsync(IPyWidget, RenderFunctionAsync):
     def __init__(self, fn: IPyWidgetRenderFuncAsync) -> None:
         if not inspect.iscoroutinefunction(fn):
             raise TypeError("IPyWidgetAsync requires an async function")
-
-        super().__init__(lambda: None)
-        self._fn: IPyWidgetRenderFuncAsync = fn
+        super().__init__(cast(IPyWidgetRenderFunc, fn))
 
     async def __call__(self) -> object:
         return await self.run()
