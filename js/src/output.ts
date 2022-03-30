@@ -1,5 +1,3 @@
-// N.B. for this to work properly, it seems we must include
-// https://unpkg.com/@jupyter-widgets/html-manager@*/dist/libembed-amd.js
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
 import { jsonParse } from './utils';
@@ -10,7 +8,7 @@ import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shi
  ******************************************************************************/
 
 class OutputManager extends HTMLManager {
-  // In a soon-to-be-released version of @jupyter-widgets/html-manager,  
+  // In a soon-to-be-released version of @jupyter-widgets/html-manager,
   // display_view()'s first "dummy" argument will be removed... this shim simply
   // makes it so that our manager can work with either version
   // https://github.com/jupyter-widgets/ipywidgets/commit/159bbe4#diff-45c126b24c3c43d2cee5313364805c025e911c4721d45ff8a68356a215bfb6c8R42-R43
@@ -42,6 +40,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     this.renderError(el, err);
   }
   renderValue(el: HTMLElement, data): void {
+    // TODO: allow for null value
     const model = manager.get_model(data.model_id);
     if (!model) {
       throw new Error(`No model found for id ${data.model_id}`);
@@ -57,7 +56,7 @@ Shiny.outputBindings.register(new IPyWidgetOutput(), "shiny.IPyWidgetOutput");
 
 
 /******************************************************************************
-* Handle messages from the server-side Widget 
+* Handle messages from the server-side Widget
 ******************************************************************************/
 
 // Initialize the comm and model when a new widget is created
@@ -76,7 +75,7 @@ Shiny.addCustomMessageHandler("ipyshiny_comm_msg", (msg_txt) => {
   const msg = jsonParse(msg_txt);
   manager.get_model(msg.content.comm_id).then(m => {
     // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
-    m.comm.handle_msg(msg)
+    m.comm.handle_msg(msg);
   });
 });
 

@@ -67,7 +67,7 @@ const plugins = [
     }
   })
 ]
-const mode = "development"
+
 
 module.exports = [
   {
@@ -75,16 +75,23 @@ module.exports = [
     output: {
       filename: 'output.js',
       path: outputPath,
-      // I think this is needed for externals to work
-      //libraryTarget: 'amd',
+      // amd is needed for externals to work and require is for immediately invoking
+      // https://webpack.js.org/configuration/output/#librarytarget-amd-require
+      libraryTarget: "amd-require",
       publicPath: 'dist/',
     },
     resolve,
     plugins,
     module: {rules: rules},
-    mode,
-    // TODO: this bundle is quite large because html-manager is large. Find a way to
-    // make it smaller (which seems possible given we're already sourcing libembed?)
-    //externals: {"@jupyter-widgets/html-manager": "@jupyter-widgets/html-manager"}
-  }
-];
+    // Since we're bundling hardly any dependencies, just use development (at least for now)
+    mode: "development",
+    // These dependencies are brought in externally via ipywidget's "libembed" bundle
+    // which is configured to load 3rd party widgets dynamically via RequireJS
+    // https://github.com/jupyter-widgets/ipywidgets/blob/88cec8/packages/html-manager/webpack.config.js#L98
+    externals: [
+      "@jupyter-widgets/base",
+      "@jupyter-widgets/controls",
+      "@jupyter-widgets/html-manager",
+    ]
+  },
+ ];
