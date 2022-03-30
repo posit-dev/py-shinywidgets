@@ -4,7 +4,7 @@ from ipyshiny import *
 import ipywidgets as ipy
 
 
-app_ui = ui.page_fluid(output_ipywidget("slider"), ui.output_text("value"))
+app_ui = ui.page_fluid(output_widget("slider"), ui.output_text("value"))
 
 
 def server(input: Inputs, output: Outputs, session: Session):
@@ -25,7 +25,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     s.observe(lambda change: print(change.new), "value")
 
     @output()
-    @render_ipywidget()
+    @render_widget()
     def slider():
         return s
 

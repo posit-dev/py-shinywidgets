@@ -42,7 +42,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output(name="figure")
     @render_ui()
     def _():
-        return output_ipywidget(input.framework())
+        return output_widget(input.framework())
 
     @output(name="state")
     @render_ui()
@@ -51,7 +51,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         return ui.tags.pre(ui.HTML(input[f]()))
 
     @output(name="ipyleaflet")
-    @render_ipywidget()
+    @render_widget()
     def _():
         from ipyleaflet import Map, Marker
 
@@ -60,7 +60,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         return m
 
     @output(name="qgrid")
-    @render_ipywidget()
+    @render_widget()
     def _():
         randn = np.random.randn
         df_types = pd.DataFrame(
@@ -111,7 +111,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         return qgrid.show_grid(df_types, show_toolbar=True)
 
     @output(name="altair")
-    @render_ipywidget()
+    @render_widget()
     def _():
         import altair as alt
 
@@ -126,7 +126,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         )
 
     @output(name="plotly")
-    @render_ipywidget()
+    @render_widget()
     def _():
         import plotly.graph_objects as go
 
@@ -136,7 +136,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         )
 
     @output(name="bqplot")
-    @render_ipywidget()
+    @render_widget()
     def _():
         from bqplot import OrdinalScale, LinearScale, Bars, Lines, Axis, Figure
 
@@ -177,7 +177,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         )
 
     @output(name="ipychart")
-    @render_ipywidget()
+    @render_widget()
     def _():
         from ipychart import Chart
 
@@ -198,7 +198,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         return Chart(data=dataset, kind="bar")
 
     @output(name="ipywebrtc")
-    @render_ipywidget()
+    @render_widget()
     def _():
         from ipywebrtc import CameraStream
 
@@ -211,7 +211,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         )
 
     @output(name="ipyvolume")
-    @render_ipywidget()
+    @render_widget()
     def _():
         from ipyvolume import quickquiver
 
@@ -219,7 +219,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         return quickquiver(x, y, z, u, v, w, size=5)
 
     @output(name="pydeck")
-    @render_ipywidget()
+    @render_widget()
     def _():
         import pydeck as pdk
 
@@ -254,7 +254,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         return w
 
     @output(name="bokeh")
-    @render_ipywidget()
+    @render_widget()
     def _():
         from bokeh.plotting import figure
         from jupyter_bokeh import BokehModel

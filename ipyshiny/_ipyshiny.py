@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 __all__ = (
-    "output_ipywidget",
-    "render_ipywidget",
+    "output_widget",
+    "render_widget",
 )
 
 import copy
@@ -30,7 +30,7 @@ from . import _dependencies
 from ._comm import ShinyComm, ShinyCommManager, BufferType
 
 
-def output_ipywidget(
+def output_widget(
     id: str, *, width: str = "100%", height: str = "400px", inline: bool = False
 ) -> Tag:
     # TODO: we should probably have a way to customize the container tag, like you can
@@ -145,7 +145,7 @@ COMM_MANAGER = ShinyCommManager()
 
 
 # --------------------------------------------------------------------------------------------
-# Implement @render_ipywidget()
+# Implement @render_widget()
 # TODO: shiny should probably make this simpler
 # --------------------------------------------------------------------------------------------
 
@@ -177,7 +177,7 @@ class IPyWidgetAsync(IPyWidget, RenderFunctionAsync):
         return await self.run()
 
 
-def render_ipywidget():
+def render_widget():
     def wrapper(fn: Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]) -> IPyWidget:
         if inspect.iscoroutinefunction(fn):
             fn = cast(IPyWidgetRenderFuncAsync, fn)
@@ -224,7 +224,7 @@ def _widget_pkg(w: object) -> str:
 #         if 'Button' != widget.__class__.__name__:
 #           raise RuntimeError(
 #               "widget must have a value property to be treated as an input. "
-#               + "Do you want to render this widget as an output (i.e., output_ipywidget())?"
+#               + "Do you want to render this widget as an output (i.e., output_widget())?"
 #           )
 #     return tags.div(
 #         widget,

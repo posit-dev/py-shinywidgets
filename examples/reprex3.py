@@ -3,10 +3,8 @@ import shiny as s
 import ipyshiny
 import ipysheet
 
-app_ui = ui.page_fluid(
-    ipyshiny.output_ipywidget("sheet"),
-    ui.output_text("first_value")
-)
+app_ui = ui.page_fluid(ipyshiny.output_widget("sheet"), ui.output_text("first_value"))
+
 
 def server(input: s.Inputs, output: s.Outputs, session: s.Session):
     x = reactive.Value()
@@ -16,10 +14,10 @@ def server(input: s.Inputs, output: s.Outputs, session: s.Session):
     cell.observe(lambda change: x.set(change["new"]), "value")
 
     @output(name="sheet")
-    @ipyshiny.render_ipywidget()
+    @ipyshiny.render_widget()
     def _():
         return sheet1
-    
+
     @output()
     def first_value():
         return x()
