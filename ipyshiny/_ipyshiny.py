@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-__all__ = (
-    "output_widget",
-    "render_widget",
-)
+__all__ = ("output_widget", "render_widget", "reactive_read")
 
 import copy
 import inspect
 import json
 import os
-from typing import Callable, Awaitable, Union, cast
+from typing import Callable, Awaitable, Sequence, Union, cast, Any
 from uuid import uuid4
 from weakref import WeakSet
 
@@ -18,12 +15,11 @@ from ipywidgets._version import __protocol_version__
 
 from htmltools import tags, Tag, TagList, css
 from htmltools._util import _package_dir
-from shiny import event
+from shiny import event, reactive
 
 from shiny.http_staticfiles import StaticFiles
 from shiny.session import get_current_session
 from shiny.render import RenderFunction, RenderFunctionAsync
-from shiny.reactive import Effect
 from shiny._utils import run_coro_sync, wrap_async
 
 from . import _dependencies
@@ -120,7 +116,7 @@ def init_shiny_widget(w: Widget):
 
     # Handle messages from the client. Note that widgets like qgrid send client->server messages
     # to figure out things like what filter to be shown in the table.
-    @Effect()
+    @reactive.Effect()
     @event(session.input["ipyshiny_comm_send"])
     def _():
         msg_txt = session.input["ipyshiny_comm_send"]()
@@ -211,6 +207,36 @@ def _as_widget(x: object) -> Widget:
 
 def _widget_pkg(w: object) -> str:
     return w.__module__.split(".")[0]
+
+
+def reactive_read(widget: Widget, names: Union[str, Sequence[str]]) -> Any:
+    reactive_depend(widget, names)
+    if isinstance(names, str):
+        return getattr(widget, names)
+    else:
+        return tuple(getattr(widget, name) for name in names)
+
+
+def reactive_depend(
+    widget: Widget,
+    names: Union[str, Sequence[str]],
+    type: str = "change",
+) -> None:
+    """
+    Reactively read a Widget's trait(s)
+    """
+
+    ctx = reactive.get_current_context()
+
+    def invalidate(change: object):
+        ctx.invalidate()
+
+    widget.observe(invalidate, names, type)  # type: ignore
+
+    def _():
+        widget.unobserve(invalidate, names, type)  # type: ignore
+
+    ctx.on_invalidate(_)
 
 
 # It doesn't, at the moment, seem feasible to establish a comm with statically rendered widgets,
