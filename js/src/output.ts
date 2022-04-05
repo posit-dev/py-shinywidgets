@@ -40,11 +40,20 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     this.renderError(el, err);
   }
   renderValue(el: HTMLElement, data): void {
-    // TODO: allow for null value
+
+    // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
+    if (!data) {
+      el.style.visibility = "hidden";
+      return;
+    } else {
+      el.style.visibility = "inherit";
+    }
+
     const model = manager.get_model(data.model_id);
     if (!model) {
       throw new Error(`No model found for id ${data.model_id}`);
     }
+
     model.then((m) => {
       const view = manager.create_view(m, {});
       view.then(v => {
@@ -52,7 +61,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
           // TODO: This is not an ideal way to handle the case where another render
           // is requested before the last one is finished displaying the view, but
           // it's probably the least unobtrusive way to handle this for now
-          // 
           while (el.childNodes.length > 1) {
             el.removeChild(el.childNodes[0]);
           }

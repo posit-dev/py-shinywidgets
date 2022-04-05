@@ -157,6 +157,8 @@ class IPyWidget(RenderFunction):
 
     async def run(self) -> object:
         x = await self._fn()
+        if x is None:
+            return None
         widget = _as_widget(x)
         return {"model_id": widget.model_id}  # type: ignore
 
