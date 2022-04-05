@@ -1,6 +1,7 @@
 import importlib
 import json
 import os
+import packaging.version
 import re
 from types import ModuleType
 import warnings
@@ -46,7 +47,7 @@ def libembed_dependency() -> List[HTMLDependency]:
         # stuff we need to render widgets outside of the notebook.
         HTMLDependency(
             name="ipywidget-libembed-amd",
-            version=as_version(__html_manager_version__),
+            version=packaging.version.parse(__html_manager_version__),
             source={"package": "ipyshiny", "subdir": "static"},
             script={"src": "libembed-amd.js"},
         ),
@@ -97,7 +98,7 @@ def require_dependency(w: Widget, session: Session) -> Optional[HTMLDependency]:
             )
             return None
 
-    version = as_version(getattr(w, "_model_module_version", "1.0"))
+    version = packaging.version.parse(getattr(w, "_model_module_version", "1.0"))
     source = {"package": None, "subdir": module_dir}
 
     dep = HTMLDependency(module_name, version, source=source)
@@ -158,7 +159,3 @@ def jupyter_extension_destination(w: Widget) -> str:
 
 def widget_pkg(w: object) -> str:
     return w.__module__.split(".")[0]
-
-
-def as_version(v: str) -> str:
-    return re.sub("^\\D*", "", v)
