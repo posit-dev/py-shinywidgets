@@ -185,11 +185,11 @@ def render_widget():
     return wrapper
 
 
-# altair objects aren't directly renderable as an ipywidget,
-# but we can still render them as an ipywidget via ipyvega
-# TODO: we should probably do this for bokeh, pydeck, and probably others as well
+# altair/pydeck/bokeh objects aren't directly renderable as an ipywidget,
+# but we can coerce them into one
 def _as_widget(x: object) -> Widget:
-    if widget_pkg(x) == "altair":
+    pkg = widget_pkg(x)
+    if pkg == "altair" and not isinstance(x, Widget):
         try:
             import altair
             from vega.widget import VegaWidget
@@ -197,16 +197,33 @@ def _as_widget(x: object) -> Widget:
             x = cast(altair.Chart, x)
             x = VegaWidget(x.to_dict())  # type: ignore
         except ImportError:
-            raise ImportError("ipyvega is required to render altair charts")
-    elif widget_pkg(x) == "pydeck":
-        import pydeck
+            raise ImportError(
+                "To render altair charts, the ipyvega package must be installed."
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to coerce {x} into a VegaWidget: {e}")
 
-        if isinstance(x, pydeck.Deck):
+    elif pkg == "pydeck" and not isinstance(x, Widget):
+        try:
             from pydeck.widget import DeckGLWidget
 
-            x_ = x.to_json()
+            x_ = x.to_json()  # type: ignore
             x = DeckGLWidget()
             x.json_input = x_
+        except Exception as e:
+            raise RuntimeError(f"Failed to coerce {x} into a DeckGLWidget: {e}")
+
+    elif pkg == "bokeh" and not isinstance(x, Widget):
+        try:
+            from jupyter_bokeh import BokehModel
+
+            x = BokehModel(x)  # type: ignore
+        except ImportError:
+            raise ImportError(
+                "To render bokeh charts, the jupyter_bokeh package must be installed."
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to coerce {x} into a BokehModel: {e}")
 
     if isinstance(x, Widget):
         return x

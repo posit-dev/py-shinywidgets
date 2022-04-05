@@ -268,13 +268,12 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render_widget()
     def _():
         from bokeh.plotting import figure
-        from jupyter_bokeh import BokehModel
 
         x = [1, 2, 3, 4, 5]
         y = [6, 7, 2, 4, 5]
         p = figure(title="Simple line example", x_axis_label="x", y_axis_label="y")
         p.line(x, y, legend_label="Temp.", line_width=2)
-        return BokehModel(p)
+        return p
 
 
 app = App(app_ui, server)
