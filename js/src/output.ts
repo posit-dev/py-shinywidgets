@@ -47,7 +47,17 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     }
     model.then((m) => {
       const view = manager.create_view(m, {});
-      view.then((v) => manager.display_view(v, {el: el}));
+      view.then(v => {
+        manager.display_view(v, {el: el}).then(() => {
+          // TODO: This is not an ideal way to handle the case where another render
+          // is requested before the last one is finished displaying the view, but
+          // it's probably the least unobtrusive way to handle this for now
+          // 
+          while (el.childNodes.length > 1) {
+            el.removeChild(el.childNodes[0]);
+          }
+        })
+      });
     });
   }
 }
