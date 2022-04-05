@@ -249,9 +249,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         )
 
         # Combined all of it and render a viewport
-        w = pdk.widget.DeckGLWidget()
-        w.json_input = pdk.Deck(layers=[layer], initial_view_state=view_state).to_json()
-        return w
+        return pdk.Deck(layers=[layer], initial_view_state=view_state)
 
     @output(name="bokeh")
     @render_widget()

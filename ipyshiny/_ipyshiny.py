@@ -22,7 +22,7 @@ from shiny.session import get_current_session
 from shiny.render import RenderFunction, RenderFunctionAsync
 from shiny._utils import run_coro_sync, wrap_async
 
-from . import _dependencies
+from ._dependencies import *
 from ._comm import ShinyComm, ShinyCommManager, BufferType
 
 
@@ -32,8 +32,8 @@ def output_widget(
     # TODO: we should probably have a way to customize the container tag, like you can
     # in htmlwidgets
     return tags.div(
-        *_dependencies.core(),
-        _dependencies.output_binding(),
+        *libembed_dependency(),
+        output_binding_dependency(),
         id=id,
         class_="shiny-ipywidget-output",
         style=css(
@@ -68,7 +68,7 @@ def init_shiny_widget(w: Widget):
     # Make sure window.require() calls made by 3rd party widgets
     # (via handle_comm_open() -> new_model() -> loadClass() -> requireLoader())
     # actually point to directories served locally by shiny
-    deps = _dependencies.require_deps(_widget_pkg(w), session)
+    widget_dep = require_dependency(w, session)
 
     # By the time we get here, the user has already had an opportunity to specify a model_id,
     # so it isn't yet populated, generate a random one so we can assign the same id to the comm
@@ -84,7 +84,7 @@ def init_shiny_widget(w: Widget):
         buffers=cast(BufferType, buffers),
         # TODO: should this be hard-coded?
         metadata={"version": __protocol_version__},
-        html_deps=session._process_ui(TagList(*deps))["deps"],
+        html_deps=session._process_ui(TagList(widget_dep))["deps"],
     )
 
     # Some widget's JS make external requests for static files (e.g.,
@@ -92,13 +92,11 @@ def init_shiny_widget(w: Widget):
     # we're setting the data-base-url attribute on the <body> (which we should
     # be doing on load in js/src/output.ts)
     # https://github.com/jupyter-widgets/widget-cookiecutter/blob/9694718/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js#L8
-    for dep in deps:
-        if not dep.source:
-            continue
+    if widget_dep and widget_dep.source:
         session.app._dependency_handler.mount(
-            f"/nbextensions/{dep.name}",
-            StaticFiles(directory=dep.source["subdir"]),
-            name=f"{dep.name}-nbextension-static-resources",
+            f"/nbextensions/{widget_dep.name}",
+            StaticFiles(directory=widget_dep.source["subdir"]),
+            name=f"{widget_dep.name}-nbextension-static-resources",
         )
 
     # everything after this point should be done once per session
@@ -189,7 +187,7 @@ def render_widget():
 # but we can still render them as an ipywidget via ipyvega
 # TODO: we should probably do this for bokeh, pydeck, and probably others as well
 def _as_widget(x: object) -> Widget:
-    if _widget_pkg(x) == "altair":
+    if widget_pkg(x) == "altair":
         try:
             import altair
             from vega.widget import VegaWidget
@@ -198,15 +196,20 @@ def _as_widget(x: object) -> Widget:
             x = VegaWidget(x.to_dict())  # type: ignore
         except ImportError:
             raise ImportError("ipyvega is required to render altair charts")
+    elif widget_pkg(x) == "pydeck":
+        import pydeck
+
+        if isinstance(x, pydeck.Deck):
+            from pydeck.widget import DeckGLWidget
+
+            x_ = x.to_json()
+            x = DeckGLWidget()
+            x.json_input = x_
 
     if isinstance(x, Widget):
         return x
     else:
         raise TypeError(f"{x} is not a coerce-able to a ipywidget.Widget object")
-
-
-def _widget_pkg(w: object) -> str:
-    return w.__module__.split(".")[0]
 
 
 def reactive_read(widget: Widget, names: Union[str, Sequence[str]]) -> Any:

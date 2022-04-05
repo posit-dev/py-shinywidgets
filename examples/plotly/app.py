@@ -1,5 +1,5 @@
 import shiny as sh
-import plotly.graph_objects as go
+import plotly.graph_objs as go
 import ipywidgets as widgets
 import pandas as pd
 import numpy as np
