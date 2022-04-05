@@ -80,7 +80,6 @@ Shiny.outputBindings.register(new IPyWidgetOutput(), "shiny.IPyWidgetOutput");
 // TODO: this is a hack. Could we do something better?
 setTimeout(() => { Shiny.bindAll(document.body); }, 0);
 
-
 /******************************************************************************
 * Handle messages from the server-side Widget
 ******************************************************************************/
@@ -105,12 +104,23 @@ Shiny.addCustomMessageHandler("ipyshiny_comm_msg", (msg_txt) => {
   });
 });
 
-// TODO: test that this actually works
 Shiny.addCustomMessageHandler("ipyshiny_comm_close", (msg_txt) => {
   const msg = jsonParse(msg_txt);
   manager.get_model(msg.content.comm_id).then(m => {
     // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
     m.comm.handle_close(msg)
+    // Wait until a view of the model is displayed before closing it
+    //m.state_change.then((view) => {
+    //  view.then(v => {
+    //    if (v.is_displayed()) {
+    //      // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
+    //      //m.comm.handle_close(msg);
+    //    } else {
+    //      // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
+    //      //v.on("remove", () => m.comm.handle_close(msg));
+    //    }
+    //  });
+    //});
   });
 });
 

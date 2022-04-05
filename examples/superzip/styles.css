@@ -4,7 +4,7 @@ input[type="number"] {
 
 div.outer {
   position: fixed;
-  top: 41px;
+  top: 55px;
   left: 0;
   right: 0;
   bottom: 0;
@@ -48,4 +48,9 @@ h1, h2, h3, h4 { font-weight: 400; }
 /* If not using map tiles, show a white background */
 .leaflet-container {
   background-color: white !important;
+}
+
+/* FigureWidget doesn't support config?!? */
+.plotly .modebar-container {
+  display: none;
 }

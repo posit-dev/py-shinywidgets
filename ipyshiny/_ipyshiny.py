@@ -13,9 +13,9 @@ from weakref import WeakSet
 from ipywidgets.widgets.widget import Widget, _remove_buffers
 from ipywidgets._version import __protocol_version__
 
-from htmltools import tags, Tag, TagList, css
+from htmltools import tags, Tag, TagList, css, HTML, head_content
 from htmltools._util import _package_dir
-from shiny import event, reactive
+from shiny import event, reactive, ui
 
 from shiny.http_staticfiles import StaticFiles
 from shiny.session import get_current_session
@@ -53,6 +53,14 @@ def init_shiny_widget(w: Widget):
         raise RuntimeError(
             "ipyshiny requires that all ipywidgets be constructed within an active Shiny session"
         )
+
+    # TODO: this won't work until we find a way to get session._send_message() to
+    # work (syncronously) with a big payload
+    # if session not in SESSIONS and widget_pkg(w) == "jupyter_bokeh":
+    #    from bokeh.resources import Resources
+    #
+    #    bokeh_js = head_content(HTML(Resources(mode="inline").render()))
+    #    ui.insert_ui(ui=bokeh_js, selector="head", immediate=True)
 
     # `Widget` has `comm = Instance('ipykernel.comm.Comm')` which means we'd get a
     # runtime error if we try to set this attribute to a different class, but
@@ -120,8 +128,12 @@ def init_shiny_widget(w: Widget):
         msg_txt = session.input["ipyshiny_comm_send"]()
         msg = json.loads(msg_txt)
         comm_id = msg["content"]["comm_id"]
-        comm: ShinyComm = COMM_MANAGER.comms[comm_id]
-        comm.handle_msg(msg)
+        # When a widget gets closed server-side, the comm gets
+        # unregistered, _then_ we get a message from the client to decrement the view
+        # count, which seems safe to ignore.
+        if comm_id in COMM_MANAGER.comms:
+            comm: ShinyComm = COMM_MANAGER.comms[comm_id]
+            comm.handle_msg(msg)
 
     def _restore_state():
         Widget.comm.klass = old_comm_klass  # type: ignore
