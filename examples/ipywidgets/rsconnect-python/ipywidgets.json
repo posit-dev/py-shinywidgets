@@ -1,0 +1,11 @@
+{
+    "https://connect.rstudioservices.com/": {
+        "server_url": "https://connect.rstudioservices.com/",
+        "filename": "/Users/cpsievert/github/ipyshiny/examples/ipywidgets",
+        "app_url": "https://connect.rstudioservices.com/content/346038e1-cbb2-407a-b0ba-91f421c128df/",
+        "app_id": 8699,
+        "app_guid": "346038e1-cbb2-407a-b0ba-91f421c128df",
+        "title": "ipywidgets",
+        "app_mode": "python-shiny"
+    }
+}
