@@ -5,7 +5,20 @@ from shiny import *
 from ipyshiny import *
 import numpy as np
 
+
+# TODO: jupyter_bokeh assumes this additional JS has been loaded into the
+# (in a notebook, this comes in via bokeh.io.output_notebook()).
+# We could probably insert this on widget construction, just before the comm
+# gets initialized (it's not currently working due to run_coro_sync() not working
+# when session._send_message() wants to send a big payload).
+from htmltools import head_content, HTML
+from bokeh.resources import Resources
+
+bokeh_js = HTML(Resources(mode="inline").render())
+
+
 app_ui = ui.page_fluid(
+    head_content(bokeh_js),
     ui.layout_sidebar(
         ui.panel_sidebar(
             ui.input_radio_buttons(
@@ -17,14 +30,14 @@ app_ui = ui.page_fluid(
                     "pydeck",
                     "altair",
                     "plotly",
-                    # TODO: fix me
-                    # "bokeh",
+                    "bokeh",
                     "bqplot",
                     "ipychart",
                     "ipywebrtc",
-                    "ipyvolume",
+                    # TODO: fix me
+                    # "ipyvolume",
                 ],
-                selected="qgrid",
+                selected="ipyleaflet",
             )
         ),
         ui.panel_main(
@@ -255,18 +268,12 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render_widget()
     def _():
         from bokeh.plotting import figure
-        from jupyter_bokeh import BokehModel
-
-        # TODO: figure out what this does and try to replicate it
-        import bokeh.io
-
-        bokeh.io.output_notebook()
 
         x = [1, 2, 3, 4, 5]
         y = [6, 7, 2, 4, 5]
         p = figure(title="Simple line example", x_axis_label="x", y_axis_label="y")
         p.line(x, y, legend_label="Temp.", line_width=2)
-        return BokehModel(p)
+        return p
 
 
 app = App(app_ui, server)
