@@ -22,15 +22,6 @@ from . import __version__
 # TODO: scripts/static_download.R should produce/update these
 def libembed_dependency() -> List[HTMLDependency]:
     return [
-        # Load 3rd party widget dependencies at runtime via requirejs. One of the benefits of doing it
-        # this way is that for whatever reason, if we can't find the widgets statically assets locally,
-        # the requireLoader we use client side will fallback to loading the dependencies from a CDN.
-        HTMLDependency(
-            name="requirejs",
-            version="2.3.4",
-            source={"package": "ipyshiny", "subdir": "static"},
-            script={"src": "require.min.js"},
-        ),
         # Jupyter Notebook/Lab both come "preloaded" with several @jupyter-widgets packages
         # (i.e., base, controls, output), all of which are bundled into this extension.js file
         # provided by the widgetsnbextension package, which is a dependency of ipywidgets.
