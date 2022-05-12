@@ -10,10 +10,11 @@ from typing import List, Optional
 
 from ipywidgets import Widget, DOMWidget
 from ipywidgets._version import __html_manager_version__
-from jupyter_core.paths import jupyter_path
+from jupyter_core.paths import jupyter_path  # type: ignore
 
 
 from htmltools import HTMLDependency, tags
+from htmltools._core import HTMLDependencySource
 from shiny import Session
 
 from . import __version__
@@ -99,7 +100,7 @@ def require_dependency(w: Widget, session: Session) -> Optional[HTMLDependency]:
             return None
 
     version = as_version(getattr(w, "_model_module_version", "1.0"))
-    source = {"package": None, "subdir": module_dir}
+    source = HTMLDependencySource(subdir=module_dir)
 
     dep = HTMLDependency(module_name, version, source=source)
     # Get the location where the dependency files will be mounted by the shiny app
