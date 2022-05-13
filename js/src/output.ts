@@ -103,7 +103,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
           }
         })
       });
-    });
+    }); 
   }
 }
 
