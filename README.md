@@ -5,10 +5,11 @@ Render [ipywidgets](https://github.com/jupyter-widgets/ipywidgets) inside a [PyS
 
 ## Installation
 
+First, [install Shiny](https://rstudio.github.io/pyshiny-site/install.html), then:
+
 ```sh
-pip install ipywidgets
-pip install shiny==0.0.0.9001 --extra-index-url=https://rstudio.github.io/pyshiny-site/pypi
-pip install -e .
+git clone https://github.com/rstudio/ipyshiny
+pip install -e ipyshiny
 ```
 
 ## Usage
@@ -16,7 +17,7 @@ pip install -e .
 Coming soon. For now, see/run the `examples/`:
 
 ```sh
-shiny run examples.outputs
+shiny run examples/outputs/appy.py
 ```
 
 ## Development
