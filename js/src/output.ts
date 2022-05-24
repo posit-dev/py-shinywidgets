@@ -23,9 +23,14 @@ class OutputManager extends HTMLManager {
   }
 }
 
+// shiny includes require.js and also sets `define.amd=false` to prevent <script>s
+// with UMD loaders from triggering anonymous define() errors. For many widgets, this
+// isn't an issue since they mostly define() without first checking for define.amd,
+// but at least pydeck (at the moment) does check for define.amd and does the wrong
+// thing if it's set to false.
 const shinyRequireLoader = async function(moduleName: string, moduleVersion: string): Promise<any> {
   const oldAmd = (window as any).define.amd;
-  (window as any).define.amd = {jQuery: true};
+  (window as any).define.amd = {jQuery: true}; // i.e. restore the value that require.js sets
   try {
     await requireLoader(moduleName, moduleVersion);
   } finally {
