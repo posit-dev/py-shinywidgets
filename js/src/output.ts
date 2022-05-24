@@ -31,11 +31,9 @@ class OutputManager extends HTMLManager {
 const shinyRequireLoader = async function(moduleName: string, moduleVersion: string): Promise<any> {
   const oldAmd = (window as any).define.amd;
   (window as any).define.amd = {jQuery: true}; // i.e. restore the value that require.js sets
-  try {
-    await requireLoader(moduleName, moduleVersion);
-  } finally {
+  return requireLoader(moduleName, moduleVersion).finally(() => {
     (window as any).define.amd = oldAmd;
-  }
+  });
 }
 
 const manager = new OutputManager({ loader: shinyRequireLoader });
@@ -86,15 +84,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
 }
 
 Shiny.outputBindings.register(new IPyWidgetOutput(), "shiny.IPyWidgetOutput");
-
-// By the time this code executes (i.e., by the time the `callback` in
-// `require(["@jupyter-widgets/html-manager"], callback)` executes, it seems to be too
-// late to register the output binding in a way that it'll "just work" for dynamic UI.
-// Moreover, when this code executes, dynamic UI when yet be loaded, so schedule
-// a bind to happen on the next tick.
-// TODO: this is a hack. Could we do something better?
-setTimeout(() => { Shiny.bindAll(document.body); }, 0);
-
 
 /******************************************************************************
 * Handle messages from the server-side Widget
