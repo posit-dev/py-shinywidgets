@@ -3,6 +3,7 @@ import { ShinyComm } from './comm';
 import { jsonParse } from './utils';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
+
 /******************************************************************************
  * Define a custom HTMLManager for use with Shiny
  ******************************************************************************/
@@ -23,16 +24,38 @@ class OutputManager extends HTMLManager {
   }
 }
 
-// shiny includes require.js and also sets `define.amd=false` to prevent <script>s
-// with UMD loaders from triggering anonymous define() errors. For many widgets, this
-// isn't an issue since they mostly define() without first checking for define.amd,
-// but at least pydeck (at the moment) does check for define.amd and does the wrong
-// thing if it's set to false.
+// Define our own custom module loader for Shiny
 const shinyRequireLoader = async function(moduleName: string, moduleVersion: string): Promise<any> {
+
+  // shiny provides require.js and also sets `define.amd=false` to prevent <script>s
+  // with UMD loaders from triggering anonymous define() errors. ipyshiny should
+  // generally be able to avoid anonymous define errors though since there should only
+  // be one 'main' anonymous define() for the widget's module (located in a JS file that
+  // we've already require.config({paths: {...}})ed; and in that case, requirejs adds a
+  // data-requiremodule attribute to the <script> tag that shiny's custom define will
+  // recognize and use as the name).)
   const oldAmd = (window as any).define.amd;
-  (window as any).define.amd = {jQuery: true}; // i.e. restore the value that require.js sets
+
+  // The is the original value for define.amd that require.js sets
+  (window as any).define.amd = {jQuery: true};
+
+  // If loading this module changes the jQuery version (qgrid is one good example of a
+  // widget that does this), then restore the previous version of jQuery when we're done
+  const $version = (window as any).$.fn.jquery;
+
+  if (moduleName === 'qgrid') {
+    // qgrid wants to use base/js/dialog (if it's available) for full-screen tables
+    // https://github.com/quantopian/qgrid/blob/877b420/js/src/qgrid.widget.js#L11-L16
+    // Maybe that's worth supporting someday, but for now, we define it to be nothing
+    // to avoid require('qgrid') from producing an error
+    (window as any).define("base/js/dialog", [], function() { return null });
+  }
+
   return requireLoader(moduleName, moduleVersion).finally(() => {
     (window as any).define.amd = oldAmd;
+    if ($version !== (window as any).$.fn.jquery) {
+      (window as any).$.noConflict();
+    }
   });
 }
 
