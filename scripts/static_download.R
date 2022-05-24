@@ -1,11 +1,6 @@
 
 static_dir <- file.path(getwd(), "ipyshiny", "static")
 if (!dir.exists(static_dir)) dir.create(static_dir)
-# From https://github.com/jupyter-widgets/ipywidgets/blob/fbdbd005/python/ipywidgets/ipywidgets/embed.py#L32
-download.file(
-  "https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js",
-  file.path(static_dir, "require.min.js")
-)
 # From https://github.com/jupyter-widgets/ipywidgets/blob/fbdbd005/python/ipywidgets/ipywidgets/embed.py#L62
 # Note that we also grab libembed-amd, not embed-amd, because the Shiny bindings handle the actual rendering aspect
 # https://github.com/jupyter-widgets/ipywidgets/blob/fbdbd00/packages/html-manager/scripts/concat-amd-build.js#L6

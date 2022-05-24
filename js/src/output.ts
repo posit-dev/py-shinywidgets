@@ -23,7 +23,17 @@ class OutputManager extends HTMLManager {
   }
 }
 
-const manager = new OutputManager({ loader: requireLoader });
+const shinyRequireLoader = async function(moduleName: string, moduleVersion: string): Promise<any> {
+  const oldAmd = (window as any).define.amd;
+  (window as any).define.amd = {jQuery: true};
+  try {
+    await requireLoader(moduleName, moduleVersion);
+  } finally {
+    (window as any).define.amd = oldAmd;
+  }
+}
+
+const manager = new OutputManager({ loader: shinyRequireLoader });
 
 
 /******************************************************************************
