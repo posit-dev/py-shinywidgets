@@ -41,10 +41,7 @@ app_ui = ui.page_fluid(
             )
         ),
         ui.panel_main(
-            ui.TagList(
-                ui.output_ui("figure"),
-                ui.output_ui("state"),
-            )
+            ui.output_ui("figure"),
         ),
     ),
     title="ipywidgets in Shiny",
@@ -56,12 +53,6 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render_ui()
     def _():
         return output_widget(input.framework())
-
-    @output(name="state")
-    @render_ui()
-    def _():
-        f = input.framework()
-        return ui.tags.pre(ui.HTML(input[f]()))
 
     @output(name="ipyleaflet")
     @render_widget()
