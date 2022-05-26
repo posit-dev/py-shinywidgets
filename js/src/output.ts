@@ -39,9 +39,10 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
   // The is the original value for define.amd that require.js sets
   (window as any).define.amd = {jQuery: true};
 
-  // If loading this module changes the jQuery version (qgrid is one good example of a
-  // widget that does this), then restore the previous version of jQuery when we're done
-  const $version = (window as any).$.fn.jquery;
+  // Store jQuery global since loading we load a module, it may overwrite it
+  // (qgrid is one good example)
+  const old$ = (window as any).$;
+  const oldJQ = (window as any).jQuery;
 
   if (moduleName === 'qgrid') {
     // qgrid wants to use base/js/dialog (if it's available) for full-screen tables
@@ -53,9 +54,8 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
 
   return requireLoader(moduleName, moduleVersion).finally(() => {
     (window as any).define.amd = oldAmd;
-    if ($version !== (window as any).$.fn.jquery) {
-      (window as any).$.noConflict();
-    }
+    (window as any).$ = old$;
+    (window as any).jQuery = oldJQ;
   });
 }
 
@@ -85,6 +85,8 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       el.style.visibility = "inherit";
     }
 
+    // At this time point, we should've already handled an 'open' message, and so
+    // the model should be ready to use
     const model = manager.get_model(data.model_id);
     if (!model) {
       throw new Error(`No model found for id ${data.model_id}`);
@@ -94,9 +96,8 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       const view = manager.create_view(m, {});
       view.then(v => {
         manager.display_view(v, {el: el}).then(() => {
-          // TODO: This is not an ideal way to handle the case where another render
-          // is requested before the last one is finished displaying the view, but
-          // it's probably the least unobtrusive way to handle this for now
+          // TODO: It would be better to .close() the widget here, but
+          // I'm not sure how to do that yet (at least client-side)
           while (el.childNodes.length > 1) {
             el.removeChild(el.childNodes[0]);
           }
