@@ -1,7 +1,7 @@
-from ipywidgets.widgets.widget import Widget
 from shiny import *
 from ipyshiny import *
 import ipywidgets as ipy
+from ipywidgets.widgets.widget import Widget
 
 
 app_ui = ui.page_fluid(output_widget("slider"), ui.output_text("value"))

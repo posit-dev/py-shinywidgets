@@ -1,24 +1,28 @@
+import warnings
+
 import pandas as pd
-import qgrid
-from vega_datasets import data
-from shiny import *
-from ipyshiny import *
 import numpy as np
 
+from shiny import *
+from ipyshiny import *
+from htmltools import head_content, HTML
 
 # TODO: jupyter_bokeh assumes this additional JS has been loaded into the
 # (in a notebook, this comes in via bokeh.io.output_notebook()).
 # We could probably insert this on widget construction, just before the comm
 # gets initialized (it's not currently working due to run_coro_sync() not working
 # when session._send_message() wants to send a big payload).
-from htmltools import head_content, HTML
-from bokeh.resources import Resources
+bokeh_dependency = None
+try:
+    from bokeh.resources import Resources
 
-bokeh_js = HTML(Resources(mode="inline").render())
+    bokeh_dependency = head_content(HTML(Resources(mode="inline").render()))
+except ImportError:
+    warnings.warn("Could not import bokeh")
 
 
 app_ui = ui.page_fluid(
-    head_content(bokeh_js),
+    bokeh_dependency,
     ui.layout_sidebar(
         ui.panel_sidebar(
             ui.input_radio_buttons(
@@ -66,6 +70,8 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output(name="qgrid")
     @render_widget()
     def _():
+        import qgrid
+
         randn = np.random.randn
         df_types = pd.DataFrame(
             {
@@ -118,6 +124,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render_widget()
     def _():
         import altair as alt
+        from vega_datasets import data
 
         return (
             alt.Chart(data.cars())

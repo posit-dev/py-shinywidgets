@@ -1,0 +1,18 @@
+--extra-index-url https://pyshiny.netlify.app/pypi/
+shiny>=0.2.0.9004
+ipyshiny
+ipywidgets
+numpy
+pandas
+qgrid
+vega_datasets
+bokeh
+jupyter_bokeh
+ipyleaflet
+pydeck
+altair
+plotly
+bqplot
+ipychart
+ipywebrtc
+vega

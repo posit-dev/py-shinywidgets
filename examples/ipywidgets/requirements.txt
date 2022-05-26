@@ -1,0 +1,2 @@
+--extra-index-url https://pyshiny.netlify.app/pypi/
+ipyshiny
