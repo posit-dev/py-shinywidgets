@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-__all__ = ("output_widget", "render_widget", "reactive_read")
+# TODO: export _as_widget()?
+__all__ = ("output_widget", "display_widget", "render_widget", "reactive_read")
 
 import copy
 import inspect
@@ -18,7 +19,7 @@ from ipywidgets._version import __protocol_version__
 
 from htmltools import tags, Tag, TagList, css
 from htmltools._util import _package_dir
-from shiny import event, reactive
+from shiny import event, reactive, require_active_session
 
 from shiny.http_staticfiles import StaticFiles
 from shiny.session import get_current_session
@@ -262,6 +263,22 @@ def reactive_depend(
         widget.unobserve(invalidate, names, type)  # type: ignore
 
     ctx.on_invalidate(_)
+
+
+def display_widget(
+    id: str, widget: Widget, session: Optional[Session] = None
+) -> Widget:
+    if session is None:
+        session = require_active_session(session)
+
+    @session.output(name=id)
+    @render_widget()
+    def _():
+        return widget
+
+    # TODO: would this actually make sense/be useful? Without this, using something
+    # like altair with display_widget() feels pretty awkward.
+    return _as_widget(widget)
 
 
 # It doesn't, at the moment, seem feasible to establish a comm with statically rendered widgets,
