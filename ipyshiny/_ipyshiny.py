@@ -10,7 +10,10 @@ from typing import Callable, Awaitable, Sequence, Union, cast, Any
 from uuid import uuid4
 from weakref import WeakSet
 
-from ipywidgets.widgets.widget import Widget, _remove_buffers
+from ipywidgets.widgets.widget import (
+    Widget,
+    _remove_buffers,
+)  # pyright: reportMissingTypeStubs=false, reportUnknownVariableType=false
 from ipywidgets._version import __protocol_version__
 
 from htmltools import tags, Tag, TagList, css
