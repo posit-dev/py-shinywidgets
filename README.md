@@ -238,16 +238,10 @@ equivalent thing in Shiny is to include the following in the UI definition:
 from bokeh.resources import Resources
 head_content(HTML(Resources(mode="inline").render()))
 ```
-
-#### itables
-
-Coming soon
-
-#### Other widgets
+#### Other widgets?
 
 Know of another widget that requires initialization code? [Please let us know about
 it](https://github.com/rstudio/ipyshiny/issues/new)!
-
 
 ## Development
 
