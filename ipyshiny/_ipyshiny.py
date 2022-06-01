@@ -30,18 +30,14 @@ from ._comm import ShinyComm, ShinyCommManager, BufferType
 
 
 def output_widget(
-    id: str, *, width: str = "100%", height: str = "400px", inline: bool = False
+    id: str, *, width: Optional[str] = None, height: Optional[str] = None
 ) -> Tag:
-    # TODO: we should probably have a way to customize the container tag, like you can
-    # in htmlwidgets
     return tags.div(
         *libembed_dependency(),
         output_binding_dependency(),
         id=id,
         class_="shiny-ipywidget-output",
-        style=css(
-            width=width, height=height, display="inline-block" if inline else None
-        ),
+        style=css(width=width, height=height),
     )
 
 
