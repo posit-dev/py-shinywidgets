@@ -21,13 +21,11 @@ def server(input: Inputs, output: Outputs, session: Session):
         readout_format="d",
     )
 
-    # This should print on every client-side change to the slider
-    s.observe(lambda change: print(change.new), "value")
+    register_widget("slider", s)
 
-    @output()
-    @render_widget()
-    def slider():
-        return s
+    @reactive.Effect()
+    def _():
+        return f"The value of the slider is: {reactive_read(s, 'value')}"
 
 
 app = App(app_ui, server)
