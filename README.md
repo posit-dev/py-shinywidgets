@@ -77,8 +77,9 @@ def server(input, output, session):
 app = App(app_ui, server)
 ```
 
-![<https://imgur.com/a/pUOEfwv.gifv>](https://imgur.com/a/pUOEfwv.gif)
-
+<div align="center">
+    <img src="https://user-images.githubusercontent.com/1365941/171508416-1ebe157c-b305-4517-9c89-14891dff8f79.gif" width="70%">
+</div>
 
 The style of programming above (display and mutate) is great for efficiently performing
 partial updates to a widget. This is really useful when a widget needs to display lots
@@ -131,7 +132,10 @@ def server(input, output, session):
 app = App(app_ui, server)
 ```
 
-![<https://imgur.com/a/54ECn09.gifv>](https://imgur.com/a/54ECn09.gif)
+<div align="center">
+    <img src="https://user-images.githubusercontent.com/1365941/171507230-4b32ce4a-6e80-43a4-9c71-6a1f3ffe443e.gif" width="70%">
+</div>
+
 
 That being said, in a situation where:
 
@@ -148,7 +152,7 @@ be noticeable delay.
 
 ```py
 from shiny import *
-from ipyshiny import output_widget, register_widget, reactive_read
+from ipyshiny import output_widget, render_widget
 import ipyleaflet as L
 
 app_ui = ui.page_fluid(
@@ -212,7 +216,7 @@ In some cases, the package(s) that you want to use may not come pre-bundled with
 file](https://pyshiny.netlify.app/examples/#extra-packages) to pre-install those other
 packages
 
-## Troubleshooting {#troubleshooting}
+## Troubleshooting
 
 If after [installing](#installation) `{ipyshiny}`, you have trouble rendering widgets,
 first try running the "hello world" ipywidgets [example](https://github.com/rstudio/ipyshiny/blob/main/examples/ipywidgets/app.py). If that doesn't work, it could be that you have an unsupported version
@@ -237,7 +241,7 @@ head_content(HTML(Resources(mode="inline").render()))
 
 #### itables
 
-TODO: Provide initialization code
+Coming soon
 
 #### Other widgets
 
