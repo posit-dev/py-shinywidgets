@@ -16,7 +16,7 @@ from ipywidgets.widgets.widget import (
 )  # pyright: reportMissingTypeStubs=false, reportUnknownVariableType=false
 from ipywidgets._version import __protocol_version__
 
-from htmltools import tags, Tag, TagList
+from htmltools import tags, Tag, TagList, css
 from htmltools._util import _package_dir
 from shiny import event, reactive
 
@@ -29,12 +29,19 @@ from ._dependencies import *
 from ._comm import ShinyComm, ShinyCommManager, BufferType
 
 
-def output_widget(id: str) -> Tag:
+def output_widget(
+    id: str, *, width: str = "100%", height: str = "400px", inline: bool = False
+) -> Tag:
+    # TODO: we should probably have a way to customize the container tag, like you can
+    # in htmlwidgets
     return tags.div(
         *libembed_dependency(),
         output_binding_dependency(),
         id=id,
         class_="shiny-ipywidget-output",
+        style=css(
+            width=width, height=height, display="inline-block" if inline else None
+        ),
     )
 
 
