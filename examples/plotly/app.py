@@ -41,7 +41,7 @@ def server(input, output, session):
 
     register_widget("scatterplot", scatterplot)
 
-    @reactive.Effect()
+    @reactive.Effect
     def _():
         scatterplot.data[1].visible = input.show_fit()
 

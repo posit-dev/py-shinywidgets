@@ -114,7 +114,7 @@ def init_shiny_widget(w: Widget):
 
     # Handle messages from the client. Note that widgets like qgrid send client->server messages
     # to figure out things like what filter to be shown in the table.
-    @reactive.Effect()
+    @reactive.Effect
     @event(session.input["ipyshiny_comm_send"])
     def _():
         msg_txt = session.input["ipyshiny_comm_send"]()
@@ -291,8 +291,8 @@ def register_widget(
 
     w = _as_widget(widget)
 
-    @session.output(name=id)
-    @render_widget()
+    @session.output(id=id)
+    @render_widget
     def _():
         return w
 

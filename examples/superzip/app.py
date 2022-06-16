@@ -192,13 +192,13 @@ def server(input: Inputs, output: Outputs, session: Session):
     # Keeps track of whether we're showing markers (zoomed in) or heatmap (zoomed out)
     show_markers = reactive.Value(False)
 
-    @reactive.Effect()
+    @reactive.Effect
     def _():
         nzips = zips_in_bounds().shape[0]
         show_markers.set(nzips < 200)
 
     # When the variable changes, either update marker colors or redraw the heatmap
-    @reactive.Effect()
+    @reactive.Effect
     @event(input.variable)
     def _():
         zips = zips_in_bounds()
@@ -214,7 +214,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                         x.color = zip_colors[zipcode]
 
     # When bounds change, maybe add new markers
-    @reactive.Effect()
+    @reactive.Effect
     @event(lambda: zips_in_bounds())
     def _():
         if not show_markers():
@@ -234,7 +234,7 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     # Change from heatmap to markers: remove the heatmap and show markers
     # Change from markers to heatmap: hide the markers and add the heatmap
-    @reactive.Effect()
+    @reactive.Effect
     @event(show_markers)
     def _():
         if show_markers():
@@ -249,7 +249,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 x.fill_opacity = opacity
                 x.opacity = opacity
 
-    @reactive.Calc()
+    @reactive.Calc
     def zips_in_bounds():
         bb = reactive_read(map, "bounds")
         if not bb:
@@ -266,14 +266,14 @@ def server(input: Inputs, output: Outputs, session: Session):
             & (allzips.Long <= lons[1])
         ]
 
-    @reactive.Calc()
+    @reactive.Calc
     def zips_marker_color():
         vals = allzips[input.variable()]
         domain = (vals.min(), vals.max())
         vals_in_bb = zips_in_bounds()[input.variable()]
         return col_numeric(domain)(vals_in_bb)
 
-    @reactive.Calc()
+    @reactive.Calc
     def layer_heatmap():
         locs = allzips[["Lat", "Long", input.variable()]].to_numpy()
         return leaf.Heatmap(
@@ -301,8 +301,8 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     zip_selected = reactive.Value(None)
 
-    @output(name="density_score")
-    @render_widget()
+    @output(id="density_score")
+    @render_widget
     def _():
         return density_plot(
             allzips,
@@ -313,22 +313,22 @@ def server(input: Inputs, output: Outputs, session: Session):
             showlegend=True,
         )
 
-    @output(name="density_income")
-    @render_widget()
+    @output(id="density_income")
+    @render_widget
     def _():
         return density_plot(
             allzips, zips_in_bounds(), selected=zip_selected(), var="Income"
         )
 
-    @output(name="density_college")
-    @render_widget()
+    @output(id="density_college")
+    @render_widget
     def _():
         return density_plot(
             allzips, zips_in_bounds(), selected=zip_selected(), var="College"
         )
 
-    @output(name="density_pop")
-    @render_widget()
+    @output(id="density_pop")
+    @render_widget
     def _():
         return density_plot(
             allzips,
@@ -363,8 +363,8 @@ def server(input: Inputs, output: Outputs, session: Session):
 
         return m
 
-    @output(name="data_intro")
-    @render_ui()
+    @output(id="data_intro")
+    @render.ui
     def _():
         zips = zips_in_bounds()
 
@@ -386,8 +386,8 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     selected_table_row = reactive.Value(pd.DataFrame())
 
-    @output(name="data")
-    @render_widget()
+    @output(id="data")
+    @render_widget
     def _():
         import qgrid
 
@@ -409,8 +409,8 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     table_map = create_map()
 
-    @output(name="table_map")
-    @render_widget()
+    @output(id="table_map")
+    @render_widget
     def _():
         if selected_table_row().empty:
             return None
@@ -420,7 +420,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     # TODO: currently there is a bug where clicking the popup causes an error,
     # but I _think_ this'll get fixed in the next release of ipywidgets/ipyleaflet
     # https://github.com/jupyter-widgets/ipywidgets/issues/3384
-    @reactive.Effect()
+    @reactive.Effect
     @event(selected_table_row)
     def _():
         for x in table_map.layers:

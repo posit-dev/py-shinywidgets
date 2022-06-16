@@ -14,7 +14,7 @@ pip install ipyshiny --extra-index-url=https://pyshiny.netlify.app/pypi
 
 Every Shiny app has two main parts: the user interface (UI) and server logic.
 `{ipyshiny}` provides `output_widget()` for defining where to place a widget in the UI
-and `register_widget()` (or `@render_widget()`) for supplying a widget-like object to
+and `register_widget()` (or `@render_widget`) for supplying a widget-like object to
 the `output_widget()` container. More technically, widget-like means:
 
 * Any object that subclasses `{ipywidgets}`'s `Widget` class.
@@ -30,7 +30,7 @@ The recommended way to incorporate `{ipyshiny}` widgets into Shiny apps is to:
       the `server` function first executes), but if the widget is slow to initialize and
       doesn't need to be shown right away, you may want to delay that initialization
       until it's needed.
-2. Use Shiny's `@reactive.Effect()` to reactively modify the widget whenever relevant
+2. Use Shiny's `@reactive.Effect` to reactively modify the widget whenever relevant
    reactive values change.
 3. Use `{ipyshiny}`'s `reactive_read()` to update other outputs whenever the widget changes.
     * This way, relevant output(s) invalidate (i.e., recalculate) whenever the relevant
@@ -56,19 +56,19 @@ def server(input, output, session):
     register_widget("map", map)
 
     # When the slider changes, update the map's zoom attribute (2)
-    @reactive.Effect()
+    @reactive.Effect
     def _():
         map.zoom = input.zoom()
 
     # When zooming directly on the map, update the slider's value (2 and 3)
-    @reactive.Effect()
+    @reactive.Effect
     def _():
         ui.update_slider("zoom", value=reactive_read(map, "zoom"))
 
     # Everytime the map's bounds change, update the output message (3)
-    @output(name="map_bounds")
-    @render_text()
-    def _():
+    @output
+    @render.text
+    def map_bounds():
         b = reactive_read(map, "bounds")
         lat = [b[0][0], b[0][1]]
         lon = [b[1][0], b[1][1]]
@@ -125,7 +125,7 @@ def server(input, output, session):
 
     register_widget("scatterplot", scatterplot)
 
-    @reactive.Effect()
+    @reactive.Effect
     def _():
         scatterplot.data[1].visible = input.show_fit()
 
@@ -161,9 +161,9 @@ app_ui = ui.page_fluid(
 )
 
 def server(input, output, session):
-    @output(name="map")
-    @render_widget()
-    def _():
+    @output
+    @render_widget
+    def map():
         return L.Map(center=(52, 360), zoom=input.zoom())
 
 app = App(app_ui, server)

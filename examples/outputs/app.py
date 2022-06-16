@@ -53,13 +53,13 @@ app_ui = ui.page_fluid(
 
 
 def server(input: Inputs, output: Outputs, session: Session):
-    @output(name="figure")
-    @render_ui()
+    @output(id="figure")
+    @render.ui
     def _():
         return output_widget(input.framework())
 
-    @output(name="ipyleaflet")
-    @render_widget()
+    @output(id="ipyleaflet")
+    @render_widget
     def _():
         from ipyleaflet import Map, Marker
 
@@ -67,8 +67,8 @@ def server(input: Inputs, output: Outputs, session: Session):
         m.add_layer(Marker(location=(52.204793, 360.121558)))
         return m
 
-    @output(name="qgrid")
-    @render_widget()
+    @output(id="qgrid")
+    @render_widget
     def _():
         import qgrid
 
@@ -120,8 +120,8 @@ def server(input: Inputs, output: Outputs, session: Session):
         df_types["E"] = df_types["D"] == "foo"
         return qgrid.show_grid(df_types, show_toolbar=True)
 
-    @output(name="altair")
-    @render_widget()
+    @output(id="altair")
+    @render_widget
     def _():
         import altair as alt
         from vega_datasets import data
@@ -136,8 +136,8 @@ def server(input: Inputs, output: Outputs, session: Session):
             )
         )
 
-    @output(name="plotly")
-    @render_widget()
+    @output(id="plotly")
+    @render_widget
     def _():
         import plotly.graph_objects as go
 
@@ -146,8 +146,8 @@ def server(input: Inputs, output: Outputs, session: Session):
             layout_title_text="A Figure Displayed with fig.show()",
         )
 
-    @output(name="bqplot")
-    @render_widget()
+    @output(id="bqplot")
+    @render_widget
     def _():
         from bqplot import OrdinalScale, LinearScale, Bars, Lines, Axis, Figure
 
@@ -187,8 +187,8 @@ def server(input: Inputs, output: Outputs, session: Session):
             ],
         )
 
-    @output(name="ipychart")
-    @render_widget()
+    @output(id="ipychart")
+    @render_widget
     def _():
         from ipychart import Chart
 
@@ -208,8 +208,8 @@ def server(input: Inputs, output: Outputs, session: Session):
 
         return Chart(data=dataset, kind="bar")
 
-    @output(name="ipywebrtc")
-    @render_widget()
+    @output(id="ipywebrtc")
+    @render_widget
     def _():
         from ipywebrtc import CameraStream
 
@@ -221,16 +221,16 @@ def server(input: Inputs, output: Outputs, session: Session):
             }
         )
 
-    @output(name="ipyvolume")
-    @render_widget()
+    @output(id="ipyvolume")
+    @render_widget
     def _():
         from ipyvolume import quickquiver
 
         x, y, z, u, v, w = np.random.random((6, 1000)) * 2 - 1
         return quickquiver(x, y, z, u, v, w, size=5)
 
-    @output(name="pydeck")
-    @render_widget()
+    @output(id="pydeck")
+    @render_widget
     def _():
         import pydeck as pdk
 
@@ -262,8 +262,8 @@ def server(input: Inputs, output: Outputs, session: Session):
         # Combined all of it and render a viewport
         return pdk.Deck(layers=[layer], initial_view_state=view_state)
 
-    @output(name="bokeh")
-    @render_widget()
+    @output(id="bokeh")
+    @render_widget
     def _():
         from bokeh.plotting import figure
 
