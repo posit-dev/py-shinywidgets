@@ -7,7 +7,7 @@ import copy
 import inspect
 import json
 import os
-from typing import Callable, Awaitable, Sequence, Union, cast, Any
+from typing import Callable, Awaitable, Sequence, Union, cast, Any, overload
 from uuid import uuid4
 from weakref import WeakSet
 
@@ -173,7 +173,26 @@ class IPyWidgetAsync(IPyWidget, RenderFunctionAsync):
         return await self.run()
 
 
-def render_widget():
+@overload
+def render_widget(
+    fn: Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]
+) -> IPyWidget:
+    ...
+
+
+@overload
+def render_widget() -> Callable[
+    [Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]], IPyWidget
+]:
+    ...
+
+
+def render_widget(
+    fn: Optional[Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]] = None
+) -> Union[
+    IPyWidget,
+    Callable[[Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]], IPyWidget],
+]:
     def wrapper(fn: Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]) -> IPyWidget:
         if inspect.iscoroutinefunction(fn):
             fn = cast(IPyWidgetRenderFuncAsync, fn)
@@ -182,7 +201,10 @@ def render_widget():
             fn = cast(IPyWidgetRenderFunc, fn)
             return IPyWidget(fn)
 
-    return wrapper
+    if fn is None:
+        return wrapper
+    else:
+        return wrapper(fn)
 
 
 # altair/pydeck/bokeh objects aren't directly renderable as an ipywidget,
