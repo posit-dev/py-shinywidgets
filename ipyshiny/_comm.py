@@ -2,7 +2,7 @@ from base64 import b64encode
 from typing import Callable, Dict, Optional, List
 
 from shiny import get_current_session
-from shiny._utils import run_coro_sync
+from shiny._utils import run_coro_hybrid
 
 from ._serialization import json_packer
 
@@ -166,7 +166,7 @@ class ShinyComm:
         # In theory, it seems that this send could maybe be async (that we then asyncio.create_task() with),
         # but that might mean that messages are sent out of order, which is not what we want.
         def _send():
-            run_coro_sync(session.send_custom_message(msg_type, msg_txt))  # type: ignore
+            run_coro_hybrid(session.send_custom_message(msg_type, msg_txt))  # type: ignore
 
         # N.B., if we don't do this on flush, then if you initialize a widget
         # outside of a reactive context, run_coro_sync() will complain with
