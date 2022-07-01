@@ -7,27 +7,33 @@ import copy
 import inspect
 import json
 import os
-from typing import Callable, Awaitable, Sequence, Union, cast, Any, overload
+from typing import Any, Awaitable, Callable, Optional, Sequence, Union, cast, overload
 from uuid import uuid4
 from weakref import WeakSet
 
+from htmltools import Tag, TagList, css, tags
+from htmltools._util import _package_dir
+from ipywidgets._version import (
+    __protocol_version__,  # pyright: ignore[reportUnknownVariableType]
+)
+
 from ipywidgets.widgets.widget import (
     Widget,
-    _remove_buffers,
-)  # pyright: reportMissingTypeStubs=false, reportUnknownVariableType=false
-from ipywidgets._version import __protocol_version__
-
-from htmltools import tags, Tag, TagList, css
-from htmltools._util import _package_dir
-from shiny import event, reactive
-
-from shiny.http_staticfiles import StaticFiles
-from shiny.session import get_current_session, require_active_session
-from shiny.render import RenderFunction, RenderFunctionAsync
+    _remove_buffers,  # pyright: ignore[reportUnknownVariableType, reportGeneralTypeIssues]
+)
+from shiny import Session, event, reactive
 from shiny._utils import run_coro_sync, wrap_async
+from shiny.http_staticfiles import StaticFiles
+from shiny.render import RenderFunction, RenderFunctionAsync
+from shiny.session import get_current_session, require_active_session
 
-from ._dependencies import *
-from ._comm import ShinyComm, ShinyCommManager, BufferType
+from ._comm import BufferType, ShinyComm, ShinyCommManager
+from ._dependencies import (
+    libembed_dependency,
+    output_binding_dependency,
+    require_dependency,
+    widget_pkg,
+)
 
 
 def output_widget(

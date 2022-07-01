@@ -8,8 +8,11 @@ import warnings
 import tempfile
 from typing import List, Optional
 
-from ipywidgets import Widget, DOMWidget
-from ipywidgets._version import __html_manager_version__
+from ipywidgets.widgets.widget import Widget
+from ipywidgets.widgets.domwidget import DOMWidget
+from ipywidgets._version import (
+    __html_manager_version__,  # pyright: ignore[reportUnknownVariableType]
+)
 from jupyter_core.paths import jupyter_path  # type: ignore
 
 
