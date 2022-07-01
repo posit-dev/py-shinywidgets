@@ -19,10 +19,10 @@ from ipywidgets._version import __protocol_version__
 
 from htmltools import tags, Tag, TagList, css
 from htmltools._util import _package_dir
-from shiny import event, reactive, require_active_session
+from shiny import event, reactive
 
 from shiny.http_staticfiles import StaticFiles
-from shiny.session import get_current_session
+from shiny.session import get_current_session, require_active_session
 from shiny.render import RenderFunction, RenderFunctionAsync
 from shiny._utils import run_coro_sync, wrap_async
 

@@ -1,7 +1,7 @@
 from base64 import b64encode
 from typing import Callable, Dict, Optional, List
 
-from shiny import get_current_session
+from shiny.session import get_current_session
 from shiny._utils import run_coro_hybrid
 
 from ._serialization import json_packer
