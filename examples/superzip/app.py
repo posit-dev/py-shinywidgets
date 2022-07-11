@@ -1,4 +1,3 @@
-from atexit import register
 import os
 from typing import Tuple, List, Optional
 
@@ -52,7 +51,6 @@ css = open(os.path.join(app_dir, "styles.css"), "r").readlines()
 ui_map = ui.TagList(
     output_widget("map", width="100%", height="100%"),
     ui.panel_fixed(
-        ui.h2(ui.HTML("ZIP explorer<br/>(no tiles)")),
         ui.h2("SuperZIP explorer"),
         ui.input_select("variable", "Heatmap variable", vars),
         output_widget("density_score", height="200px"),
