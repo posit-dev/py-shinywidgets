@@ -1,4 +1,4 @@
-ipyshiny
+shinywidgets
 ================
 
 Render [ipywidgets](https://ipywidgets.readthedocs.io/en/stable/) inside a
@@ -7,23 +7,23 @@ Render [ipywidgets](https://ipywidgets.readthedocs.io/en/stable/) inside a
 ## Installation
 
 ```sh
-pip install ipyshiny --extra-index-url=https://pyshiny.netlify.app/pypi
+pip install shinywidgets --extra-index-url=https://pyshiny.netlify.app/pypi
 ```
 
 ## Overview
 
 Every Shiny app has two main parts: the user interface (UI) and server logic.
-`{ipyshiny}` provides `output_widget()` for defining where to place a widget in the UI
+`{shinywidgets}` provides `output_widget()` for defining where to place a widget in the UI
 and `register_widget()` (or `@render_widget`) for supplying a widget-like object to
 the `output_widget()` container. More technically, widget-like means:
 
 * Any object that subclasses `{ipywidgets}`'s `Widget` class.
 * Some other widget-like object that can be coerced into a `Widget`. Currently, we
   support objects from `{altair}`, `{bokeh}`, and `{pydeck}`, but [please let us
-  know](https://github.com/rstudio/ipyshiny/issues/new) about other packages that we
+  know](https://github.com/rstudio/shinywidgets/issues/new) about other packages that we
   should support.
 
-The recommended way to incorporate `{ipyshiny}` widgets into Shiny apps is to:
+The recommended way to incorporate `{shinywidgets}` widgets into Shiny apps is to:
 
 1. Initialize and `register_widget()` _once_ for each widget.
     * In most cases, initialization should happen when the user session starts (i.e.,
@@ -32,7 +32,7 @@ The recommended way to incorporate `{ipyshiny}` widgets into Shiny apps is to:
       until it's needed.
 2. Use Shiny's `@reactive.Effect` to reactively modify the widget whenever relevant
    reactive values change.
-3. Use `{ipyshiny}`'s `reactive_read()` to update other outputs whenever the widget changes.
+3. Use `{shinywidgets}`'s `reactive_read()` to update other outputs whenever the widget changes.
     * This way, relevant output(s) invalidate (i.e., recalculate) whenever the relevant
       widget attributes change (client-side or server-side).
 
@@ -40,7 +40,7 @@ The following app below uses `{ipyleaflet}` to demonstrate all these concepts:
 
 ```py
 from shiny import *
-from ipyshiny import output_widget, register_widget, reactive_read
+from shinywidgets import output_widget, register_widget, reactive_read
 import ipyleaflet as L
 
 app_ui = ui.page_fluid(
@@ -88,7 +88,7 @@ a fitted line on a scatterplot with lots of points:
 
 ```py
 from shiny import *
-from ipyshiny import output_widget, register_widget
+from shinywidgets import output_widget, register_widget
 import plotly.graph_objs as go
 import numpy as np
 from sklearn.linear_model import LinearRegression
@@ -152,7 +152,7 @@ be noticeable delay.
 
 ```py
 from shiny import *
-from ipyshiny import output_widget, render_widget
+from shinywidgets import output_widget, render_widget
 import ipyleaflet as L
 
 app_ui = ui.page_fluid(
@@ -204,29 +204,29 @@ w.layout.display = "none"
 Yes! In fact this a crucial aspect to how packages like `{ipyleaflet}` work. In
 `{ipyleaflet}`'s case, each [individual marker is a widget](https://ipyleaflet.readthedocs.io/en/latest/layers/circle_marker.html) which gets attached to a `Map()` via `.add_layer()`.
 
-### Does `{ipyshiny}` work with `shiny static`?
+### Does `{shinywidgets}` work with `shiny static`?
 
 Shiny's `shiny static` CLI command allows some Shiny apps to be statically served (i.e.,
 run entirely in the browser). [py-shinylive](https://github.com/rstudio/py-shinylive)
 (the Python package behind `shiny static`) does have some special support for
-`{ipyshiny}` and it's dependencies, which should make most widgets work out-of-the-box.
+`{shinywidgets}` and it's dependencies, which should make most widgets work out-of-the-box.
 
 In some cases, the package(s) that you want to use may not come pre-bundled with
-`{ipyshiny}`; and in that case, you can [include a `requirements.txt`
+`{shinywidgets}`; and in that case, you can [include a `requirements.txt`
 file](https://pyshiny.netlify.app/examples/#extra-packages) to pre-install those other
 packages
 
 ## Troubleshooting
 
-If after [installing](#installation) `{ipyshiny}`, you have trouble rendering widgets,
-first try running the "hello world" ipywidgets [example](https://github.com/rstudio/ipyshiny/blob/main/examples/ipywidgets/app.py). If that doesn't work, it could be that you have an unsupported version
+If after [installing](#installation) `{shinywidgets}`, you have trouble rendering widgets,
+first try running the "hello world" ipywidgets [example](https://github.com/rstudio/shinywidgets/blob/main/examples/ipywidgets/app.py). If that doesn't work, it could be that you have an unsupported version
 of a dependency like `{ipywidgets}` or `{shiny}`.
 
 If you can run the "hello world" example, but "3rd party" widget(s) don't work, first
 check that the extension is properly configured with `jupyter nbextension list`. Even if
 the extension is properly configured, it still may not work right away, especially if
 that widget requires initialization code in a notebook environment. In this case,
-`{ipyshiny}` probably won't work without providing the equivalent setup information to
+`{shinywidgets}` probably won't work without providing the equivalent setup information to
 Shiny. Some known cases of this are:
 
 #### bokeh
@@ -241,11 +241,11 @@ head_content(HTML(Resources(mode="inline").render()))
 #### Other widgets?
 
 Know of another widget that requires initialization code? [Please let us know about
-it](https://github.com/rstudio/ipyshiny/issues/new)!
+it](https://github.com/rstudio/shinywidgets/issues/new)!
 
 ## Development
 
-If you want to do development on `{ipyshiny}`, run:
+If you want to do development on `{shinywidgets}`, run:
 
 ```sh
 pip install -e .

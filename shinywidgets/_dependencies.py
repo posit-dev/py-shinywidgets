@@ -43,7 +43,7 @@ def libembed_dependency() -> List[HTMLDependency]:
         HTMLDependency(
             name="ipywidget-libembed-amd",
             version=as_version(__html_manager_version__),
-            source={"package": "ipyshiny", "subdir": "static"},
+            source={"package": "shinywidgets", "subdir": "static"},
             script={"src": "libembed-amd.js"},
         ),
     ]
@@ -53,7 +53,7 @@ def output_binding_dependency() -> HTMLDependency:
     return HTMLDependency(
         name="ipywidget-output-binding",
         version=__version__,
-        source={"package": "ipyshiny", "subdir": "static"},
+        source={"package": "shinywidgets", "subdir": "static"},
         script={"src": "output.js"},
     )
 
