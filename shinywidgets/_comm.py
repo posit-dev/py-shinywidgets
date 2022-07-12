@@ -61,7 +61,7 @@ class ShinyComm:
         self.comm_manager.register_comm(self)
         try:
             self._publish_msg(
-                "ipyshiny_comm_open",
+                "shinywidgets_comm_open",
                 data=data,
                 metadata=metadata,
                 buffers=buffers,
@@ -82,7 +82,7 @@ class ShinyComm:
         buffers: BufferType = None,
     ) -> None:
         self._publish_msg(
-            "ipyshiny_comm_msg", data=data, metadata=metadata, buffers=buffers
+            "shinywidgets_comm_msg", data=data, metadata=metadata, buffers=buffers
         )
 
     def close(
@@ -97,7 +97,7 @@ class ShinyComm:
         self._closed = True
         data = self._closed_data if data is None else data
         self._publish_msg(
-            "ipyshiny_comm_close", data=data, metadata=metadata, buffers=buffers
+            "shinywidgets_comm_close", data=data, metadata=metadata, buffers=buffers
         )
         if not deleting:
             # If deleting, the comm can't be unregistered

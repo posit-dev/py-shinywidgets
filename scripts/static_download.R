@@ -1,5 +1,5 @@
 
-static_dir <- file.path(getwd(), "ipyshiny", "static")
+static_dir <- file.path(getwd(), "shinywidgets", "static")
 if (!dir.exists(static_dir)) dir.create(static_dir)
 # From https://github.com/jupyter-widgets/ipywidgets/blob/fbdbd005/python/ipywidgets/ipywidgets/embed.py#L62
 # Note that we also grab libembed-amd, not embed-amd, because the Shiny bindings handle the actual rendering aspect

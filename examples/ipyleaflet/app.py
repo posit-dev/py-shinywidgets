@@ -1,5 +1,5 @@
 from shiny import *
-from ipyshiny import output_widget, register_widget, reactive_read
+from shinywidgets import output_widget, register_widget, reactive_read
 import ipyleaflet as L
 from htmltools import css
 

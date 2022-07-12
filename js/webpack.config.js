@@ -62,7 +62,7 @@ const plugins = [
   new FileManagerPlugin({
     events: {
       onEnd: {
-        copy: [{ source: outputPath + '/*', destination: '../ipyshiny/static' }]
+        copy: [{ source: outputPath + '/*', destination: '../shinywidgets/static' }]
       }
     }
   })

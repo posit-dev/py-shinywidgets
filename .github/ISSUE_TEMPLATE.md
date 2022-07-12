@@ -1,4 +1,4 @@
-* ipyshiny version:
+* shinywidgets version:
 * Python version:
 * Operating System:
 

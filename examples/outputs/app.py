@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 
 from shiny import *
-from ipyshiny import *
+from shinywidgets import *
 from htmltools import head_content, HTML
 
 # TODO: jupyter_bokeh assumes this additional JS has been loaded into the

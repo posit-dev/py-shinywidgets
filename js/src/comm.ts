@@ -32,7 +32,7 @@ export class ShinyComm {
       header: {}
     };
     const msg_txt = JSON.stringify(msg);
-    Shiny.setInputValue("ipyshiny_comm_send", msg_txt, {priority: "event"});
+    Shiny.setInputValue("shinywidgets_comm_send", msg_txt, {priority: "event"});
 
     // When client-side changes happen to the WidgetModel, this send method
     // won't get called for _every_  change (just the first one). The

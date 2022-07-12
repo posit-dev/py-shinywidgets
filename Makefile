@@ -48,9 +48,9 @@ clean-test: ## remove test and coverage artifacts
 	rm -fr .pytest_cache
 
 lint/flake8: ## check style with flake8
-	flake8 ipyshiny tests
+	flake8 shinywidgets tests
 lint/black: ## check style with black
-	black --check ipyshiny tests
+	black --check shinywidgets tests
 
 lint: lint/flake8 lint/black ## check style
 
@@ -61,15 +61,15 @@ test-all: ## run tests on every Python version with tox
 	tox
 
 coverage: ## check code coverage quickly with the default Python
-	coverage run --source ipyshiny -m pytest
+	coverage run --source shinywidgets -m pytest
 	coverage report -m
 	coverage html
 	$(BROWSER) htmlcov/index.html
 
 docs: ## generate Sphinx HTML documentation, including API docs
-	rm -f docs/ipyshiny.rst
+	rm -f docs/shinywidgets.rst
 	rm -f docs/modules.rst
-	sphinx-apidoc -o docs/ ipyshiny
+	sphinx-apidoc -o docs/ shinywidgets
 	$(MAKE) -C docs clean
 	$(MAKE) -C docs html
 	$(BROWSER) docs/_build/html/index.html

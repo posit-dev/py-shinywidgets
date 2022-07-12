@@ -4,7 +4,7 @@ from typing import Tuple, List, Optional
 from htmltools import head_content
 from shiny import *
 from shiny.types import SilentException
-from ipyshiny import *
+from shinywidgets import *
 import ipywidgets
 import ipyleaflet as leaf
 from ipyleaflet import basemaps

@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 
 from shiny import *
-from ipyshiny import output_widget, register_widget
+from shinywidgets import output_widget, register_widget
 import plotly.graph_objs as go
 
 # Generate some data and fit a linear regression

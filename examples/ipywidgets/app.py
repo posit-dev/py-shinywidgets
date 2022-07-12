@@ -1,5 +1,5 @@
 from shiny import *
-from ipyshiny import *
+from shinywidgets import *
 import ipywidgets as ipy
 from ipywidgets.widgets.widget import Widget
 
@@ -28,4 +28,4 @@ def server(input: Inputs, output: Outputs, session: Session):
         return f"The value of the slider is: {reactive_read(s, 'value')}"
 
 
-app = App(app_ui, server)
+app = App(app_ui, server, debug=True)

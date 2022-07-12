@@ -57,7 +57,7 @@ def init_shiny_widget(w: Widget):
     session = get_current_session()
     if session is None:
         raise RuntimeError(
-            "ipyshiny requires that all ipywidgets be constructed within an active Shiny session"
+            "shinywidgets requires that all ipywidgets be constructed within an active Shiny session"
         )
 
     # `Widget` has `comm = Instance('ipykernel.comm.Comm')` which means we'd get a
@@ -114,16 +114,16 @@ def init_shiny_widget(w: Widget):
     # under the publicPath set by the webpack.config.js file.
     session.app._dependency_handler.mount(
         "/dist/",
-        StaticFiles(directory=os.path.join(_package_dir("ipyshiny"), "static")),
-        name="ipyshiny-static-resources",
+        StaticFiles(directory=os.path.join(_package_dir("shinywidgets"), "static")),
+        name="shinywidgets-static-resources",
     )
 
     # Handle messages from the client. Note that widgets like qgrid send client->server messages
     # to figure out things like what filter to be shown in the table.
     @reactive.Effect
-    @event(session.input["ipyshiny_comm_send"])
+    @event(session.input["shinywidgets_comm_send"])
     def _():
-        msg_txt = session.input["ipyshiny_comm_send"]()
+        msg_txt = session.input["shinywidgets_comm_send"]()
         msg = json.loads(msg_txt)
         comm_id = msg["content"]["comm_id"]
         comm: ShinyComm = COMM_MANAGER.comms[comm_id]
@@ -329,6 +329,6 @@ def register_widget(
 #     )
 #
 # # https://ipywidgets.readthedocs.io/en/7.6.5/examples/Widget%20Low%20Level.html#Serialization-of-widget-attributes
-# @input_handlers.add("ipyshiny.ipywidget")
+# @input_handlers.add("shinywidgets.ipywidget")
 # def _(value: int, session: Session, name: str):
 #     return widget_serialization["from_json"](value, dict())

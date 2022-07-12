@@ -1,6 +1,6 @@
 --extra-index-url https://pyshiny.netlify.app/pypi/
 shiny>=0.2.0.9004
-ipyshiny
+shinywidgets
 ipywidgets
 numpy
 pandas

@@ -28,7 +28,7 @@ class OutputManager extends HTMLManager {
 const shinyRequireLoader = async function(moduleName: string, moduleVersion: string): Promise<any> {
 
   // shiny provides require.js and also sets `define.amd=false` to prevent <script>s
-  // with UMD loaders from triggering anonymous define() errors. ipyshiny should
+  // with UMD loaders from triggering anonymous define() errors. shinywidgets should
   // generally be able to avoid anonymous define errors though since there should only
   // be one 'main' anonymous define() for the widget's module (located in a JS file that
   // we've already require.config({paths: {...}})ed; and in that case, requirejs adds a
@@ -103,7 +103,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
           }
         })
       });
-    }); 
+    });
   }
 }
 
@@ -115,7 +115,7 @@ Shiny.outputBindings.register(new IPyWidgetOutput(), "shiny.IPyWidgetOutput");
 
 // Initialize the comm and model when a new widget is created
 // This is basically our version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1144-L1176
-Shiny.addCustomMessageHandler("ipyshiny_comm_open", (msg_txt) => {
+Shiny.addCustomMessageHandler("shinywidgets_comm_open", (msg_txt) => {
   setBaseURL();
   const msg = jsonParse(msg_txt);
   Shiny.renderDependencies(msg.content.html_deps);
@@ -125,7 +125,7 @@ Shiny.addCustomMessageHandler("ipyshiny_comm_open", (msg_txt) => {
 
 // Handle any mutation of the model (e.g., add a marker to a map, without a full redraw)
 // Basically out version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1200-L1215
-Shiny.addCustomMessageHandler("ipyshiny_comm_msg", (msg_txt) => {
+Shiny.addCustomMessageHandler("shinywidgets_comm_msg", (msg_txt) => {
   const msg = jsonParse(msg_txt);
   manager.get_model(msg.content.comm_id).then(m => {
     // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
@@ -134,7 +134,7 @@ Shiny.addCustomMessageHandler("ipyshiny_comm_msg", (msg_txt) => {
 });
 
 // TODO: test that this actually works
-Shiny.addCustomMessageHandler("ipyshiny_comm_close", (msg_txt) => {
+Shiny.addCustomMessageHandler("shinywidgets_comm_close", (msg_txt) => {
   const msg = jsonParse(msg_txt);
   manager.get_model(msg.content.comm_id).then(m => {
     // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
