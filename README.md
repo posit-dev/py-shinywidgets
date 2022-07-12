@@ -20,7 +20,7 @@ the `output_widget()` container. More technically, widget-like means:
 * Any object that subclasses `{ipywidgets}`'s `Widget` class.
 * Some other widget-like object that can be coerced into a `Widget`. Currently, we
   support objects from `{altair}`, `{bokeh}`, and `{pydeck}`, but [please let us
-  know](https://github.com/rstudio/shinywidgets/issues/new) about other packages that we
+  know](https://github.com/rstudio/py-shinywidgets/issues/new) about other packages that we
   should support.
 
 The recommended way to incorporate `{shinywidgets}` widgets into Shiny apps is to:
@@ -219,7 +219,7 @@ packages
 ## Troubleshooting
 
 If after [installing](#installation) `{shinywidgets}`, you have trouble rendering widgets,
-first try running the "hello world" ipywidgets [example](https://github.com/rstudio/shinywidgets/blob/main/examples/ipywidgets/app.py). If that doesn't work, it could be that you have an unsupported version
+first try running the "hello world" ipywidgets [example](https://github.com/rstudio/py-shinywidgets/blob/main/examples/ipywidgets/app.py). If that doesn't work, it could be that you have an unsupported version
 of a dependency like `{ipywidgets}` or `{shiny}`.
 
 If you can run the "hello world" example, but "3rd party" widget(s) don't work, first
@@ -241,7 +241,7 @@ head_content(HTML(Resources(mode="inline").render()))
 #### Other widgets?
 
 Know of another widget that requires initialization code? [Please let us know about
-it](https://github.com/rstudio/shinywidgets/issues/new)!
+it](https://github.com/rstudio/py-shinywidgets/issues/new)!
 
 ## Development
 
