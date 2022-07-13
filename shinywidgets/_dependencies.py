@@ -99,7 +99,7 @@ def require_dependency(w: Widget, session: Session) -> Optional[HTMLDependency]:
     dep = HTMLDependency(module_name, version, source=source)
     # Get the location where the dependency files will be mounted by the shiny app
     # and use that to inform the requirejs import path
-    href = dep.source_path_map(lib_prefix=session.app.LIB_PREFIX)["href"]
+    href = dep.source_path_map(lib_prefix=session.app.lib_prefix)["href"]
     config = {"paths": {module_name: os.path.join(href, "index")}}
     # Basically our equivalent of the extension.js file provided by the cookiecutter
     # https://github.com/jupyter-widgets/widget-cookiecutter/blob/master/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js
