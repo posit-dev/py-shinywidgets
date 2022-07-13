@@ -197,7 +197,7 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     # When the variable changes, either update marker colors or redraw the heatmap
     @reactive.Effect
-    @event(input.variable)
+    @reactive.event(input.variable)
     def _():
         zips = zips_in_bounds()
         if not show_markers():
@@ -213,7 +213,7 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     # When bounds change, maybe add new markers
     @reactive.Effect
-    @event(lambda: zips_in_bounds())
+    @reactive.event(lambda: zips_in_bounds())
     def _():
         if not show_markers():
             return
@@ -233,7 +233,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     # Change from heatmap to markers: remove the heatmap and show markers
     # Change from markers to heatmap: hide the markers and add the heatmap
     @reactive.Effect
-    @event(show_markers)
+    @reactive.event(show_markers)
     def _():
         if show_markers():
             map.remove_layer(layer_heatmap())
@@ -419,7 +419,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     # but I _think_ this'll get fixed in the next release of ipywidgets/ipyleaflet
     # https://github.com/jupyter-widgets/ipywidgets/issues/3384
     @reactive.Effect
-    @event(selected_table_row)
+    @reactive.event(selected_table_row)
     def _():
         for x in table_map.layers:
             if x.name.startswith("marker"):
