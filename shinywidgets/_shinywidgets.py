@@ -235,9 +235,7 @@ def _as_widget(x: object) -> Widget:
         try:
             from pydeck.widget import DeckGLWidget
 
-            x_ = x.to_json()  # type: ignore
-            x = DeckGLWidget()
-            x.json_input = x_
+            x = x.deck_widget
         except Exception as e:
             raise RuntimeError(f"Failed to coerce {x} into a DeckGLWidget: {e}")
 
