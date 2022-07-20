@@ -26,6 +26,7 @@ from shiny._utils import run_coro_sync, wrap_async
 from shiny.http_staticfiles import StaticFiles
 from shiny.render import RenderFunction, RenderFunctionAsync
 from shiny.session import get_current_session, require_active_session
+from shiny.module import resolve_id
 
 from ._comm import BufferType, ShinyComm, ShinyCommManager
 from ._dependencies import (
@@ -39,6 +40,7 @@ from ._dependencies import (
 def output_widget(
     id: str, *, width: Optional[str] = None, height: Optional[str] = None
 ) -> Tag:
+    id = resolve_id(id)
     return tags.div(
         *libembed_dependency(),
         output_binding_dependency(),
