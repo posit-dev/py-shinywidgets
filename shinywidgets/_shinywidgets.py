@@ -61,6 +61,10 @@ def init_shiny_widget(w: Widget):
         raise RuntimeError(
             "shinywidgets requires that all ipywidgets be constructed within an active Shiny session"
         )
+    # Break out of any module-specific session. Otherwise, input.shinywidgets_comm_send
+    # will be some module-specific copy.
+    while hasattr(session, "_parent"):
+        session = session._parent
 
     # `Widget` has `comm = Instance('ipykernel.comm.Comm')` which means we'd get a
     # runtime error if we try to set this attribute to a different class, but
@@ -123,9 +127,9 @@ def init_shiny_widget(w: Widget):
     # Handle messages from the client. Note that widgets like qgrid send client->server messages
     # to figure out things like what filter to be shown in the table.
     @reactive.Effect
-    @reactive.event(session.input["shinywidgets_comm_send"])
+    @reactive.event(session.input.shinywidgets_comm_send)
     def _():
-        msg_txt = session.input["shinywidgets_comm_send"]()
+        msg_txt = session.input.shinywidgets_comm_send()
         msg = json.loads(msg_txt)
         comm_id = msg["content"]["comm_id"]
         comm: ShinyComm = COMM_MANAGER.comms[comm_id]
