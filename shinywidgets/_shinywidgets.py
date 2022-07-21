@@ -26,6 +26,7 @@ from shiny._utils import run_coro_sync, wrap_async
 from shiny.http_staticfiles import StaticFiles
 from shiny.render import RenderFunction, RenderFunctionAsync
 from shiny.session import get_current_session, require_active_session
+from shiny.module import resolve_id
 
 from ._comm import BufferType, ShinyComm, ShinyCommManager
 from ._dependencies import (
@@ -39,6 +40,7 @@ from ._dependencies import (
 def output_widget(
     id: str, *, width: Optional[str] = None, height: Optional[str] = None
 ) -> Tag:
+    id = resolve_id(id)
     return tags.div(
         *libembed_dependency(),
         output_binding_dependency(),
@@ -59,6 +61,10 @@ def init_shiny_widget(w: Widget):
         raise RuntimeError(
             "shinywidgets requires that all ipywidgets be constructed within an active Shiny session"
         )
+    # Break out of any module-specific session. Otherwise, input.shinywidgets_comm_send
+    # will be some module-specific copy.
+    while hasattr(session, "_parent"):
+        session = session._parent
 
     # `Widget` has `comm = Instance('ipykernel.comm.Comm')` which means we'd get a
     # runtime error if we try to set this attribute to a different class, but
@@ -121,9 +127,9 @@ def init_shiny_widget(w: Widget):
     # Handle messages from the client. Note that widgets like qgrid send client->server messages
     # to figure out things like what filter to be shown in the table.
     @reactive.Effect
-    @reactive.event(session.input["shinywidgets_comm_send"])
+    @reactive.event(session.input.shinywidgets_comm_send)
     def _():
-        msg_txt = session.input["shinywidgets_comm_send"]()
+        msg_txt = session.input.shinywidgets_comm_send()
         msg = json.loads(msg_txt)
         comm_id = msg["content"]["comm_id"]
         comm: ShinyComm = COMM_MANAGER.comms[comm_id]
