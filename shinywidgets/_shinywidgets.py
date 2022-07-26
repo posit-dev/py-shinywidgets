@@ -241,7 +241,7 @@ def _as_widget(x: object) -> Widget:
         try:
             from pydeck.widget import DeckGLWidget
 
-            x = x.deck_widget
+            x = x.show()
         except Exception as e:
             raise RuntimeError(f"Failed to coerce {x} into a DeckGLWidget: {e}")
 
