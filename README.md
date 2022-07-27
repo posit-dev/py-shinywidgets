@@ -2,7 +2,7 @@ shinywidgets
 ================
 
 Render [ipywidgets](https://ipywidgets.readthedocs.io/en/stable/) inside a
-[Shiny](https://pyshiny.netlify.app/) app.
+[Shiny](https://shiny.rstudio.com/py) app.
 
 ## Installation
 
@@ -213,7 +213,7 @@ run entirely in the browser). [py-shinylive](https://github.com/rstudio/py-shiny
 
 In some cases, the package(s) that you want to use may not come pre-bundled with
 `{shinywidgets}`; and in that case, you can [include a `requirements.txt`
-file](https://pyshiny.netlify.app/examples/#extra-packages) to pre-install those other
+file](https://shinylive.io/py/examples/#extra-packages) to pre-install those other
 packages
 
 ## Troubleshooting
