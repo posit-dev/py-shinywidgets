@@ -7,7 +7,7 @@ Render [ipywidgets](https://ipywidgets.readthedocs.io/en/stable/) inside a
 ## Installation
 
 ```sh
-pip install shinywidgets --extra-index-url=https://pyshiny.netlify.app/pypi
+pip install shinywidgets
 ```
 
 ## Overview
