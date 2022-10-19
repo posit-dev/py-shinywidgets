@@ -204,12 +204,12 @@ w.layout.display = "none"
 Yes! In fact this a crucial aspect to how packages like `{ipyleaflet}` work. In
 `{ipyleaflet}`'s case, each [individual marker is a widget](https://ipyleaflet.readthedocs.io/en/latest/layers/circle_marker.html) which gets attached to a `Map()` via `.add_layer()`.
 
-### Does `{shinywidgets}` work with `shiny static`?
+### Does `{shinywidgets}` work with Shinylive?
 
-Shiny's `shiny static` CLI command allows some Shiny apps to be statically served (i.e.,
-run entirely in the browser). [py-shinylive](https://github.com/rstudio/py-shinylive)
-(the Python package behind `shiny static`) does have some special support for
-`{shinywidgets}` and it's dependencies, which should make most widgets work out-of-the-box.
+Shinylive allows some Shiny apps to be statically served (i.e., run entirely in the
+browser). [py-shinylive](https://github.com/rstudio/py-shinylive) does have some special
+support for `{shinywidgets}` and it's dependencies, which should make most widgets work
+out-of-the-box.
 
 In some cases, the package(s) that you want to use may not come pre-bundled with
 `{shinywidgets}`; and in that case, you can [include a `requirements.txt`
