@@ -45,7 +45,7 @@ def output_widget(
         *libembed_dependency(),
         output_binding_dependency(),
         id=id,
-        class_="shiny-ipywidget-output",
+        class_="shiny-ipywidget-output shiny-report-size shiny-report-theme",
         style=css(width=width, height=height),
     )
 
