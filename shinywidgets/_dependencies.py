@@ -42,7 +42,7 @@ def libembed_dependency() -> List[HTMLDependency]:
         # stuff we need to render widgets outside of the notebook.
         HTMLDependency(
             name="ipywidget-libembed-amd",
-            version=as_version(__html_manager_version__),
+            version=parse_version_safely(__html_manager_version__),
             source={"package": "shinywidgets", "subdir": "static"},
             script={"src": "libembed-amd.js"},
         ),
@@ -93,7 +93,7 @@ def require_dependency(w: Widget, session: Session) -> Optional[HTMLDependency]:
             )
             return None
 
-    version = as_version(getattr(w, "_model_module_version", "1.0"))
+    version = parse_version_safely(getattr(w, "_model_module_version", "1.0"))
     source = HTMLDependencySource(subdir=module_dir)
 
     dep = HTMLDependency(module_name, version, source=source)
@@ -156,5 +156,21 @@ def widget_pkg(w: object) -> str:
     return w.__module__.split(".")[0]
 
 
-def as_version(v: str) -> str:
-    return re.sub("\\D*", "", str(packaging.version.parse(v)))
+def parse_version(v: str) -> str:
+    # version could be in node-semver format
+    # which is not compatible with packaging.version.parse
+    # so we strip out the leading non-numeric characters
+    # e.g., ^1.2.3 -> 1.2.3
+    ver = re.sub("^\\D+", "", v)
+    return str(packaging.version.parse(ver))
+
+
+# parsing can fail if the version is something like "*",
+# but it doesn't seem vital that we obtain the _actual_ version
+# since this only gets the version of the HTMLManager and module
+# dependencies, which should be unique within a given session
+def parse_version_safely(v: str) -> str:
+    try:
+        return parse_version(v)
+    except Exception:
+        return "0.0"
