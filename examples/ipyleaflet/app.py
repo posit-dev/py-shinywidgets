@@ -36,6 +36,7 @@ def server(input, output, session):
     @render.text
     def map_bounds():
         b = reactive_read(map, "bounds")
+        req(b)
         lat = [b[0][0], b[0][1]]
         lon = [b[1][0], b[1][1]]
         return f"The current latitude is {lat} and longitude is {lon}"
