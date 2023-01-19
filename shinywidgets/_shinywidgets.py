@@ -4,15 +4,16 @@ from __future__ import annotations
 __all__ = ("output_widget", "register_widget", "render_widget", "reactive_read")
 
 import copy
+import importlib
 import inspect
 import json
 import os
+import tempfile
 from typing import Any, Awaitable, Callable, Optional, Sequence, Union, cast, overload
 from uuid import uuid4
 from weakref import WeakSet
 
 from htmltools import Tag, TagList, css, tags
-from htmltools._util import _package_dir
 from ipywidgets._version import (
     __protocol_version__,  # pyright: ignore[reportUnknownVariableType]
 )
@@ -307,6 +308,15 @@ def register_widget(
         return w
 
     return w
+
+
+# similar to base::system.file()
+def _package_dir(package: str) -> str:
+    with tempfile.TemporaryDirectory():
+        pkg_file = importlib.import_module(".", package=package).__file__
+        if pkg_file is None:
+            raise ImportError(f"Couldn't load package {package}")
+        return os.path.dirname(pkg_file)
 
 
 # It doesn't, at the moment, seem feasible to establish a comm with statically rendered widgets,
