@@ -248,6 +248,6 @@ it](https://github.com/rstudio/py-shinywidgets/issues/new)!
 If you want to do development on `{shinywidgets}`, run:
 
 ```sh
-pip install -e .
+pip install -e ".[dev,test]"
 cd js && yarn watch
 ```
