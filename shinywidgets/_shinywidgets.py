@@ -21,7 +21,7 @@ from ipywidgets.widgets.widget import (
     _remove_buffers,  # pyright: ignore[reportUnknownVariableType, reportGeneralTypeIssues]
 )
 from ipywidgets.widgets.widget import Widget
-from shiny import Session, event, reactive
+from shiny import Session, reactive
 from shiny._utils import run_coro_sync, wrap_async
 from shiny.http_staticfiles import StaticFiles
 from shiny.module import resolve_id
@@ -64,7 +64,7 @@ def init_shiny_widget(w: Widget):
     # Break out of any module-specific session. Otherwise, input.shinywidgets_comm_send
     # will be some module-specific copy.
     while hasattr(session, "_parent"):
-        session = session._parent
+        session = cast(Session, session._parent)
 
     # `Widget` has `comm = Instance('ipykernel.comm.Comm')` which means we'd get a
     # runtime error if we try to set this attribute to a different class, but
@@ -280,7 +280,7 @@ def reactive_depend(
     Reactively read a Widget's trait(s)
     """
 
-    ctx = reactive.get_current_context()
+    ctx = reactive.get_current_context()  # pyright: ignore[reportPrivateImportUsage]
 
     def invalidate(change: object):
         ctx.invalidate()

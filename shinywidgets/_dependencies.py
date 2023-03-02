@@ -88,7 +88,8 @@ def require_dependency(w: Widget, session: Session) -> Optional[HTMLDependency]:
         if module_dir is None:
             warnings.warn(
                 f"Failed to discover JavaScript dependencies for {type(w)}."
-                + " Make sure it is installed as a jupyter notebook extension."
+                + " Make sure it is installed as a jupyter notebook extension.",
+                stacklevel=2,
             )
             return None
 
