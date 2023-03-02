@@ -85,11 +85,11 @@ def init_shiny_widget(w: Widget):
     # By the time we get here, the user has already had an opportunity to specify a model_id,
     # so it isn't yet populated, generate a random one so we can assign the same id to the comm
     if getattr(w, "_model_id", None) is None:
-        setattr(w, "_model_id", uuid4().hex)
+        w._model_id = uuid4().hex
 
     # Initialize the comm...this will also send the initial state of the widget
     w.comm = ShinyComm(
-        comm_id=getattr(w, "_model_id"),
+        comm_id=w._model_id,
         comm_manager=COMM_MANAGER,
         target_name="jupyter.widgets",
         data={"state": state, "buffer_paths": buffer_paths},
@@ -239,8 +239,6 @@ def _as_widget(x: object) -> Widget:
 
     elif pkg == "pydeck" and not isinstance(x, Widget):
         try:
-            from pydeck.widget import DeckGLWidget
-
             x = x.show()
         except Exception as e:
             raise RuntimeError(f"Failed to coerce {x} into a DeckGLWidget: {e}")

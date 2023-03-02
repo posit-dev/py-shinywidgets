@@ -1,11 +1,11 @@
 import warnings
 
-import pandas as pd
 import numpy as np
-
+import pandas as pd
+from htmltools import HTML, head_content
 from shiny import *
+
 from shinywidgets import *
-from htmltools import head_content, HTML
 
 # TODO: jupyter_bokeh assumes this additional JS has been loaded into the
 # (in a notebook, this comes in via bokeh.io.output_notebook()).
@@ -18,7 +18,7 @@ try:
 
     bokeh_dependency = head_content(HTML(Resources(mode="inline").render()))
 except ImportError:
-    warnings.warn("Could not import bokeh")
+    warnings.warn("Could not import bokeh", stacklevel=2)
 
 
 app_ui = ui.page_fluid(
@@ -149,7 +149,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output(id="bqplot")
     @render_widget
     def _():
-        from bqplot import OrdinalScale, LinearScale, Bars, Lines, Axis, Figure
+        from bqplot import Axis, Bars, Figure, LinearScale, Lines, OrdinalScale
 
         size = 20
         x_data = np.arange(size)

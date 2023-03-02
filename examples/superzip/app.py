@@ -1,21 +1,23 @@
 import os
-from typing import Tuple, List, Optional
+from typing import List, Optional, Tuple
 
+import ipyleaflet as leaf
+import ipywidgets
+import matplotlib as mpl
+import numpy as np
+import pandas as pd
+import plotly.figure_factory as ff
+import plotly.graph_objs as go
 from htmltools import head_content
+from ipyleaflet import basemaps
+from matplotlib import cm
 from shiny import *
 from shiny.types import SilentException
+
 from shinywidgets import *
-import ipywidgets
-import ipyleaflet as leaf
-from ipyleaflet import basemaps
-import plotly.graph_objs as go
-import plotly.figure_factory as ff
-import pandas as pd
-import numpy as np
-import matplotlib as mpl
-from matplotlib import cm
 
 color_palette = cm.get_cmap("viridis", 10)
+
 
 # TODO: how to handle nas (pd.isna)?
 def col_numeric(domain: Tuple[float, float], na_color: str = "#808080"):
@@ -108,7 +110,6 @@ def density_plot(
     title: Optional[str] = None,
     showlegend: bool = False,
 ):
-
     dat = [overall[var], in_bounds[var]]
     if var == "Population":
         dat = [np.log10(x) for x in dat]
@@ -142,7 +143,7 @@ def density_plot(
         ),
     )
     # hovermode itsn't working properly when dynamically, absolutely positioned
-    for i, trace in enumerate(fig.data):
+    for _, trace in enumerate(fig.data):
         trace.update(hoverinfo="none")
 
     if selected is not None:
@@ -180,7 +181,6 @@ def create_map(**kwargs):
 
 
 def server(input: Inputs, output: Outputs, session: Session):
-
     # ------------------------------------------------------------------------
     # Main map logic
     # ------------------------------------------------------------------------
