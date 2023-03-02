@@ -87,3 +87,13 @@ dist: clean ## builds source and wheel package
 
 install: clean ## install the package to the active Python's site-packages
 	python setup.py install
+
+pyright: ## type check with pyright
+	pyright --pythonversion=3.7
+	pyright --pythonversion=3.11
+
+check: pyright lint ## check code quality with pyright, flake8, black and isort
+	echo "Checking code with black."
+	black --check .
+	echo "Sorting imports with isort."
+	isort --check-only --diff .
