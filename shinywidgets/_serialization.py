@@ -1,10 +1,12 @@
-from binascii import b2a_base64
-from datetime import datetime
-from dateutil.tz import tzlocal
 import json
 import numbers
-from typing import Iterable
 import warnings
+from binascii import b2a_base64
+from datetime import datetime
+from typing import Iterable
+
+from dateutil.tz import tzlocal
+
 
 # Same as `from jupyter_client.session import json_packer` (i.e., Jupyter's
 # default JSON serializer), except this returns a string not bytes, and doesn't

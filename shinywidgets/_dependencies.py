@@ -1,26 +1,25 @@
 import importlib
 import json
 import os
-import packaging.version
 import re
-from types import ModuleType
-import warnings
 import tempfile
+import warnings
+from types import ModuleType
 from typing import List, Optional
 
-from ipywidgets.widgets.widget import Widget
-from ipywidgets.widgets.domwidget import DOMWidget
+import packaging.version
+from htmltools import HTMLDependency, tags
+from htmltools._core import HTMLDependencySource
 from ipywidgets._version import (
     __html_manager_version__,  # pyright: ignore[reportUnknownVariableType]
 )
+from ipywidgets.widgets.domwidget import DOMWidget
+from ipywidgets.widgets.widget import Widget
 from jupyter_core.paths import jupyter_path  # type: ignore
-
-
-from htmltools import HTMLDependency, tags
-from htmltools._core import HTMLDependencySource
 from shiny import Session
 
 from . import __version__
+
 
 # TODO: scripts/static_download.R should produce/update these
 def libembed_dependency() -> List[HTMLDependency]:

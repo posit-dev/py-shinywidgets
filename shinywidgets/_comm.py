@@ -1,8 +1,8 @@
 from base64 import b64encode
-from typing import Callable, Dict, Optional, List
+from typing import Callable, Dict, List, Optional
 
-from shiny.session import get_current_session
 from shiny._utils import run_coro_hybrid
+from shiny.session import get_current_session
 
 from ._serialization import json_packer
 
@@ -23,6 +23,7 @@ MsgCallback = Callable[[Dict[str, object]], None]
 DataType = Optional[Dict[str, object]]
 MetadataType = Optional[Dict[str, object]]
 BufferType = Optional[List[bytes]]
+
 
 # Compare to `ipykernel.comm.Comm` (uses the Shiny session instead of a Kernel to send/receive messages).
 # Also note that `ipywidgets.widgets.Widget` is responsible to calling these methods when need be.

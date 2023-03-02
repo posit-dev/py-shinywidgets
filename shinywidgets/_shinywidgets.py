@@ -17,17 +17,16 @@ from htmltools import Tag, TagList, css, tags
 from ipywidgets._version import (
     __protocol_version__,  # pyright: ignore[reportUnknownVariableType]
 )
-
 from ipywidgets.widgets.widget import (
-    Widget,
     _remove_buffers,  # pyright: ignore[reportUnknownVariableType, reportGeneralTypeIssues]
 )
+from ipywidgets.widgets.widget import Widget
 from shiny import Session, event, reactive
 from shiny._utils import run_coro_sync, wrap_async
 from shiny.http_staticfiles import StaticFiles
+from shiny.module import resolve_id
 from shiny.render import RenderFunction, RenderFunctionAsync
 from shiny.session import get_current_session, require_active_session
-from shiny.module import resolve_id
 
 from ._comm import BufferType, ShinyComm, ShinyCommManager
 from ._dependencies import (
@@ -194,9 +193,9 @@ def render_widget(
 
 
 @overload
-def render_widget() -> Callable[
-    [Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]], IPyWidget
-]:
+def render_widget() -> (
+    Callable[[Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]], IPyWidget]
+):
     ...
 
 
@@ -311,7 +310,7 @@ def register_widget(
 
 
 # similar to base::system.file()
-def _package_dir(package: str) -> str:
+def package_dir(package: str) -> str:
     with tempfile.TemporaryDirectory():
         pkg_file = importlib.import_module(".", package=package).__file__
         if pkg_file is None:
