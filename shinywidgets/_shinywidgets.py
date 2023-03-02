@@ -120,7 +120,7 @@ def init_shiny_widget(w: Widget):
     # under the publicPath set by the webpack.config.js file.
     session.app._dependency_handler.mount(
         "/dist/",
-        StaticFiles(directory=os.path.join(_package_dir("shinywidgets"), "static")),
+        StaticFiles(directory=os.path.join(package_dir("shinywidgets"), "static")),
         name="shinywidgets-static-resources",
     )
 
