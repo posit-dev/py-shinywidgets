@@ -34,7 +34,9 @@ def json_default(obj: object) -> object:
         return b2a_base64(obj).decode("ascii")
 
     if isinstance(obj, Iterable):
-        return list(obj)
+        return list(
+            obj  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+        )
 
     if isinstance(obj, numbers.Integral):
         return int(obj)
