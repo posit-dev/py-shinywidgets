@@ -18,8 +18,6 @@ from ipywidgets.widgets.widget import Widget
 from jupyter_core.paths import jupyter_path  # type: ignore
 from shiny import Session
 
-from . import __version__
-
 
 # TODO: scripts/static_download.R should produce/update these
 def libembed_dependency() -> List[HTMLDependency]:
@@ -49,6 +47,8 @@ def libembed_dependency() -> List[HTMLDependency]:
 
 
 def output_binding_dependency() -> HTMLDependency:
+    from ._version import __version__
+
     return HTMLDependency(
         name="ipywidget-output-binding",
         version=__version__,
