@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED]
 
+* Stopped use of `_package_dir` function from `htmltools`.
+
+* Miscellaneous typing fixes and updates.
 
 ## [0.1.4] - 2022-12-12
 
