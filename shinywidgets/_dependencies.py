@@ -18,7 +18,7 @@ from ipywidgets.widgets.widget import Widget
 from jupyter_core.paths import jupyter_path  # type: ignore
 from shiny import Session
 
-from ._version import __version__
+from . import __version__
 
 
 # TODO: scripts/static_download.R should produce/update these
