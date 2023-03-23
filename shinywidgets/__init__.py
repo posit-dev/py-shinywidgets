@@ -2,7 +2,7 @@
 
 __author__ = """Carson Sievert"""
 __email__ = "carson@rstudio.com"
-__version__ = "0.1.5"
+__version__ = "0.1.5.9000"
 
 from ._shinywidgets import output_widget, reactive_read, register_widget, render_widget
 
