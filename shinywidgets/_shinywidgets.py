@@ -21,8 +21,6 @@ from ipywidgets.widgets.widget import (
     _remove_buffers,  # pyright: ignore[reportUnknownVariableType, reportGeneralTypeIssues]
 )
 from ipywidgets.widgets.widget import Widget
-import traitlets
-
 from shiny import Session, reactive
 from shiny._utils import run_coro_sync, wrap_async
 from shiny.http_staticfiles import StaticFiles
@@ -75,7 +73,7 @@ def init_shiny_widget(w: Widget):
     # changed comm from an Instance() to Any().
     # https://github.com/jupyter-widgets/ipywidgets/pull/3533/files#diff-522bb5e7695975cba0199c6a3d6df5be827035f4dc18ed6da22ac216b5615c77R482
     old_comm_klass = None
-    if isinstance(Widget.comm, traitlets.traitlets.Instance):  # type: ignore
+    if is_instance_of_class(Widget.comm, "Instance", "traitlets.traitlets"):  # type: ignore
         old_comm_klass = copy.copy(Widget.comm.klass)  # type: ignore
         Widget.comm.klass = object  # type: ignore
 
@@ -320,6 +318,17 @@ def package_dir(package: str) -> str:
         if pkg_file is None:
             raise ImportError(f"Couldn't load package {package}")
         return os.path.dirname(pkg_file)
+
+
+def is_instance_of_class(
+    x: object, class_name: str, module_name: Optional[str] = None
+) -> bool:
+    typ = type(x)
+    res = typ.__name__ == class_name
+    if module_name is None:
+        return res
+    else:
+        return res and typ.__module__ == module_name
 
 
 # It doesn't, at the moment, seem feasible to establish a comm with statically rendered widgets,
