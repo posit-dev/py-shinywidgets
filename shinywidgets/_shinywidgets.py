@@ -66,13 +66,16 @@ def init_shiny_widget(w: Widget):
     while hasattr(session, "_parent"):
         session = cast(Session, session._parent)
 
-    # `Widget` has `comm = Instance('ipykernel.comm.Comm')` which means we'd get a
-    # runtime error if we try to set this attribute to a different class, but
-    # fortunately this hack provides a workaround.
-    # TODO: find a better way to do this (maybe send a PR to ipywidgets?) or at least clean up after ourselves
-    # https://github.com/jupyter-widgets/ipywidgets/blob/88cec8b/python/ipywidgets/ipywidgets/widgets/widget.py#L424
-    old_comm_klass = copy.copy(Widget.comm.klass)  # type: ignore
-    Widget.comm.klass = object  # type: ignore
+    # Previous versions of ipywidgets (< 8.0.5) had
+    #   `Widget.comm = Instance('ipykernel.comm.Comm')`
+    # which meant we'd get a runtime error when setting `Widget.comm = ShinyComm()`.
+    # In more recent versions, this is no longer necessary since they've (correctly)
+    # changed comm from an Instance() to Any().
+    # https://github.com/jupyter-widgets/ipywidgets/pull/3533/files#diff-522bb5e7695975cba0199c6a3d6df5be827035f4dc18ed6da22ac216b5615c77R482
+    old_comm_klass = None
+    if is_instance_of_class(Widget.comm, "Instance", "traitlets.traitlets"):  # type: ignore
+        old_comm_klass = copy.copy(Widget.comm.klass)  # type: ignore
+        Widget.comm.klass = object  # type: ignore
 
     # Get the initial state of the widget
     state, buffer_paths, buffers = _remove_buffers(w.get_state())  # type: ignore
@@ -136,7 +139,8 @@ def init_shiny_widget(w: Widget):
         comm.handle_msg(msg)
 
     def _restore_state():
-        Widget.comm.klass = old_comm_klass  # type: ignore
+        if old_comm_klass is not None:
+            Widget.comm.klass = old_comm_klass  # type: ignore
         SESSIONS.remove(session)  # type: ignore
 
     session.on_ended(_restore_state)
@@ -314,6 +318,17 @@ def package_dir(package: str) -> str:
         if pkg_file is None:
             raise ImportError(f"Couldn't load package {package}")
         return os.path.dirname(pkg_file)
+
+
+def is_instance_of_class(
+    x: object, class_name: str, module_name: Optional[str] = None
+) -> bool:
+    typ = type(x)
+    res = typ.__name__ == class_name
+    if module_name is None:
+        return res
+    else:
+        return res and typ.__module__ == module_name
 
 
 # It doesn't, at the moment, seem feasible to establish a comm with statically rendered widgets,
