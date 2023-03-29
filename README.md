@@ -235,8 +235,14 @@ To use `{bokeh}` in notebook, you have to run `bokeh.io.output_notebook()`. The
 equivalent thing in Shiny is to include the following in the UI definition:
 
 ```py
-from bokeh.resources import Resources
-head_content(HTML(Resources(mode="inline").render()))
+from shiny import ui
+from shinywidgets import bokeh_dependencies
+
+app_ui = ui.page_fluid(
+    bokeh_dependencies(),
+    # ...
+)
+```
 ```
 #### Other widgets?
 
