@@ -1,13 +1,7 @@
 from __future__ import annotations
 
 # TODO: export _as_widget()?
-__all__ = (
-    "output_widget",
-    "output_widget_bokeh",
-    "register_widget",
-    "render_widget",
-    "reactive_read",
-)
+__all__ = ("output_widget", "register_widget", "render_widget", "reactive_read")
 
 import copy
 import importlib
@@ -33,7 +27,6 @@ from shiny.http_staticfiles import StaticFiles
 from shiny.module import resolve_id
 from shiny.render import RenderFunction, RenderFunctionAsync
 from shiny.session import get_current_session, require_active_session
-from shiny.ui import HTML, head_content
 
 from ._comm import BufferType, ShinyComm, ShinyCommManager
 from ._dependencies import (
@@ -55,18 +48,6 @@ def output_widget(
         class_="shiny-ipywidget-output shiny-report-size shiny-report-theme",
         style=css(width=width, height=height),
     )
-
-
-def output_widget_bokeh(
-    id: str, *, width: Optional[str] = None, height: Optional[str] = None
-) -> Tag:
-    from bokeh.resources import Resources
-
-    bokeh_dependency = head_content(HTML(Resources(mode="inline").render()))
-
-    res = output_widget(id, width=width, height=height)
-    res.insert(0, bokeh_dependency)
-    return res
 
 
 # --------------------------------------------------------------------------------------------

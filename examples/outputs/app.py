@@ -5,6 +5,7 @@ from shiny import *
 from shinywidgets import *
 
 app_ui = ui.page_fluid(
+    bokeh_dependency(),
     ui.layout_sidebar(
         ui.panel_sidebar(
             ui.input_radio_buttons(
@@ -38,11 +39,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output(id="figure")
     @render.ui
     def _():
-        x = input.framework()
-        if x == "bokeh":
-            return output_widget_bokeh(x)
-        else:
-            return output_widget(x)
+        return output_widget(input.framework())
 
     @output(id="ipyleaflet")
     @render_widget
