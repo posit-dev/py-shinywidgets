@@ -1,28 +1,11 @@
-import warnings
-
 import numpy as np
 import pandas as pd
-from htmltools import HTML, head_content
 from shiny import *
 
 from shinywidgets import *
 
-# TODO: jupyter_bokeh assumes this additional JS has been loaded into the
-# (in a notebook, this comes in via bokeh.io.output_notebook()).
-# We could probably insert this on widget construction, just before the comm
-# gets initialized (it's not currently working due to run_coro_sync() not working
-# when session._send_message() wants to send a big payload).
-bokeh_dependency = None
-try:
-    from bokeh.resources import Resources
-
-    bokeh_dependency = head_content(HTML(Resources(mode="inline").render()))
-except ImportError:
-    warnings.warn("Could not import bokeh", stacklevel=2)
-
-
 app_ui = ui.page_fluid(
-    bokeh_dependency,
+    bokeh_dependency(),
     ui.layout_sidebar(
         ui.panel_sidebar(
             ui.input_radio_buttons(
