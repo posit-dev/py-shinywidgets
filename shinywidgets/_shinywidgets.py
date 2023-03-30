@@ -258,6 +258,22 @@ def _as_widget(x: object) -> Widget:
             )
         except Exception as e:
             raise RuntimeError(f"Failed to coerce {x} into a BokehModel: {e}")
+    elif pkg == "plotly" and not isinstance(x, Widget):
+        try:
+            from plotly.graph_objects import Figure, FigureWidget
+
+            if isinstance(x, FigureWidget):
+                pass
+            elif isinstance(x, Figure):
+                x = FigureWidget(x.data, x.layout)
+            else:
+                raise TypeError(
+                    f"{x} is not a plotly.graph_objects.Figure or FigureWidget"
+                )
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to coerce {x} into a plotly.graph_objects.FigureWidget: {e}"
+            )
 
     if isinstance(x, Widget):
         return x
