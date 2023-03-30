@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-# TODO: export _as_widget()?
-__all__ = ("output_widget", "register_widget", "render_widget", "reactive_read")
+__all__ = (
+    "output_widget",
+    "register_widget",
+    "render_widget",
+    "reactive_read",
+    "as_widget",
+)
 
 import copy
 import importlib
@@ -28,12 +33,12 @@ from shiny.module import resolve_id
 from shiny.render import RenderFunction, RenderFunctionAsync
 from shiny.session import get_current_session, require_active_session
 
+from ._as_widget import as_widget
 from ._comm import BufferType, ShinyComm, ShinyCommManager
 from ._dependencies import (
     libembed_dependency,
     output_binding_dependency,
     require_dependency,
-    widget_pkg,
 )
 
 
@@ -175,7 +180,7 @@ class IPyWidget(RenderFunction[Widget, object]):
         x = await self._fn()
         if x is None:
             return None
-        widget = _as_widget(x)
+        widget = as_widget(x)
         return {"model_id": widget.model_id}  # type: ignore
 
 
@@ -223,64 +228,6 @@ def render_widget(
         return wrapper(fn)
 
 
-# altair/pydeck/bokeh objects aren't directly renderable as an ipywidget,
-# but we can coerce them into one
-def _as_widget(x: object) -> Widget:
-    pkg = widget_pkg(x)
-    if pkg == "altair" and not isinstance(x, Widget):
-        try:
-            import altair
-            from vega.widget import VegaWidget
-
-            x = cast(altair.Chart, x)
-            x = VegaWidget(x.to_dict())  # type: ignore
-        except ImportError:
-            raise ImportError(
-                "To render altair charts, the ipyvega package must be installed."
-            )
-        except Exception as e:
-            raise RuntimeError(f"Failed to coerce {x} into a VegaWidget: {e}")
-
-    elif pkg == "pydeck" and not isinstance(x, Widget):
-        try:
-            x = x.show()
-        except Exception as e:
-            raise RuntimeError(f"Failed to coerce {x} into a DeckGLWidget: {e}")
-
-    elif pkg == "bokeh" and not isinstance(x, Widget):
-        try:
-            from jupyter_bokeh import BokehModel
-
-            x = BokehModel(x)  # type: ignore
-        except ImportError:
-            raise ImportError(
-                "To render bokeh charts, the jupyter_bokeh package must be installed."
-            )
-        except Exception as e:
-            raise RuntimeError(f"Failed to coerce {x} into a BokehModel: {e}")
-    elif pkg == "plotly" and not isinstance(x, Widget):
-        try:
-            from plotly.graph_objects import Figure, FigureWidget
-
-            if isinstance(x, FigureWidget):
-                pass
-            elif isinstance(x, Figure):
-                x = FigureWidget(x.data, x.layout)
-            else:
-                raise TypeError(
-                    f"{x} is not a plotly.graph_objects.Figure or FigureWidget"
-                )
-        except Exception as e:
-            raise RuntimeError(
-                f"Failed to coerce {x} into a plotly.graph_objects.FigureWidget: {e}"
-            )
-
-    if isinstance(x, Widget):
-        return x
-    else:
-        raise TypeError(f"{x} is not a coerce-able to a ipywidget.Widget object")
-
-
 def reactive_read(widget: Widget, names: Union[str, Sequence[str]]) -> Any:
     reactive_depend(widget, names)
     if isinstance(names, str):
@@ -317,7 +264,7 @@ def register_widget(
     if session is None:
         session = require_active_session(session)
 
-    w = _as_widget(widget)
+    w = as_widget(widget)
 
     @session.output(id=id)
     @render_widget

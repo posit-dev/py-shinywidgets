@@ -113,7 +113,7 @@ def require_dependency(w: Widget, session: Session) -> Optional[HTMLDependency]:
 
 
 def bokeh_dependency() -> HTMLDependency:
-    from bokeh.resources import Resources 
+    from bokeh.resources import Resources
 
     resources = Resources(mode="inline").render()
     return ui.head_content(ui.HTML(resources))
