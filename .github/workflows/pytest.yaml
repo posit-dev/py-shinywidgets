@@ -32,6 +32,10 @@ jobs:
         run: |
           pip install https://github.com/rstudio/py-htmltools/tarball/main
 
+      - name: Install dev version of shiny
+        run: |
+          pip install https://github.com/rstudio/py-shiny/tarball/main
+
       - name: Install dependencies
         run: |
           pip install -e ".[dev,test]"
