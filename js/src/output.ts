@@ -116,10 +116,7 @@ Shiny.outputBindings.register(new IPyWidgetOutput(), "shiny.IPyWidgetOutput");
 // dependencies don't come in until after initial page load). And, in the dynamic UI
 // case, UI is rendered asychronously via Shiny.shinyapp.taskQueue, so if it exists,
 // we probably need to re-bind the DOM after the taskQueue is done.
-const app = Shiny.shinyapp || {};
-// taskQueue was renamed from actionQueue in py-shiny 0.2.10.9001
-// @ts-ignore
-const taskQueue = app.taskQueue ? app.taskQueue : app.actionQueue;
+const taskQueue = Shiny?.shinyapp?.taskQueue;
 if (taskQueue) {
   taskQueue.enqueue(() => Shiny.bindAll(document.body));
 }
