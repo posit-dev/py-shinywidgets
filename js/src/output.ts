@@ -109,18 +109,20 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
 
 Shiny.outputBindings.register(new IPyWidgetOutput(), "shiny.IPyWidgetOutput");
 
-// Current PyShiny has actionQueue, but not (yet) taskQueue.
-// TODO: Remove this when PyShiny has taskQueue
-// @ts-ignore
-const taskQueue = Shiny.shinyapp.taskQueue ? Shiny.shinyapp.taskQueue : Shiny.shinyapp.actionQueue;
 
 // Due to the way HTMLManager (and widget implementations) get loaded (via
-// require.js), the binding registration above may happen _after_ Shiny has
-// already bound the DOM.
+// require.js), the binding registration above can happen _after_ Shiny has
+// already bound the DOM, especially in the dynamic UI case (i.e., output_binding()'s
+// dependencies don't come in until after initial page load). And, in the dynamic UI
+// case, UI is rendered asychronously via Shiny.shinyapp.taskQueue, so if it exists,
+// we probably need to re-bind the DOM after the taskQueue is done.
+const app = Shiny.shinyapp || {};
+// taskQueue was renamed from actionQueue in py-shiny 0.2.10.9001
+// @ts-ignore
+const taskQueue = app.taskQueue ? app.taskQueue : app.actionQueue;
 if (taskQueue) {
   taskQueue.enqueue(() => Shiny.bindAll(document.body));
 }
-
 
 /******************************************************************************
 * Handle messages from the server-side Widget
