@@ -109,6 +109,13 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
 
 Shiny.outputBindings.register(new IPyWidgetOutput(), "shiny.IPyWidgetOutput");
 
+// Due to the way HTMLManager (and widget implementations) get loaded (via
+// require.js), the binding registration above may happen _after_ Shiny has
+// already bound the DOM.
+Shiny.shinyapp.actionQueue.enqueue(() => {
+  Shiny.bindAll(document.body);
+});
+
 /******************************************************************************
 * Handle messages from the server-side Widget
 ******************************************************************************/
