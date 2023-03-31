@@ -1,5 +1,5 @@
 {
-  "name": "@jupyter-widgets/prism-embed-manager",
+  "name": "@jupyter-widgets/shiny-embed-manager",
   "version": "0.1.0",
   "private": true,
   "description": "Shiny input/output bindings for ipywidgets",
@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@jupyter-widgets/html-manager": "^0.20.1",
-    "@types/rstudio-shiny": "https://github.com/rstudio/shiny#v1.7.0",
+    "@types/rstudio-shiny": "https://github.com/rstudio/shiny#main",
     "base64-arraybuffer": "^1.0.2",
     "font-awesome": "^4.7.0"
   },
