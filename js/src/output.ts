@@ -4,26 +4,6 @@ import { jsonParse } from './utils';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
 
-/******************************************************************************
- * Define a custom HTMLManager for use with Shiny
- ******************************************************************************/
-
-class OutputManager extends HTMLManager {
-  // In a soon-to-be-released version of @jupyter-widgets/html-manager,
-  // display_view()'s first "dummy" argument will be removed... this shim simply
-  // makes it so that our manager can work with either version
-  // https://github.com/jupyter-widgets/ipywidgets/commit/159bbe4#diff-45c126b24c3c43d2cee5313364805c025e911c4721d45ff8a68356a215bfb6c8R42-R43
-  async display_view(view: any, options: { el: HTMLElement; }): Promise<any> {
-    const n_args = super.display_view.length
-    if (n_args === 3) {
-      return super.display_view({}, view, options)
-    } else {
-      // @ts-ignore
-      return super.display_view(view, options)
-    }
-  }
-}
-
 // Define our own custom module loader for Shiny
 const shinyRequireLoader = async function(moduleName: string, moduleVersion: string): Promise<any> {
 
@@ -59,7 +39,7 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
   });
 }
 
-const manager = new OutputManager({ loader: shinyRequireLoader });
+const manager = new HTMLManager({ loader: shinyRequireLoader });
 
 
 /******************************************************************************
@@ -93,9 +73,9 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     }
 
     model.then((m) => {
-      const view = manager.create_view(m, {});
+      const view = manager.create_view(m, { el });
       view.then(v => {
-        manager.display_view(v, {el: el}).then(() => {
+        manager.display_view(v, el).then(() => {
           // TODO: It would be better to .close() the widget here, but
           // I'm not sure how to do that yet (at least client-side)
           while (el.childNodes.length > 1) {
