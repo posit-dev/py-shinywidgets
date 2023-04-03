@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [UNRELEASED]
 
 * Closed #14: Added a `bokeh_dependency()` function to simplify use of bokeh widgets. (#85)
+* Closed #89: Exported the `as_widget()` function to attempt coercion of objects into ipywidgets. Internally, `{shinywidgets}` uses it to implictly coerce objects into ipywidgets, but it can be also useful to explicitly coerce objects before passing to `register_widget()` (so that the ipywidget can then be updated in-place and/or used as a reactive value (`reactive_read()`)). (#90)
 
 ## [0.1.6] - 2023-03-24
 
