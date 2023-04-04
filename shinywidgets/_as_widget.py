@@ -58,6 +58,7 @@ def as_widget_bokeh(x: object) -> Optional[Widget]:
 
 
 def as_widget_plotly(x: object) -> Optional[Widget]:
+    # Don't need a try import here since this won't be called unless x is a plotly object
     import plotly.graph_objects as go
 
     if not isinstance(x, go.Figure):
