@@ -13,7 +13,7 @@ from typing import Any, Awaitable, Callable, Optional, Sequence, Union, cast, ov
 from uuid import uuid4
 from weakref import WeakSet
 
-from htmltools import Tag, TagList, css, tags
+from htmltools import Tag, TagList, css, head_content, tags
 from ipywidgets._version import (
     __protocol_version__,  # pyright: ignore[reportUnknownVariableType]
 )
@@ -36,6 +36,16 @@ from ._dependencies import (
     widget_pkg,
 )
 
+# Make it easier to customize the CDN fallback (and make it CDN-only)
+# https://ipywidgets.readthedocs.io/en/7.6.3/embedding.html#python-interface
+# https://github.com/jupyter-widgets/ipywidgets/blob/6f6156c7/packages/html-manager/src/libembed-amd.ts#L6-L14
+SHINYWIDGETS_CDN = os.getenv("SHINYWIDGETS_CDN", "https://cdn.jsdelivr.net/npm/")
+SHINYWIDGETS_CDN_ONLY = os.getenv("SHINYWIDGETS_CDN_ONLY", "false").lower() == "true"
+# Should shinywidgets warn if unable to find a local path to a widget extension?
+SHINYWIDGETS_EXTENSION_WARNING = (
+    os.getenv("SHINYWIDGETS_EXTENSION_WARNING", "false").lower() == "true"
+)
+
 
 def output_widget(
     id: str, *, width: Optional[str] = None, height: Optional[str] = None
@@ -44,6 +54,12 @@ def output_widget(
     return tags.div(
         *libembed_dependency(),
         output_binding_dependency(),
+        head_content(
+            tags.script(
+                data_jupyter_widgets_cdn=SHINYWIDGETS_CDN,
+                data_jupyter_widgets_cdn_only=SHINYWIDGETS_CDN_ONLY,
+            )
+        ),
         id=id,
         class_="shiny-ipywidget-output shiny-report-size shiny-report-theme",
         style=css(width=width, height=height),
@@ -83,7 +99,10 @@ def init_shiny_widget(w: Widget):
     # Make sure window.require() calls made by 3rd party widgets
     # (via handle_comm_open() -> new_model() -> loadClass() -> requireLoader())
     # actually point to directories served locally by shiny
-    widget_dep = require_dependency(w, session)
+    if SHINYWIDGETS_CDN_ONLY:
+        widget_dep = None
+    else:
+        widget_dep = require_dependency(w, session, SHINYWIDGETS_EXTENSION_WARNING)
 
     # By the time we get here, the user has already had an opportunity to specify a model_id,
     # so it isn't yet populated, generate a random one so we can assign the same id to the comm
@@ -108,11 +127,13 @@ def init_shiny_widget(w: Widget):
     # be doing on load in js/src/output.ts)
     # https://github.com/jupyter-widgets/widget-cookiecutter/blob/9694718/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js#L8
     if widget_dep and widget_dep.source:
-        session.app._dependency_handler.mount(
-            f"/nbextensions/{widget_dep.name}",
-            StaticFiles(directory=widget_dep.source["subdir"]),
-            name=f"{widget_dep.name}-nbextension-static-resources",
-        )
+        src_dir = widget_dep.source.get("subdir", "")
+        if src_dir:
+            session.app._dependency_handler.mount(
+                f"/nbextensions/{widget_dep.name}",
+                StaticFiles(directory=src_dir),
+                name=f"{widget_dep.name}-nbextension-static-resources",
+            )
 
     # everything after this point should be done once per session
     if session in SESSIONS:
