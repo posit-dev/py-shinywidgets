@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Closed #94: New `SHINYWIDGETS_CDN` and `SHINYWIDGETS_CDN_ONLY` environment variables were added to more easily specify the CDN provider. Also, the default provider has changed from <unpkg.com> to <cdn.jsdelivr.net/npm> (#95)
 * A warning is no longer issued (by default) when the path to a local widget extension is not found. This is because, if an internet connection is available, the widget assests are still loaded via CDN. To restore the previous behavior, set the `SHINYWIDGETS_EXTENSION_WARNING` environment variable to `"true"`. (#95)
 * Closed #14: Added a `bokeh_dependency()` function to simplify use of bokeh widgets. (#85)
+* Closed #89: Exported the `as_widget()` function to attempt coercion of objects into ipywidgets. Internally, `{shinywidgets}` uses it to implictly coerce objects into ipywidgets, but it can be also useful to explicitly coerce objects before passing to `register_widget()` (so that the ipywidget can then be updated in-place and/or used as a reactive value (`reactive_read()`)). (#90)
 
 ## [0.1.6] - 2023-03-24
 
