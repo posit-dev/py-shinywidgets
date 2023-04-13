@@ -1,66 +1,4 @@
-class Throttler {
-  fnToCall: Function;
-  wait: number;
-  timeoutId: ReturnType<typeof setTimeout>;
-  get isWaiting(): boolean {
-    return this.timeoutId !== null;
-  }
-  constructor(wait: number = 100) {
-    if (wait < 0) throw new Error("wait must be a positive number");
-    this.wait = wait;
-    this._reset();
-  }
-  _reset() {
-    this.fnToCall = null;
-    clearTimeout(this.timeoutId);
-    this.timeoutId = null;
-  }
-  _setTimeout() {
-    this.timeoutId = setTimeout(() => {
-      if (this.fnToCall) {
-        // console.log("Timeout!", Date.now());
-
-        // Call the function
-        this.fnToCall();
-        this.fnToCall = null;
-        // Restart the timeout as we just called the function
-        // This call is the key step of Throttler
-        this._setTimeout();
-      } else {
-        // console.log("Empty!", Date.now());
-
-        // Nothing was done, so reset
-        this._reset();
-      }
-    }, this.wait);
-  }
-  // Execute the function immediately and reset the timeout
-  // This is useful when the timeout is waiting and we want to
-  // execute the function immediately to not have events be out
-  // of order
-  flush() {
-    // console.log("Flush!", Date.now());
-
-    if (this.fnToCall) this.fnToCall();
-    this._reset();
-  }
-  // Try to execute the function immediately, if it is not waiting
-  // If it is waiting, update the function to be called
-  throttle(fn: Function) {
-    if (!this.isWaiting) {
-      // console.log("Call!", Date.now());
-
-      // If there is nothing waiting, call it immediately
-      // and start the throttling
-      fn();
-      this._setTimeout();
-    } else {
-      // If the timeout is currently waiting, update the func to be called
-      this.fnToCall = fn;
-    }
-  }
-
-}
+import { Throttler } from "./utils";
 
 // This class is a striped down version of Comm from @jupyter-widgets/base
 // https://github.com/jupyter-widgets/ipywidgets/blob/88cec8/packages/base/src/services-shim.ts#L192-L335
@@ -70,8 +8,11 @@ export class ShinyComm {
 
   // It seems like we'll want one comm per model
   comm_id: string;
+  throttler: Throttler;
   constructor(model_id: string) {
     this.comm_id = model_id;
+    // TODO: make this configurable (see comments in send() below)?
+    this.throttler = new Throttler(100);
   }
 
   // This might not be needed
@@ -81,8 +22,6 @@ export class ShinyComm {
 
   _msg_callback;
   _close_callback;
-  // Throttle mousemove events to every 100ms
-  _mouse_move_throttler = new Throttler(100);
 
   send(
     data: any,
@@ -100,23 +39,26 @@ export class ShinyComm {
 
     const msg_txt = JSON.stringify(msg);
 
-    // Ex `data` value:
-    // {"method": "custom","content": {    "event": "interaction",    "type": "mousemove",    "coordinates": [        -17.76259815404015,        12.096729340756617    ]}}
-    if (
+    // Since ipyleaflet can send mousemove events very quickly when hovering over the map,
+    // we throttle them to ensure that the server doesn't get overwhelmed. Said events
+    // generate a payload that looks like this:
+    // {"method": "custom", "content": {"event": "interaction", "type": "mousemove", "coordinates": [-17.76259815404015, 12.096729340756617]}}
+    //
+    // TODO: This is definitely not ideal. It would be better to have a way to specify/
+    // customize throttle rates instead of having such a targetted fix for ipyleaflet.
+    const is_mousemove =
       data.method === "custom" &&
       data.content.event === "interaction" &&
-      data.content.type === "mousemove"
-    ) {
-      // mousemove events only
-      this._mouse_move_throttler.throttle(() => {
+      data.content.type === "mousemove";
+
+    if (is_mousemove) {
+      this.throttler.throttle(() => {
         Shiny.setInputValue("shinywidgets_comm_send", msg_txt, {priority: "event"});
-      })
+      });
     } else {
-      // Mouse over, mouse out, click, etc. (Anything other than `"mousemove"`)
-      this._mouse_move_throttler.flush()
+      this.throttler.flush();
       Shiny.setInputValue("shinywidgets_comm_send", msg_txt, {priority: "event"});
     }
-
 
     // When client-side changes happen to the WidgetModel, this send method
     // won't get called for _every_  change (just the first one). The
@@ -126,7 +68,8 @@ export class ShinyComm {
     // https://github.com/jupyter-widgets/ipywidgets/blob/88cec8b/packages/base/src/widget.ts#L550-L557
     if (callbacks && callbacks.iopub && callbacks.iopub.status) {
       setTimeout(() => {
-        // TODO-future: this doesn't seem quite right. Maybe listen to the shiny-busy flag?
+        // TODO-future: it doesn't seem quite right to report that shiny is always idle.
+        // Maybe listen to the shiny-busy flag?
         // const state = document.querySelector("html").classList.contains("shiny-busy") ? "busy" : "idle";
         const msg = {content: {execution_state: "idle"}};
         callbacks.iopub.status(msg);
