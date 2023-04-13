@@ -110,3 +110,5 @@ js/node_modules
 typings/
 sandbox/
 Untitled*.ipynb
+
+rsconnect-python/
