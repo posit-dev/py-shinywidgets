@@ -23,7 +23,8 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     register_widget("slider", s)
 
-    @reactive.Effect
+    @output(id="value")
+    @reactive.text
     def _():
         return f"The value of the slider is: {reactive_read(s, 'value')}"
 
