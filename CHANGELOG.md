@@ -5,7 +5,11 @@ All notable changes to shinywidgets will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.1]
+## [UNRELEASED]
+
+* Closed #104: Officially support for Python 3.7.
+
+## [0.2.1] - 2023-05-15
 
 * Actually export `as_widget()` (it was mistakenly not exported in 0.2.0).
 
