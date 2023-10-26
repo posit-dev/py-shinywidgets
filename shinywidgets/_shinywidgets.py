@@ -31,6 +31,12 @@ from shiny._utils import run_coro_sync, wrap_async
 from shiny.http_staticfiles import StaticFiles
 from shiny.module import resolve_id
 from shiny.render import RenderFunction, RenderFunctionAsync
+from shiny.render.transformer import (
+    TransformerMetadata,
+    ValueFn,
+    output_transformer,
+    resolve_value_fn,
+)
 from shiny.session import get_current_session, require_active_session
 
 from ._as_widget import as_widget
@@ -182,71 +188,35 @@ COMM_MANAGER = ShinyCommManager()
 
 # --------------------------------------------------------------------------------------------
 # Implement @render_widget()
-# TODO: shiny should probably make this simpler
 # --------------------------------------------------------------------------------------------
 
-IPyWidgetRenderFunc = Callable[[], Widget]
-IPyWidgetRenderFuncAsync = Callable[[], Awaitable[Widget]]
 
-
-class IPyWidget(RenderFunction[Widget, object]):
-    def __init__(self, fn: IPyWidgetRenderFunc) -> None:
-        super().__init__(fn)
-        self._fn: IPyWidgetRenderFuncAsync = wrap_async(fn)
-
-    def __call__(self) -> object:
-        return run_coro_sync(self.run())
-
-    async def run(self) -> object:
-        x = await self._fn()
-        if x is None:
-            return None
-        widget = as_widget(x)
-        return {"model_id": widget.model_id}  # type: ignore
-
-
-class IPyWidgetAsync(IPyWidget, RenderFunctionAsync[Widget, object]):
-    def __init__(self, fn: IPyWidgetRenderFuncAsync) -> None:
-        if not inspect.iscoroutinefunction(fn):
-            raise TypeError("IPyWidgetAsync requires an async function")
-        super().__init__(cast(IPyWidgetRenderFunc, fn))
-
-    async def __call__(self) -> object:
-        return await self.run()
+@output_transformer(default_ui=output_widget)
+async def WidgetTransformer(
+    _meta: TransformerMetadata,
+    _fn: ValueFn[object | None],
+) -> dict[str, Any] | None:
+    value = await resolve_value_fn(_fn)
+    if value is None:
+        return None
+    widget = as_widget(value)
+    return {"model_id": widget.model_id}  # type: ignore
 
 
 @overload
-def render_widget(
-    fn: Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]
-) -> IPyWidget:
+def render_widget(fn: WidgetTransformer.ValueFn) -> WidgetTransformer.OutputRenderer:
     ...
 
 
 @overload
-def render_widget() -> (
-    Callable[[Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]], IPyWidget]
-):
+def render_widget() -> WidgetTransformer.OutputRendererDecorator:
     ...
 
 
 def render_widget(
-    fn: Optional[Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]] = None
-) -> Union[
-    IPyWidget,
-    Callable[[Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]], IPyWidget],
-]:
-    def wrapper(fn: Union[IPyWidgetRenderFunc, IPyWidgetRenderFuncAsync]) -> IPyWidget:
-        if inspect.iscoroutinefunction(fn):
-            fn = cast(IPyWidgetRenderFuncAsync, fn)
-            return IPyWidgetAsync(fn)
-        else:
-            fn = cast(IPyWidgetRenderFunc, fn)
-            return IPyWidget(fn)
-
-    if fn is None:
-        return wrapper
-    else:
-        return wrapper(fn)
+    fn: WidgetTransformer.ValueFn | None = None,
+) -> WidgetTransformer.OutputRenderer | WidgetTransformer.OutputRendererDecorator:
+    return WidgetTransformer(fn)
 
 
 def reactive_read(widget: Widget, names: Union[str, Sequence[str]]) -> Any:
