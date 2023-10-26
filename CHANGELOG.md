@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED]
 
+* Moved `@render_widget` to output_transformer infrastructure, and as a result, it works more seamlessly in `shiny.express` mode. (#110)
 * Closed #104: Officially support for Python 3.7.
 
 ## [0.2.1] - 2023-05-15
