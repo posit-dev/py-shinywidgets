@@ -41,7 +41,7 @@ def libembed_dependency() -> List[HTMLDependency]:
         # stuff we need to render widgets outside of the notebook.
         HTMLDependency(
             name="ipywidget-libembed-amd",
-            version=parse_version_safely(__html_manager_version__),
+            version="1.0.7",
             source={"package": "shinywidgets", "subdir": "static"},
             script={"src": "libembed-amd.js"},
         ),
