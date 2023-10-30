@@ -2,7 +2,7 @@
 
 __author__ = """Carson Sievert"""
 __email__ = "carson@rstudio.com"
-__version__ = "0.2.1.9000"
+__version__ = "0.2.2"
 
 from ._dependencies import bokeh_dependency
 from ._shinywidgets import output_widget, reactive_read, register_widget, render_widget, as_widget
