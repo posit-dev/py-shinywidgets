@@ -31,19 +31,13 @@ def as_widget(x: object) -> Widget:
 
 def as_widget_altair(x: object) -> Optional[Widget]:
     try:
-        from vega.widget import VegaWidget
+        from altair import JupyterChart
     except ImportError:
-        raise ImportError("Install the vega package to use altair with shinywidgets.")
-
-    if not hasattr(x, "to_dict"):
-        raise TypeError(
-            f"Don't know how to coerce {x} (an altair object) into an ipywidget without a .to_dict() method."
+        raise RuntimeError(
+            "Failed to import altair.JupyterChart (do you need to pip install -U altair?)"
         )
 
-    try:
-        return VegaWidget(x.to_dict())  # type: ignore
-    except Exception as e:
-        raise RuntimeError(f"Failed to coerce {x} into a VegaWidget: {e}")
+    return JupyterChart(x)  # type: ignore
 
 
 def as_widget_bokeh(x: object) -> Optional[Widget]:

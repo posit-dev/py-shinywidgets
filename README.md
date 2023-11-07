@@ -18,18 +18,19 @@ See the [using ipywidgets section](https://shiny.rstudio.com/py/docs/ipywidgets.
 
 ### What ipywidgets are supported?
 
-In theory, shinywidgets supports any instance that inherits from `{ipywidgets}`' `Widget` class.
+In theory, shinywidgets supports any instance that inherits from `{ipywidgets}`' `Widget` class. That is, if `isinstance(obj, ipywidgets.widgets.Widget)` returns `True` for some object `obj`, then `{shinywidgets}` should be able to render it.
 
-That said, `{shinywidgets}` can also "directly" render objects that don't inherit from `Widget`, but have a known way of coercing into a `Widget` instance. This list currently includes:
+`{shinywidgets}` can also render objects that don't inherit from `Widget`, but have a known way of coercing into a `Widget` instance. This list currently includes:
 
-* Altair charts (via the [vega](https://pypi.org/project/vega/) package).
-* Bokeh widgets (via the [jupyter_bokeh](https://github.com/bokeh/jupyter_bokeh) package).
-* Plotly's `Figure` class (via `FigureWidget`).
+* Altair charts (i.e., `altair.Chart()` instances).
+* Plotly figures (i.e., `plotly.go.Figure()`)
 * Pydeck's `Deck` class (via it's `.show()` method).
+* Bokeh widgets (via the [jupyter_bokeh](https://github.com/bokeh/jupyter_bokeh) package).
+  * Bokeh widgets are a bit of a special case, as they require some extra setup to work in Shiny. See the [Bokeh widgets aren't displaying, what gives?](#bokeh-widgets-arent-displaying-what-gives) section below for more details.
 
-[See here](https://github.com/rstudio/py-shinywidgets/blob/main/shinywidgets/_as_widget.py) for more details on how these objects are coerced into `Widget` instances, and if you know of other packages that should be added to this list, please [let us know](https://github.com/rstudio/py-shinywidgets/issues/new)
+[See here](https://github.com/rstudio/py-shinywidgets/blob/main/shinywidgets/_as_widget.py) for more details on how these objects are coerced into `Widget` instances, and if you know of other packages that should be added to this list, please [let us know](https://github.com/rstudio/py-shinywidgets/issues/new).
 
-### Bokeh widgets aren't displaying, what gives?
+### Bokeh setup
 
 Similar to how you have to run `bokeh.io.output_notebook()` to run `{bokeh}` in notebook, you also have to explicitly bring the JS/CSS dependencies to the Shiny app, which can be done this way:
 
@@ -94,26 +95,6 @@ that widget requires initialization code in a notebook environment. In this case
 `{shinywidgets}` probably won't work without providing the equivalent setup information to
 Shiny. Some known cases of this are:
 
-#### bokeh
-
-To use `{bokeh}` in notebook, you have to run `bokeh.io.output_notebook()`. The
-equivalent thing in Shiny is to include the following in the UI definition:
-
-```py
-from shiny import ui
-from shinywidgets import bokeh_dependencies
-
-app_ui = ui.page_fluid(
-    bokeh_dependencies(),
-    # ...
-)
-```
-
-
-#### Other widgets?
-
-Know of another widget that requires initialization code? [Please let us know about
-it](https://github.com/rstudio/py-shinywidgets/issues/new)!
 
 ## Development
 
