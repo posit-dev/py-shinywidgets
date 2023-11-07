@@ -54,6 +54,7 @@ def output_binding_dependency() -> HTMLDependency:
         version=__version__,
         source={"package": "shinywidgets", "subdir": "static"},
         script={"src": "output.js"},
+        stylesheet={"href": "shinywidgets.css"},
     )
 
 

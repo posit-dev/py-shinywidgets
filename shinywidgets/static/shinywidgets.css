@@ -1,0 +1,25 @@
+/*
+  The child of this container, .lmWidget also does this, so seems harmless
+  to add (and yields better, more pixel-perfect results)
+*/
+.shiny-ipywidget-output {
+  overflow: hidden;
+}
+
+/*
+  For most/all ipywidgets, we can set these defaults via the Layout() API,
+  but go.FigureWidget().layout points to plotly.js' layout, and I'm not
+  sure how to get at the ipywidget's layout object from there.
+*/
+.plotly.plot-container {
+  height: 400px;
+  width: 100%;
+}
+
+/*
+* Our fill.css ends up overriding this rule from bqplot...
+* https://github.com/bqplot/bqplot/blob/c186fcd/js/less/bqplot.less#L170
+*/
+.bqplot > svg {
+  flex-grow: 1 !important;
+}

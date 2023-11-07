@@ -21,10 +21,10 @@ from htmltools import Tag, TagList, css, head_content, tags
 from ipywidgets._version import (
     __protocol_version__,  # pyright: ignore[reportUnknownVariableType]
 )
+from ipywidgets.widgets import DOMWidget, Layout, Widget
 from ipywidgets.widgets.widget import (
     _remove_buffers,  # pyright: ignore[reportUnknownVariableType, reportGeneralTypeIssues]
 )
-from ipywidgets.widgets.widget import Widget
 from shiny import Session, reactive
 from shiny.http_staticfiles import StaticFiles
 from shiny.module import resolve_id
@@ -42,6 +42,7 @@ from ._dependencies import (
     libembed_dependency,
     output_binding_dependency,
     require_dependency,
+    widget_pkg,
 )
 
 # Make it easier to customize the CDN fallback (and make it CDN-only)
@@ -59,6 +60,14 @@ def output_widget(
     id: str, *, width: Optional[str] = None, height: Optional[str] = None
 ) -> Tag:
     id = resolve_id(id)
+
+    cls = "shiny-ipywidget-output shiny-report-size shiny-report-theme"
+
+    # We may eventually want to make this configurable (i.e., fill=True),
+    # but for now, we'll always make the output container a fill carrier...
+    if True:
+        cls += " html-fill-container html-fill-item"
+
     return tags.div(
         *libembed_dependency(),
         output_binding_dependency(),
@@ -69,7 +78,7 @@ def output_widget(
             )
         ),
         id=id,
-        class_="shiny-ipywidget-output shiny-report-size shiny-report-theme",
+        class_=cls,
         style=css(width=width, height=height),
     )
 
@@ -197,6 +206,8 @@ async def WidgetTransformer(
     if value is None:
         return None
     widget = as_widget(value)
+    # TODO: should this be done in as_widget()?
+    widget = set_layout_defaults(widget)
     return {"model_id": widget.model_id}  # type: ignore
 
 
@@ -261,6 +272,36 @@ def register_widget(
 
     return w
 
+
+def set_layout_defaults(widget: Widget) -> Widget:
+    if not isinstance(widget, DOMWidget):
+        return widget
+
+    layout = widget.layout         # type: ignore
+
+    # Give the ipywidget Layout() width/height defaults that are more sensible for
+    # filling layout https://ipywidgets.readthedocs.io/en/stable/examples/Widget%20Layout.html
+    if isinstance(layout, Layout):
+        if layout.width is None:   # type: ignore
+            layout.width = "100%"
+        if layout.height is None:  # type: ignore
+            layout.height = "400px"
+
+    widget.layout = layout
+
+    # Some packages (e.g., altair) aren't setup to fill their parent container by
+    # default. I can't imagine a situation where you'd actually want it to _not_ fill
+    # the parent container since it'll be contained within the Layout() container, which
+    # has a full-fledged sizing API.
+    pkg = widget_pkg(widget)
+    if pkg == "altair":
+        from altair import JupyterChart
+
+        # Since as_widget() has already happened, we only need to handle JupyterChart
+        if isinstance(widget, JupyterChart):
+            widget.chart = widget.chart.properties(width="container", height="container")  # type: ignore
+
+    return widget
 
 # similar to base::system.file()
 def package_dir(package: str) -> str:

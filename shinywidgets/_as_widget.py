@@ -48,6 +48,13 @@ def as_widget_bokeh(x: object) -> Optional[Widget]:
             "Install the jupyter_bokeh package to use bokeh with shinywidgets."
         )
 
+    # TODO: ideally we'd do this in set_layout_defaults() but doing
+    # `BokehModel(x)._model.sizing_mode = "stretch_both"`
+    # there, but that doesn't seem to work??
+    from bokeh.plotting import figure
+    if isinstance(x, figure):
+        x.sizing_mode = "stretch_both"
+
     return BokehModel(x)  # type: ignore
 
 
