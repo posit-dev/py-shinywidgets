@@ -10,11 +10,10 @@ __all__ = (
 
 import copy
 import importlib
-import inspect
 import json
 import os
 import tempfile
-from typing import Any, Awaitable, Callable, Optional, Sequence, Union, cast, overload
+from typing import Any, Optional, Sequence, Union, cast, overload
 from uuid import uuid4
 from weakref import WeakSet
 
@@ -27,10 +26,8 @@ from ipywidgets.widgets.widget import (
 )
 from ipywidgets.widgets.widget import Widget
 from shiny import Session, reactive
-from shiny._utils import run_coro_sync, wrap_async
 from shiny.http_staticfiles import StaticFiles
 from shiny.module import resolve_id
-from shiny.render import RenderFunction, RenderFunctionAsync
 from shiny.render.transformer import (
     TransformerMetadata,
     ValueFn,
