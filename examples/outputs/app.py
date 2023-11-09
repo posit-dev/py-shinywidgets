@@ -26,8 +26,7 @@ app_ui = ui.page_sidebar(
         )
     ),
     bokeh_dependency(),
-    # TODO: send shiny a PR to fix this
-    ui.output_ui("figure", fill=True, class_="html-fill-container"),
+    ui.output_ui("figure", fill=True, fillable=True),
     title="Hello Jupyter Widgets in Shiny for Python",
 )
 

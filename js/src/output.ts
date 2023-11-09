@@ -75,7 +75,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     Shiny.unbindAll(el);
     this.renderError(el, err);
   }
-  renderValue(el: HTMLElement, data): void {
+  async renderValue(el: HTMLElement, data): Promise<void> {
 
     // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
     if (!data) {
@@ -87,45 +87,40 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
 
     // At this time point, we should've already handled an 'open' message, and so
     // the model should be ready to use
-    const model = manager.get_model(data.model_id);
+    const model = await manager.get_model(data.model_id);
     if (!model) {
       throw new Error(`No model found for id ${data.model_id}`);
     }
 
-    model.then((m) => {
-      const view = manager.create_view(m, {});
-      view.then(v => {
-        manager.display_view(v, {el: el}).then(() => {
-          // Don't allow more than one .lmWidget container, which can happen
-          // when the view is displayed more than once
-          // TODO: It's probably better to get view(s) from m.views and .remove() them
-          while (el.childNodes.length > 1) {
-            el.removeChild(el.childNodes[0]);
-          }
+    const view = await manager.create_view(model, {});
+    await manager.display_view(view, {el: el});
 
-          if (!data.fill) return;
+    // Don't allow more than one .lmWidget container, which can happen
+    // when the view is displayed more than once
+    // TODO: It's probably better to get view(s) from m.views and .remove() them
+    while (el.childNodes.length > 1) {
+      el.removeChild(el.childNodes[0]);
+    }
 
-          // Make ipywidgets container (.lmWidget) a fill carrier
-          // el should already be a fill carrier (done during markup generation)
-          const lmWidget = el.children[0] as HTMLElement;
-          lmWidget?.classList.add("html-fill-container", "html-fill-item");
+    if (!data.fill) return;
 
-          // lmWidget's children is the actual widget implementation.
-          // Ideally this would be a single element, but some widget
-          // implementations (e.g., pydeck, altair) have multiple direct children.
-          // It seems relatively safe to make all of them fill items, but there's
-          // at least one case where it's problematic (pydeck)
-          lmWidget.childNodes.forEach((child) => {
-            if (!(child instanceof HTMLElement)) return;
-            if (child.classList.contains("deckgl-ui-elements-overlay")) return;
-            child.classList.add("html-fill-item");
-          });
+    // Make ipywidgets container (.lmWidget) a fill carrier
+    // el should already be a fill carrier (done during markup generation)
+    const lmWidget = el.children[0] as HTMLElement;
+    lmWidget?.classList.add("html-fill-container", "html-fill-item");
 
-          this._maybeResize(lmWidget);
-        })
-
-      });
+    // lmWidget's children is the actual widget implementation.
+    // Ideally this would be a single element, but some widget
+    // implementations (e.g., pydeck, altair) have multiple direct children.
+    // It seems relatively safe to make all of them fill items, but there's
+    // at least one case where it's problematic (pydeck)
+    lmWidget.childNodes.forEach((child) => {
+      if (!(child instanceof HTMLElement)) return;
+      if (child.classList.contains("deckgl-ui-elements-overlay")) return;
+      child.classList.add("html-fill-item");
     });
+
+    this._maybeResize(lmWidget);
   }
   _maybeResize(lmWidget: HTMLElement): void {
     const impl = lmWidget.children[0];
@@ -147,7 +142,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
   _doResize(impl: Element): void {
     // Trigger resize event to force layout (setTimeout() is needed for altair)
     // TODO: debounce this call?
-    // TODO: Maybe restore visibility after this?
     setTimeout(() => {
       window.dispatchEvent(new Event('resize'))
     }, 0);

@@ -1,9 +1,9 @@
 import numpy as np
+import plotly.graph_objs as go
+from shiny import *
 from sklearn.linear_model import LinearRegression
 
-from shiny import *
 from shinywidgets import output_widget, register_widget
-import plotly.graph_objs as go
 
 # Generate some data and fit a linear regression
 n = 10000
@@ -13,7 +13,7 @@ y = dat[1]
 fit = LinearRegression().fit(x.reshape(-1, 1), dat[1])
 xgrid = np.linspace(start=min(x), stop=max(x), num=30)
 
-app_ui = ui.page_fluid(
+app_ui = ui.page_fillable(
     ui.input_checkbox("show_fit", "Show fitted line", value=True),
     output_widget("scatterplot"),
 )
