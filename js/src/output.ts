@@ -102,6 +102,9 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
           while (el.childNodes.length > 1) {
             el.removeChild(el.childNodes[0]);
           }
+
+          if (!data.fill) return;
+
           // Make ipywidgets container (.lmWidget) a fill carrier
           // el should already be a fill carrier (done during markup generation)
           const lmWidget = el.children[0] as HTMLElement;
@@ -129,8 +132,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     if (impl.children.length > 0) {
       return this._doResize(impl);
     }
-
-    console.log("No impl", impl);
 
     // Some widget implementation (e.g., ipyleaflet, pydeck) won't actually
     // have rendered to the DOM at this point, so wait until they do

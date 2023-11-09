@@ -13,7 +13,7 @@ import importlib
 import json
 import os
 import tempfile
-from typing import Any, Optional, Sequence, Union, cast, overload
+from typing import Any, Optional, Sequence, Tuple, Union, cast, overload
 from uuid import uuid4
 from weakref import WeakSet
 
@@ -35,6 +35,8 @@ from shiny.render.transformer import (
     resolve_value_fn,
 )
 from shiny.session import get_current_session, require_active_session
+from shiny.ui.css import as_css_unit
+from shiny.ui.fill import as_fill_item, as_fillable_container
 
 from ._as_widget import as_widget
 from ._comm import BufferType, ShinyComm, ShinyCommManager
@@ -60,15 +62,7 @@ def output_widget(
     id: str, *, width: Optional[str] = None, height: Optional[str] = None
 ) -> Tag:
     id = resolve_id(id)
-
-    cls = "shiny-ipywidget-output shiny-report-size shiny-report-theme"
-
-    # We may eventually want to make this configurable (i.e., fill=True),
-    # but for now, we'll always make the output container a fill carrier...
-    if True:
-        cls += " html-fill-container html-fill-item"
-
-    return tags.div(
+    res = tags.div(
         *libembed_dependency(),
         output_binding_dependency(),
         head_content(
@@ -78,9 +72,20 @@ def output_widget(
             )
         ),
         id=id,
-        class_=cls,
-        style=css(width=width, height=height),
+        class_="shiny-ipywidget-output shiny-report-size shiny-report-theme",
+        style=css(
+            width=as_css_unit(width),
+            height=as_css_unit(height)
+        ),
     )
+
+    # We may eventually want to make this configurable (i.e., fill=True),
+    # but for now, we'll always make the output container a fill carrier...
+    if height is None:
+        res = as_fill_item(res)
+        res = as_fillable_container(res)
+
+    return res
 
 
 # --------------------------------------------------------------------------------------------
@@ -206,9 +211,8 @@ async def WidgetTransformer(
     if value is None:
         return None
     widget = as_widget(value)
-    # TODO: should this be done in as_widget()?
-    widget = set_layout_defaults(widget)
-    return {"model_id": widget.model_id}  # type: ignore
+    widget, fill = set_layout_defaults(widget)
+    return {"model_id": widget.model_id, "fill": fill}  # type: ignore
 
 
 @overload
@@ -273,9 +277,13 @@ def register_widget(
     return w
 
 
-def set_layout_defaults(widget: Widget) -> Widget:
+def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
+    # If we detect a user specified height on the widget, then don't
+    # do filling layout (akin to the behavior of output_widget(height=...))
+    fill = True
+
     if not isinstance(widget, DOMWidget):
-        return widget
+        return (widget, fill)
 
     layout = widget.layout         # type: ignore
 
@@ -286,6 +294,9 @@ def set_layout_defaults(widget: Widget) -> Widget:
             layout.width = "100%"
         if layout.height is None:  # type: ignore
             layout.height = "400px"
+        else:
+            if layout.height != "auto":  # type: ignore
+                fill = False
 
     widget.layout = layout
 
@@ -301,7 +312,7 @@ def set_layout_defaults(widget: Widget) -> Widget:
         if isinstance(widget, JupyterChart):
             widget.chart = widget.chart.properties(width="container", height="container")  # type: ignore
 
-    return widget
+    return (widget, fill)
 
 # similar to base::system.file()
 def package_dir(package: str) -> str:

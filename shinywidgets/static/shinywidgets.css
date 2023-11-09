@@ -23,3 +23,12 @@
 .bqplot > svg {
   flex-grow: 1 !important;
 }
+
+/*
+* For some reason ipyleaflet puts `flex: 1` on the .lm-Widget container
+* which breaks our filling layout setup.
+* This fixes it (by putting higher priority) on `flex: 0`.
+*/
+.html-fill-container > .lm-Widget:not(.html-fill-item) {
+  flex: 0 0 auto;
+}
