@@ -102,6 +102,11 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       el.removeChild(el.childNodes[0]);
     }
 
+    // Only carry the potential to fill (i.e., add fill classes)
+    // if `output_widget(fillable=True)`
+    if (!el.classList.contains("html-fill-container")) return;
+
+    // And only fill if the `Widget.layout.height` isn't set
     if (!data.fill) return;
 
     // Make ipywidgets container (.lmWidget) a fill carrier

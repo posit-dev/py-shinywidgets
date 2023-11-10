@@ -59,7 +59,8 @@ SHINYWIDGETS_EXTENSION_WARNING = (
 
 
 def output_widget(
-    id: str, *, width: Optional[str] = None, height: Optional[str] = None
+    id: str, *, width: Optional[str] = None, height: Optional[str] = None,
+    fill: Optional[bool] = None, fillable: Optional[bool] = None
 ) -> Tag:
     id = resolve_id(id)
     res = tags.div(
@@ -79,10 +80,16 @@ def output_widget(
         ),
     )
 
-    # We may eventually want to make this configurable (i.e., fill=True),
-    # but for now, we'll always make the output container a fill carrier...
-    if height is None:
+    if fill is None:
+        fill = height is None
+
+    if fill:
         res = as_fill_item(res)
+
+    if fillable is None:
+        fillable = height is None
+
+    if fillable:
         res = as_fillable_container(res)
 
     return res

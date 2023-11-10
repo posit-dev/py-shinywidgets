@@ -12,7 +12,6 @@ app_ui = ui.page_sidebar(
             [
                 "altair",
                 "plotly",
-                "ipyaggrid",
                 "ipyleaflet",
                 "pydeck",
                 "ipysigma",
@@ -49,25 +48,6 @@ def server(input: Inputs, output: Outputs, session: Session):
         m = Map(center=(52.204793, 360.121558), zoom=4)
         m.add_layer(Marker(location=(52.204793, 360.121558)))
         return m
-
-    @output(id="ipyaggrid")
-    @render_widget
-    def _():
-        from ipyaggrid import Grid
-        from vega_datasets import data
-
-        d = data.cars()
-
-        column_defs = [{'field': c} for c in d.columns]
-
-        return Grid(
-            grid_data=data.cars(),
-            grid_options={'columnDefs': column_defs},
-            theme='ag-theme-bootstrap',
-            center=True,
-            sync_grid=True
-        )
-
 
     @output(id="qgrid")
     @render_widget
