@@ -4,34 +4,29 @@ from shiny import *
 
 from shinywidgets import *
 
-app_ui = ui.page_fluid(
-    bokeh_dependency(),
-    ui.layout_sidebar(
-        ui.panel_sidebar(
-            ui.input_radio_buttons(
-                "framework",
-                "Choose an ipywidget package",
-                [
-                    "qgrid",
-                    "ipyleaflet",
-                    "pydeck",
-                    "altair",
-                    "plotly",
-                    "bokeh",
-                    "bqplot",
-                    "ipychart",
-                    "ipywebrtc",
-                    # TODO: fix me
-                    # "ipyvolume",
-                ],
-                selected="ipyleaflet",
-            )
-        ),
-        ui.panel_main(
-            ui.output_ui("figure"),
-        ),
+app_ui = ui.page_sidebar(
+    ui.sidebar(
+        ui.input_radio_buttons(
+            "framework",
+            "Choose a widget",
+            [
+                "altair",
+                "plotly",
+                "ipyleaflet",
+                "pydeck",
+                "ipysigma",
+                "bokeh",
+                "bqplot",
+                "ipychart",
+                "ipywebrtc",
+                # TODO: fix ipyvolume, qgrid
+            ],
+            selected="altair",
+        )
     ),
-    title="ipywidgets in Shiny",
+    bokeh_dependency(),
+    ui.output_ui("figure", fill=True, fillable=True),
+    title="Hello Jupyter Widgets in Shiny for Python",
 )
 
 
@@ -39,7 +34,11 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output(id="figure")
     @render.ui
     def _():
-        return output_widget(input.framework())
+        return ui.card(
+            ui.card_header(input.framework()),
+            output_widget(input.framework()),
+            full_screen=True,
+        )
 
     @output(id="ipyleaflet")
     @render_widget
@@ -122,11 +121,12 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output(id="plotly")
     @render_widget
     def _():
-        import plotly.graph_objects as go
+        import plotly.express as px
 
-        return go.FigureWidget(
-            data=[go.Bar(y=[2, 1, 3])],
-            layout_title_text="A Figure Displayed with fig.show()",
+        return px.scatter(
+            x=np.random.randn(100),
+            y=np.random.randn(100),
+            color=np.random.randn(100),
         )
 
     @output(id="bqplot")
@@ -211,6 +211,14 @@ def server(input: Inputs, output: Outputs, session: Session):
 
         x, y, z, u, v, w = np.random.random((6, 1000)) * 2 - 1
         return quickquiver(x, y, z, u, v, w, size=5)
+
+    @output(id="ipysigma")
+    @render_widget
+    def _():
+        import igraph as ig
+        from ipysigma import Sigma
+        g = ig.Graph.Famous('Zachary')
+        return Sigma(g, node_size=g.degree, node_color=g.betweenness(), node_color_gradient='Viridis')
 
     @output(id="pydeck")
     @render_widget

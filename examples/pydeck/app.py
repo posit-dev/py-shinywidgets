@@ -1,9 +1,9 @@
 import pydeck as pdk
-
 from shiny import *
+
 from shinywidgets import *
 
-app_ui = ui.page_fluid(
+app_ui = ui.page_fillable(
     ui.input_slider("zoom", "Zoom", 0, 20, 6, step=1),
     output_widget("pydeck")
 )

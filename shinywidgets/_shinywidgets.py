@@ -13,7 +13,7 @@ import importlib
 import json
 import os
 import tempfile
-from typing import Any, Optional, Sequence, Union, cast, overload
+from typing import Any, Optional, Sequence, Tuple, Union, cast, overload
 from uuid import uuid4
 from weakref import WeakSet
 
@@ -21,10 +21,10 @@ from htmltools import Tag, TagList, css, head_content, tags
 from ipywidgets._version import (
     __protocol_version__,  # pyright: ignore[reportUnknownVariableType]
 )
+from ipywidgets.widgets import DOMWidget, Layout, Widget
 from ipywidgets.widgets.widget import (
     _remove_buffers,  # pyright: ignore[reportUnknownVariableType, reportGeneralTypeIssues]
 )
-from ipywidgets.widgets.widget import Widget
 from shiny import Session, reactive
 from shiny.http_staticfiles import StaticFiles
 from shiny.module import resolve_id
@@ -35,6 +35,8 @@ from shiny.render.transformer import (
     resolve_value_fn,
 )
 from shiny.session import get_current_session, require_active_session
+from shiny.ui.css import as_css_unit
+from shiny.ui.fill import as_fill_item, as_fillable_container
 
 from ._as_widget import as_widget
 from ._comm import BufferType, ShinyComm, ShinyCommManager
@@ -42,6 +44,7 @@ from ._dependencies import (
     libembed_dependency,
     output_binding_dependency,
     require_dependency,
+    widget_pkg,
 )
 
 # Make it easier to customize the CDN fallback (and make it CDN-only)
@@ -56,10 +59,11 @@ SHINYWIDGETS_EXTENSION_WARNING = (
 
 
 def output_widget(
-    id: str, *, width: Optional[str] = None, height: Optional[str] = None
+    id: str, *, width: Optional[str] = None, height: Optional[str] = None,
+    fill: Optional[bool] = None, fillable: Optional[bool] = None
 ) -> Tag:
     id = resolve_id(id)
-    return tags.div(
+    res = tags.div(
         *libembed_dependency(),
         output_binding_dependency(),
         head_content(
@@ -70,8 +74,25 @@ def output_widget(
         ),
         id=id,
         class_="shiny-ipywidget-output shiny-report-size shiny-report-theme",
-        style=css(width=width, height=height),
+        style=css(
+            width=as_css_unit(width),
+            height=as_css_unit(height)
+        ),
     )
+
+    if fill is None:
+        fill = height is None
+
+    if fill:
+        res = as_fill_item(res)
+
+    if fillable is None:
+        fillable = height is None
+
+    if fillable:
+        res = as_fillable_container(res)
+
+    return res
 
 
 # --------------------------------------------------------------------------------------------
@@ -197,7 +218,8 @@ async def WidgetTransformer(
     if value is None:
         return None
     widget = as_widget(value)
-    return {"model_id": widget.model_id}  # type: ignore
+    widget, fill = set_layout_defaults(widget)
+    return {"model_id": widget.model_id, "fill": fill}  # type: ignore
 
 
 @overload
@@ -261,6 +283,43 @@ def register_widget(
 
     return w
 
+
+def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
+    # If we detect a user specified height on the widget, then don't
+    # do filling layout (akin to the behavior of output_widget(height=...))
+    fill = True
+
+    if not isinstance(widget, DOMWidget):
+        return (widget, fill)
+
+    layout = widget.layout         # type: ignore
+
+    # Give the ipywidget Layout() width/height defaults that are more sensible for
+    # filling layout https://ipywidgets.readthedocs.io/en/stable/examples/Widget%20Layout.html
+    if isinstance(layout, Layout):
+        if layout.width is None:   # type: ignore
+            layout.width = "100%"
+        if layout.height is None:  # type: ignore
+            layout.height = "400px"
+        else:
+            if layout.height != "auto":  # type: ignore
+                fill = False
+
+    widget.layout = layout
+
+    # Some packages (e.g., altair) aren't setup to fill their parent container by
+    # default. I can't imagine a situation where you'd actually want it to _not_ fill
+    # the parent container since it'll be contained within the Layout() container, which
+    # has a full-fledged sizing API.
+    pkg = widget_pkg(widget)
+    if pkg == "altair":
+        from altair import JupyterChart
+
+        # Since as_widget() has already happened, we only need to handle JupyterChart
+        if isinstance(widget, JupyterChart):
+            widget.chart = widget.chart.properties(width="container", height="container")  # type: ignore
+
+    return (widget, fill)
 
 # similar to base::system.file()
 def package_dir(package: str) -> str:

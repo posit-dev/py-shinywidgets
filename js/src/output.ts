@@ -75,7 +75,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     Shiny.unbindAll(el);
     this.renderError(el, err);
   }
-  renderValue(el: HTMLElement, data): void {
+  async renderValue(el: HTMLElement, data): Promise<void> {
 
     // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
     if (!data) {
@@ -87,23 +87,69 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
 
     // At this time point, we should've already handled an 'open' message, and so
     // the model should be ready to use
-    const model = manager.get_model(data.model_id);
+    const model = await manager.get_model(data.model_id);
     if (!model) {
       throw new Error(`No model found for id ${data.model_id}`);
     }
 
-    model.then((m) => {
-      const view = manager.create_view(m, {});
-      view.then(v => {
-        manager.display_view(v, {el: el}).then(() => {
-          // TODO: It would be better to .close() the widget here, but
-          // I'm not sure how to do that yet (at least client-side)
-          while (el.childNodes.length > 1) {
-            el.removeChild(el.childNodes[0]);
-          }
-        })
-      });
+    const view = await manager.create_view(model, {});
+    await manager.display_view(view, {el: el});
+
+    // Don't allow more than one .lmWidget container, which can happen
+    // when the view is displayed more than once
+    // TODO: It's probably better to get view(s) from m.views and .remove() them
+    while (el.childNodes.length > 1) {
+      el.removeChild(el.childNodes[0]);
+    }
+
+    // Only carry the potential to fill (i.e., add fill classes)
+    // if `output_widget(fillable=True)`
+    if (!el.classList.contains("html-fill-container")) return;
+
+    // And only fill if the `Widget.layout.height` isn't set
+    if (!data.fill) return;
+
+    // Make ipywidgets container (.lmWidget) a fill carrier
+    // el should already be a fill carrier (done during markup generation)
+    const lmWidget = el.children[0] as HTMLElement;
+    lmWidget?.classList.add("html-fill-container", "html-fill-item");
+
+    // lmWidget's children is the actual widget implementation.
+    // Ideally this would be a single element, but some widget
+    // implementations (e.g., pydeck, altair) have multiple direct children.
+    // It seems relatively safe to make all of them fill items, but there's
+    // at least one case where it's problematic (pydeck)
+    lmWidget.childNodes.forEach((child) => {
+      if (!(child instanceof HTMLElement)) return;
+      if (child.classList.contains("deckgl-ui-elements-overlay")) return;
+      child.classList.add("html-fill-item");
     });
+
+    this._maybeResize(lmWidget);
+  }
+  _maybeResize(lmWidget: HTMLElement): void {
+    const impl = lmWidget.children[0];
+    if (impl.children.length > 0) {
+      return this._doResize(impl);
+    }
+
+    // Some widget implementation (e.g., ipyleaflet, pydeck) won't actually
+    // have rendered to the DOM at this point, so wait until they do
+    const mo = new MutationObserver((mutations) => {
+      if (impl.children.length > 0) {
+        mo.disconnect();
+        this._doResize(impl);
+      }
+    });
+
+    mo.observe(impl, {childList: true});
+  }
+  _doResize(impl: Element): void {
+    // Trigger resize event to force layout (setTimeout() is needed for altair)
+    // TODO: debounce this call?
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'))
+    }, 0);
   }
 }
 

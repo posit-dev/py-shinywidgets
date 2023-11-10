@@ -1,9 +1,10 @@
-from shiny import *
-from shinywidgets import output_widget, register_widget, reactive_read
 import ipyleaflet as L
 from htmltools import css
+from shiny import *
 
-app_ui = ui.page_fluid(
+from shinywidgets import output_widget, reactive_read, register_widget
+
+app_ui = ui.page_fillable(
     ui.div(
         ui.input_slider("zoom", "Map zoom level", value=4, min=1, max=10),
         ui.output_text("map_bounds"),
