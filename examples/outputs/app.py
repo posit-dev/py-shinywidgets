@@ -45,14 +45,24 @@ def server(input: Inputs, output: Outputs, session: Session):
         import altair as alt
         from vega_datasets import data
 
-        return (
-            alt.Chart(data.cars())
-            .mark_point()
-            .encode(
-                x="Horsepower",
-                y="Miles_per_Gallon",
-                color="Origin",
+        source = data.stocks()
+
+        return alt.Chart(source).transform_filter(
+            'datum.symbol==="GOOG"'
+        ).mark_area(
+            tooltip=True,
+            line={'color': '#0281CD'},
+            color=alt.Gradient(
+                gradient='linear',
+                stops=[alt.GradientStop(color='white', offset=0),
+                       alt.GradientStop(color='#0281CD', offset=1)],
+                x1=1, x2=1, y1=1, y2=0
             )
+        ).encode(
+            alt.X('date:T'),
+            alt.Y('price:Q')
+        ).properties(
+            title={"text": ["Google's stock price over time"]}
         )
 
     @output(id="plotly")
@@ -60,10 +70,10 @@ def server(input: Inputs, output: Outputs, session: Session):
     def _():
         import plotly.express as px
 
-        return px.scatter(
-            x=np.random.randn(100),
-            y=np.random.randn(100),
-            color=np.random.randn(100),
+        return px.density_heatmap(
+            px.data.tips(),
+            x="total_bill", y="tip",
+            marginal_x="histogram", marginal_y="histogram"
         )
 
     @output(id="ipyleaflet")
