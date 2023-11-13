@@ -103,27 +103,28 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     }
 
     // Only carry the potential to fill (i.e., add fill classes)
-    // if `output_widget(fillable=True)`
-    if (!el.classList.contains("html-fill-container")) return;
+    // if `output_widget(fillable=True)` _and_ the widget wants to fill
+    const fill = data.fill && el.classList.contains("html-fill-container");
 
-    // And only fill if the `Widget.layout.height` isn't set
-    if (!data.fill) return;
-
-    // Make ipywidgets container (.lmWidget) a fill carrier
-    // el should already be a fill carrier (done during markup generation)
+    // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;
-    lmWidget?.classList.add("html-fill-container", "html-fill-item");
 
-    // lmWidget's children is the actual widget implementation.
-    // Ideally this would be a single element, but some widget
-    // implementations (e.g., pydeck, altair) have multiple direct children.
-    // It seems relatively safe to make all of them fill items, but there's
-    // at least one case where it's problematic (pydeck)
-    lmWidget.childNodes.forEach((child) => {
-      if (!(child instanceof HTMLElement)) return;
-      if (child.classList.contains("deckgl-ui-elements-overlay")) return;
-      child.classList.add("html-fill-item");
-    });
+    if (fill) {
+      // Make lmWidget a fill carrier
+      // el should already be a fill carrier (done during markup generation)
+      lmWidget?.classList.add("html-fill-container", "html-fill-item");
+
+      // lmWidget's children is the actual widget implementation.
+      // Ideally this would be a single element, but some widget
+      // implementations (e.g., pydeck, altair) have multiple direct children.
+      // It seems relatively safe to make all of them fill items, but there's
+      // at least one case where it's problematic (pydeck)
+      lmWidget.childNodes.forEach((child) => {
+        if (!(child instanceof HTMLElement)) return;
+        if (child.classList.contains("deckgl-ui-elements-overlay")) return;
+        child.classList.add("html-fill-item");
+      });
+    }
 
     this._maybeResize(lmWidget);
   }
