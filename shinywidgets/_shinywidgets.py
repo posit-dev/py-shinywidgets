@@ -26,7 +26,7 @@ from ipywidgets.widgets import DOMWidget, Layout, Widget
 from ipywidgets.widgets.widget import (
     _remove_buffers,  # pyright: ignore[reportUnknownVariableType, reportGeneralTypeIssues]
 )
-from shiny import Session, reactive
+from shiny import Session, reactive, req
 from shiny.http_staticfiles import StaticFiles
 from shiny.module import resolve_id
 from shiny.render.transformer import (
@@ -216,10 +216,13 @@ async def WidgetTransformer(
     _fn: ValueFn[object | None],
 ) -> dict[str, Any] | None:
     value = await resolve_value_fn(_fn)
+    _fn.value = value  # type: ignore
+    _fn.widget = None  # type: ignore
     if value is None:
         return None
     widget = as_widget(value)
     widget, fill = set_layout_defaults(widget)
+    _fn.widget = widget  # type: ignore
     return {"model_id": widget.model_id, "fill": fill}  # type: ignore
 
 
@@ -232,12 +235,34 @@ def render_widget(fn: WidgetTransformer.ValueFn) -> WidgetTransformer.OutputRend
 def render_widget() -> WidgetTransformer.OutputRendererDecorator:
     ...
 
-
 def render_widget(
     fn: WidgetTransformer.ValueFn | None = None,
 ) -> WidgetTransformer.OutputRenderer | WidgetTransformer.OutputRendererDecorator:
-    return WidgetTransformer(fn)
+    res = WidgetTransformer(fn)
 
+    # Make the `res._value_fn.widget` attribute that we set in WidgetTransformer
+    # accessible via `res.widget`
+    def get_widget(*_: object) -> Optional[Widget]:
+        w = res._value_fn.widget  # type: ignore
+        if w is None:
+            req(False)
+            return None
+        return w
+
+    def set_widget(*_: object):
+        raise RuntimeError("The widget attribute of a @render_widget function is read only.")
+
+    setattr(res.__class__, "widget", property(get_widget, set_widget))
+
+    def get_value(*_: object) -> object | None:
+        return res._value_fn.value  # type: ignore
+
+    def set_value(*_: object):
+        raise RuntimeError("The value attribute of a @render_widget function is read only.")
+
+    setattr(res.__class__, "value", property(get_value, set_value))
+
+    return res
 
 def reactive_read(widget: Widget, names: Union[str, Sequence[str]]) -> Any:
     reactive_depend(widget, names)
