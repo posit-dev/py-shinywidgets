@@ -292,6 +292,10 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
     if not isinstance(widget, DOMWidget):
         return (widget, fill)
 
+    # Do nothing for "input-like" widgets (e.g., ipywidgets.IntSlider())
+    if getattr(widget, "_model_module", None) == "@jupyter-widgets/controls":
+        return (widget, False)
+
     layout = widget.layout         # type: ignore
 
     # Give the ipywidget Layout() width/height defaults that are more sensible for
