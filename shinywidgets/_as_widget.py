@@ -19,7 +19,7 @@ def as_widget(x: object) -> Widget:
     if _as_widget is None:
         msg = f"Don't know how to coerce {x} into a ipywidget.Widget object."
         if callable(getattr(x, "_repr_html_", None)):
-            msg += " Instead of using shinywidgets to render this object, you can use shiny's @render.ui decorator "
+            msg += " Instead of using shinywidgets to render this object, try using shiny's @render.ui decorator "
             msg += " https://shiny.posit.co/py/api/ui.output_ui.html#shiny.ui.output_ui"
         raise TypeError(msg)
 
