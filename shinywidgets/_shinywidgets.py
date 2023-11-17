@@ -255,7 +255,21 @@ def reactive_depend(
     Reactively read a Widget's trait(s)
     """
 
-    ctx = reactive.get_current_context()  # pyright: ignore[reportPrivateImportUsage]
+    try:
+        ctx = reactive.get_current_context()  # pyright: ignore[reportPrivateImportUsage]
+    except RuntimeError:
+        raise RuntimeError("reactive_read() must be called within a reactive context")
+
+    if isinstance(names, str):
+        names = [names]
+
+    for name in names:
+        if not widget.has_trait(name):
+            raise ValueError(
+                f"The '{name}' attribute of {widget.__class__.__name__} is not a "
+                "widget trait, and so it's not possible to reactively read it. "
+                "For a list of widget traits, call `.trait_names()` on the widget."
+            )
 
     def invalidate(change: object):
         ctx.invalidate()
