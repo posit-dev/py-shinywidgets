@@ -7,12 +7,14 @@
 }
 
 /*
-  For most/all ipywidgets, we can set these defaults via the Layout() API,
-  but go.FigureWidget().layout points to plotly.js' layout, and I'm not
-  sure how to get at the ipywidget's layout object from there.
+  .html-fill-item defaults to `flex-basis: auto`, which works well when item's
+  all have consistent height, but we can't assume that (because different
+  widgets want different height defaults). By setting `flex-basis: 400px`,
+  we let widgets keep its natural height (when not filling), but when filling,
+  widgets will all grow/shrink to a consistent height.
 */
-.plotly.plot-container {
-  height: 400px;
+.shiny-ipywidget-output.html-fill-container > .lm-Widget.html-fill-item {
+  flex-basis: 400px;
   width: 100%;
 }
 

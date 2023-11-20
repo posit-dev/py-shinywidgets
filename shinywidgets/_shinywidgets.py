@@ -312,24 +312,27 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
 
     layout = widget.layout         # type: ignore
 
-    # Give the ipywidget Layout() width/height defaults that are more sensible for
-    # filling layout https://ipywidgets.readthedocs.io/en/stable/examples/Widget%20Layout.html
+    # If the ipywidget Layout() height is set to something other than "auto", then
+    # don't do filling layout https://ipywidgets.readthedocs.io/en/stable/examples/Widget%20Layout.html
     if isinstance(layout, Layout):
-        if layout.width is None:   # type: ignore
-            layout.width = "100%"
-        if layout.height is None:  # type: ignore
-            layout.height = "400px"
-        else:
-            if layout.height != "auto":  # type: ignore
+        if layout.height is not None and layout.height != "auto":  # type: ignore
+            fill = False
+
+    pkg = widget_pkg(widget)
+
+    # Plotly provides it's own layout API (which isn't a subclass of ipywidgets.Layout)
+    if pkg == "plotly":
+        from plotly.graph_objs import Layout as PlotlyLayout
+        if isinstance(layout, PlotlyLayout):
+            if layout.height is not None:
                 fill = False
 
     widget.layout = layout
 
-    # Some packages (e.g., altair) aren't setup to fill their parent container by
-    # default. I can't imagine a situation where you'd actually want it to _not_ fill
-    # the parent container since it'll be contained within the Layout() container, which
-    # has a full-fledged sizing API.
-    pkg = widget_pkg(widget)
+    # altair, confusingly, isn't setup to fill it's Layout() container by default. I
+    # can't imagine a situation where you'd actually want it to _not_ fill the parent
+    # container since it'll be contained within the Layout() container, which has a
+    # full-fledged sizing API.
     if pkg == "altair":
         from altair import JupyterChart
 
