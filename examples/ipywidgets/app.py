@@ -1,8 +1,8 @@
-from shiny import *
-from shinywidgets import *
 import ipywidgets as ipy
 from ipywidgets.widgets.widget import Widget
+from shiny import *
 
+from shinywidgets import *
 
 app_ui = ui.page_fluid(output_widget("slider"), ui.output_text("value"))
 
@@ -24,7 +24,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     register_widget("slider", s)
 
     @output(id="value")
-    @reactive.text
+    @render.text
     def _():
         return f"The value of the slider is: {reactive_read(s, 'value')}"
 
