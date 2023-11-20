@@ -13,6 +13,7 @@ import importlib
 import json
 import os
 import tempfile
+import warnings
 from typing import Any, Optional, Sequence, Tuple, Union, cast, overload
 from uuid import uuid4
 from weakref import WeakSet
@@ -334,11 +335,19 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
     # container since it'll be contained within the Layout() container, which has a
     # full-fledged sizing API.
     if pkg == "altair":
-        from altair import JupyterChart
+        import altair as alt
 
         # Since as_widget() has already happened, we only need to handle JupyterChart
-        if isinstance(widget, JupyterChart):
-            widget.chart = widget.chart.properties(width="container", height="container")  # type: ignore
+        if isinstance(widget, alt.JupyterChart):
+            if isinstance(widget.chart, alt.ConcatChart):
+                # Throw warning to use ui.layout_column_wrap() instead
+                warnings.warn(
+                    "Consider using shiny.ui.layout_column_wrap() instead of alt.concat() "
+                    "for multi-column layout (the latter doesn't support filling layout)."
+                )
+            else:
+                widget.chart = widget.chart.properties(width="container", height="container")  # type: ignore
+
 
     return (widget, fill)
 
