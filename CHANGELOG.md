@@ -5,7 +5,7 @@ All notable changes to shinywidgets will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [UNRELEASED]
+## [0.2.4] - 2023-11-20
 
 * Fixed several issues with filling layout behavior introduced in 0.2.3. (#124, #125)
 * `reactive_read()` now throws a more informative error when attempting to read non-existing or non-trait attributes. (#120)
