@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED]
 
+* Fixed several issues with filling layout behavior introduced in 0.2.3 (#124)
 * `reactive_read()` now throws a more informative error when attempting to read non-existing or non-trait attributes. (#120)
 
 ## [0.2.3] - 2023-11-13
