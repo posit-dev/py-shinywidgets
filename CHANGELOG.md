@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED]
 
+* Reduce default plot margins on plotly graphs.
 
 ## [0.2.4] - 2023-11-20
 

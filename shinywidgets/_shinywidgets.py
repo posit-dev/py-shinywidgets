@@ -327,6 +327,12 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
         if isinstance(layout, PlotlyLayout):
             if layout.height is not None:
                 fill = False
+            # Default margins are also way too big
+            layout.template.layout.margin = dict(l=16, t=32, r=16, b=16)
+            # Unfortunately, plotly doesn't want to respect the top margin template,
+            # so change that 60px default to 32px
+            if layout.margin["t"] == 60:
+                layout.margin["t"] = 32
 
     widget.layout = layout
 
@@ -347,7 +353,6 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
                 )
             else:
                 widget.chart = widget.chart.properties(width="container", height="container")  # type: ignore
-
 
     return (widget, fill)
 
