@@ -93,7 +93,7 @@ check that the extension is properly configured with `jupyter nbextension list`.
 the extension is properly configured, it still may not work right away, especially if
 that widget requires initialization code in a notebook environment. In this case,
 `{shinywidgets}` probably won't work without providing the equivalent setup information to
-Shiny. Some known cases of this are:
+Shiny. A known case of this is bokeh, which is why shinywidgets includes a [`bokeh_dependency()` function](https://github.com/posit-dev/py-shinywidgets/blob/255a0d15d74828c28999cdce3fe9a0b5c2795016/examples/outputs/app.py#L26).
 
 
 ## Development
