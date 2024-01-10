@@ -7,14 +7,13 @@ __all__ = (
     "reactive_read",
     "as_widget",
 )
-
 import copy
 import importlib
 import json
 import os
 import tempfile
 import warnings
-from typing import Any, Optional, Sequence, Tuple, Union, cast, overload
+from typing import Any, Generic, Optional, Sequence, Tuple, TypeVar, Union, cast
 from uuid import uuid4
 from weakref import WeakSet
 
@@ -30,15 +29,11 @@ from shiny import Session, reactive, req
 from shiny.http_staticfiles import StaticFiles
 from shiny.module import resolve_id
 from shiny.reactive._core import Context, get_current_context
-from shiny.render.transformer import (
-    TransformerMetadata,
-    ValueFn,
-    output_transformer,
-    resolve_value_fn,
-)
+from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
 from shiny.session import get_current_session, require_active_session
 from shiny.ui.css import as_css_unit
 from shiny.ui.fill import as_fill_item, as_fillable_container
+from traitlets import Unicode
 
 from ._as_widget import as_widget
 from ._comm import BufferType, ShinyComm, ShinyCommManager
@@ -61,8 +56,12 @@ SHINYWIDGETS_EXTENSION_WARNING = (
 
 
 def output_widget(
-    id: str, *, width: Optional[str] = None, height: Optional[str] = None,
-    fill: Optional[bool] = None, fillable: Optional[bool] = None
+    id: str,
+    *,
+    width: Optional[str] = None,
+    height: Optional[str] = None,
+    fill: Optional[bool] = None,
+    fillable: Optional[bool] = None,
 ) -> Tag:
     id = resolve_id(id)
     res = tags.div(
@@ -78,7 +77,7 @@ def output_widget(
         class_="shiny-ipywidget-output shiny-report-size shiny-report-theme",
         style=css(
             width=as_css_unit(width),
-            height=as_css_unit(height)
+            height=as_css_unit(height),
         ),
     )
 
@@ -210,107 +209,142 @@ COMM_MANAGER = ShinyCommManager()
 # Implement @render_widget()
 # --------------------------------------------------------------------------------------------
 
-# TODO: pass along IT/OT to get proper typing?
-UserValueFn = ValueFn[object | None]
-
-@output_transformer(default_ui=output_widget)
-async def WidgetTransformer(
-    _meta: TransformerMetadata,
-    _fn: UserValueFn,
-) -> dict[str, Any] | None:
-    value = await resolve_value_fn(_fn)
-
-    # Attach value/widget attributes to user func so they can be accessed (in other reactive contexts)
-    _fn.value = value  # type: ignore
-    _fn.widget = None  # type: ignore
-
-    # Invalidate any reactive contexts that have read these attributes
-    invalidate_contexts(_fn)
-
-    if value is None:
-        return None
-
-    # Ensure we have a widget & smart layout defaults
-    widget = as_widget(value)
-    widget, fill = set_layout_defaults(widget)
-    _fn.widget = widget  # type: ignore
-
-    return {"model_id": widget.model_id, "fill": fill}  # type: ignore
+ValueT = TypeVar("ValueT", bound=object)
+WidgetT = TypeVar("WidgetT", bound=Widget)
+T = TypeVar("T", bound=object)
 
 
-@overload
-def render_widget(fn: WidgetTransformer.ValueFn) -> WidgetTransformer.OutputRenderer:
-    ...
+class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
+    def default_ui(self, id: str) -> Tag:
+        return output_widget(
+            id,
+            width=self.width,
+            height=self.height,
+            fill=self.fill,
+            fillable=self.fillable,
+        )
 
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[ValueT]] = None,
+        *,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+    ):
+        super().__init__(_fn)
+        self.width: Optional[str] = width
+        self.height: Optional[str] = height
+        self.fill: Optional[bool] = fill
+        self.fillable: Optional[bool] = fillable
 
-@overload
-def render_widget() -> WidgetTransformer.OutputRendererDecorator:
-    ...
+        self._value: ValueT | None = None  # TODO-barret; Not right type
+        self._widget: WidgetT | None = None
+        self._contexts: set[Context] = set()
 
-def render_widget(
-    fn: WidgetTransformer.ValueFn | None = None,
-) -> WidgetTransformer.OutputRenderer | WidgetTransformer.OutputRendererDecorator:
-    res = WidgetTransformer(fn)
+    async def render(self) -> Jsonifiable | None:
+        value = await self.fn()
 
-    # Make the `res._value_fn.widget` attribute that we set in WidgetTransformer
-    # accessible via `res.widget`
-    def get_widget(*_: object) -> Optional[Widget]:
-        vfn = res._value_fn  # pyright: ignore[reportFunctionMemberAccess]
-        vfn = register_current_context(vfn)
-        w = vfn.widget  # type: ignore
-        if w is not None:
-            return w
-        # If widget is None, we're reading in a reactive context, other than the render context, throw a silent exception
-        if has_current_context():
+        # Attach value/widget attributes to user func so they can be accessed (in other reactive contexts)
+        self._value = value
+        self._widget = None
+
+        # Invalidate any reactive contexts that have read these attributes
+        self._invalidate_contexts()
+
+        if value is None:
+            return None
+
+        # Ensure we have a widget & smart layout defaults
+        widget = as_widget(value)
+        widget, fill = set_layout_defaults(widget)
+
+        self._widget = cast(WidgetT, widget)
+
+        return {
+            "model_id": str(
+                cast(
+                    Unicode,
+                    widget.model_id,  # pyright: ignore[reportUnknownMemberType]
+                )
+            ),
+            "fill": fill,
+        }
+
+    # ########
+    # Enhancements
+    # ########
+
+    # TODO-barret; Turn these into reactives. We do not have reactive values in `py-shiny`, we shouldn't have them in `py-shinywidgets`
+    # TODO-barret; Add `.reactive_read()` and `.reactive_depend()` methods
+
+    def _get_reactive_obj(self, x: T) -> T | None:
+        self._register_current_context()
+        if x is not None:
+            return x
+        # If `self._value` or `self._widget` is None, we're reading in a reactive context,
+        # other than the render context, throw a silent exception
+        if self._has_current_context():
             req(False)
         return None
 
-    def set_widget(*_: object):
-        raise RuntimeError("The widget attribute of a @render_widget function is read only.")
+    @property
+    def value(self) -> ValueT | None:
+        return self._get_reactive_obj(self._value)
 
-    setattr(res.__class__, "widget", property(get_widget, set_widget))
+    @value.setter
+    def value(self, value: object):
+        raise RuntimeError(
+            "The `value` attribute of a @render_widget function is read only."
+        )
 
-    def get_value(*_: object) -> object | None:
-        vfn = res._value_fn  # pyright: ignore[reportFunctionMemberAccess]
-        vfn = register_current_context(vfn)
-        v = vfn.value  # type: ignore
-        if v is not None:
-            return v
-        if has_current_context():
-            req(False)
-        return None
+    @property
+    def widget(self) -> WidgetT | None:
+        return self._get_reactive_obj(self._widget)
 
-    def set_value(*_: object):
-        raise RuntimeError("The value attribute of a @render_widget function is read only.")
+    @value.setter
+    def value(self, value: object):
+        raise RuntimeError(
+            "The `value` attribute of a @render_widget function is read only."
+        )
 
-    setattr(res.__class__, "value", property(get_value, set_value))
+    # ########
+    # Reactivity contexts
+    # ########
+    def _has_current_context(self) -> bool:
+        try:
+            get_current_context()
+            return True
+        except RuntimeError:
+            return False
 
-    # Define these attributes directly on the user function so they're defined, even
-    # if that function hasn't been called yet. (we don't want to raise an exception in that case)
-    fn.widget = None  # type: ignore
-    fn.value = None   # type: ignore
+    # _contexts: set[Context]
+    def _invalidate_contexts(self) -> None:
+        for ctx in self._contexts:
+            ctx.invalidate()
 
-    return res
-
-
-def invalidate_contexts(fn: UserValueFn):
-    ctxs = getattr(fn, "_shinywidgets_contexts", set[Context]())
-    for ctx in ctxs:
-        # TODO: at what point should we be removing contexts?
-        ctx.invalidate()
-
-
-# If the widget/value is read in a reactive context, then we'll need to invalidate
-# that context when the widget's value changes
-def register_current_context(fn: UserValueFn):
-    if not has_current_context():
-        return fn
-    ctxs = getattr(fn, "_shinywidgets_contexts", set[Context]())
-    ctxs.add(get_current_context())
-    fn._shinywidgets_contexts = ctxs  # type: ignore
-    return fn
+    # If the widget/value is read in a reactive context, then we'll need to invalidate
+    # that context when the widget's value changes
+    def _register_current_context(self) -> None:
+        if not self._has_current_context():
+            return
+        self._contexts.add(get_current_context())
 
 
+class render_widget(render_widget_base[ValueT, Widget]):
+    ...
+
+
+# TODO-future; Add support for plotly (and other packages)
+# # Working proof of concept for `@render_plotly`
+# import plotly.graph_objects as go
+# FigureT = TypeVar("FigureT", bound=go.Figure | go.FigureWidget)
+# class render_plotly(render_widget_base[FigureT, go.FigureWidget]):
+#     ...
+
+
+# TODO-barret; Make method on RenderWidget base
 def reactive_read(widget: Widget, names: Union[str, Sequence[str]]) -> Any:
     reactive_depend(widget, names)
     if isinstance(names, str):
@@ -383,7 +417,7 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
     if getattr(widget, "_model_module", None) == "@jupyter-widgets/controls":
         return (widget, False)
 
-    layout = widget.layout         # type: ignore
+    layout = widget.layout  # type: ignore
 
     # If the ipywidget Layout() height is set to something other than "auto", then
     # don't do filling layout https://ipywidgets.readthedocs.io/en/stable/examples/Widget%20Layout.html
@@ -396,6 +430,7 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
     # Plotly provides it's own layout API (which isn't a subclass of ipywidgets.Layout)
     if pkg == "plotly":
         from plotly.graph_objs import Layout as PlotlyLayout
+
         if isinstance(layout, PlotlyLayout):
             if layout.height is not None:
                 fill = False
@@ -428,13 +463,6 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
 
     return (widget, fill)
 
-
-def has_current_context() -> bool:
-    try:
-        get_current_context()
-        return True
-    except RuntimeError:
-        return False
 
 # similar to base::system.file()
 def package_dir(package: str) -> str:
