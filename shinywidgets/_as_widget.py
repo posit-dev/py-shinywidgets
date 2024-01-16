@@ -35,7 +35,7 @@ def as_widget(x: object) -> Widget:
 
 def as_widget_altair(x: object) -> Optional[Widget]:
     try:
-        from altair import JupyterChart
+        from altair import JupyterChart  # pyright: ignore[reportMissingTypeStubs]
     except ImportError:
         raise RuntimeError(
             "Failed to import altair.JupyterChart (do you need to pip install -U altair?)"
@@ -55,9 +55,9 @@ def as_widget_bokeh(x: object) -> Optional[Widget]:
     # TODO: ideally we'd do this in set_layout_defaults() but doing
     # `BokehModel(x)._model.sizing_mode = "stretch_both"`
     # there, but that doesn't seem to work??
-    from bokeh.plotting import figure
+    from bokeh.plotting import figure  # pyright: ignore[reportMissingTypeStubs]
 
-    if isinstance(x, figure):
+    if isinstance(x, figure):  # type: ignore
         x.sizing_mode = "stretch_both"  # pyright: ignore[reportGeneralTypeIssues]
 
     return BokehModel(x)  # type: ignore
@@ -67,7 +67,7 @@ def as_widget_plotly(x: object) -> Optional[Widget]:
     # Don't need a try import here since this won't be called unless x is a plotly object
     import plotly.graph_objects as go  # pyright: ignore[reportMissingTypeStubs]
 
-    if not isinstance(x, go.Figure):
+    if not isinstance(x, go.Figure):  # type: ignore
         raise TypeError(
             f"Don't know how to coerce {x} into a plotly.graph_objects.FigureWidget object."
         )

@@ -1,21 +1,22 @@
 from __future__ import annotations
 
-from typing import Any, Generic, Optional, Sequence, TypeVar, Union, cast
+import warnings
+from typing import Generic, Optional, Tuple, TypeVar, cast
 
 from htmltools import Tag
-from ipywidgets.widgets import Widget  # pyright: ignore[reportMissingTypeStubs]
-from shiny import reactive, req
-from shiny.reactive import (
-    Calc_ as shiny_reactive_calc_class,  # pyright: ignore[reportPrivateImportUsage]
+from ipywidgets.widgets import (  # pyright: ignore[reportMissingTypeStubs]
+    DOMWidget,
+    Layout,
+    Widget,
 )
-from shiny.reactive import value as shiny_reactive_value
+from shiny import req
 from shiny.reactive._core import Context, get_current_context
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
 from traitlets import Unicode
 
 from ._as_widget import as_widget
+from ._dependencies import widget_pkg
 from ._output_widget import output_widget
-from ._shinywidgets import reactive_depend, reactive_read, set_layout_defaults
 
 __all__ = (
     "render_widget_base",
@@ -35,7 +36,7 @@ WidgetT = TypeVar("WidgetT", bound=Widget)
 """
 The type of the widget created from the renderer's ValueT
 """
-
+T = TypeVar("T", bound=object)
 
 class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     """ """
@@ -64,19 +65,19 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self.fill = fill
         self.fillable = fillable
 
-        # self._value: ValueT | None = None  # TODO-barret; Not right type
-        # self._widget: WidgetT | None = None
+        self._value: ValueT | None = None
+        self._widget: WidgetT | None = None
         self._contexts: set[Context] = set()
-
-        self._value: shiny_reactive_value[ValueT | None] = shiny_reactive_value(None)
-        self._widget: shiny_reactive_value[WidgetT | None] = shiny_reactive_value(None)
 
     async def render(self) -> Jsonifiable | None:
         value = await self.fn()
 
         # Attach value/widget attributes to user func so they can be accessed (in other reactive contexts)
-        self._value.set(value)
-        self._widget.set(None)
+        self._value = value
+        self._widget = None
+
+        # Invalidate any reactive contexts that have read these attributes
+        self._invalidate_contexts()
 
         if value is None:
             return None
@@ -85,10 +86,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         widget = as_widget(value)
         widget, fill = set_layout_defaults(widget)
 
-        self._widget.set(
-            # TODO-future; Remove cast call once `as_widget()` returns a WidgetT
-            cast(WidgetT, widget)
-        )
+        self._widget = cast(WidgetT, widget)
 
         return {
             "model_id": str(
@@ -100,198 +98,113 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             "fill": fill,
         }
 
-    # ########
-    # Enhancements
-    # ########
+    @property
+    def value(self) -> ValueT | None:
+        return self._get_reactive_obj(self._value)
 
-    # TODO-barret; Turn these into reactives. We do not have reactive values in `py-shiny`, we shouldn't have them in `py-shinywidgets`
-    # TODO-barret; Add `.reactive_read()` and `.reactive_depend()` methods
+    @value.setter
+    def value(self, value: object):
+        raise RuntimeError(
+            "The `value` attribute of a @render_widget function is read only."
+        )
 
-    def value(self) -> ValueT:
-        value = self._value()
-        req(value)
+    @property
+    def widget(self) -> WidgetT | None:
+        return self._get_reactive_obj(self._widget)
 
-        # Can only get here if value is not `None`
-        value = cast(ValueT, value)
-        return value
+    @widget.setter
+    def widget(self, widget: object):
+        raise RuntimeError(
+            "The `widget` attribute of a @render_widget function is read only."
+        )
 
-    def widget(self) -> WidgetT:
-        widget = self._widget()
-        req(widget)
+    def _get_reactive_obj(self, x: T) -> T | None:
+        self._register_current_context()
+        if x is not None:
+            return x
+        if has_current_context():
+            req(False)  # A widget/model hasn't rendered yet
+        return None
 
-        # Can only get here if widget is not `None`
-        widget = cast(WidgetT, widget)
-        return widget
+    def _invalidate_contexts(self) -> None:
+        for ctx in self._contexts:
+            ctx.invalidate()
 
-    # def value_trait(self, name: str) -> Any:
-    #     return reactive_read(self.value(), name)
-    def widget_trait(self, name: str) -> Any:
-        return reactive_read(self.widget(), name)
-
-    # ##########################################################################
-
-    # TODO-future; Should this method be supported? Can we have full typing support for the trait values?
-    # Note: Barret,Carson Jan 11-2024;
-    # This method is a very Shiny-like approach to making reactive values from
-    # ipywidgets. However, it would not support reaching into the widget with full
-    # typing. Instead, it is recommended that we keep `reactive_read(widget_like_obj,
-    # name)` that upgrades a (nested within widget) value to a resolved value that will
-    # invalidate the current context when the widget value is updated (by some other
-    # means).
-    #
-    # Since we know that `@render_altair` is built on `altair.JupyterChart`, we know
-    # that `jchart.widget()` will return an `JupyterChart` object. This object has full
-    # typing, such as `jchart.widget().selections` which is a JupyterChart `Selections`
-    # object. Then using the `reactive_read()` function, we can create a reactive value
-    # from the `Selections` object. This allows for users to reach into the widget as
-    # much as possible (with full typing) before using `reactive_read()`.
-    #
-    # Ex:
-    # ----------------------
-    # ```python
-    # @render_altair
-    # def jchart():
-    #    return some_altair_chart
-    #
-    # @render.text
-    # def selected_point():
-    #    # This is a reactive value that will invalidate the current context when the chart's selection changes
-    #    selected_point = reactive_read(jchart.widget().selections, "point")
-    #    return f"The selected point is: {selected_point()}"
-    # ```
-    # ----------------------
-    #
-    # Final realization:
-    # The method below (`_reactive_trait()`) does not support reaching into the widget
-    # result object. If the method was updated to support a nested key (str), typing
-    # would not be supported.
-    #
-    # Therefore, `reactive_read()` should be used until we can dynamically create
-    # classes that wrap a widget. (Barret: I am not hopeful that this will be possible
-    # or worth the effort. Ex: `jchart.traits.selections.point()` would be a reactive
-    # and fully typed.)
-    def _reactive_trait(
-        self,
-        names: Union[str, Sequence[str]],
-    ) -> shiny_reactive_calc_class[Any]:
-        """
-        Create a reactive value of a widget's top-level value that can be accessed by
-        name.
-
-        Ex:
-
-        ```python
-        slider_value = slider.reactive_trait("value")
-
-        @render.text
-        def slider_val():
-            return f"The value of the slider is: {slider_value()}"
-        ```
-        """
-
-        if in_reactive_context():
-            raise RuntimeError(
-                "Calling `reactive_trait()` within a reactive context is not supported."
-            )
-
-        reactive_trait: shiny_reactive_value[Any] = shiny_reactive_value(None)
-
-        names_was_str = isinstance(names, str)
-        if isinstance(names, str):
-            names = [names]
-
-        @reactive.effect
-        def _():
-            # Set the value to None incase the widget doesn't exist / have the trait
-            reactive_trait.set(None)
-
-            widget = self.widget()
-
-            for name in names:
-                if not widget.has_trait(  # pyright: ignore[reportUnknownMemberType]
-                    name
-                ):
-                    raise ValueError(
-                        f"The '{name}' attribute of {widget.__class__.__name__} is not a "
-                        "widget trait, and so it's not possible to reactively read it. "
-                        "For a list of widget traits, call `.widget().trait_names()`."
-                    )
-
-            # # From `Widget.observe()` docs:
-            # A callable that is called when a trait changes. Its
-            # signature should be ``handler(change)``, where ``change`` is a
-            # dictionary. The change dictionary at least holds a 'type' key.
-            # * ``type``: the type of notification.
-            # Other keys may be passed depending on the value of 'type'. In the
-            # case where type is 'change', we also have the following keys:
-            # * ``owner`` : the HasTraits instance
-            # * ``old`` : the old value of the modified trait attribute
-            # * ``new`` : the new value of the modified trait attribute
-            # * ``name`` : the name of the modified trait attribute.
-            def on_key_update(change: object):
-                if names_was_str:
-                    val = getattr(widget, names[0])
-                else:
-                    val = tuple(getattr(widget, name) for name in names)
-
-                reactive_trait.set(val)
-
-            # set value to the init widget value
-            on_key_update(None)
-
-            # Setup - onchange
-            # When widget attr changes, update the reactive value
-            widget.observe(  # pyright: ignore[reportUnknownMemberType]
-                on_key_update,
-                names,  # pyright: ignore[reportGeneralTypeIssues]
-                "change",
-            )
-
-            # Teardown - onchange
-            # When the widget object is created again, remove the old observer
-            def on_ctx_invalidate():
-                widget.unobserve(  # pyright: ignore[reportUnknownMemberType]
-                    on_key_update,
-                    names,  # pyright: ignore[reportGeneralTypeIssues]
-                    "change",
-                )
-
-            get_current_context().on_invalidate(on_ctx_invalidate)
-
-        # Return a calc object that can only be read from
-        @reactive.calc
-        def trait_calc():
-            return reactive_trait()
-
-        return trait_calc
-
-    # Note: Should be removed once `._reactive_trait()` is removed
-    def _reactive_read(self, names: Union[str, Sequence[str]]) -> Any:
-        """
-        Reactively read a Widget's trait(s)
-        """
-        self._reactive_depend(names)
-
-        widget = self.widget()
-
-        return reactive_read(widget, names)
-
-    # Note: Should be removed once `._reactive_trait()` is removed
-    def _reactive_depend(
-        self,
-        names: Union[str, Sequence[str]],
-        type: str = "change",
-    ) -> None:
-        """
-        Reactively depend upon a Widget's trait(s)
-        """
-        return reactive_depend(self.widget(), names, type)
+    # If the widget/value is read in a reactive context, then we'll need to invalidate
+    # that context when the widget's value changes
+    def _register_current_context(self) -> None:
+        if not has_current_context():
+            return
+        self._contexts.add(get_current_context())
 
 
-def in_reactive_context() -> bool:
+def has_current_context() -> bool:
     try:
-        # Raises a `RuntimeError` if there is no current context
         get_current_context()
         return True
     except RuntimeError:
         return False
+
+
+def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
+    # If we detect a user specified height on the widget, then don't
+    # do filling layout (akin to the behavior of output_widget(height=...))
+    fill = True
+
+    if not isinstance(widget, DOMWidget):
+        return (widget, fill)
+
+    # Do nothing for "input-like" widgets (e.g., ipywidgets.IntSlider())
+    if getattr(widget, "_model_module", None) == "@jupyter-widgets/controls":
+        return (widget, False)
+
+    layout = widget.layout  # type: ignore
+
+    # If the ipywidget Layout() height is set to something other than "auto", then
+    # don't do filling layout https://ipywidgets.readthedocs.io/en/stable/examples/Widget%20Layout.html
+    if isinstance(layout, Layout):
+        if layout.height is not None and layout.height != "auto":  # type: ignore
+            fill = False
+
+    pkg = widget_pkg(widget)
+
+    # Plotly provides it's own layout API (which isn't a subclass of ipywidgets.Layout)
+    if pkg == "plotly":
+        from plotly.graph_objs import Layout as PlotlyLayout  # pyright: ignore
+
+        if isinstance(layout, PlotlyLayout):
+            if layout.height is not None:  # pyright: ignore[reportUnknownMemberType]
+                fill = False
+            # Default margins are also way too big
+            layout.template.layout.margin = dict(  # pyright: ignore
+                l=16, t=32, r=16, b=16
+            )
+            # Unfortunately, plotly doesn't want to respect the top margin template,
+            # so change that 60px default to 32px
+            if layout.margin["t"] == 60:  # pyright: ignore
+                layout.margin["t"] = 32  # pyright: ignore
+
+    widget.layout = layout
+
+    # altair, confusingly, isn't setup to fill it's Layout() container by default. I
+    # can't imagine a situation where you'd actually want it to _not_ fill the parent
+    # container since it'll be contained within the Layout() container, which has a
+    # full-fledged sizing API.
+    if pkg == "altair":
+        import altair as alt  # pyright: ignore[reportMissingTypeStubs]
+
+        # Since as_widget() has already happened, we only need to handle JupyterChart
+        if isinstance(widget, alt.JupyterChart):
+            if isinstance(
+                widget.chart,  # pyright: ignore[reportUnknownMemberType]
+                alt.ConcatChart,
+            ):
+                # Throw warning to use ui.layout_column_wrap() instead
+                warnings.warn(
+                    "Consider using shiny.ui.layout_column_wrap() instead of alt.concat() "
+                    "for multi-column layout (the latter doesn't support filling layout)."
+                )
+            else:
+                widget.chart = widget.chart.properties(width="container", height="container")  # type: ignore
+
+    return (widget, fill)
