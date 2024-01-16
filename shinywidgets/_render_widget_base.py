@@ -59,10 +59,10 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         fillable: Optional[bool] = None,
     ):
         super().__init__(_fn)
-        self.width: Optional[str] = width
-        self.height: Optional[str] = height
-        self.fill: Optional[bool] = fill
-        self.fillable: Optional[bool] = fillable
+        self.width = width
+        self.height = height
+        self.fill = fill
+        self.fillable = fillable
 
         # self._value: ValueT | None = None  # TODO-barret; Not right type
         # self._widget: WidgetT | None = None
