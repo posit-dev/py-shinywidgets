@@ -1,99 +1,39 @@
 from __future__ import annotations
 
-__all__ = (
-    "output_widget",
-    "register_widget",
-    "render_widget",
-    "reactive_read",
-    "as_widget",
-)
 import copy
 import importlib
 import json
 import os
 import tempfile
 import warnings
-from typing import Any, Generic, Optional, Sequence, Tuple, TypeVar, Union, cast
+from typing import Any, Optional, Sequence, Tuple, Union, cast
 from uuid import uuid4
 from weakref import WeakSet
 
-from htmltools import Tag, TagList, css, head_content, tags
-from ipywidgets._version import (
-    __protocol_version__,  # pyright: ignore[reportUnknownVariableType]
-)
-from ipywidgets.widgets import DOMWidget, Layout, Widget
-from ipywidgets.widgets.widget import (
-    _remove_buffers,  # pyright: ignore[reportUnknownVariableType, reportGeneralTypeIssues]
-)
-from shiny import Session, reactive, req
+import ipywidgets  # pyright: ignore[reportMissingTypeStubs]
+
+from ._render_widget import render_widget
+
+__protocol_version__ = ipywidgets._version.__protocol_version__
+DOMWidget = ipywidgets.widgets.DOMWidget
+Layout = ipywidgets.widgets.Layout
+Widget = ipywidgets.widgets.Widget
+_remove_buffers = ipywidgets.widgets.widget._remove_buffers  # pyright: ignore
+from htmltools import TagList
+from shiny import Session, reactive
 from shiny.http_staticfiles import StaticFiles
-from shiny.module import resolve_id
-from shiny.reactive._core import Context, get_current_context
-from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
+from shiny.reactive._core import get_current_context
 from shiny.session import get_current_session, require_active_session
-from shiny.ui.css import as_css_unit
-from shiny.ui.fill import as_fill_item, as_fillable_container
-from traitlets import Unicode
 
 from ._as_widget import as_widget
+from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, ShinyComm, ShinyCommManager
-from ._dependencies import (
-    libembed_dependency,
-    output_binding_dependency,
-    require_dependency,
-    widget_pkg,
+from ._dependencies import require_dependency, widget_pkg
+
+__all__ = (
+    "register_widget",
+    "reactive_read",
 )
-
-# Make it easier to customize the CDN fallback (and make it CDN-only)
-# https://ipywidgets.readthedocs.io/en/7.6.3/embedding.html#python-interface
-# https://github.com/jupyter-widgets/ipywidgets/blob/6f6156c7/packages/html-manager/src/libembed-amd.ts#L6-L14
-SHINYWIDGETS_CDN = os.getenv("SHINYWIDGETS_CDN", "https://cdn.jsdelivr.net/npm/")
-SHINYWIDGETS_CDN_ONLY = os.getenv("SHINYWIDGETS_CDN_ONLY", "false").lower() == "true"
-# Should shinywidgets warn if unable to find a local path to a widget extension?
-SHINYWIDGETS_EXTENSION_WARNING = (
-    os.getenv("SHINYWIDGETS_EXTENSION_WARNING", "false").lower() == "true"
-)
-
-
-def output_widget(
-    id: str,
-    *,
-    width: Optional[str] = None,
-    height: Optional[str] = None,
-    fill: Optional[bool] = None,
-    fillable: Optional[bool] = None,
-) -> Tag:
-    id = resolve_id(id)
-    res = tags.div(
-        *libembed_dependency(),
-        output_binding_dependency(),
-        head_content(
-            tags.script(
-                data_jupyter_widgets_cdn=SHINYWIDGETS_CDN,
-                data_jupyter_widgets_cdn_only=SHINYWIDGETS_CDN_ONLY,
-            )
-        ),
-        id=id,
-        class_="shiny-ipywidget-output shiny-report-size shiny-report-theme",
-        style=css(
-            width=as_css_unit(width),
-            height=as_css_unit(height),
-        ),
-    )
-
-    if fill is None:
-        fill = height is None
-
-    if fill:
-        res = as_fill_item(res)
-
-    if fillable is None:
-        fillable = height is None
-
-    if fillable:
-        res = as_fillable_container(res)
-
-    return res
 
 
 # --------------------------------------------------------------------------------------------
@@ -110,7 +50,7 @@ def init_shiny_widget(w: Widget):
     # Break out of any module-specific session. Otherwise, input.shinywidgets_comm_send
     # will be some module-specific copy.
     while hasattr(session, "_parent"):
-        session = cast(Session, session._parent)
+        session = cast(Session, session._parent)  # pyright: ignore
 
     # Previous versions of ipywidgets (< 8.0.5) had
     #   `Widget.comm = Instance('ipykernel.comm.Comm')`
@@ -141,7 +81,7 @@ def init_shiny_widget(w: Widget):
 
     # Initialize the comm...this will also send the initial state of the widget
     w.comm = ShinyComm(
-        comm_id=w._model_id,
+        comm_id=w._model_id,  # pyright: ignore
         comm_manager=COMM_MANAGER,
         target_name="jupyter.widgets",
         data={"state": state, "buffer_paths": buffer_paths},
@@ -205,143 +145,9 @@ SESSIONS = WeakSet()  # type: ignore
 COMM_MANAGER = ShinyCommManager()
 
 
-# --------------------------------------------------------------------------------------------
-# Implement @render_widget()
-# --------------------------------------------------------------------------------------------
-
-ValueT = TypeVar("ValueT", bound=object)
-WidgetT = TypeVar("WidgetT", bound=Widget)
-T = TypeVar("T", bound=object)
-
-
-class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
-    def default_ui(self, id: str) -> Tag:
-        return output_widget(
-            id,
-            width=self.width,
-            height=self.height,
-            fill=self.fill,
-            fillable=self.fillable,
-        )
-
-    def __init__(
-        self,
-        _fn: Optional[ValueFn[ValueT]] = None,
-        *,
-        width: Optional[str] = None,
-        height: Optional[str] = None,
-        fill: Optional[bool] = None,
-        fillable: Optional[bool] = None,
-    ):
-        super().__init__(_fn)
-        self.width: Optional[str] = width
-        self.height: Optional[str] = height
-        self.fill: Optional[bool] = fill
-        self.fillable: Optional[bool] = fillable
-
-        self._value: ValueT | None = None  # TODO-barret; Not right type
-        self._widget: WidgetT | None = None
-        self._contexts: set[Context] = set()
-
-    async def render(self) -> Jsonifiable | None:
-        value = await self.fn()
-
-        # Attach value/widget attributes to user func so they can be accessed (in other reactive contexts)
-        self._value = value
-        self._widget = None
-
-        # Invalidate any reactive contexts that have read these attributes
-        self._invalidate_contexts()
-
-        if value is None:
-            return None
-
-        # Ensure we have a widget & smart layout defaults
-        widget = as_widget(value)
-        widget, fill = set_layout_defaults(widget)
-
-        self._widget = cast(WidgetT, widget)
-
-        return {
-            "model_id": str(
-                cast(
-                    Unicode,
-                    widget.model_id,  # pyright: ignore[reportUnknownMemberType]
-                )
-            ),
-            "fill": fill,
-        }
-
-    # ########
-    # Enhancements
-    # ########
-
-    # TODO-barret; Turn these into reactives. We do not have reactive values in `py-shiny`, we shouldn't have them in `py-shinywidgets`
-    # TODO-barret; Add `.reactive_read()` and `.reactive_depend()` methods
-
-    def _get_reactive_obj(self, x: T) -> T | None:
-        self._register_current_context()
-        if x is not None:
-            return x
-        # If `self._value` or `self._widget` is None, we're reading in a reactive context,
-        # other than the render context, throw a silent exception
-        if self._has_current_context():
-            req(False)
-        return None
-
-    @property
-    def value(self) -> ValueT | None:
-        return self._get_reactive_obj(self._value)
-
-    @value.setter
-    def value(self, value: object):
-        raise RuntimeError(
-            "The `value` attribute of a @render_widget function is read only."
-        )
-
-    @property
-    def widget(self) -> WidgetT | None:
-        return self._get_reactive_obj(self._widget)
-
-    @widget.setter
-    def widget(self, widget: object):
-        raise RuntimeError(
-            "The `widget` attribute of a @render_widget function is read only."
-        )
-
-    # ########
-    # Reactivity contexts
-    # ########
-    def _has_current_context(self) -> bool:
-        try:
-            get_current_context()
-            return True
-        except RuntimeError:
-            return False
-
-    # _contexts: set[Context]
-    def _invalidate_contexts(self) -> None:
-        for ctx in self._contexts:
-            ctx.invalidate()
-
-    # If the widget/value is read in a reactive context, then we'll need to invalidate
-    # that context when the widget's value changes
-    def _register_current_context(self) -> None:
-        if not self._has_current_context():
-            return
-        self._contexts.add(get_current_context())
-
-
-class render_widget(render_widget_base[ValueT, Widget]):
-    ...
-
-
-# TODO-future; Add support for plotly (and other packages)
-# # Working proof of concept for `@render_plotly`
-# import plotly.graph_objects as go
-# FigureT = TypeVar("FigureT", bound=go.Figure | go.FigureWidget)
-# class render_plotly(render_widget_base[FigureT, go.FigureWidget]):
-#     ...
+# --------------------------------------
+# Reactivity
+# --------------------------------------
 
 
 # TODO-barret; Make method on RenderWidget base
@@ -371,7 +177,7 @@ def reactive_depend(
         names = [names]
 
     for name in names:
-        if not widget.has_trait(name):
+        if not widget.has_trait(name):  # pyright: ignore[reportUnknownMemberType]
             raise ValueError(
                 f"The '{name}' attribute of {widget.__class__.__name__} is not a "
                 "widget trait, and so it's not possible to reactively read it. "
@@ -389,6 +195,7 @@ def reactive_depend(
     ctx.on_invalidate(_)
 
 
+# TODO-barret; Proposal: Remove `register_widget()` in favor of `@render_widget`
 def register_widget(
     id: str, widget: Widget, session: Optional[Session] = None
 ) -> Widget:
@@ -429,17 +236,19 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
 
     # Plotly provides it's own layout API (which isn't a subclass of ipywidgets.Layout)
     if pkg == "plotly":
-        from plotly.graph_objs import Layout as PlotlyLayout
+        from plotly.graph_objs import Layout as PlotlyLayout  # pyright: ignore
 
         if isinstance(layout, PlotlyLayout):
-            if layout.height is not None:
+            if layout.height is not None:  # pyright: ignore[reportUnknownMemberType]
                 fill = False
             # Default margins are also way too big
-            layout.template.layout.margin = dict(l=16, t=32, r=16, b=16)
+            layout.template.layout.margin = dict(  # pyright: ignore
+                l=16, t=32, r=16, b=16
+            )
             # Unfortunately, plotly doesn't want to respect the top margin template,
             # so change that 60px default to 32px
-            if layout.margin["t"] == 60:
-                layout.margin["t"] = 32
+            if layout.margin["t"] == 60:  # pyright: ignore
+                layout.margin["t"] = 32  # pyright: ignore
 
     widget.layout = layout
 
@@ -452,7 +261,10 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
 
         # Since as_widget() has already happened, we only need to handle JupyterChart
         if isinstance(widget, alt.JupyterChart):
-            if isinstance(widget.chart, alt.ConcatChart):
+            if isinstance(
+                widget.chart,  # pyright: ignore[reportUnknownMemberType]
+                alt.ConcatChart,
+            ):
                 # Throw warning to use ui.layout_column_wrap() instead
                 warnings.warn(
                     "Consider using shiny.ui.layout_column_wrap() instead of alt.concat() "

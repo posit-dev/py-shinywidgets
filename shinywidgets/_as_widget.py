@@ -1,6 +1,6 @@
 from typing import Optional
 
-from ipywidgets.widgets.widget import Widget
+from ipywidgets.widgets.widget import Widget  # pyright: ignore[reportMissingTypeStubs]
 
 from ._dependencies import widget_pkg
 
@@ -46,7 +46,7 @@ def as_widget_altair(x: object) -> Optional[Widget]:
 
 def as_widget_bokeh(x: object) -> Optional[Widget]:
     try:
-        from jupyter_bokeh import BokehModel
+        from jupyter_bokeh import BokehModel  # pyright: ignore[reportMissingTypeStubs]
     except ImportError:
         raise ImportError(
             "Install the jupyter_bokeh package to use bokeh with shinywidgets."
@@ -56,15 +56,16 @@ def as_widget_bokeh(x: object) -> Optional[Widget]:
     # `BokehModel(x)._model.sizing_mode = "stretch_both"`
     # there, but that doesn't seem to work??
     from bokeh.plotting import figure
+
     if isinstance(x, figure):
-        x.sizing_mode = "stretch_both"
+        x.sizing_mode = "stretch_both"  # pyright: ignore[reportGeneralTypeIssues]
 
     return BokehModel(x)  # type: ignore
 
 
 def as_widget_plotly(x: object) -> Optional[Widget]:
     # Don't need a try import here since this won't be called unless x is a plotly object
-    import plotly.graph_objects as go
+    import plotly.graph_objects as go  # pyright: ignore[reportMissingTypeStubs]
 
     if not isinstance(x, go.Figure):
         raise TypeError(
