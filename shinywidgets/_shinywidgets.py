@@ -303,10 +303,10 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     def widget(self) -> WidgetT | None:
         return self._get_reactive_obj(self._widget)
 
-    @value.setter
-    def value(self, value: object):
+    @widget.setter
+    def widget(self, widget: object):
         raise RuntimeError(
-            "The `value` attribute of a @render_widget function is read only."
+            "The `widget` attribute of a @render_widget function is read only."
         )
 
     # ########
