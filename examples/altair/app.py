@@ -1,37 +1,24 @@
 import altair as alt
-from shiny import App, render, ui
+import shiny.express
+from shiny import render
 from vega_datasets import data
 
-from shinywidgets import output_widget, reactive_read, register_widget
+from shinywidgets import reactive_read, render_altair
 
-source = data.cars()
 
-app_ui = ui.page_fluid(
-    ui.output_text_verbatim("selection"),
-    output_widget("chart")
-)
+# Output selection information (click on legend in the plot)
+@render.text
+def selection():
+    pt = reactive_read(jchart.widget.selections, "point")
+    return "Selected point: " + str(pt)
 
-def server(input, output, session):
-
-    # Replicate JupyterChart interactivity
-    # https://altair-viz.github.io/user_guide/jupyter_chart.html#point-selections
+# Replicate JupyterChart interactivity
+# https://altair-viz.github.io/user_guide/jupyter_chart.html#point-selections
+@render_altair
+def jchart():
     brush = alt.selection_point(name="point", encodings=["color"], bind="legend")
-    chart = alt.Chart(source).mark_point().encode(
+    return alt.Chart(data.cars()).mark_point().encode(
         x='Horsepower:Q',
         y='Miles_per_Gallon:Q',
         color=alt.condition(brush, 'Origin:N', alt.value('grey')),
     ).add_params(brush)
-
-    jchart = alt.JupyterChart(chart)
-
-    # Display/register the chart in the app_ui
-    register_widget("chart", jchart)
-
-    # Reactive-ly read point selections
-    @output
-    @render.text
-    def selection():
-        pt = reactive_read(jchart.selections, "point")
-        return "Selected point: " + str(pt)
-
-app = App(app_ui, server)

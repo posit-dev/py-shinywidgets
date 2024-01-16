@@ -1,9 +1,10 @@
 import numpy as np
 import plotly.graph_objs as go
-from shiny import *
+from shiny import reactive
+from shiny.express import input, ui
 from sklearn.linear_model import LinearRegression
 
-from shinywidgets import output_widget, register_widget
+from shinywidgets import render_plotly
 
 # Generate some data and fit a linear regression
 n = 10000
@@ -13,15 +14,13 @@ y = dat[1]
 fit = LinearRegression().fit(x.reshape(-1, 1), dat[1])
 xgrid = np.linspace(start=min(x), stop=max(x), num=30)
 
-app_ui = ui.page_fillable(
-    ui.input_checkbox("show_fit", "Show fitted line", value=True),
-    output_widget("scatterplot"),
-)
+ui.page_opts(title="Plotly demo", fillable=True)
 
+ui.input_checkbox("show_fit", "Show fitted line", value=True)
 
-def server(input, output, session):
-
-    scatterplot = go.FigureWidget(
+@render_plotly
+def scatterplot():
+    return go.FigureWidget(
         data=[
             go.Scattergl(
                 x=x,
@@ -39,11 +38,7 @@ def server(input, output, session):
         layout={"showlegend": False},
     )
 
-    register_widget("scatterplot", scatterplot)
 
-    @reactive.Effect
-    def _():
-        scatterplot.data[1].visible = input.show_fit()
-
-
-app = App(app_ui, server)
+@reactive.Effect
+def _():
+    scatterplot.widget.data[1].visible = input.show_fit()
