@@ -195,16 +195,20 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
 
         # Since as_widget() has already happened, we only need to handle JupyterChart
         if isinstance(widget, alt.JupyterChart):
-            if isinstance(
-                widget.chart,  # pyright: ignore[reportUnknownMemberType]
-                alt.ConcatChart,
-            ):
+            chart = cast(alt.JupyterChart, widget).chart  # type: ignore
+            if isinstance(chart, alt.ConcatChart):
                 # Throw warning to use ui.layout_column_wrap() instead
                 warnings.warn(
                     "Consider using shiny.ui.layout_column_wrap() instead of alt.concat() "
-                    "for multi-column layout (the latter doesn't support filling layout)."
+                    "for multi-column layout (the latter doesn't support filling layout).",
+                    stacklevel=2
                 )
             else:
-                widget.chart = widget.chart.properties(width="container", height="container")  # type: ignore
+                UndefinedType = alt.utils.schemapi.UndefinedType  # type: ignore
+                if isinstance(chart.width, UndefinedType):  # type: ignore[reportMissingTypeStubs]
+                    chart = chart.properties(width="container")  # type: ignore
+                if isinstance(chart.height, UndefinedType):  # type: ignore[reportMissingTypeStubs]
+                    chart = chart.properties(height="container")  # type: ignore
+            widget.chart = chart
 
     return (widget, fill)
