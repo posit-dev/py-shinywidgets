@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from htmltools import Tag
+
 if TYPE_CHECKING:
     from altair import JupyterChart  # pyright: ignore[reportMissingTypeStubs]
     from jupyter_bokeh import BokehModel  # pyright: ignore[reportMissingTypeStubs]
@@ -12,6 +14,7 @@ if TYPE_CHECKING:
 else:
     JupyterChart = BokehModel = FigureWidget = DeckGLWidget = object
 
+from ._dependencies import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
 __all__ = (
@@ -33,7 +36,10 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     ...
 
 class render_bokeh(render_widget_base[ValueT, BokehModel]):
-    ...
+    def default_ui(self, id: str) -> Tag:
+        res = super().default_ui(id)
+        res.children.append(bokeh_dependency())
+        return res
 
 class render_plotly(render_widget_base[ValueT, FigureWidget]):
     ...
