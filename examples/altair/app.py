@@ -7,7 +7,7 @@ from shinywidgets import reactive_read, render_altair
 
 
 # Output selection information (click on legend in the plot)
-@render.text
+@render.code
 def selection():
     pt = reactive_read(jchart.widget.selections, "point")
     return "Selected point: " + str(pt)

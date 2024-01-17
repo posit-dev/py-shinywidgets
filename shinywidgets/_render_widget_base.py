@@ -41,7 +41,7 @@ T = TypeVar("T", bound=object)
 class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     """ """
 
-    def default_ui(self, id: str) -> Tag:
+    def auto_output_ui(self, id: str) -> Tag:
         return output_widget(
             id,
             width=self.width,
