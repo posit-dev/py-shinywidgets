@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [UNRELEASED]
 
 * The `@render_widget` decorator now attaches a `widget` (and `value`) attribute to the function it decorates. This allows for easier access to the widget instance (or value), and eliminates the need for `register_widget` (which is now soft deprecated).  (#119)
+* The `.properties()` method on `altair.Chart` object now works as expected again. (#129)
 * Reduce default plot margins on plotly graphs.
 
 ## [0.2.4] - 2023-11-20
