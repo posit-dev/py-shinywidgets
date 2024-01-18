@@ -38,12 +38,13 @@ The type of the widget created from the renderer's ValueT
 """
 T = TypeVar("T", bound=object)
 
+
 class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     """ """
 
-    def auto_output_ui(self, id: str) -> Tag:
+    def auto_output_ui(self) -> Tag:
         return output_widget(
-            id,
+            self.output_id,
             width=self.width,
             height=self.height,
             fill=self.fill,
@@ -201,7 +202,7 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
                 warnings.warn(
                     "Consider using shiny.ui.layout_column_wrap() instead of alt.concat() "
                     "for multi-column layout (the latter doesn't support filling layout).",
-                    stacklevel=2
+                    stacklevel=2,
                 )
             else:
                 UndefinedType = alt.utils.schemapi.UndefinedType  # type: ignore
