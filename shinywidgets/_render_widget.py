@@ -36,8 +36,8 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     ...
 
 class render_bokeh(render_widget_base[ValueT, BokehModel]):
-    def auto_output_ui(self, id: str) -> Tag:
-        res = super().auto_output_ui(id)
+    def auto_output_ui(self) -> Tag:
+        res = super().auto_output_ui()
         res.children.append(bokeh_dependency())
         return res
 
