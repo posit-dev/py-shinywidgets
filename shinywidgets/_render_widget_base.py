@@ -89,6 +89,10 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
         self._widget = cast(WidgetT, widget)
 
+        # Don't actually display anything unless this is a DOMWidget
+        if not isinstance(widget, DOMWidget):
+            return None
+
         return {
             "model_id": str(
                 cast(
