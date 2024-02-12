@@ -85,6 +85,11 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       el.style.visibility = "inherit";
     }
 
+    // Only forward the potential to fill if `output_widget(fillable=True)`
+    // _and_ the widget instance wants to fill
+    const fill = data.fill && el.classList.contains("html-fill-container");
+    if (fill) el.classList.add("forward-fill-potential");
+
     // At this time point, we should've already handled an 'open' message, and so
     // the model should be ready to use
     const model = await manager.get_model(data.model_id);
@@ -102,29 +107,8 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       el.removeChild(el.childNodes[0]);
     }
 
-    // Only carry the potential to fill (i.e., add fill classes)
-    // if `output_widget(fillable=True)` _and_ the widget wants to fill
-    const fill = data.fill && el.classList.contains("html-fill-container");
-
     // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;
-
-    if (fill) {
-      // Make lmWidget a fill carrier
-      // el should already be a fill carrier (done during markup generation)
-      lmWidget?.classList.add("html-fill-container", "html-fill-item");
-
-      // lmWidget's children is the actual widget implementation.
-      // Ideally this would be a single element, but some widget
-      // implementations (e.g., pydeck, altair) have multiple direct children.
-      // It seems relatively safe to make all of them fill items, but there's
-      // at least one case where it's problematic (pydeck)
-      lmWidget.childNodes.forEach((child) => {
-        if (!(child instanceof HTMLElement)) return;
-        if (child.classList.contains("deckgl-ui-elements-overlay")) return;
-        child.classList.add("html-fill-item");
-      });
-    }
 
     this._maybeResize(lmWidget);
   }

@@ -7,15 +7,24 @@
 }
 
 /*
-  .html-fill-item defaults to `flex-basis: auto`, which works well when item's
-  all have consistent height, but we can't assume that (because different
-  widgets want different height defaults). By setting `flex-basis: 400px`,
-  we let widgets keep its natural height (when not filling), but when filling,
-  widgets will all grow/shrink to a consistent height.
+* The .forward-fill-potential class gets added after the widget gets displayed (since we
+* don't know if it's going to fill until then). Also note that we intentionally do this
+* instead of adding html-fill-container/html-fill-item classes to these elements since
+* that causes a flash of incorrect sizing.
 */
-.shiny-ipywidget-output.html-fill-container > .lm-Widget.html-fill-item {
-  flex-basis: 400px;
+.forward-fill-potential > * {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 400px !important;
+  min-height: 0;
+  min-width: 0;
   width: 100%;
+}
+
+.forward-fill-potential > * > *:not(.deckgl-ui-elements-overlay) {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
 }
 
 /*
