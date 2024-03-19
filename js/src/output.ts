@@ -113,28 +113,31 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     this._maybeResize(lmWidget);
   }
   _maybeResize(lmWidget: HTMLElement): void {
-    const impl = lmWidget.children[0];
-    if (impl.children.length > 0) {
-      return this._doResize(impl);
+    if (this._hasImplementation(lmWidget)) {
+      return this._doResize();
     }
 
     // Some widget implementation (e.g., ipyleaflet, pydeck) won't actually
     // have rendered to the DOM at this point, so wait until they do
     const mo = new MutationObserver((mutations) => {
-      if (impl.children.length > 0) {
+      if (this._hasImplementation(lmWidget)) {
         mo.disconnect();
-        this._doResize(impl);
+        this._doResize();
       }
     });
 
-    mo.observe(impl, {childList: true});
+    mo.observe(lmWidget, {childList: true});
   }
-  _doResize(impl: Element): void {
+  _doResize(): void {
     // Trigger resize event to force layout (setTimeout() is needed for altair)
     // TODO: debounce this call?
     setTimeout(() => {
       window.dispatchEvent(new Event('resize'))
     }, 0);
+  }
+  _hasImplementation(lmWidget: HTMLElement): boolean {
+    const impl = lmWidget.children[0];
+    return impl && impl.children.length > 0;
   }
 }
 

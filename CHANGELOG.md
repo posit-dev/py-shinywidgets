@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED]
 
-
+* Fixed a bug with multiple altair outputs not working inside a `@shiny.render.ui` decorator. (#140)
 
 ## [0.3.1] - 2024-03-01
 
