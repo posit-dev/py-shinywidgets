@@ -210,9 +210,9 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
                 )
             else:
                 UndefinedType = alt.utils.schemapi.UndefinedType  # type: ignore
-                if isinstance(chart.width, UndefinedType):  # type: ignore[reportMissingTypeStubs]
+                if hasattr(chart, "width") and isinstance(chart.width, UndefinedType):  # type: ignore[reportMissingTypeStubs]
                     chart = chart.properties(width="container")  # type: ignore
-                if isinstance(chart.height, UndefinedType):  # type: ignore[reportMissingTypeStubs]
+                if hasattr(chart, "height") and isinstance(chart.height, UndefinedType):  # type: ignore[reportMissingTypeStubs]
                     chart = chart.properties(height="container")  # type: ignore
             widget.chart = chart
 
