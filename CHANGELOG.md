@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Fixed a bug with multiple altair outputs not working inside a `@shiny.render.ui` decorator. (#140)
 * `@render_widget` no longer errors out when giving a `altair.FacetChart` class. (#142)
+* `@render_widget` no longer fails to serialize `decimal.Decimal` objects. (#138)
 
 ## [0.3.1] - 2024-03-01
 
