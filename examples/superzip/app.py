@@ -4,6 +4,7 @@ import ipyleaflet as leaf
 import ipywidgets
 import pandas as pd
 from faicons import icon_svg
+from ratelimit import debounce
 from shiny import App, Inputs, Outputs, Session, reactive, render, req, ui
 from utils import col_numeric, create_map, density_plot, heatmap_gradient
 
@@ -173,6 +174,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         with reactive.isolate():
             current_bounds.set(bb)
 
+    @debounce(0.3)
     @reactive.calc
     def zips_in_bounds():
         bb = req(current_bounds())
@@ -326,4 +328,4 @@ def server(input: Inputs, output: Outputs, session: Session):
         return m
 
 
-app = App(app_ui, server)
+app = App(app_ui, server, static_assets=app_dir / "www")
