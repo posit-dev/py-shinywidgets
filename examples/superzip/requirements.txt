@@ -1,0 +1,9 @@
+ipywidgets==7.8.1 # ipyleaflet's popup is broken with >8.0
+ipyleaflet
+shiny @ git+https://github.com/posit-dev/py-shiny@main
+shinywidgets
+plotly
+matplotlib
+scipy
+pandas
+faicons

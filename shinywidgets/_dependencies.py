@@ -54,6 +54,7 @@ def output_binding_dependency() -> HTMLDependency:
         version=__version__,
         source={"package": "shinywidgets", "subdir": "static"},
         script={"src": "output.js"},
+        stylesheet={"href": "shinywidgets.css"},
     )
 
 
@@ -61,7 +62,9 @@ def output_binding_dependency() -> HTMLDependency:
 # possible for a Widget to have traits that are themselves Widgets
 # (which could have their own npm module), but in practice, I haven't seen any cases
 # where a 3rd party widget can contain a 3rd party widget.
-def require_dependency(w: Widget, session: Session) -> Optional[HTMLDependency]:
+def require_dependency(
+    w: Widget, session: Session, warn_if_missing: bool = True
+) -> Optional[HTMLDependency]:
     """
     Obtain an HTMLDependency for a 3rd party ipywidget that points
     require('widget-npm-package') requests in the browser to the correct local path.
@@ -86,11 +89,13 @@ def require_dependency(w: Widget, session: Session) -> Optional[HTMLDependency]:
     if module_dir is None:
         module_dir = jupyter_extension_path(jupyter_extension_destination(w))
         if module_dir is None:
-            warnings.warn(
-                f"Failed to discover JavaScript dependencies for {type(w)}."
-                + " Make sure it is installed as a jupyter notebook extension.",
-                stacklevel=2,
-            )
+            if warn_if_missing:
+                warnings.warn(
+                    f"Couldn't find local path to widget extension for {type(w)}."
+                    + " Since a CDN fallback is provided, the widget will still render if an internet connection is available."
+                    + " To avoid depending on a CDN, make sure the widget is installed as a jupyter extension.",
+                    stacklevel=2,
+                )
             return None
 
     version = parse_version_safely(getattr(w, "_model_module_version", "1.0"))
@@ -113,7 +118,7 @@ def require_dependency(w: Widget, session: Session) -> Optional[HTMLDependency]:
 
 
 def bokeh_dependency() -> HTMLDependency:
-    from bokeh.resources import Resources 
+    from bokeh.resources import Resources
 
     resources = Resources(mode="inline").render()
     return ui.head_content(ui.HTML(resources))

@@ -32,8 +32,8 @@ class ShinyComm:
     # we don't have a kernel here, so give it a meaningless value.
     kernel = "Shiny"
 
-    _msg_callback: MsgCallback
-    _close_callback: MsgCallback
+    _msg_callback: Optional[MsgCallback]
+    _close_callback: Optional[MsgCallback]
     _closed: bool = False
     _closed_data: Dict[str, object] = {}
 

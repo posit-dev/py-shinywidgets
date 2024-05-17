@@ -1,3 +1,4 @@
+import decimal
 import json
 import numbers
 import warnings
@@ -42,6 +43,9 @@ def json_default(obj: object) -> object:
         return int(obj)
 
     if isinstance(obj, numbers.Real):
+        return float(obj)
+
+    if isinstance(obj, decimal.Decimal):
         return float(obj)
 
     raise TypeError("%r is not JSON serializable" % obj)

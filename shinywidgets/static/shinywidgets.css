@@ -1,0 +1,55 @@
+/*
+  The child of this container, .lmWidget also does this, so seems harmless
+  to add (and yields better, more pixel-perfect results)
+*/
+.shiny-ipywidget-output {
+  overflow: hidden;
+}
+
+/*
+* At least one exception is .vega-embed, which needs to be visible.
+* This especially important for things like FacetChart, where responsive
+* sizing isn't supported.
+* https://github.com/altair-viz/altair/blob/5dac297/altair/jupyter/jupyter_chart.py#L103-L106
+*/
+.shiny-ipywidget-output:has(> .vega-embed) {
+  overflow: visible;
+}
+
+/*
+* The .forward-fill-potential class gets added after the widget gets displayed (since we
+* don't know if it's going to fill until then). Also note that we intentionally do this
+* instead of adding html-fill-container/html-fill-item classes to these elements since
+* that causes a flash of incorrect sizing.
+*/
+.forward-fill-potential > * {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 400px !important;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.forward-fill-potential > * > *:not(.deckgl-ui-elements-overlay) {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+/*
+* Our fill.css ends up overriding this rule from bqplot...
+* https://github.com/bqplot/bqplot/blob/c186fcd/js/less/bqplot.less#L170
+*/
+.bqplot > svg {
+  flex-grow: 1 !important;
+}
+
+/*
+* For some reason ipyleaflet puts `flex: 1` on the .lm-Widget container
+* which breaks our filling layout setup.
+* This fixes it (by putting higher priority) on `flex: 0`.
+*/
+.html-fill-container > .lm-Widget:not(.html-fill-item) {
+  flex: 0 0 auto;
+}

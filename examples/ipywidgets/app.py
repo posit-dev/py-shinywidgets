@@ -1,14 +1,13 @@
-from shiny import *
-from shinywidgets import *
-import ipywidgets as ipy
-from ipywidgets.widgets.widget import Widget
+import shiny.express
+from ipywidgets import IntSlider
+from shiny import render
+
+from shinywidgets import reactive_read, render_widget
 
 
-app_ui = ui.page_fluid(output_widget("slider"), ui.output_text("value"))
-
-
-def server(input: Inputs, output: Outputs, session: Session):
-    s: Widget = ipy.IntSlider(
+@render_widget
+def slider():
+    return IntSlider(
         value=7,
         min=0,
         max=10,
@@ -21,11 +20,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         readout_format="d",
     )
 
-    register_widget("slider", s)
-
-    @reactive.Effect
-    def _():
-        return f"The value of the slider is: {reactive_read(s, 'value')}"
-
-
-app = App(app_ui, server, debug=True)
+@render.ui
+def slider_val():
+    val = reactive_read(slider.widget, "value")
+    return f"The value of the slider is: {val}"
