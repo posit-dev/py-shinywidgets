@@ -2,13 +2,13 @@ from typing import List, Optional, Tuple
 
 import ipyleaflet as leaf
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly.figure_factory as ff
 import plotly.graph_objs as go
 import shiny
 from ipyleaflet import basemaps
-from matplotlib import cm
 
 
 def create_map(**kwargs):
@@ -91,7 +91,7 @@ def density_plot(
     return go.FigureWidget(data=fig.data, layout=fig.layout)
 
 
-color_palette = cm.get_cmap("viridis", 10)
+color_palette = plt.get_cmap("viridis", 10)
 
 # TODO: how to handle nas (pd.isna)?
 def col_numeric(domain: Tuple[float, float], na_color: str = "#808080"):
