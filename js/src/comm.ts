@@ -32,6 +32,7 @@ export class ShinyComm {
     const msg = {
       content: {comm_id: this.comm_id, data: data},
       metadata: metadata,
+      // TODO: need to _encode_ any buffers into base64 (JSON.stringify just drops them)
       buffers: buffers || [],
       // this doesn't seem relevant to the widget?
       header: {}
