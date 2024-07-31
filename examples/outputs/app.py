@@ -1,7 +1,11 @@
+from pathlib import Path
+
 import numpy as np
 from shiny import *
 
 from shinywidgets import *
+
+app_dir = Path(__file__).parent
 
 app_ui = ui.page_sidebar(
     ui.sidebar(
@@ -13,6 +17,8 @@ app_ui = ui.page_sidebar(
                 "plotly",
                 "ipyleaflet",
                 "pydeck",
+                "quak",
+                "mosaic",
                 "ipysigma",
                 "bokeh",
                 "bqplot",
@@ -48,22 +54,26 @@ def server(input: Inputs, output: Outputs, session: Session):
 
         source = data.stocks()
 
-        return alt.Chart(source).transform_filter(
-            'datum.symbol==="GOOG"'
-        ).mark_area(
-            tooltip=True,
-            line={'color': '#0281CD'},
-            color=alt.Gradient(
-                gradient='linear',
-                stops=[alt.GradientStop(color='white', offset=0),
-                       alt.GradientStop(color='#0281CD', offset=1)],
-                x1=1, x2=1, y1=1, y2=0
+        return (
+            alt.Chart(source)
+            .transform_filter('datum.symbol==="GOOG"')
+            .mark_area(
+                tooltip=True,
+                line={"color": "#0281CD"},
+                color=alt.Gradient(
+                    gradient="linear",
+                    stops=[
+                        alt.GradientStop(color="white", offset=0),
+                        alt.GradientStop(color="#0281CD", offset=1),
+                    ],
+                    x1=1,
+                    x2=1,
+                    y1=1,
+                    y2=0,
+                ),
             )
-        ).encode(
-            alt.X('date:T'),
-            alt.Y('price:Q')
-        ).properties(
-            title={"text": ["Google's stock price over time"]}
+            .encode(alt.X("date:T"), alt.Y("price:Q"))
+            .properties(title={"text": ["Google's stock price over time"]})
         )
 
     @output(id="plotly")
@@ -73,8 +83,10 @@ def server(input: Inputs, output: Outputs, session: Session):
 
         return px.density_heatmap(
             px.data.tips(),
-            x="total_bill", y="tip",
-            marginal_x="histogram", marginal_y="histogram"
+            x="total_bill",
+            y="tip",
+            marginal_x="histogram",
+            marginal_y="histogram",
         )
 
     @output(id="ipyleaflet")
@@ -119,14 +131,48 @@ def server(input: Inputs, output: Outputs, session: Session):
         # Combined all of it and render a viewport
         return pdk.Deck(layers=[layer], initial_view_state=view_state)
 
+    @output(id="quak")
+    @render_widget
+    def _():
+        import polars as pl
+        import quak
+
+        df = pl.read_parquet(
+            "https://github.com/uwdata/mosaic/raw/main/data/athletes.parquet"
+        )
+        return quak.Widget(df)
+
+    @output(id="mosaic")
+    @render_widget
+    def _():
+        import polars as pl
+        import yaml
+        from mosaic_widget import MosaicWidget
+
+        flights = pl.read_parquet(
+            "https://github.com/uwdata/mosaic/raw/main/data/flights-200k.parquet"
+        )
+
+        # Load weather spec, remove data key to ensure load from Pandas
+        with open(app_dir / "flights.yaml") as f:
+            spec = yaml.safe_load(f)
+            _ = spec.pop("data")
+
+        return MosaicWidget(spec, data={"flights": flights})
+
     @output(id="ipysigma")
     @render_widget
     def _():
         import igraph as ig
         from ipysigma import Sigma
-        g = ig.Graph.Famous('Zachary')
-        return Sigma(g, node_size=g.degree, node_color=g.betweenness(), node_color_gradient='Viridis')
 
+        g = ig.Graph.Famous("Zachary")
+        return Sigma(
+            g,
+            node_size=g.degree,
+            node_color=g.betweenness(),
+            node_color_gradient="Viridis",
+        )
 
     @output(id="bokeh")
     @render_widget
