@@ -5,7 +5,7 @@ import { decode } from 'base64-arraybuffer';
 // along to the comm logic
 function jsonParse(x: string) {
   const msg = JSON.parse(x);
-  msg.buffers = msg.buffers.map((b: any) => decode(b));
+  msg.buffers = msg.buffers.map((b: any) => new DataView(decode(b)));
   return msg;
 }
 
