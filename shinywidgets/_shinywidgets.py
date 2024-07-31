@@ -125,6 +125,7 @@ def init_shiny_widget(w: Widget):
         msg = json.loads(msg_txt)
         comm_id = msg["content"]["comm_id"]
         comm: ShinyComm = COMM_MANAGER.comms[comm_id]
+        # TODO: seems we probably need to transform (base64 encoded) buffers back into bytes/memoryviews?
         comm.handle_msg(msg)
 
     def _restore_state():
@@ -146,6 +147,7 @@ COMM_MANAGER = ShinyCommManager()
 # --------------------------------------
 # Reactivity
 # --------------------------------------
+
 
 def reactive_read(widget: Widget, names: Union[str, Sequence[str]]) -> Any:
     """
