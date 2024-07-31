@@ -8,12 +8,18 @@
 
 /*
 * At least one exception is .vega-embed, which needs to be visible.
-* This especially important for things like FacetChart, where responsive
+* This especially important for things like FacetChart or MosaicWidget, where responsive
 * sizing isn't supported.
 * https://github.com/altair-viz/altair/blob/5dac297/altair/jupyter/jupyter_chart.py#L103-L106
 */
-.shiny-ipywidget-output:has(> .vega-embed) {
+.shiny-ipywidget-output:has(> .vega-embed, > .mosaic-widget) {
   overflow: visible;
+  > * {
+    overflow: visible;
+  }
+  > .mosaic-widget > * {
+    align-items: center !important;
+  }
 }
 
 /*
