@@ -1,4 +1,3 @@
-import { encode } from "base64-arraybuffer";
 import { Throttler } from "./utils";
 
 // This class is a striped down version of Comm from @jupyter-widgets/base
@@ -30,17 +29,11 @@ export class ShinyComm {
     metadata?: any,
     buffers?: ArrayBuffer[] | ArrayBufferView[]
   ): string {
-
-    // Encode buffers as base64 before stringifying the message
-    const buffers_64 = (buffers || []).map((b: ArrayBuffer | ArrayBufferView) => {
-      const buffer = b instanceof ArrayBuffer ? b : b.buffer;
-      return encode(buffer);
-    });
-
     const msg = {
       content: {comm_id: this.comm_id, data: data},
       metadata: metadata,
-      buffers: buffers_64,
+      // TODO: need to _encode_ any buffers into base64 (JSON.stringify just drops them)
+      buffers: buffers || [],
       // this doesn't seem relevant to the widget?
       header: {}
     };
