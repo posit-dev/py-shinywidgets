@@ -78,10 +78,22 @@ def as_widget_plotly(x: object) -> Optional[Widget]:
 def as_widget_pydeck(x: object) -> Optional[Widget]:
     if not hasattr(x, "show"):
         raise TypeError(
-            f"Don't know how to coerce {x} (a pydeck object) into an ipywidget without a .show() method."
+            f"Don't know how to coerce {type(x)} (a pydeck object) into an ipywidget without a .show() method."
         )
 
-    return x.show()  # type: ignore
+    res = x.show()  # type: ignore
+
+    if not isinstance(res, Widget):
+        raise TypeError(
+            "pydeck v0.9 removed ipywidgets support, thus it no longer works with "
+            "shinywidgets. Consider either downgrading to pydeck v0.8.0 or using shiny's "
+            "@render.ui decorator to display the map (and return Deck.to_html() in "
+            "that render function). Note that the latter strategy means you won't be "
+            "able to programmatically .update() the map or access user events."
+            "For more, see https://github.com/visgl/deck.gl/pull/8854"
+        )
+
+    return res  # type: ignore
 
 
 AS_WIDGET_MAP = {
