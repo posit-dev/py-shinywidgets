@@ -110,11 +110,15 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;
 
-    this._maybeResize(lmWidget);
+    if (fill) {
+      this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
+    }
+    this._onImplementation(lmWidget, this._doResize);
   }
-  _maybeResize(lmWidget: HTMLElement): void {
+  _onImplementation(lmWidget: HTMLElement, callback: () => void): void {
     if (this._hasImplementation(lmWidget)) {
-      return this._doResize();
+      callback();
+      return;
     }
 
     // Some widget implementation (e.g., ipyleaflet, pydeck) won't actually
@@ -122,11 +126,23 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     const mo = new MutationObserver((mutations) => {
       if (this._hasImplementation(lmWidget)) {
         mo.disconnect();
-        this._doResize();
+        callback();
       }
     });
 
     mo.observe(lmWidget, {childList: true});
+  }
+  // In most cases, we can get widgets to fill through Python/CSS, but some widgets
+  // (e.g., quak) don't have a Python API and use shadow DOM, which can only access
+  // from JS
+  _doAddFillClasses(lmWidget: HTMLElement): void {
+    const impl = lmWidget.children[0];
+    const isQuakWidget = impl && !!impl.shadowRoot?.querySelector(".quak");
+    if (isQuakWidget) {
+      impl.classList.add("html-fill-container", "html-fill-item");
+      const quakWidget = impl.shadowRoot.querySelector(".quak") as HTMLElement;
+      quakWidget.style.maxHeight = "unset";
+    }
   }
   _doResize(): void {
     // Trigger resize event to force layout (setTimeout() is needed for altair)
@@ -137,7 +153,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
   }
   _hasImplementation(lmWidget: HTMLElement): boolean {
     const impl = lmWidget.children[0];
-    return impl && impl.children.length > 0;
+    return impl && (impl.children.length > 0 || impl.shadowRoot?.children.length > 0);
   }
 }
 
