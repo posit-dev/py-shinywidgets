@@ -29,12 +29,7 @@ def output_widget(
             tags.script(
                 data_jupyter_widgets_cdn=SHINYWIDGETS_CDN,
                 data_jupyter_widgets_cdn_only=SHINYWIDGETS_CDN_ONLY,
-            ),
-            tags.script(
-                src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js",
-                integrity="sha512-c3Nl8+7g4LMSTdrm621y7kf9v3SDPnhxLNhcjFJbKECVnmZHTdo+IRO05sNLTH/D3vA6u1X32ehoLC7WFVdheg==",
-                crossorigin="anonymous",
-            ),
+            )
         ),
         id=id,
         class_="shiny-ipywidget-output shiny-report-size shiny-report-theme",
