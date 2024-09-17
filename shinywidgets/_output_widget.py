@@ -8,7 +8,7 @@ from shiny.ui.css import as_css_unit
 from shiny.ui.fill import as_fill_item, as_fillable_container
 
 from ._cdn import SHINYWIDGETS_CDN, SHINYWIDGETS_CDN_ONLY
-from ._dependencies import libembed_dependency, output_binding_dependency
+from ._dependencies import output_binding_dependency
 
 __all__ = ("output_widget",)
 
@@ -23,7 +23,6 @@ def output_widget(
 ) -> Tag:
     id = resolve_id(id)
     res = tags.div(
-        *libembed_dependency(),
         output_binding_dependency(),
         head_content(
             tags.script(

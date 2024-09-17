@@ -5,6 +5,10 @@ All notable changes to shinywidgets will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [UNRELEASED]
+
+* Fixed an issue where widgets would sometimes fail to render in a Quarto document. (#159)
+
 ## [0.3.3] - 2024-08-13
 
 * Fixed a bug with receiving binary data on the frontend, which gets [quak](https://github.com/manzt/quak) and [mosaic-widget](https://idl.uw.edu/mosaic/jupyter/) working with `@render_widget`. (#152)

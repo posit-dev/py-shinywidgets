@@ -22,38 +22,33 @@ from . import __version__
 
 
 # TODO: scripts/static_download.R should produce/update these
-def libembed_dependency() -> List[HTMLDependency]:
-    return [
-        # Jupyter Notebook/Lab both come "preloaded" with several @jupyter-widgets packages
-        # (i.e., base, controls, output), all of which are bundled into this extension.js file
-        # provided by the widgetsnbextension package, which is a dependency of ipywidgets.
-        # https://github.com/nteract/nes/tree/master/portable-widgets
-        # https://github.com/jupyter-widgets/ipywidgets/blob/88cec8/packages/html-manager/src/htmlmanager.ts#L115-L120
-        #
-        # Unfortunately, I don't think there is a good way for us to "pre-bundle" these dependencies
-        # since they could change depending on the version of ipywidgets (and ipywidgets itself
-        # doesn't include these dependencies in such a way that require("@jupyter-widget/base") would
-        # work robustly when used in other 3rd party widgets). Moreover, I don't think we can simply
-        # have @jupyter-widget/base point to https://unpkg.com/@jupyter-widgets/base@__version__/lib/index.js
-        # (or a local version of this) since it appears the lib entry points aren't usable in the browser.
-        #
-        # All this is to say that I think we are stuck with this mega 3.5MB file that contains all of the
-        # stuff we need to render widgets outside of the notebook.
-        HTMLDependency(
-            name="ipywidget-libembed-amd",
-            version=parse_version_safely(__html_manager_version__),
-            source={"package": "shinywidgets", "subdir": "static"},
-            script={"src": "libembed-amd.js"},
-        ),
-    ]
-
-
 def output_binding_dependency() -> HTMLDependency:
+    # Jupyter Notebook/Lab both come "preloaded" with several @jupyter-widgets packages
+    # (i.e., base, controls, output), all of which are bundled into this extension.js file
+    # provided by the widgetsnbextension package, which is a dependency of ipywidgets.
+    # https://github.com/nteract/nes/tree/master/portable-widgets
+    # https://github.com/jupyter-widgets/ipywidgets/blob/88cec8/packages/html-manager/src/htmlmanager.ts#L115-L120
+    #
+    # Unfortunately, I don't think there is a good way for us to "pre-bundle" these dependencies
+    # since they could change depending on the version of ipywidgets (and ipywidgets itself
+    # doesn't include these dependencies in such a way that require("@jupyter-widget/base") would
+    # work robustly when used in other 3rd party widgets). Moreover, I don't think we can simply
+    # have @jupyter-widget/base point to https://unpkg.com/@jupyter-widgets/base@__version__/lib/index.js
+    # (or a local version of this) since it appears the lib entry points aren't usable in the browser.
+    #
+    # All this is to say that I think we are stuck with this mega 3.5MB file that contains all of the
+    # stuff we need to render widgets outside of the notebook.
     return HTMLDependency(
         name="ipywidget-output-binding",
         version=__version__,
         source={"package": "shinywidgets", "subdir": "static"},
-        script={"src": "output.js"},
+        script=[
+            {"src": "libembed-amd.js"},
+            # Bundle our output.js in the same dependency as libembded since Quarto
+            # has a bug where it doesn't renders dependencies in the order they are defined
+            # (i.e., this way we can ensure the output.js script always comes after the libembed-amd.js script tag)
+            {"src": "output.js"},
+        ],
         stylesheet={"href": "shinywidgets.css"},
     )
 
