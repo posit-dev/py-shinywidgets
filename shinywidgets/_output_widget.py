@@ -23,8 +23,8 @@ def output_widget(
 ) -> Tag:
     id = resolve_id(id)
     res = tags.div(
-        *libembed_dependency(),
         output_binding_dependency(),
+        *libembed_dependency(),
         head_content(
             tags.script(
                 data_jupyter_widgets_cdn=SHINYWIDGETS_CDN,
