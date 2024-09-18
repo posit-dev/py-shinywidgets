@@ -30,11 +30,11 @@ jobs:
 
       - name: Install dev version of htmltools
         run: |
-          pip install https://github.com/rstudio/py-htmltools/tarball/main
+          pip install git+https://github.com/posit-dev/py-htmltools
 
       - name: Install dev version of shiny
         run: |
-          pip install https://github.com/rstudio/py-shiny/tarball/main
+          pip install git+https://github.com/posit-dev/py-shiny
 
       - name: Install dependencies
         run: |
