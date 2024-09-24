@@ -4,3 +4,4 @@ ipywidgets
 numpy
 pandas
 plotly
+scikit-learn
