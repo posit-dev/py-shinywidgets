@@ -111,3 +111,7 @@ typings/
 Untitled*.ipynb
 
 rsconnect-python/
+
+# Deploy to Connect Cloud Button
+*/*/README_FILES/*
+*/*/README.html
