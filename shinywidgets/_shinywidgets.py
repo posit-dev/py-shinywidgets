@@ -45,6 +45,10 @@ def init_shiny_widget(w: Widget):
         raise RuntimeError(
             "shinywidgets requires that all ipywidgets be constructed within an active Shiny session"
         )
+    # Wait until we're in a "real" session before doing anything
+    # (i.e., on the 1st run of an Express app, it's too early to do anything)
+    if session.is_stub_session():
+        return
     # Break out of any module-specific session. Otherwise, input.shinywidgets_comm_send
     # will be some module-specific copy.
     while hasattr(session, "_parent"):
