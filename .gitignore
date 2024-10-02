@@ -113,5 +113,5 @@ Untitled*.ipynb
 rsconnect-python/
 
 # Deploy to Connect Cloud Button
-*/*/README_FILES/*
-*/*/README.html
+examples/*/README_FILES/*
+examples/*/README.html
