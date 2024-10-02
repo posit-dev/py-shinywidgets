@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [UNRELEASED]
 
 * Fixed an issue where widgets would sometimes fail to render in a Quarto document. (#159)
+* Fixed an issue where importing shinywidgets before a ipywidget implementation can sometimes error in a Shiny Express app. (#163)
 
 ## [0.3.3] - 2024-08-13
 
