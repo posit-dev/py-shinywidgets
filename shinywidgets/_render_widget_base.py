@@ -12,7 +12,6 @@ from ipywidgets.widgets import (  # pyright: ignore[reportMissingTypeStubs]
 from shiny import req
 from shiny.reactive._core import Context, get_current_context
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
-from traitlets import Unicode
 
 from ._as_widget import as_widget
 from ._dependencies import widget_pkg
@@ -71,6 +70,9 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._contexts: set[Context] = set()
 
     async def render(self) -> Jsonifiable | None:
+        # Before executing user function, get currently active widgets
+        widgets_before = set(WIDGET_INSTANCE_MAP.keys())
+
         value = await self.fn()
 
         # Attach value/widget attributes to user func so they can be accessed (in other reactive contexts)
@@ -89,16 +91,23 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
         self._widget = cast(WidgetT, widget)
 
+        # Collect widget ids introduced by the render function
+        widgets_after = set(WIDGET_INSTANCE_MAP.keys())
+        widgets_diff = widgets_after - widgets_before
+
+        # The next time this render context gets invalidated, close widgets introduced
+        # by the user function. This _could_ be problematic if widgets get hoisted
+        # out of the render function for use elsewhere, but if you're doing that,
+        # you're likely to have other problems anyway.
+        get_current_context().on_invalidate(lambda: close_widgets(widgets_diff))
+
         # Don't actually display anything unless this is a DOMWidget
         if not isinstance(widget, DOMWidget):
             return None
 
         return {
             "model_id": str(
-                cast(
-                    Unicode,
-                    widget.model_id,  # pyright: ignore[reportUnknownMemberType]
-                )
+                cast(str, widget.model_id)  # pyright: ignore[reportUnknownMemberType]
             ),
             "fill": fill,
         }
@@ -217,3 +226,17 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
             widget.chart = chart
 
     return (widget, fill)
+
+
+# Dictionary of all "active" widgets (ipywidgets automatically adds to this dictionary as
+# new widgets are created, but they won't get removed until the widget is explictly closed)
+WIDGET_INSTANCE_MAP = cast(dict[str, Widget], Widget.widgets)  # pyright: ignore[reportUnknownMemberType]
+
+# Given a set of widget ids, close those widgets. Closing should not only
+# remove the widget reference, but also send a message to the client to remove
+# the corresponding model from the widget manager.
+def close_widgets(ids: set[str]):
+    for id in ids:
+        widget = WIDGET_INSTANCE_MAP.get(id)
+        if widget is not None:
+            widget.close()

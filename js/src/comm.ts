@@ -96,7 +96,8 @@ export class ShinyComm {
     metadata?: any,
     buffers?: ArrayBuffer[] | ArrayBufferView[]
   ): string {
-    // I don't think we need to do anything here?
+    // Inform the server that a client-side model/comm has closed
+    Shiny.setInputValue("shinywidgets_comm_close", this.comm_id, {priority: "event"});
     return this.comm_id;
   }
 

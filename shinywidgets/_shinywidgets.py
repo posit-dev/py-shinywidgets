@@ -26,6 +26,7 @@ from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, ShinyComm, ShinyCommManager
 from ._dependencies import require_dependency
+from ._render_widget_base import WIDGET_INSTANCE_MAP
 from ._utils import is_instance_of_class, package_dir
 
 __all__ = (
@@ -122,14 +123,26 @@ def init_shiny_widget(w: Widget):
 
     # Handle messages from the client. Note that widgets like qgrid send client->server messages
     # to figure out things like what filter to be shown in the table.
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(session.input.shinywidgets_comm_send)
     def _():
         msg_txt = session.input.shinywidgets_comm_send()
         msg = json.loads(msg_txt)
         comm_id = msg["content"]["comm_id"]
-        comm: ShinyComm = COMM_MANAGER.comms[comm_id]
-        comm.handle_msg(msg)
+        if comm_id in COMM_MANAGER.comms:
+            comm: ShinyComm = COMM_MANAGER.comms[comm_id]
+            comm.handle_msg(msg)
+
+    # Handle a close message from the client.
+    @reactive.effect
+    @reactive.event(session.input.shinywidgets_comm_close)
+    def _():
+        comm_id = session.input.shinywidgets_comm_close()
+        # Close the widget, which unregisters/deletes the comm, and also drops
+        # ipywidget's reference to the instance, allowing it to be garbage collected.
+        w_obj = WIDGET_INSTANCE_MAP.get(comm_id)
+        if w_obj:
+            w_obj.close()
 
     def _restore_state():
         if old_comm_klass is not None:
