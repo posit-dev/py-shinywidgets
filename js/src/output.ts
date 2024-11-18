@@ -9,7 +9,6 @@ import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shi
  ******************************************************************************/
 
 class OutputManager extends HTMLManager {
-  orphaned_models: string[];
   // In a soon-to-be-released version of @jupyter-widgets/html-manager,
   // display_view()'s first "dummy" argument will be removed... this shim simply
   // makes it so that our manager can work with either version
@@ -100,23 +99,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
 
     const view = await manager.create_view(model, {});
     await manager.display_view(view, {el: el});
-
-    // If the model was orphaned, close it (and thus, the view as well) now
-    if (manager.orphaned_models.length > 0) {
-      for (const model_id of manager.orphaned_models) {
-        const model = await manager.get_model(model_id);
-        if (model) {
-          // Closing the model removes the previous view
-          await model.close();
-          // .close() isn't enough to remove manager's reference to it,
-          // and apparently the only way to remove it is through the `comm:close` event
-          // https://github.com/jupyter-widgets/ipywidgets/blob/303cae4/packages/base-manager/src/manager-base.ts#L330-L337
-          // https://github.com/jupyter-widgets/ipywidgets/blob/303cae4/packages/base/src/widget.ts#L251-L253
-          model.trigger("comm:close");
-        }
-      }
-      manager.orphaned_models = [];
-    }
 
     // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;
@@ -213,14 +195,24 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_msg", (msg_txt) => {
 });
 
 
-// When `widget.close()` happens server-side, don't `.close()` client-side until the
-// next render. This is because we currently trigger a close _during_ the server-side
-// render, and thus, immediately closing the model removes the view before a new one is
-// ready.
-manager.orphaned_models = [];
+// Handle the closing of a widget/comm/model
 Shiny.addCustomMessageHandler("shinywidgets_comm_close", (msg_txt) => {
   const msg = jsonParse(msg_txt);
-  manager.orphaned_models.push(msg.content.comm_id);
+  const id = msg.content.comm_id;
+  const model = manager.get_model(id);
+  if (!model) {
+    console.error(`Couldn't close model ${id} because it doesn't exist.`);
+    return;
+  }
+  model.then(m => {
+    // Closing the model removes the previous view
+    m.close();
+    // .close() isn't enough to remove manager's reference to it,
+    // and apparently the only way to remove it is through the `comm:close` event
+    // https://github.com/jupyter-widgets/ipywidgets/blob/303cae4/packages/base-manager/src/manager-base.ts#L330-L337
+    // https://github.com/jupyter-widgets/ipywidgets/blob/303cae4/packages/base/src/widget.ts#L251-L253
+    m.trigger("comm:close");
+  });
 });
 
 // At least currently, all widgets must be created within a session scope, so we can

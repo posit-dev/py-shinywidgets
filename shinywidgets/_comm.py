@@ -169,10 +169,17 @@ class ShinyComm:
         def _send():
             run_coro_hybrid(session.send_custom_message(msg_type, msg_txt))  # type: ignore
 
-        # N.B., if we don't do this on flush, then if you initialize a widget
-        # outside of a reactive context, run_coro_sync() will complain with
+        # N.B., if messages are sent immediately, run_coro_sync() could fail with
         # 'async function yielded control; it did not finish in one iteration.'
-        session.on_flush(_send)
+        # if executed outside of a reactive context.
+        if msg_type == "shinywidgets_comm_close":
+            # The primary way widgets are closed are when a new widget is rendered in
+            # its place (see render_widget_base). By sending close on_flushed(), we
+            # ensure to close the 'old' widget after the new one is created. (avoiding a
+            # "flicker" of the old widget being removed before the new one is created)
+            session.on_flushed(_send)
+        else:
+            session.on_flush(_send)
 
     # This is the method that ipywidgets.widgets.Widget uses to respond to client-side changes
     def on_msg(self, callback: MsgCallback) -> None:
