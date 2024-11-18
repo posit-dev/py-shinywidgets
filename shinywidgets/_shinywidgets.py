@@ -26,7 +26,7 @@ from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, ShinyComm, ShinyCommManager
 from ._dependencies import require_dependency
-from ._render_widget_base import WIDGET_INSTANCE_MAP
+from ._render_widget_base import has_current_context
 from ._utils import is_instance_of_class, package_dir
 
 __all__ = (
@@ -94,6 +94,15 @@ def init_shiny_widget(w: Widget):
         html_deps=session._process_ui(TagList(widget_dep))["deps"],
     )
 
+    # If we're in a reactive context, close this widget when the context is invalidated
+    if has_current_context():
+        ctx = get_current_context()
+        ctx.on_invalidate(lambda: w.close())
+
+    # Also close the widget when the session ends (if the widget is already closed, this
+    # is a no-op)
+    session.on_ended(lambda: w.close())
+
     # Some widget's JS make external requests for static files (e.g.,
     # ipyleaflet markers) under this resource path. Note that this assumes that
     # we're setting the data-base-url attribute on the <body> (which we should
@@ -111,7 +120,7 @@ def init_shiny_widget(w: Widget):
     # everything after this point should be done once per session
     if session in SESSIONS:
         return
-    SESSIONS.add(session)  # type: ignore
+    SESSIONS.add(session)
 
     # Somewhere inside ipywidgets, it makes requests for static files
     # under the publicPath set by the webpack.config.js file.
@@ -133,21 +142,10 @@ def init_shiny_widget(w: Widget):
             comm: ShinyComm = COMM_MANAGER.comms[comm_id]
             comm.handle_msg(msg)
 
-    # Handle a close message from the client.
-    @reactive.effect
-    @reactive.event(session.input.shinywidgets_comm_close)
-    def _():
-        comm_id = session.input.shinywidgets_comm_close()
-        # Close the widget, which unregisters/deletes the comm, and also drops
-        # ipywidget's reference to the instance, allowing it to be garbage collected.
-        w_obj = WIDGET_INSTANCE_MAP.get(comm_id)
-        if w_obj:
-            w_obj.close()
-
     def _restore_state():
         if old_comm_klass is not None:
             Widget.comm.klass = old_comm_klass  # type: ignore
-        SESSIONS.remove(session)  # type: ignore
+        SESSIONS.remove(session)
 
     session.on_ended(_restore_state)
 
@@ -156,7 +154,7 @@ def init_shiny_widget(w: Widget):
 Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
 
 # Use WeakSet() over Set() so that the session can be garbage collected
-SESSIONS = WeakSet()  # type: ignore
+SESSIONS: WeakSet[Session] = WeakSet()
 COMM_MANAGER = ShinyCommManager()
 
 

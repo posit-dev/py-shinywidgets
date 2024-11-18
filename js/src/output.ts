@@ -215,12 +215,6 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", (msg_txt) => {
   });
 });
 
-// At least currently, all widgets must be created within a session scope, so we can
-// clear the state (i.e., .close() all the widget models) when the session ends
-$(document).on("shiny:disconnected", () => {
-  manager.clear_state();
-});
-
 // Our version of https://github.com/jupyter-widgets/widget-cookiecutter/blob/9694718/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js#L8
 function setBaseURL(x: string = '') {
   const base_url = document.querySelector('body').getAttribute('data-base-url');
