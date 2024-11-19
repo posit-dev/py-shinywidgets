@@ -253,7 +253,7 @@ def widget_comm_patch():
     Widget.comm.klass = comm_klass
 
 
-def is_traitlet_instance(x: object) -> TypeGuard[Instance]:
+def is_traitlet_instance(x: object) -> "TypeGuard[Instance]":
     try:
         from traitlets.traitlets import Instance
     except ImportError:
