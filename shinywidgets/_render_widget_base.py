@@ -4,15 +4,10 @@ import warnings
 from typing import Generic, Optional, Tuple, TypeVar, cast
 
 from htmltools import Tag
-from ipywidgets.widgets import (  # pyright: ignore[reportMissingTypeStubs]
-    DOMWidget,
-    Layout,
-    Widget,
-)
+from ipywidgets.widgets import DOMWidget, Layout, Widget
 from shiny import req
 from shiny.reactive._core import Context, get_current_context
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
-from traitlets import Unicode
 
 from ._as_widget import as_widget
 from ._dependencies import widget_pkg
@@ -94,12 +89,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             return None
 
         return {
-            "model_id": str(
-                cast(
-                    Unicode,
-                    widget.model_id,  # pyright: ignore[reportUnknownMemberType]
-                )
-            ),
+            "model_id": str(widget.model_id),
             "fill": fill,
         }
 
@@ -168,7 +158,7 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
     # If the ipywidget Layout() height is set to something other than "auto", then
     # don't do filling layout https://ipywidgets.readthedocs.io/en/stable/examples/Widget%20Layout.html
     if isinstance(layout, Layout):
-        if layout.height is not None and layout.height != "auto":  # type: ignore
+        if layout.height is not None and layout.height != "auto":
             fill = False
 
     pkg = widget_pkg(widget)
@@ -178,7 +168,7 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
         from plotly.graph_objs import Layout as PlotlyLayout  # pyright: ignore
 
         if isinstance(layout, PlotlyLayout):
-            if layout.height is not None:  # pyright: ignore[reportUnknownMemberType]
+            if layout.height is not None:
                 fill = False
             # Default margins are also way too big
             layout.template.layout.margin = dict(  # pyright: ignore
@@ -196,7 +186,7 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
     # container since it'll be contained within the Layout() container, which has a
     # full-fledged sizing API.
     if pkg == "altair":
-        import altair as alt  # pyright: ignore[reportMissingTypeStubs]
+        import altair as alt
 
         # Since as_widget() has already happened, we only need to handle JupyterChart
         if isinstance(widget, alt.JupyterChart):

@@ -5,12 +5,10 @@ from typing import TYPE_CHECKING
 from htmltools import Tag
 
 if TYPE_CHECKING:
-    from altair import JupyterChart  # pyright: ignore[reportMissingTypeStubs]
-    from jupyter_bokeh import BokehModel  # pyright: ignore[reportMissingTypeStubs]
-    from plotly.graph_objects import (  # pyright: ignore[reportMissingTypeStubs]
-        FigureWidget,
-    )
-    from pydeck.widget import DeckGLWidget  # pyright: ignore[reportMissingTypeStubs]
+    from altair import JupyterChart
+    from jupyter_bokeh import BokehModel
+    from plotly.graph_objects import FigureWidget
+    from pydeck.widget import DeckGLWidget
 else:
     JupyterChart = BokehModel = FigureWidget = DeckGLWidget = object
 

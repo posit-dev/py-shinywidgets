@@ -43,12 +43,14 @@ jobs:
       - name: Install
         run: |
           make install
+
+      - name: pyright
+        run: |
+          make pyright
+
       #- name: Run unit tests
       #  run: |
       #    make test
-      # - name: pyright, flake8, black and isort
-      #   run: |
-      #     make check
 
   deploy:
     name: "Deploy to PyPI"

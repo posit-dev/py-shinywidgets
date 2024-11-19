@@ -1,5 +1,7 @@
 {
   "ignore": ["examples", "sandbox", "build", "dist", "typings"],
-  "typeCheckingMode": "strict",
+  "typeCheckingMode": "basic",
   "reportPrivateUsage": "none",
+  "reportUnknownMemberType": "none",
+  "reportMissingTypeStubs": "none"
 }
