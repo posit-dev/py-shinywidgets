@@ -100,13 +100,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     const view = await manager.create_view(model, {});
     await manager.display_view(view, {el: el});
 
-    // Don't allow more than one .lmWidget container, which can happen
-    // when the view is displayed more than once
-    // TODO: It's probably better to get view(s) from m.views and .remove() them
-    while (el.childNodes.length > 1) {
-      el.removeChild(el.childNodes[0]);
-    }
-
     // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;
 
@@ -189,21 +182,46 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_open", (msg_txt) => {
 // Basically out version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1200-L1215
 Shiny.addCustomMessageHandler("shinywidgets_comm_msg", (msg_txt) => {
   const msg = jsonParse(msg_txt);
-  manager.get_model(msg.content.comm_id).then(m => {
-    // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
-    m.comm.handle_msg(msg);
-  });
+  const id = msg.content.comm_id;
+  const model = manager.get_model(id);
+  if (!model) {
+    console.error(`Couldn't handle message for model ${id} because it doesn't exist.`);
+    return;
+  }
+  model
+    .then(m => {
+      // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
+      m.comm.handle_msg(msg);
+    })
+    .catch(console.error);
 });
 
-// TODO: test that this actually works
+
+// Handle the closing of a widget/comm/model
 Shiny.addCustomMessageHandler("shinywidgets_comm_close", (msg_txt) => {
   const msg = jsonParse(msg_txt);
-  manager.get_model(msg.content.comm_id).then(m => {
-    // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
-    m.comm.handle_close(msg)
-  });
+  const id = msg.content.comm_id;
+  const model = manager.get_model(id);
+  if (!model) {
+    console.error(`Couldn't close model ${id} because it doesn't exist.`);
+    return;
+  }
+  model
+    .then(m => {
+        // Closing the model removes the corresponding view from the DOM
+        m.close();
+        // .close() isn't enough to remove manager's reference to it,
+        // and apparently the only way to remove it is through the `comm:close` event
+        // https://github.com/jupyter-widgets/ipywidgets/blob/303cae4/packages/base-manager/src/manager-base.ts#L330-L337
+        // https://github.com/jupyter-widgets/ipywidgets/blob/303cae4/packages/base/src/widget.ts#L251-L253
+        m.trigger("comm:close");
+    })
+    .catch(console.error);
 });
 
+$(document).on("shiny:disconnected", () => {
+  manager.clear_state();
+});
 
 // Our version of https://github.com/jupyter-widgets/widget-cookiecutter/blob/9694718/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js#L8
 function setBaseURL(x: string = '') {

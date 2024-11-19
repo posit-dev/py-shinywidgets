@@ -3,7 +3,8 @@ from __future__ import annotations
 import copy
 import json
 import os
-from typing import Any, Optional, Sequence, Union, cast
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, Optional, Sequence, TypeGuard, Union, cast
 from uuid import uuid4
 from weakref import WeakSet
 
@@ -26,12 +27,16 @@ from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, ShinyComm, ShinyCommManager
 from ._dependencies import require_dependency
-from ._utils import is_instance_of_class, package_dir
+from ._render_widget_base import has_current_context
+from ._utils import package_dir
 
 __all__ = (
     "register_widget",
     "reactive_read",
 )
+
+if TYPE_CHECKING:
+    from traitlets.traitlets import Instance
 
 
 # --------------------------------------------------------------------------------------------
@@ -54,19 +59,43 @@ def init_shiny_widget(w: Widget):
     while hasattr(session, "_parent"):
         session = cast(Session, session._parent)  # pyright: ignore
 
-    # Previous versions of ipywidgets (< 8.0.5) had
-    #   `Widget.comm = Instance('ipykernel.comm.Comm')`
-    # which meant we'd get a runtime error when setting `Widget.comm = ShinyComm()`.
-    # In more recent versions, this is no longer necessary since they've (correctly)
-    # changed comm from an Instance() to Any().
-    # https://github.com/jupyter-widgets/ipywidgets/pull/3533/files#diff-522bb5e7695975cba0199c6a3d6df5be827035f4dc18ed6da22ac216b5615c77R482
-    old_comm_klass = None
-    if is_instance_of_class(Widget.comm, "Instance", "traitlets.traitlets"):  # type: ignore
-        old_comm_klass = copy.copy(Widget.comm.klass)  # type: ignore
-        Widget.comm.klass = object  # type: ignore
+    # If this is the first time we've seen this session, initialize some things
+    if session not in SESSIONS:
+        SESSIONS.add(session)
+
+        # Somewhere inside ipywidgets, it makes requests for static files
+        # under the publicPath set by the webpack.config.js file.
+        session.app._dependency_handler.mount(
+            "/dist/",
+            StaticFiles(directory=os.path.join(package_dir("shinywidgets"), "static")),
+            name="shinywidgets-static-resources",
+        )
+
+        # Handle messages from the client. Note that widgets like qgrid send client->server messages
+        # to figure out things like what filter to be shown in the table.
+        @reactive.effect
+        @reactive.event(session.input.shinywidgets_comm_send)
+        def _():
+            msg_txt = session.input.shinywidgets_comm_send()
+            msg = json.loads(msg_txt)
+            comm_id = msg["content"]["comm_id"]
+            if comm_id in COMM_MANAGER.comms:
+                comm: ShinyComm = COMM_MANAGER.comms[comm_id]
+                comm.handle_msg(msg)
+
+        def _cleanup_session_state():
+            SESSIONS.remove(session)
+            # Cleanup any widgets that were created in this session
+            for id in SESSION_WIDGET_ID_MAP[session.id]:
+                widget = WIDGET_INSTANCE_MAP.get(id)
+                if widget:
+                    widget.close()
+            del SESSION_WIDGET_ID_MAP[session.id]
+
+        session.on_ended(_cleanup_session_state)
 
     # Get the initial state of the widget
-    state, buffer_paths, buffers = _remove_buffers(w.get_state())  # type: ignore
+    state, buffer_paths, buffers = _remove_buffers(w.get_state())
 
     # Make sure window.require() calls made by 3rd party widgets
     # (via handle_comm_open() -> new_model() -> loadClass() -> requireLoader())
@@ -81,17 +110,29 @@ def init_shiny_widget(w: Widget):
     if getattr(w, "_model_id", None) is None:
         w._model_id = uuid4().hex
 
+    id = cast(str, w._model_id)  # pyright: ignore[reportUnknownMemberType]
+
     # Initialize the comm...this will also send the initial state of the widget
-    w.comm = ShinyComm(
-        comm_id=w._model_id,  # pyright: ignore
-        comm_manager=COMM_MANAGER,
-        target_name="jupyter.widgets",
-        data={"state": state, "buffer_paths": buffer_paths},
-        buffers=cast(BufferType, buffers),
-        # TODO: should this be hard-coded?
-        metadata={"version": __protocol_version__},
-        html_deps=session._process_ui(TagList(widget_dep))["deps"],
-    )
+    with widget_comm_patch():
+        w.comm = ShinyComm(
+            comm_id=id,
+            comm_manager=COMM_MANAGER,
+            target_name="jupyter.widgets",
+            data={"state": state, "buffer_paths": buffer_paths},
+            buffers=cast(BufferType, buffers),
+            # TODO: should this be hard-coded?
+            metadata={"version": __protocol_version__},
+            html_deps=session._process_ui(TagList(widget_dep))["deps"],
+        )
+
+    # If we're in a reactive context, close this widget when the context is invalidated
+    if has_current_context():
+        ctx = get_current_context()
+        ctx.on_invalidate(lambda: w.close())
+
+    # Keep track of what session this widget belongs to (so we can close it when the
+    # session ends)
+    SESSION_WIDGET_ID_MAP.setdefault(session.id, []).append(id)
 
     # Some widget's JS make external requests for static files (e.g.,
     # ipyleaflet markers) under this resource path. Note that this assumes that
@@ -107,45 +148,21 @@ def init_shiny_widget(w: Widget):
                 name=f"{widget_dep.name}-nbextension-static-resources",
             )
 
-    # everything after this point should be done once per session
-    if session in SESSIONS:
-        return
-    SESSIONS.add(session)  # type: ignore
-
-    # Somewhere inside ipywidgets, it makes requests for static files
-    # under the publicPath set by the webpack.config.js file.
-    session.app._dependency_handler.mount(
-        "/dist/",
-        StaticFiles(directory=os.path.join(package_dir("shinywidgets"), "static")),
-        name="shinywidgets-static-resources",
-    )
-
-    # Handle messages from the client. Note that widgets like qgrid send client->server messages
-    # to figure out things like what filter to be shown in the table.
-    @reactive.Effect
-    @reactive.event(session.input.shinywidgets_comm_send)
-    def _():
-        msg_txt = session.input.shinywidgets_comm_send()
-        msg = json.loads(msg_txt)
-        comm_id = msg["content"]["comm_id"]
-        comm: ShinyComm = COMM_MANAGER.comms[comm_id]
-        comm.handle_msg(msg)
-
-    def _restore_state():
-        if old_comm_klass is not None:
-            Widget.comm.klass = old_comm_klass  # type: ignore
-        SESSIONS.remove(session)  # type: ignore
-
-    session.on_ended(_restore_state)
-
 
 # TODO: can we restore the widget constructor in a sensible way?
 Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
 
 # Use WeakSet() over Set() so that the session can be garbage collected
-SESSIONS = WeakSet()  # type: ignore
+SESSIONS: WeakSet[Session] = WeakSet()
 COMM_MANAGER = ShinyCommManager()
 
+# Dictionary mapping session id to widget ids
+# The key is the session id, and the value is a list of widget ids
+SESSION_WIDGET_ID_MAP: dict[str, list[str]] = {}
+
+# Dictionary of all "active" widgets (ipywidgets automatically adds to this dictionary as
+# new widgets are created, but they won't get removed until the widget is explictly closed)
+WIDGET_INSTANCE_MAP = cast(dict[str, Widget], Widget.widgets)  # pyright: ignore[reportUnknownMemberType]
 
 # --------------------------------------
 # Reactivity
@@ -216,6 +233,32 @@ def register_widget(
 
     return w
 
+# Previous versions of ipywidgets (< 8.0.5) had
+#   `Widget.comm = Instance('ipykernel.comm.Comm')`
+# which meant we'd get a runtime error when setting `Widget.comm = ShinyComm()`.
+# In more recent versions, this is no longer necessary since they've (correctly)
+# changed comm from an Instance() to Any().
+# https://github.com/jupyter-widgets/ipywidgets/pull/3533/files#diff-522bb5e7695975cba0199c6a3d6df5be827035f4dc18ed6da22ac216b5615c77R482
+@contextmanager
+def widget_comm_patch():
+    if not is_traitlet_instance(Widget.comm):
+        yield
+        return
+
+    comm_klass = copy.copy(Widget.comm.klass)
+    Widget.comm.klass = object
+
+    yield
+
+    Widget.comm.klass = comm_klass
+
+
+def is_traitlet_instance(x: object) -> "TypeGuard[Instance]":
+    try:
+        from traitlets.traitlets import Instance
+    except ImportError:
+        return False
+    return isinstance(x, Instance)
 
 # It doesn't, at the moment, seem feasible to establish a comm with statically rendered widgets,
 # and partially for this reason, it may not be sensible to provide an input-like API for them.
