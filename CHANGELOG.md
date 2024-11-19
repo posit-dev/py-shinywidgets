@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED]
 
-
+* Fixed a memory leak issue. (#167)
 
 ## [0.3.4] - 2024-10-29
 
