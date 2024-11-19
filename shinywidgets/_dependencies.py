@@ -10,12 +10,9 @@ from typing import List, Optional
 import packaging.version
 from htmltools import HTMLDependency, tags
 from htmltools._core import HTMLDependencySource
-from ipywidgets._version import (
-    __html_manager_version__,  # pyright: ignore[reportUnknownVariableType]
-)
 from ipywidgets.widgets.domwidget import DOMWidget
 from ipywidgets.widgets.widget import Widget
-from jupyter_core.paths import jupyter_path  # type: ignore
+from jupyter_core.paths import jupyter_path
 from shiny import Session, ui
 
 from . import __version__

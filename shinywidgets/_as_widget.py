@@ -1,6 +1,6 @@
 from typing import Optional
 
-from ipywidgets.widgets.widget import Widget  # pyright: ignore[reportMissingTypeStubs]
+from ipywidgets.widgets.widget import Widget
 
 from ._dependencies import widget_pkg
 
@@ -35,7 +35,7 @@ def as_widget(x: object) -> Widget:
 
 def as_widget_altair(x: object) -> Optional[Widget]:
     try:
-        from altair import JupyterChart  # pyright: ignore[reportMissingTypeStubs]
+        from altair import JupyterChart
     except ImportError:
         raise RuntimeError(
             "Failed to import altair.JupyterChart (do you need to pip install -U altair?)"
@@ -46,7 +46,7 @@ def as_widget_altair(x: object) -> Optional[Widget]:
 
 def as_widget_bokeh(x: object) -> Optional[Widget]:
     try:
-        from jupyter_bokeh import BokehModel  # pyright: ignore[reportMissingTypeStubs]
+        from jupyter_bokeh import BokehModel
     except ImportError:
         raise ImportError(
             "Install the jupyter_bokeh package to use bokeh with shinywidgets."
@@ -55,19 +55,19 @@ def as_widget_bokeh(x: object) -> Optional[Widget]:
     # TODO: ideally we'd do this in set_layout_defaults() but doing
     # `BokehModel(x)._model.sizing_mode = "stretch_both"`
     # there, but that doesn't seem to work??
-    from bokeh.plotting import figure  # pyright: ignore[reportMissingTypeStubs]
+    from bokeh.plotting import figure
 
-    if isinstance(x, figure):  # type: ignore
-        x.sizing_mode = "stretch_both"  # pyright: ignore[reportGeneralTypeIssues]
+    if isinstance(x, figure):
+        x.sizing_mode = "stretch_both"  # type: ignore
 
     return BokehModel(x)  # type: ignore
 
 
 def as_widget_plotly(x: object) -> Optional[Widget]:
     # Don't need a try import here since this won't be called unless x is a plotly object
-    import plotly.graph_objects as go  # pyright: ignore[reportMissingTypeStubs]
+    import plotly.graph_objects as go
 
-    if not isinstance(x, go.Figure):  # type: ignore
+    if not isinstance(x, go.Figure):
         raise TypeError(
             f"Don't know how to coerce {x} into a plotly.graph_objects.FigureWidget object."
         )
@@ -93,7 +93,7 @@ def as_widget_pydeck(x: object) -> Optional[Widget]:
             "For more, see https://github.com/visgl/deck.gl/pull/8854"
         )
 
-    return res  # type: ignore
+    return res
 
 
 AS_WIDGET_MAP = {

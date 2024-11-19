@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Optional, Sequence, TypeGuard, Union, cas
 from uuid import uuid4
 from weakref import WeakSet
 
-import ipywidgets  # pyright: ignore[reportMissingTypeStubs]
+import ipywidgets
 
 from ._render_widget import render_widget
 
@@ -110,7 +110,7 @@ def init_shiny_widget(w: Widget):
     if getattr(w, "_model_id", None) is None:
         w._model_id = uuid4().hex
 
-    id = cast(str, w._model_id)  # pyright: ignore[reportUnknownMemberType]
+    id = cast(str, w._model_id)
 
     # Initialize the comm...this will also send the initial state of the widget
     with widget_comm_patch():
@@ -162,7 +162,7 @@ SESSION_WIDGET_ID_MAP: dict[str, list[str]] = {}
 
 # Dictionary of all "active" widgets (ipywidgets automatically adds to this dictionary as
 # new widgets are created, but they won't get removed until the widget is explictly closed)
-WIDGET_INSTANCE_MAP = cast(dict[str, Widget], Widget.widgets)  # pyright: ignore[reportUnknownMemberType]
+WIDGET_INSTANCE_MAP = cast(dict[str, Widget], Widget.widgets)
 
 # --------------------------------------
 # Reactivity
@@ -197,7 +197,7 @@ def reactive_depend(
         names = [names]
 
     for name in names:
-        if not widget.has_trait(name):  # pyright: ignore[reportUnknownMemberType]
+        if not widget.has_trait(name):
             raise ValueError(
                 f"The '{name}' attribute of {widget.__class__.__name__} is not a "
                 "widget trait, and so it's not possible to reactively read it. "
@@ -253,7 +253,7 @@ def widget_comm_patch():
     Widget.comm.klass = comm_klass
 
 
-def is_traitlet_instance(x: object) -> "TypeGuard[Instance]":
+def is_traitlet_instance(x: object) -> "TypeGuard[Instance[Any]]":
     try:
         from traitlets.traitlets import Instance
     except ImportError:
