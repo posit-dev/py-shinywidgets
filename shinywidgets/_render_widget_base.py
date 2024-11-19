@@ -12,6 +12,7 @@ from ipywidgets.widgets import (  # pyright: ignore[reportMissingTypeStubs]
 from shiny import req
 from shiny.reactive._core import Context, get_current_context
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
+from traitlets import Unicode
 
 from ._as_widget import as_widget
 from ._dependencies import widget_pkg
@@ -94,7 +95,10 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
         return {
             "model_id": str(
-                cast(str, widget.model_id)  # pyright: ignore[reportUnknownMemberType]
+                cast(
+                    Unicode,
+                    widget.model_id,  # pyright: ignore[reportUnknownMemberType]
+                )
             ),
             "fill": fill,
         }

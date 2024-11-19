@@ -101,7 +101,8 @@ def init_shiny_widget(w: Widget):
         ctx = get_current_context()
         ctx.on_invalidate(lambda: w.close())
 
-    # Keep track of what session this widget belongs to (so we can close it when the session ends)
+    # Keep track of what session this widget belongs to (so we can close it when the
+    # session ends)
     SESSION_WIDGET_ID_MAP.setdefault(session.id, []).append(id)
 
     # Some widget's JS make external requests for static files (e.g.,
@@ -164,7 +165,7 @@ Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
 SESSIONS: WeakSet[Session] = WeakSet()
 COMM_MANAGER = ShinyCommManager()
 
-# Dictionary of all widgets that have been created in a session
+# Dictionary mapping session id to widget ids
 # The key is the session id, and the value is a list of widget ids
 SESSION_WIDGET_ID_MAP: dict[str, list[str]] = {}
 

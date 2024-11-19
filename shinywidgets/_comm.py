@@ -97,7 +97,6 @@ class ShinyComm:
             return
         self._closed = True
         data = self._closed_data if data is None else data
-        # If there's no active session, we can't send a message to the client
         if get_current_session():
             self._publish_msg(
                 "shinywidgets_comm_close", data=data, metadata=metadata, buffers=buffers
