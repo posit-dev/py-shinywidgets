@@ -3,7 +3,8 @@ from __future__ import annotations
 import copy
 import json
 import os
-from typing import Any, Optional, Sequence, Union, cast
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, Optional, Sequence, TypeGuard, Union, cast
 from uuid import uuid4
 from weakref import WeakSet
 
@@ -27,12 +28,15 @@ from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, ShinyComm, ShinyCommManager
 from ._dependencies import require_dependency
 from ._render_widget_base import has_current_context
-from ._utils import is_instance_of_class, package_dir
+from ._utils import package_dir
 
 __all__ = (
     "register_widget",
     "reactive_read",
 )
+
+if TYPE_CHECKING:
+    from traitlets.traitlets import Instance
 
 
 # --------------------------------------------------------------------------------------------
@@ -55,17 +59,6 @@ def init_shiny_widget(w: Widget):
     while hasattr(session, "_parent"):
         session = cast(Session, session._parent)  # pyright: ignore
 
-    # Previous versions of ipywidgets (< 8.0.5) had
-    #   `Widget.comm = Instance('ipykernel.comm.Comm')`
-    # which meant we'd get a runtime error when setting `Widget.comm = ShinyComm()`.
-    # In more recent versions, this is no longer necessary since they've (correctly)
-    # changed comm from an Instance() to Any().
-    # https://github.com/jupyter-widgets/ipywidgets/pull/3533/files#diff-522bb5e7695975cba0199c6a3d6df5be827035f4dc18ed6da22ac216b5615c77R482
-    old_comm_klass = None
-    if is_instance_of_class(Widget.comm, "Instance", "traitlets.traitlets"):  # type: ignore
-        old_comm_klass = copy.copy(Widget.comm.klass)  # type: ignore
-        Widget.comm.klass = object  # type: ignore
-
     # Get the initial state of the widget
     state, buffer_paths, buffers = _remove_buffers(w.get_state())  # type: ignore
 
@@ -85,16 +78,17 @@ def init_shiny_widget(w: Widget):
     id = cast(str, w._model_id)  # pyright: ignore[reportUnknownMemberType]
 
     # Initialize the comm...this will also send the initial state of the widget
-    w.comm = ShinyComm(
-        comm_id=id,
-        comm_manager=COMM_MANAGER,
-        target_name="jupyter.widgets",
-        data={"state": state, "buffer_paths": buffer_paths},
-        buffers=cast(BufferType, buffers),
-        # TODO: should this be hard-coded?
-        metadata={"version": __protocol_version__},
-        html_deps=session._process_ui(TagList(widget_dep))["deps"],
-    )
+    with widget_comm_patch():
+        w.comm = ShinyComm(
+            comm_id=id,
+            comm_manager=COMM_MANAGER,
+            target_name="jupyter.widgets",
+            data={"state": state, "buffer_paths": buffer_paths},
+            buffers=cast(BufferType, buffers),
+            # TODO: should this be hard-coded?
+            metadata={"version": __protocol_version__},
+            html_deps=session._process_ui(TagList(widget_dep))["deps"],
+        )
 
     # If we're in a reactive context, close this widget when the context is invalidated
     if has_current_context():
@@ -144,9 +138,7 @@ def init_shiny_widget(w: Widget):
             comm: ShinyComm = COMM_MANAGER.comms[comm_id]
             comm.handle_msg(msg)
 
-    def _restore_state():
-        if old_comm_klass is not None:
-            Widget.comm.klass = old_comm_klass  # type: ignore
+    def _cleanup_session_state():
         SESSIONS.remove(session)
         # Cleanup any widgets that were created in this session
         for id in SESSION_WIDGET_ID_MAP[session.id]:
@@ -155,7 +147,7 @@ def init_shiny_widget(w: Widget):
                 widget.close()
         del SESSION_WIDGET_ID_MAP[session.id]
 
-    session.on_ended(_restore_state)
+    session.on_ended(_cleanup_session_state)
 
 
 # TODO: can we restore the widget constructor in a sensible way?
@@ -242,6 +234,32 @@ def register_widget(
 
     return w
 
+# Previous versions of ipywidgets (< 8.0.5) had
+#   `Widget.comm = Instance('ipykernel.comm.Comm')`
+# which meant we'd get a runtime error when setting `Widget.comm = ShinyComm()`.
+# In more recent versions, this is no longer necessary since they've (correctly)
+# changed comm from an Instance() to Any().
+# https://github.com/jupyter-widgets/ipywidgets/pull/3533/files#diff-522bb5e7695975cba0199c6a3d6df5be827035f4dc18ed6da22ac216b5615c77R482
+@contextmanager
+def widget_comm_patch():
+    if not is_traitlet_instance(Widget.comm):
+        yield
+        return
+
+    comm_klass = copy.copy(Widget.comm.klass)
+    Widget.comm.klass = object
+
+    yield
+
+    Widget.comm.klass = comm_klass
+
+
+def is_traitlet_instance(x: object) -> TypeGuard[Instance]:
+    try:
+        from traitlets.traitlets import Instance
+    except ImportError:
+        return False
+    return isinstance(x, Instance)
 
 # It doesn't, at the moment, seem feasible to establish a comm with statically rendered widgets,
 # and partially for this reason, it may not be sensible to provide an input-like API for them.
