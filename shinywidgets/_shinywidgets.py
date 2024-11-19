@@ -59,8 +59,43 @@ def init_shiny_widget(w: Widget):
     while hasattr(session, "_parent"):
         session = cast(Session, session._parent)  # pyright: ignore
 
+    # If this is the first time we've seen this session, initialize some things
+    if session not in SESSIONS:
+        SESSIONS.add(session)
+
+        # Somewhere inside ipywidgets, it makes requests for static files
+        # under the publicPath set by the webpack.config.js file.
+        session.app._dependency_handler.mount(
+            "/dist/",
+            StaticFiles(directory=os.path.join(package_dir("shinywidgets"), "static")),
+            name="shinywidgets-static-resources",
+        )
+
+        # Handle messages from the client. Note that widgets like qgrid send client->server messages
+        # to figure out things like what filter to be shown in the table.
+        @reactive.effect
+        @reactive.event(session.input.shinywidgets_comm_send)
+        def _():
+            msg_txt = session.input.shinywidgets_comm_send()
+            msg = json.loads(msg_txt)
+            comm_id = msg["content"]["comm_id"]
+            if comm_id in COMM_MANAGER.comms:
+                comm: ShinyComm = COMM_MANAGER.comms[comm_id]
+                comm.handle_msg(msg)
+
+        def _cleanup_session_state():
+            SESSIONS.remove(session)
+            # Cleanup any widgets that were created in this session
+            for id in SESSION_WIDGET_ID_MAP[session.id]:
+                widget = WIDGET_INSTANCE_MAP.get(id)
+                if widget:
+                    widget.close()
+            del SESSION_WIDGET_ID_MAP[session.id]
+
+        session.on_ended(_cleanup_session_state)
+
     # Get the initial state of the widget
-    state, buffer_paths, buffers = _remove_buffers(w.get_state())  # type: ignore
+    state, buffer_paths, buffers = _remove_buffers(w.get_state())
 
     # Make sure window.require() calls made by 3rd party widgets
     # (via handle_comm_open() -> new_model() -> loadClass() -> requireLoader())
@@ -112,42 +147,6 @@ def init_shiny_widget(w: Widget):
                 StaticFiles(directory=src_dir),
                 name=f"{widget_dep.name}-nbextension-static-resources",
             )
-
-    # everything after this point should be done once per session
-    if session in SESSIONS:
-        return
-    SESSIONS.add(session)
-
-    # Somewhere inside ipywidgets, it makes requests for static files
-    # under the publicPath set by the webpack.config.js file.
-    session.app._dependency_handler.mount(
-        "/dist/",
-        StaticFiles(directory=os.path.join(package_dir("shinywidgets"), "static")),
-        name="shinywidgets-static-resources",
-    )
-
-    # Handle messages from the client. Note that widgets like qgrid send client->server messages
-    # to figure out things like what filter to be shown in the table.
-    @reactive.effect
-    @reactive.event(session.input.shinywidgets_comm_send)
-    def _():
-        msg_txt = session.input.shinywidgets_comm_send()
-        msg = json.loads(msg_txt)
-        comm_id = msg["content"]["comm_id"]
-        if comm_id in COMM_MANAGER.comms:
-            comm: ShinyComm = COMM_MANAGER.comms[comm_id]
-            comm.handle_msg(msg)
-
-    def _cleanup_session_state():
-        SESSIONS.remove(session)
-        # Cleanup any widgets that were created in this session
-        for id in SESSION_WIDGET_ID_MAP[session.id]:
-            widget = WIDGET_INSTANCE_MAP.get(id)
-            if widget:
-                widget.close()
-        del SESSION_WIDGET_ID_MAP[session.id]
-
-    session.on_ended(_cleanup_session_state)
 
 
 # TODO: can we restore the widget constructor in a sensible way?
