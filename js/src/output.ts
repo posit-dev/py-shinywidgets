@@ -188,10 +188,12 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_msg", (msg_txt) => {
     console.error(`Couldn't handle message for model ${id} because it doesn't exist.`);
     return;
   }
-  model.then(m => {
-    // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
-    m.comm.handle_msg(msg);
-  });
+  model
+    .then(m => {
+      // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
+      m.comm.handle_msg(msg);
+    })
+    .catch(console.error);
 });
 
 
@@ -204,15 +206,17 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", (msg_txt) => {
     console.error(`Couldn't close model ${id} because it doesn't exist.`);
     return;
   }
-  model.then(m => {
-    // Closing the model removes the previous view
-    m.close();
-    // .close() isn't enough to remove manager's reference to it,
-    // and apparently the only way to remove it is through the `comm:close` event
-    // https://github.com/jupyter-widgets/ipywidgets/blob/303cae4/packages/base-manager/src/manager-base.ts#L330-L337
-    // https://github.com/jupyter-widgets/ipywidgets/blob/303cae4/packages/base/src/widget.ts#L251-L253
-    m.trigger("comm:close");
-  });
+  model
+    .then(m => {
+        // Closing the model removes the corresponding view from the DOM
+        m.close();
+        // .close() isn't enough to remove manager's reference to it,
+        // and apparently the only way to remove it is through the `comm:close` event
+        // https://github.com/jupyter-widgets/ipywidgets/blob/303cae4/packages/base-manager/src/manager-base.ts#L330-L337
+        // https://github.com/jupyter-widgets/ipywidgets/blob/303cae4/packages/base/src/widget.ts#L251-L253
+        m.trigger("comm:close");
+    })
+    .catch(console.error);
 });
 
 $(document).on("shiny:disconnected", () => {
