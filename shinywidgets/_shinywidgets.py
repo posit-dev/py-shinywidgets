@@ -82,9 +82,11 @@ def init_shiny_widget(w: Widget):
     if getattr(w, "_model_id", None) is None:
         w._model_id = uuid4().hex
 
+    id = cast(str, w._model_id)  # pyright: ignore[reportUnknownMemberType]
+
     # Initialize the comm...this will also send the initial state of the widget
     w.comm = ShinyComm(
-        comm_id=w._model_id,  # pyright: ignore
+        comm_id=id,
         comm_manager=COMM_MANAGER,
         target_name="jupyter.widgets",
         data={"state": state, "buffer_paths": buffer_paths},
@@ -99,9 +101,8 @@ def init_shiny_widget(w: Widget):
         ctx = get_current_context()
         ctx.on_invalidate(lambda: w.close())
 
-    # Also close the widget when the session ends (if the widget is already closed, this
-    # is a no-op)
-    session.on_ended(lambda: w.close())
+    # Keep track of what session this widget belongs to (so we can close it when the session ends)
+    SESSION_WIDGET_ID_MAP.setdefault(session.id, []).append(id)
 
     # Some widget's JS make external requests for static files (e.g.,
     # ipyleaflet markers) under this resource path. Note that this assumes that
@@ -146,6 +147,12 @@ def init_shiny_widget(w: Widget):
         if old_comm_klass is not None:
             Widget.comm.klass = old_comm_klass  # type: ignore
         SESSIONS.remove(session)
+        # Cleanup any widgets that were created in this session
+        for id in SESSION_WIDGET_ID_MAP[session.id]:
+            widget = WIDGET_INSTANCE_MAP.get(id)
+            if widget:
+                widget.close()
+        del SESSION_WIDGET_ID_MAP[session.id]
 
     session.on_ended(_restore_state)
 
@@ -157,6 +164,13 @@ Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
 SESSIONS: WeakSet[Session] = WeakSet()
 COMM_MANAGER = ShinyCommManager()
 
+# Dictionary of all widgets that have been created in a session
+# The key is the session id, and the value is a list of widget ids
+SESSION_WIDGET_ID_MAP: dict[str, list[str]] = {}
+
+# Dictionary of all "active" widgets (ipywidgets automatically adds to this dictionary as
+# new widgets are created, but they won't get removed until the widget is explictly closed)
+WIDGET_INSTANCE_MAP = cast(dict[str, Widget], Widget.widgets)  # pyright: ignore[reportUnknownMemberType]
 
 # --------------------------------------
 # Reactivity
