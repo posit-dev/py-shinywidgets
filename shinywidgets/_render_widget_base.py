@@ -168,6 +168,7 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
         from plotly.graph_objs import Layout as PlotlyLayout  # pyright: ignore
 
         if isinstance(layout, PlotlyLayout):
+            # TODO: why aren't plotly plots filling their container?
             if layout.height is not None:
                 fill = False
             # Default margins are also way too big

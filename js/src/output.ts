@@ -4,28 +4,34 @@ import { jsonParse } from './utils';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
 
+const requirePromise = function (pkg) {
+    return new Promise((resolve, reject) => {
+        // @ts-ignore
+        const require = window.requirejs;
+        if (require === undefined) {
+            reject('Requirejs is needed, please ensure it is loaded on the page.');
+        }
+        else {
+            require(pkg, resolve, reject);
+        }
+    });
+};
+
 /******************************************************************************
  * Define a custom HTMLManager for use with Shiny
  ******************************************************************************/
 
-class OutputManager extends HTMLManager {
-  // In a soon-to-be-released version of @jupyter-widgets/html-manager,
-  // display_view()'s first "dummy" argument will be removed... this shim simply
-  // makes it so that our manager can work with either version
-  // https://github.com/jupyter-widgets/ipywidgets/commit/159bbe4#diff-45c126b24c3c43d2cee5313364805c025e911c4721d45ff8a68356a215bfb6c8R42-R43
-  async display_view(view: any, options: { el: HTMLElement; }): Promise<any> {
-    const n_args = super.display_view.length
-    if (n_args === 3) {
-      return super.display_view({}, view, options)
-    } else {
-      // @ts-ignore
-      return super.display_view(view, options)
-    }
-  }
-}
+let loadedModules = new Set<string>();
 
 // Define our own custom module loader for Shiny
 const shinyRequireLoader = async function(moduleName: string, moduleVersion: string): Promise<any> {
+
+  // With Plotly 6.0, anywidget wants to get loaded several times, which causes
+  // a require.js error, so we'll skip loading it if it's already loaded
+  if (loadedModules.has(moduleName)) {
+    console.log(`Skipping loading ${moduleName} ${moduleVersion} because it's already loaded`);
+    return requirePromise([moduleName]);
+  }
 
   // shiny provides require.js and also sets `define.amd=false` to prevent <script>s
   // with UMD loaders from triggering anonymous define() errors. shinywidgets should
@@ -59,7 +65,7 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
   });
 }
 
-const manager = new OutputManager({ loader: shinyRequireLoader });
+const manager = new HTMLManager({ loader: shinyRequireLoader });
 
 
 /******************************************************************************
@@ -97,8 +103,8 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       throw new Error(`No model found for id ${data.model_id}`);
     }
 
-    const view = await manager.create_view(model, {});
-    await manager.display_view(view, {el: el});
+    const view = await manager.create_view(model, {})
+    await manager.display_view(view, el);
 
     // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;

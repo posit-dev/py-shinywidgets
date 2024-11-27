@@ -6,6 +6,6 @@ if (!dir.exists(static_dir)) dir.create(static_dir)
 # https://github.com/jupyter-widgets/ipywidgets/blob/fbdbd00/packages/html-manager/scripts/concat-amd-build.js#L6
 # TODO: minify the bundle and import the version via `from ipywidgets._version import __html_manager_version__`
 download.file(
-  "https://unpkg.com/@jupyter-widgets/html-manager@0.20.0/dist/libembed-amd.js",
+  "https://unpkg.com/@jupyter-widgets/html-manager@1.0.13/dist/libembed-amd.js",
   file.path(static_dir, "libembed-amd.js")
 )
