@@ -180,7 +180,7 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_open", (msg_txt) => {
 
 // Handle any mutation of the model (e.g., add a marker to a map, without a full redraw)
 // Basically out version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1200-L1215
-Shiny.addCustomMessageHandler("shinywidgets_comm_msg", (msg_txt) => {
+Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
   const msg = jsonParse(msg_txt);
   const id = msg.content.comm_id;
   const model = manager.get_model(id);
@@ -188,17 +188,18 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_msg", (msg_txt) => {
     console.error(`Couldn't handle message for model ${id} because it doesn't exist.`);
     return;
   }
-  model
-    .then(m => {
-      // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
-      m.comm.handle_msg(msg);
-    })
-    .catch(console.error);
+  try {
+    const m = await model;
+    // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
+    m.comm.handle_msg(msg);
+  } catch (err) {
+    console.error("Error handling message:", err);
+  }
 });
 
 
 // Handle the closing of a widget/comm/model
-Shiny.addCustomMessageHandler("shinywidgets_comm_close", (msg_txt) => {
+Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
   const msg = jsonParse(msg_txt);
   const id = msg.content.comm_id;
   const model = manager.get_model(id);
@@ -206,17 +207,43 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", (msg_txt) => {
     console.error(`Couldn't close model ${id} because it doesn't exist.`);
     return;
   }
-  model
-    .then(m => {
-        // Closing the model removes the corresponding view from the DOM
-        m.close();
-        // .close() isn't enough to remove manager's reference to it,
-        // and apparently the only way to remove it is through the `comm:close` event
-        // https://github.com/jupyter-widgets/ipywidgets/blob/303cae4/packages/base-manager/src/manager-base.ts#L330-L337
-        // https://github.com/jupyter-widgets/ipywidgets/blob/303cae4/packages/base/src/widget.ts#L251-L253
-        m.trigger("comm:close");
-    })
-    .catch(console.error);
+
+  try {
+    const m = await model;
+
+    // Before .close()ing the model (which will .remove() each view), do some
+    // additional cleanup that .remove() might miss
+    await Promise.all(
+      Object.values(m.views).map(async (viewPromise) => {
+        try {
+          const v = await viewPromise;
+
+          // Old versions of plotly need a .destroy() to properly clean up
+          // https://github.com/plotly/plotly.py/pull/3805/files#diff-259c92d
+          if (hasMethod<DestroyMethod>(v, 'destroy')) {
+            v.destroy();
+            // Also, empirically, when this destroy() is relevant, it also helps to
+            // delete the view's reference to the model, I think this is the only
+            // way to drop the resize event listener (see the diff in the link above)
+            // https://github.com/posit-dev/py-shinywidgets/issues/166
+            delete v.model;
+          }
+
+
+        } catch (err) {
+          console.error("Error cleaning up view:", err);
+        }
+      })
+    );
+
+    // Close model after all views are cleaned up
+    await m.close();
+
+    // Trigger comm:close event to remove manager's reference
+    m.trigger("comm:close");
+  } catch (err) {
+    console.error("Error during model cleanup:", err);
+  }
 });
 
 $(document).on("shiny:disconnected", () => {
@@ -229,4 +256,13 @@ function setBaseURL(x: string = '') {
   if (!base_url) {
     document.querySelector('body').setAttribute('data-base-url', x);
   }
+}
+
+// TypeGuard to safely check if an object has a method
+function hasMethod<T>(obj: any, methodName: keyof T): obj is T {
+    return typeof obj[methodName] === 'function';
+}
+
+interface DestroyMethod {
+    destroy(): void;
 }
