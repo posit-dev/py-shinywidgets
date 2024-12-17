@@ -4,7 +4,7 @@ import copy
 import json
 import os
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Optional, Sequence, TypeGuard, Union, cast
+from typing import TYPE_CHECKING, Any, Optional, Sequence, Union, cast
 from uuid import uuid4
 from weakref import WeakSet
 
@@ -36,6 +36,7 @@ __all__ = (
 )
 
 if TYPE_CHECKING:
+    from typing import TypeGuard
     from traitlets.traitlets import Instance
 
 
