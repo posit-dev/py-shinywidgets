@@ -21,7 +21,7 @@ from htmltools import TagList
 from shiny import Session, reactive
 from shiny.http_staticfiles import StaticFiles
 from shiny.reactive._core import get_current_context
-from shiny.session import get_current_session, require_active_session
+from shiny.session import get_current_session, require_active_session, session_context
 
 from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
@@ -37,6 +37,7 @@ __all__ = (
 
 if TYPE_CHECKING:
     from typing import TypeGuard
+
     from traitlets.traitlets import Instance
 
 
@@ -129,7 +130,12 @@ def init_shiny_widget(w: Widget):
     # If we're in a reactive context, close this widget when the context is invalidated
     if has_current_context():
         ctx = get_current_context()
-        ctx.on_invalidate(lambda: w.close())
+
+        def on_close():
+            with session_context(session):
+                w.close()
+                
+        ctx.on_invalidate(on_close)
 
     # Keep track of what session this widget belongs to (so we can close it when the
     # session ends)
