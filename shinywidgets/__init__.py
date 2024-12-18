@@ -2,7 +2,7 @@
 
 __author__ = """Carson Sievert"""
 __email__ = "carson@posit.co"
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 
 from ._as_widget import as_widget
 from ._dependencies import bokeh_dependency
