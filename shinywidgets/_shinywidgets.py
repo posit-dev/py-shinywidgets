@@ -25,7 +25,7 @@ from shiny.session import get_current_session, require_active_session, session_c
 
 from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
-from ._comm import BufferType, ShinyComm, ShinyCommManager
+from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
 from ._dependencies import require_dependency
 from ._render_widget_base import has_current_context
 from ._utils import package_dir
@@ -134,7 +134,16 @@ def init_shiny_widget(w: Widget):
         def on_close():
             with session_context(session):
                 w.close()
-                
+                # By closing the widget, we also close the comm, which sets w.comm to
+                # None. Unfortunately, the w.model_id property looks up w.comm.comm_id
+                # at runtime, and some packages like ipyleaflet want to use this id
+                # to manage references between widgets.
+                w.comm = OrphanedShinyComm(id)
+                # Assigning a comm has the side-effect of adding back a reference to
+                # the widget instance, so remove it again
+                if id in WIDGET_INSTANCE_MAP:
+                    del WIDGET_INSTANCE_MAP[id]
+
         ctx.on_invalidate(on_close)
 
     # Keep track of what session this widget belongs to (so we can close it when the
