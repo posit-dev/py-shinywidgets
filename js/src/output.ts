@@ -227,6 +227,8 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
             // way to drop the resize event listener (see the diff in the link above)
             // https://github.com/posit-dev/py-shinywidgets/issues/166
             delete v.model;
+            // Ensure sure the lm-Widget container is also removed
+            v.remove();
           }
 
 
