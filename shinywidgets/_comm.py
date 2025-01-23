@@ -1,4 +1,5 @@
 from base64 import b64encode
+from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
 from shiny._utils import run_coro_hybrid
@@ -196,3 +197,30 @@ class ShinyComm:
     def handle_close(self, msg: Dict[str, object]) -> None:
         if self._close_callback is not None:
             self._close_callback(msg)
+
+
+@dataclass
+class OrphanedShinyComm:
+    """
+    A 'mock' `ShinyComm`. It's only purpose is to allow one to get
+    the `model_id` (i.e., `comm_id`) of a widget after closing it.
+    """
+
+    comm_id: str
+
+    def send(
+        self,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        pass
+
+    def close(
+        self,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        pass
+
+    def on_msg(self, callback: MsgCallback) -> None:
+        pass

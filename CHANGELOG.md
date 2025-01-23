@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [UNRELEASED] - 2025-01-23
 
 * Fixed an issue with plotly graphs sometimes not getting fully removed from the DOM. (#178)
+* Fixed an issue with ipyleaflet erroring out when attempting to read the `.model_id` property of a closed widget object. (#179)
 
 ## [0.4.2] - 2024-12-18
 
