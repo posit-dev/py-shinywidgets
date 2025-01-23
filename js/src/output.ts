@@ -252,6 +252,18 @@ $(document).on("shiny:disconnected", () => {
   manager.clear_state();
 });
 
+// When in filling layout, some widgets (specifically, altair) incorrectly think their
+// height is 0 after it's shown, hidden, then shown again. As a workaround, trigger a
+// resize event when a tab is shown.
+// TODO: This covers the 95% use case, but it's definitely not an ideal way to handle
+// this situation. A more robust solution would use IntersectionObserver to detect when
+// the widget becomes visible. Or better yet, we'd get altair to handle this situation
+// better.
+// https://github.com/posit-dev/py-shinywidgets/issues/172
+document.addEventListener('shown.bs.tab', event => {
+  window.dispatchEvent(new Event('resize'));
+})
+
 // Our version of https://github.com/jupyter-widgets/widget-cookiecutter/blob/9694718/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js#L8
 function setBaseURL(x: string = '') {
   const base_url = document.querySelector('body').getAttribute('data-base-url');
