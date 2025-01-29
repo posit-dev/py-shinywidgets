@@ -128,6 +128,11 @@ def init_shiny_widget(w: Widget):
         )
 
     # If we're in a reactive context, close this widget when the context is invalidated
+    # TODO: this should probably only be done in an output context, but I'm pretty sure
+    # we don't have a decent way to determine that at the moment. In theory, doing this
+    # in _any_ reactive context be problematic if you have an effect() that adds one
+    # widget to another (i.e., a marker to a map) and want that marker to persist through
+    # the next invalidation. The example provided in #174 is one such example.
     if has_current_context():
         ctx = get_current_context()
 
