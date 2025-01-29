@@ -96,9 +96,6 @@ def init_shiny_widget(w: Widget):
 
         session.on_ended(_cleanup_session_state)
 
-    # Get the initial state of the widget
-    state, buffer_paths, buffers = _remove_buffers(w.get_state())
-
     # Make sure window.require() calls made by 3rd party widgets
     # (via handle_comm_open() -> new_model() -> loadClass() -> requireLoader())
     # actually point to directories served locally by shiny
@@ -114,18 +111,39 @@ def init_shiny_widget(w: Widget):
 
     id = cast(str, w._model_id)
 
-    # Initialize the comm...this will also send the initial state of the widget
-    with widget_comm_patch():
-        w.comm = ShinyComm(
-            comm_id=id,
-            comm_manager=COMM_MANAGER,
-            target_name="jupyter.widgets",
-            data={"state": state, "buffer_paths": buffer_paths},
-            buffers=cast(BufferType, buffers),
-            # TODO: should this be hard-coded?
-            metadata={"version": __protocol_version__},
-            html_deps=session._process_ui(TagList(widget_dep))["deps"],
-        )
+    # Since the actual ShinyComm() is initialized _after_ the Widget is initialized,
+    # and Widget.__init__() includes a call to Widget.open() which opens an unnecessary
+    # comm, we just set the comm to a dummy comm for now (to avoid unnecessary work)
+    w.comm = OrphanedShinyComm(id)
+
+    # Schedule the opening of the comm to happen sometime after this init function.
+    # This is important for widgets like plotly that do additional initialization that
+    # is required to get a valid widget state.
+    @reactive.effect(priority=99999)
+    def _open_shiny_comm():
+
+        # Call _repr_mimebundle_() before get_state() since it may modify the widget
+        # in an important way (unfortunately, it does for plotly)
+        # # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
+        w._repr_mimebundle_()
+
+        # Now, get the state
+        state, buffer_paths, buffers = _remove_buffers(w.get_state())
+
+        # Initialize the comm -- this sends widget state to the frontend
+        with widget_comm_patch():
+            w.comm = ShinyComm(
+                comm_id=id,
+                comm_manager=COMM_MANAGER,
+                target_name="jupyter.widgets",
+                data={"state": state, "buffer_paths": buffer_paths},
+                buffers=cast(BufferType, buffers),
+                # TODO: should this be hard-coded?
+                metadata={"version": __protocol_version__},
+                html_deps=session._process_ui(TagList(widget_dep))["deps"],
+            )
+
+        _open_shiny_comm.destroy()
 
     # If we're in a reactive context, close this widget when the context is invalidated
     # TODO: this should probably only be done in an output context, but I'm pretty sure

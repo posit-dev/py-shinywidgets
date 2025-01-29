@@ -178,6 +178,9 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
             # so change that 60px default to 32px
             if layout.margin["t"] == 60:  # pyright: ignore
                 layout.margin["t"] = 32  # pyright: ignore
+            # In plotly >=v6.0, the plot won't actually fill unless it's responsive
+            if fill:
+                widget._config = {"responsive": True, **widget._config}  # type: ignore
 
     widget.layout = layout
 
