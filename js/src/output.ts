@@ -37,7 +37,7 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
   const oldAmd = (window as any).define.amd;
 
   // The is the original value for define.amd that require.js sets
-  (window as any).define.amd = {jQuery: true};
+  (window as any).define.amd = false;
 
   // Store jQuery global since loading we load a module, it may overwrite it
   // (qgrid is one good example)
