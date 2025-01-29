@@ -111,14 +111,19 @@ def init_shiny_widget(w: Widget):
 
     id = cast(str, w._model_id)
 
+    # Since the actual ShinyComm() is initialized _after_ the Widget is initialized,
+    # and Widget.__init__() includes a call to Widget.open() which opens an unnecessary
+    # comm, we just set the comm to a dummy comm for now (to avoid unnecessary work)
+    w.comm = OrphanedShinyComm(id)
+
     # Schedule the opening of the comm to happen sometime after this init function.
     # This is important for widgets like plotly that do additional initialization that
     # is required to get a valid widget state.
     @reactive.effect(priority=99999)
-    def _open_comm():
+    def _open_shiny_comm():
 
-        # Call _repr_mimebundle_() before getting the state since it may modify the widget
-        # in an important way (unfortunately, plotly does this)
+        # Call _repr_mimebundle_() before get_state() since it may modify the widget
+        # in an important way (unfortunately, it does for plotly)
         # # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
         w._repr_mimebundle_()
 
@@ -138,7 +143,7 @@ def init_shiny_widget(w: Widget):
                 html_deps=session._process_ui(TagList(widget_dep))["deps"],
             )
 
-        _open_comm.destroy()
+        _open_shiny_comm.destroy()
 
     # If we're in a reactive context, close this widget when the context is invalidated
     # TODO: this should probably only be done in an output context, but I'm pretty sure
