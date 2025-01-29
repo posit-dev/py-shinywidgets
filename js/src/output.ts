@@ -27,16 +27,17 @@ class OutputManager extends HTMLManager {
 // Define our own custom module loader for Shiny
 const shinyRequireLoader = async function(moduleName: string, moduleVersion: string): Promise<any> {
 
-  // shiny provides require.js and also sets `define.amd=false` to prevent <script>s
-  // with UMD loaders from triggering anonymous define() errors. shinywidgets should
-  // generally be able to avoid anonymous define errors though since there should only
-  // be one 'main' anonymous define() for the widget's module (located in a JS file that
-  // we've already require.config({paths: {...}})ed; and in that case, requirejs adds a
-  // data-requiremodule attribute to the <script> tag that shiny's custom define will
-  // recognize and use as the name).)
+  // shiny provides a shim of require.js and also sets `define.amd=false` to
+  // allow <script>s with anonymous define()s to be loaded without error.
+  // Note that, when anonymous define()s are used, the shim will leverage the
+  // data-requiremodule attribute to determine the module name.
+  // In the context of shinywidgets, when a widget gets rendered, it should
+  // include another <script> tag that does `require.config({paths: {...}})`
+  // to map the module name to the URL of the widget's JS file.
   const oldAmd = (window as any).define.amd;
 
-  // The is the original value for define.amd that require.js sets
+  // This is probably not necessary, but just in case -- especially now in a
+  // anywidget/ES6 world, we probably don't want to load AMD modules
   (window as any).define.amd = false;
 
   // Store jQuery global since loading we load a module, it may overwrite it
