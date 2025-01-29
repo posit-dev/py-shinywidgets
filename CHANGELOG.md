@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Updates to accomodate the new plotly v6.0.0 release. (#182)
 * Fixed an issue with plotly graphs sometimes not getting fully removed from the DOM. (#178)
+* Added `anywidget` as a package dependency since it's needed now for `altair` and `plotly` (and installing this packages won't necessarily install `anywidget`). (#183)
 * Fixed an issue with ipyleaflet erroring out when attempting to read the `.model_id` property of a closed widget object. (#179)
 * Fixed an issue where altair charts would sometimes render to a 0 height after being shown, hidden, and then shown again. (#180)
 
