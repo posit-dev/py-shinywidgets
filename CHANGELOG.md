@@ -5,7 +5,7 @@ All notable changes to shinywidgets will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [UNRELEASED] - 2025-01-23
+## [0.5.0] - 2025-01-29
 
 * Updates to accomodate the new plotly v6.0.0 release. (#182)
 * Fixed an issue with plotly graphs sometimes not getting fully removed from the DOM. (#178)
