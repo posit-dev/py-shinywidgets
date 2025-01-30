@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [UNRELEASED]
 
+* Fixes 'AttributeError: object has no attribute "_repr_mimebundle_"'. (#184)
 
 ## [0.5.0] - 2025-01-29
 

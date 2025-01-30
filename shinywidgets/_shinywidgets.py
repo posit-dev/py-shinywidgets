@@ -125,7 +125,8 @@ def init_shiny_widget(w: Widget):
         # Call _repr_mimebundle_() before get_state() since it may modify the widget
         # in an important way (unfortunately, it does for plotly)
         # # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
-        w._repr_mimebundle_()
+        if hasattr(w, "_repr_mimebundle_") and callable(w._repr_mimebundle_):
+            w._repr_mimebundle_()
 
         # Now, get the state
         state, buffer_paths, buffers = _remove_buffers(w.get_state())
