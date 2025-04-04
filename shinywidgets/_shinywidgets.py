@@ -168,7 +168,14 @@ def init_shiny_widget(w: Widget):
                 if id in WIDGET_INSTANCE_MAP:
                     del WIDGET_INSTANCE_MAP[id]
 
-        ctx.on_invalidate(on_close)
+        # This could be running in a shiny.reactive.ExtendedTask, in which case,
+        # the context is a DenialContext. As a result, on_invalidate() will throw
+        # (since reading/invalidating reactive sources isn't allowed in this context).
+        # For now, we just don't clean up the widget in this case.
+        # TODO: this line can likely be removed once we start closing iff we're in a
+        # output context (see TODO comment above)
+        if "DenialContext" != ctx.__class__.__name__:
+            ctx.on_invalidate(on_close)
 
     # Keep track of what session this widget belongs to (so we can close it when the
     # session ends)
@@ -207,6 +214,7 @@ WIDGET_INSTANCE_MAP = cast(dict[str, Widget], Widget.widgets)
 # --------------------------------------
 # Reactivity
 # --------------------------------------
+
 
 def reactive_read(widget: Widget, names: Union[str, Sequence[str]]) -> Any:
     """
@@ -273,6 +281,7 @@ def register_widget(
 
     return w
 
+
 # Previous versions of ipywidgets (< 8.0.5) had
 #   `Widget.comm = Instance('ipykernel.comm.Comm')`
 # which meant we'd get a runtime error when setting `Widget.comm = ShinyComm()`.
@@ -299,6 +308,7 @@ def is_traitlet_instance(x: object) -> "TypeGuard[Instance[Any]]":
     except ImportError:
         return False
     return isinstance(x, Instance)
+
 
 # It doesn't, at the moment, seem feasible to establish a comm with statically rendered widgets,
 # and partially for this reason, it may not be sensible to provide an input-like API for them.
