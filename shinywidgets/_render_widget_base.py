@@ -6,7 +6,10 @@ from typing import Generic, Optional, Tuple, TypeVar, cast
 from htmltools import Tag
 from ipywidgets.widgets import DOMWidget, Layout, Widget
 from shiny import req
-from shiny.reactive._core import Context, get_current_context
+from shiny.reactive import Context
+from shiny.reactive._core import (
+    get_current_context,  # pyright: ignore[reportPrivateImportUsage]
+)
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
 
 from ._as_widget import as_widget

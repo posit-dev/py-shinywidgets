@@ -9,7 +9,9 @@ from typing import List, Optional
 
 import packaging.version
 from htmltools import HTMLDependency, tags
-from htmltools._core import HTMLDependencySource
+from htmltools._core import (
+    HTMLDependencySource,  # pyright: ignore[reportPrivateImportUsage]
+)
 from ipywidgets.widgets.domwidget import DOMWidget
 from ipywidgets.widgets.widget import Widget
 from jupyter_core.paths import jupyter_path
