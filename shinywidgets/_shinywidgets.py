@@ -16,11 +16,13 @@ __protocol_version__ = ipywidgets._version.__protocol_version__
 DOMWidget = ipywidgets.widgets.DOMWidget
 Layout = ipywidgets.widgets.Layout
 Widget = ipywidgets.widgets.Widget
-_remove_buffers = ipywidgets.widgets.widget._remove_buffers  # pyright: ignore
+_remove_buffers = ipywidgets.widgets.widget._remove_buffers
 from htmltools import TagList
 from shiny import Session, reactive
 from shiny.http_staticfiles import StaticFiles
-from shiny.reactive._core import get_current_context
+from shiny.reactive._core import (
+    get_current_context,  # pyright: ignore[reportPrivateImportUsage]
+)
 from shiny.session import get_current_session, require_active_session, session_context
 
 from ._as_widget import as_widget
