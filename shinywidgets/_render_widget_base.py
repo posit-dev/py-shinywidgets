@@ -70,7 +70,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._contexts: set[Context] = set()
 
     async def render(self) -> Jsonifiable | None:
-        with CurrentSessionOutput(self.output_id):
+        with WidgetRenderContext(self.output_id):
             value = await self.fn()
 
         # Attach value/widget attributes to user func so they can be accessed (in other reactive contexts)
@@ -216,20 +216,19 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
 
     return (widget, fill)
 
+class WidgetRenderContext:
+    """
+    Let the session when a widget is currently being rendered.
 
-# --------------------------------------------------------------------------------------------
-# Context manager to set the current output id
-# (this is needed since, in order to clean up widgets properly, we need to
-#  know if they were initialized in a output context or not)
-# --------------------------------------------------------------------------------------------
-class CurrentSessionOutput:
+    This is used to ensure that widget's that are initialized in a render_widget()
+    context are cleaned up properly when that context is re-entered.
+    """
     def __init__(self, output_id):
         self.session = require_active_session(None)
         self.output_id = output_id
-        self._old_id = None
+        self._old_id = self.session.__dict__.get("__shinywidget_current_output_id")
 
     def __enter__(self):
-        self._old_id = self.session.__dict__.get("__shinywidget_current_output_id")
         self.session.__dict__["__shinywidget_current_output_id"] = self.output_id
         return self
 
@@ -238,6 +237,6 @@ class CurrentSessionOutput:
         return False
 
     @staticmethod
-    def has_current_output(session):
+    def is_rendering_widget(session):
         id = session.__dict__.get("__shinywidget_current_output_id")
         return id is not None

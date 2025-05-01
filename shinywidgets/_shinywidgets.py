@@ -29,7 +29,7 @@ from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
 from ._dependencies import require_dependency
-from ._render_widget_base import CurrentSessionOutput, has_current_context
+from ._render_widget_base import WidgetRenderContext, has_current_context
 from ._utils import package_dir
 
 __all__ = (
@@ -60,9 +60,7 @@ def init_shiny_widget(w: Widget):
         return
     # Break out of any module-specific session. Otherwise, input.shinywidgets_comm_send
     # will be some module-specific copy.
-    # TODO: session = session.root_scope()
-    while hasattr(session, "_parent"):
-        session = cast(Session, session._parent)  # pyright: ignore
+    session = session.root_scope()
 
     # If this is the first time we've seen this session, initialize some things
     if session not in SESSIONS:
@@ -167,7 +165,7 @@ def init_shiny_widget(w: Widget):
                 if id in WIDGET_INSTANCE_MAP:
                     del WIDGET_INSTANCE_MAP[id]
 
-        if CurrentSessionOutput.has_current_output(session):
+        if WidgetRenderContext.is_rendering_widget(session):
             ctx.on_invalidate(on_close)
 
     # Keep track of what session this widget belongs to (so we can close it when the
