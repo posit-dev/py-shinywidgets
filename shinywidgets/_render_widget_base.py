@@ -11,6 +11,7 @@ from shiny.reactive._core import (
     get_current_context,  # pyright: ignore[reportPrivateImportUsage]
 )
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
+from shiny.session import require_active_session
 
 from ._as_widget import as_widget
 from ._dependencies import widget_pkg
@@ -69,7 +70,8 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._contexts: set[Context] = set()
 
     async def render(self) -> Jsonifiable | None:
-        value = await self.fn()
+        with WidgetRenderContext(self.output_id):
+            value = await self.fn()
 
         # Attach value/widget attributes to user func so they can be accessed (in other reactive contexts)
         self._value = value
@@ -213,3 +215,28 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
             widget.chart = chart
 
     return (widget, fill)
+
+class WidgetRenderContext:
+    """
+    Let the session when a widget is currently being rendered.
+
+    This is used to ensure that widget's that are initialized in a render_widget()
+    context are cleaned up properly when that context is re-entered.
+    """
+    def __init__(self, output_id):
+        self.session = require_active_session(None)
+        self.output_id = output_id
+        self._old_id = self.session.__dict__.get("__shinywidget_current_output_id")
+
+    def __enter__(self):
+        self.session.__dict__["__shinywidget_current_output_id"] = self.output_id
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.session.__dict__["__shinywidget_current_output_id"] = self._old_id
+        return False
+
+    @staticmethod
+    def is_rendering_widget(session):
+        id = session.__dict__.get("__shinywidget_current_output_id")
+        return id is not None

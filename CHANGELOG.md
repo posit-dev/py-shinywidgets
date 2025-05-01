@@ -5,6 +5,10 @@ All notable changes to shinywidgets will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [UNRELEASED]
+
+* Widgets initialized inside a `reactive.effect()` are no longer automatically removed when the effect invalidates. (#191)
+
 ## [0.5.2]  - 2025-04-04
 
 * Constructing a widget inside of a `shiny.reactive.ExtendedTask()` no longer errors out. (#188)

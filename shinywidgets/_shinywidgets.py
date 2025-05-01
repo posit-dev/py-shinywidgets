@@ -29,7 +29,7 @@ from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
 from ._dependencies import require_dependency
-from ._render_widget_base import has_current_context
+from ._render_widget_base import WidgetRenderContext, has_current_context
 from ._utils import package_dir
 
 __all__ = (
@@ -60,8 +60,7 @@ def init_shiny_widget(w: Widget):
         return
     # Break out of any module-specific session. Otherwise, input.shinywidgets_comm_send
     # will be some module-specific copy.
-    while hasattr(session, "_parent"):
-        session = cast(Session, session._parent)  # pyright: ignore
+    session = session.root_scope()
 
     # If this is the first time we've seen this session, initialize some things
     if session not in SESSIONS:
@@ -148,12 +147,8 @@ def init_shiny_widget(w: Widget):
 
         _open_shiny_comm.destroy()
 
-    # If we're in a reactive context, close this widget when the context is invalidated
-    # TODO: this should probably only be done in an output context, but I'm pretty sure
-    # we don't have a decent way to determine that at the moment. In theory, doing this
-    # in _any_ reactive context be problematic if you have an effect() that adds one
-    # widget to another (i.e., a marker to a map) and want that marker to persist through
-    # the next invalidation. The example provided in #174 is one such example.
+    # If the widget initialized in a reactive _output_ context, then cleanup the widget
+    # when the context gets invalidated.
     if has_current_context():
         ctx = get_current_context()
 
@@ -170,13 +165,7 @@ def init_shiny_widget(w: Widget):
                 if id in WIDGET_INSTANCE_MAP:
                     del WIDGET_INSTANCE_MAP[id]
 
-        # This could be running in a shiny.reactive.ExtendedTask, in which case,
-        # the context is a DenialContext. As a result, on_invalidate() will throw
-        # (since reading/invalidating reactive sources isn't allowed in this context).
-        # For now, we just don't clean up the widget in this case.
-        # TODO: this line can likely be removed once we start closing iff we're in a
-        # output context (see TODO comment above)
-        if "DenialContext" != ctx.__class__.__name__:
+        if WidgetRenderContext.is_rendering_widget(session):
             ctx.on_invalidate(on_close)
 
     # Keep track of what session this widget belongs to (so we can close it when the
