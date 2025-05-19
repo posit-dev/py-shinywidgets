@@ -39,7 +39,7 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         res.children.append(bokeh_dependency())
         return res
 
-class render_plotly(render_widget_base[ValueT, FigureWidget]):
+class render_plotly(render_widget_base[ValueT, FigureWidget]):  # pyright: ignore[reportInvalidTypeArguments]
     ...
 
 class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
