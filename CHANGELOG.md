@@ -5,6 +5,10 @@ All notable changes to shinywidgets will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [UNRELEASED]
+
+* Eliminate the possibility of a single `@render_widget` output from keeping a view of prior renders. (#196)
+
 ## [0.6.1] - 2025-05-21
 
 * Fixed an issue introduced by v0.6.0 where cleanup wasn't happening when it should be. (#195)
