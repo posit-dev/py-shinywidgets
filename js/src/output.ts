@@ -103,6 +103,14 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     const view = await manager.create_view(model, {});
     await manager.display_view(view, {el: el});
 
+    // Don't allow more than one .lmWidget container, which can happen
+    // when the view is displayed more than once
+    // N.B. It's probably better to get view(s) from m.views and .remove() them,
+    // but empirically, this seems to work better
+    while (el.childNodes.length > 1) {
+      el.removeChild(el.childNodes[0]);
+    }
+
     // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;
 
