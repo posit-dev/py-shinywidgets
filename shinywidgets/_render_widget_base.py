@@ -71,7 +71,10 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
     async def render(self) -> Jsonifiable | None:
         with WidgetRenderContext(self.output_id):
-            value = await self.fn()
+            return await self._render()
+
+    async def _render(self) -> Jsonifiable | None:
+        value = await self.fn()
 
         # Attach value/widget attributes to user func so they can be accessed (in other reactive contexts)
         self._value = value
