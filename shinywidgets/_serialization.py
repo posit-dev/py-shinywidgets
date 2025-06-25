@@ -3,7 +3,7 @@ import json
 import numbers
 import warnings
 from binascii import b2a_base64
-from datetime import datetime
+from datetime import date, datetime
 from typing import Iterable
 
 from dateutil.tz import tzlocal
@@ -30,6 +30,9 @@ def json_default(obj: object) -> object:
     if isinstance(obj, datetime):
         obj = _ensure_tzinfo(obj)
         return obj.isoformat().replace("+00:00", "Z")
+
+    if isinstance(obj, date):
+        return obj.isoformat()
 
     if isinstance(obj, bytes):
         return b2a_base64(obj).decode("ascii")
