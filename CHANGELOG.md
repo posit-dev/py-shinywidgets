@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [UNRELEASED]
 
 * `datetime.date()` values are properly JSON serialized. (#204)
+* Callbacks on a plotly `FigureWidget` are now retained for recent versions of plotly. (#207, thanks @simeonschwarzenberg)
 
 ## [0.6.2] - 2025-05-21
 
