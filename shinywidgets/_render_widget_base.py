@@ -173,7 +173,8 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
 
     # Plotly provides it's own layout API (which isn't a subclass of ipywidgets.Layout)
     if pkg == "plotly":
-        from plotly.graph_objs import Layout as PlotlyLayout  # pyright: ignore
+        from plotly.graph_objs import Layout as PlotlyLayout
+        from plotly.basewidget import BaseFigureWidget
 
         if isinstance(layout, PlotlyLayout):
             if layout.height is not None:
@@ -190,7 +191,12 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
             if fill:
                 widget._config = {"responsive": True, **widget._config}  # type: ignore
 
-    widget.layout = layout
+        if isinstance(widget, BaseFigureWidget):
+            # Reassigning the layout to a FigureWidget drops installed callbacks;
+            # use native update_layout instead.
+            widget.update_layout(layout)
+        else:
+            widget.layout = layout
 
     # altair, confusingly, isn't setup to fill it's Layout() container by default. I
     # can't imagine a situation where you'd actually want it to _not_ fill the parent
