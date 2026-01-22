@@ -235,17 +235,17 @@ class WidgetRenderContext:
     def __init__(self, output_id):
         self.session = require_active_session(None)
         self.output_id = output_id
-        self._old_id = self.session.__dict__.get("__shinywidget_current_output_id")
+        self._old_id = vars(self.session).get("__shinywidget_current_output_id")
 
     def __enter__(self):
-        self.session.__dict__["__shinywidget_current_output_id"] = self.output_id
+        vars(self.session)["__shinywidget_current_output_id"] = self.output_id
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.session.__dict__["__shinywidget_current_output_id"] = self._old_id
+        vars(self.session)["__shinywidget_current_output_id"] = self._old_id
         return False
 
     @staticmethod
     def is_rendering_widget(session):
-        id = session.__dict__.get("__shinywidget_current_output_id")
+        id = vars(session).get("__shinywidget_current_output_id")
         return id is not None

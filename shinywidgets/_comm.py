@@ -2,7 +2,6 @@ from base64 import b64encode
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
-from shiny._utils import run_coro_hybrid
 from shiny.session import get_current_session
 
 from ._serialization import json_packer
@@ -46,7 +45,7 @@ class ShinyComm:
         data: DataType = None,
         metadata: MetadataType = None,
         buffers: BufferType = None,
-        **keys: object
+        **keys: object,
     ) -> None:
         self.comm_id = comm_id
         self.comm_manager = comm_manager
@@ -58,7 +57,7 @@ class ShinyComm:
         data: DataType = None,
         metadata: MetadataType = None,
         buffers: BufferType = None,
-        **keys: object
+        **keys: object,
     ) -> None:
         self.comm_manager.register_comm(self)
         try:
@@ -69,7 +68,7 @@ class ShinyComm:
                 buffers=buffers,
                 target_name=self.target_name,
                 target_module=None,
-                **keys
+                **keys,
             )
             self._closed = False
         except Exception:
@@ -120,7 +119,7 @@ class ShinyComm:
         data: DataType = None,
         metadata: MetadataType = None,
         buffers: BufferType = None,
-        **keys: object
+        **keys: object,
     ) -> None:
         data = {} if data is None else data
         metadata = {} if metadata is None else metadata
@@ -166,10 +165,8 @@ class ShinyComm:
 
         msg_txt = json_packer(msg)
 
-        # In theory, it seems that this send could maybe be async (that we then asyncio.create_task() with),
-        # but that might mean that messages are sent out of order, which is not what we want.
-        def _send():
-            run_coro_hybrid(session.send_custom_message(msg_type, msg_txt))  # type: ignore
+        async def _send():
+            await session.send_custom_message(msg_type, msg_txt)  # type: ignore
 
         # N.B., if messages are sent immediately, run_coro_sync() could fail with
         # 'async function yielded control; it did not finish in one iteration.'
