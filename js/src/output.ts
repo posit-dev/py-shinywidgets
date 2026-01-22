@@ -224,8 +224,9 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
 
     // Before .close()ing the model (which will .remove() each view), do some
     // additional cleanup that .remove() might miss
-    await Promise.all(
-      Object.values(m.views).map(async (viewPromise) => {
+    if (m.views) {
+      await Promise.all(
+        Object.values(m.views).map(async (viewPromise) => {
         try {
           const v = await viewPromise;
 
@@ -248,12 +249,32 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
         }
       })
     );
+    }
 
-    // Close model after all views are cleaned up
-    await m.close();
+    // Prevent sync errors during close. When m.close() removes views, they try to
+    // sync _view_count back to the server. But m.close() deletes the comm before
+    // removing views, causing "Syncing error: no comm channel defined".
+    // Setting comm_live=false prevents save_changes() from attempting to sync.
+    // This is particularly important for anywidget-based widgets (like plotly 6.x)
+    // that don't have a destroy() method and thus aren't handled in the loop above.
+    m.comm_live = false;
 
-    // Trigger comm:close event to remove manager's reference
-    m.trigger("comm:close");
+    // Close model after all views are cleaned up.
+    // Wrap in try-catch because close() may trigger events that access already-cleaned state.
+    try {
+      await m.close();
+    } catch (closeErr) {
+      // Ignore errors during close - the model state may already be partially cleaned up
+    }
+
+    // Trigger comm:close event to remove manager's reference.
+    // This may throw if the manager tries to access model state that's been cleaned up,
+    // but that's acceptable since the model is already closed.
+    try {
+      m.trigger("comm:close");
+    } catch (triggerErr) {
+      // Ignore errors during comm:close trigger - the model is already closed
+    }
   } catch (err) {
     console.error("Error during model cleanup:", err);
   }
