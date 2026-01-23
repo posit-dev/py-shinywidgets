@@ -94,6 +94,10 @@ def init_shiny_widget(w: Widget):
                 if widget:
                     widget.close()
             del SESSION_WIDGET_ID_MAP[session.id]
+            # Also cleanup the output->widget mapping for this session
+            keys_to_remove = [k for k in OUTPUT_WIDGET_MAP if k[0] == session.id]
+            for k in keys_to_remove:
+                del OUTPUT_WIDGET_MAP[k]
 
         session.on_ended(_cleanup_session_state)
 
@@ -147,26 +151,30 @@ def init_shiny_widget(w: Widget):
 
         _open_shiny_comm.destroy()
 
-    # If the widget initialized in a reactive _output_ context, then cleanup the widget
-    # when the context gets invalidated.
-    if has_current_context():
-        ctx = get_current_context()
-
-        def on_close():
-            with session_context(session):
-                w.close()
-                # By closing the widget, we also close the comm, which sets w.comm to
-                # None. Unfortunately, the w.model_id property looks up w.comm.comm_id
-                # at runtime, and some packages like ipyleaflet want to use this id
-                # to manage references between widgets.
-                w.comm = OrphanedShinyComm(id)
-                # Assigning a comm has the side-effect of adding back a reference to
-                # the widget instance, so remove it again
-                if id in WIDGET_INSTANCE_MAP:
-                    del WIDGET_INSTANCE_MAP[id]
-
-        if WidgetRenderContext.is_rendering_widget(session):
-            ctx.on_invalidate(on_close)
+    # If the widget initialized in a render_widget() context, close any old widget
+    # for this output. This approach (instead of using on_invalidate) properly supports
+    # patterns where effects are created inside render functions - those effects can
+    # invalidate the render context without meaning the widget should be destroyed.
+    if WidgetRenderContext.is_rendering_widget(session):
+        output_id = vars(session).get("__shinywidget_current_output_id")
+        if output_id is not None:
+            key = (session.id, output_id)
+            old_widget_id = OUTPUT_WIDGET_MAP.get(key)
+            if old_widget_id is not None and old_widget_id != id:
+                old_widget = WIDGET_INSTANCE_MAP.get(old_widget_id)
+                if old_widget is not None:
+                    old_widget.close()
+                    # By closing the widget, we also close the comm, which sets
+                    # old_widget.comm to None. Unfortunately, the model_id property
+                    # looks up comm.comm_id at runtime, and some packages like
+                    # ipyleaflet want to use this id to manage references between
+                    # widgets.
+                    old_widget.comm = OrphanedShinyComm(old_widget_id)
+                    # Assigning a comm has the side-effect of adding back a reference
+                    # to the widget instance, so remove it again
+                    if old_widget_id in WIDGET_INSTANCE_MAP:
+                        del WIDGET_INSTANCE_MAP[old_widget_id]
+            OUTPUT_WIDGET_MAP[key] = id
 
     # Keep track of what session this widget belongs to (so we can close it when the
     # session ends)
@@ -197,6 +205,10 @@ COMM_MANAGER = ShinyCommManager()
 # Dictionary mapping session id to widget ids
 # The key is the session id, and the value is a list of widget ids
 SESSION_WIDGET_ID_MAP: dict[str, list[str]] = {}
+
+# Dictionary mapping (session_id, output_id) to widget_id
+# Used to close old widgets when a new one is rendered for the same output
+OUTPUT_WIDGET_MAP: dict[tuple[str, str], str] = {}
 
 # Dictionary of all "active" widgets (ipywidgets automatically adds to this dictionary as
 # new widgets are created, but they won't get removed until the widget is explictly closed)
