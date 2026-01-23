@@ -79,7 +79,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     this.renderError(el, err);
   }
   async renderValue(el: HTMLElement, data): Promise<void> {
-
     // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
     if (!data) {
       el.style.visibility = "hidden";
