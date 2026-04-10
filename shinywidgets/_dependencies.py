@@ -1,9 +1,11 @@
 import importlib
 import json
 import os
+import posixpath
 import re
 import tempfile
 import warnings
+from dataclasses import dataclass
 from types import ModuleType
 from typing import List, Optional
 
@@ -18,6 +20,7 @@ from jupyter_core.paths import jupyter_path
 from shiny import Session, ui
 
 from . import __version__
+from ._cdn import SHINYWIDGETS_CDN
 
 
 # TODO: scripts/static_download.R should produce/update these
@@ -56,57 +59,99 @@ def output_binding_dependency() -> HTMLDependency:
 # possible for a Widget to have traits that are themselves Widgets
 # (which could have their own npm module), but in practice, I haven't seen any cases
 # where a 3rd party widget can contain a 3rd party widget.
+@dataclass
+class ResolvedWidgetDependency:
+    module_name: str
+    version: str
+    notebook_dest: str
+    source_dir: Optional[str]
+    requirejs_target: str
+
+
+def resolve_widget_dependency(w: Widget) -> Optional[ResolvedWidgetDependency]:
+    module_attr = "_view_module" if isinstance(w, DOMWidget) else "_model_module"
+    module_name: str = getattr(w, module_attr, widget_pkg(w))
+
+    if module_name.startswith("@jupyter-widgets/"):
+        return None
+
+    version = parse_version_safely(getattr(w, "_model_module_version", "1.0"))
+    notebook_dest = _resolve_notebook_destination(w, module_name)
+
+    module_dir = jupyter_extension_path(module_name)
+    module_dest = module_name
+    if module_dir is None:
+        module_dir = jupyter_extension_path(notebook_dest)
+        module_dest = notebook_dest
+
+    if module_dir is not None:
+        require_target = _resolve_local_requirejs_target(module_dest, module_dir)
+        if require_target is not None:
+            return ResolvedWidgetDependency(
+                module_name=module_name,
+                version=version,
+                notebook_dest=module_dest,
+                source_dir=module_dir,
+                requirejs_target=require_target,
+            )
+
+    fallback_target = _resolve_cdn_requirejs_target(module_name, version)
+    if fallback_target is None:
+        return None
+
+    return ResolvedWidgetDependency(
+        module_name=module_name,
+        version=version,
+        notebook_dest=notebook_dest,
+        source_dir=None,
+        requirejs_target=fallback_target,
+    )
+
+
 def require_dependency(
-    w: Widget, session: Session, warn_if_missing: bool = True
+    w: Widget,
+    session: Session,
+    warn_if_missing: bool = True,
+    resolved: Optional[ResolvedWidgetDependency] = None,
 ) -> Optional[HTMLDependency]:
     """
     Obtain an HTMLDependency for a 3rd party ipywidget that points
     require('widget-npm-package') requests in the browser to the correct local path.
     """
 
-    # The relevant npm package should be specified as an attribute on the widget
-    # instance. If the widget is installed as a jupyter extension, in most cases, that
-    # name will registered at the extension name/directory
-    module_attr = "_view_module" if isinstance(w, DOMWidget) else "_model_module"
-    module_name: str = getattr(w, module_attr, widget_pkg(w))
-
-    # ipywidgets (i.e., @jupyter-widgets) come pre-bundled in libembed-amd.js
-    # # (i.e., _core() dependencies)
-    if module_name.startswith("@jupyter-widgets/"):
+    resolved = resolved or resolve_widget_dependency(w)
+    if resolved is None:
+        if warn_if_missing:
+            warnings.warn(
+                f"Couldn't find local path to widget extension for {type(w)}."
+                + " Since a CDN fallback is provided, the widget will still render if an internet connection is available."
+                + " To avoid depending on a CDN, make sure the widget is installed as a jupyter extension.",
+                stacklevel=2,
+            )
         return None
 
-    # It's technically possible for the npm package name to be different from the actual
-    # extension path (defined by `_jupyter_nbextension_paths` in __init__.py), but we
-    # also don't have a fool-proof way to discovering the relevant __init__.py file,
-    # which is why we only use look for it if the npm package isn't installed
-    module_dir = jupyter_extension_path(module_name)
-    if module_dir is None:
-        module_dir = jupyter_extension_path(jupyter_extension_destination(w))
-        if module_dir is None:
-            if warn_if_missing:
-                warnings.warn(
-                    f"Couldn't find local path to widget extension for {type(w)}."
-                    + " Since a CDN fallback is provided, the widget will still render if an internet connection is available."
-                    + " To avoid depending on a CDN, make sure the widget is installed as a jupyter extension.",
-                    stacklevel=2,
-                )
-            return None
+    if warn_if_missing and resolved.source_dir is None:
+        warnings.warn(
+            f"Couldn't find local path to widget extension for {type(w)}."
+            + " Since a CDN fallback is provided, the widget will still render if an internet connection is available."
+            + " To avoid depending on a CDN, make sure the widget is installed as a jupyter extension.",
+            stacklevel=2,
+        )
 
-    version = parse_version_safely(getattr(w, "_model_module_version", "1.0"))
-    source = HTMLDependencySource(subdir=module_dir)
+    source: Optional[HTMLDependencySource]
+    if resolved.source_dir is None:
+        source = None
+    else:
+        source = HTMLDependencySource(subdir=resolved.source_dir)
 
-    dep = HTMLDependency(module_name, version, source=source)
-    # Get the location where the dependency files will be mounted by the shiny app
-    # and use that to inform the requirejs import path
-    href = dep.source_path_map(lib_prefix=session.app.lib_prefix)["href"]
-    config = {"paths": {module_name: os.path.join(href, "index")}}
+    config = {"paths": {resolved.module_name: resolved.requirejs_target}}
     # Basically our equivalent of the extension.js file provided by the cookiecutter
     # https://github.com/jupyter-widgets/widget-cookiecutter/blob/master/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js
     return HTMLDependency(
-        module_name,
-        version,
+        resolved.module_name,
+        resolved.version,
         source=source,
-        all_files=True,
+        all_files=resolved.source_dir is not None,
         head=tags.script(f"window.require.config({json.dumps(config)})"),
     )
 
@@ -120,17 +165,56 @@ def bokeh_dependency() -> HTMLDependency:
 
 def jupyter_extension_path(module_name: str) -> Optional[str]:
     paths: List[str] = jupyter_path()
-    module_dir = None
     for x in paths:
         dir = os.path.join(x, "nbextensions", module_name)
-        if not os.path.exists(dir):
-            continue
-        for f in os.listdir(dir):
-            if f.startswith("index") and f.endswith(".js"):
-                module_dir = dir
-                break
+        if os.path.isdir(dir):
+            return dir
 
-    return module_dir
+    return None
+
+
+def _resolve_notebook_destination(w: Widget, module_name: str) -> str:
+    try:
+        return jupyter_extension_destination(w)
+    except Exception:
+        return module_name
+
+
+def _resolve_local_requirejs_target(
+    notebook_dest: str, source_dir: str
+) -> Optional[str]:
+    entrypoint = _resolve_notebook_entrypoint(source_dir)
+    if entrypoint is None:
+        return None
+
+    return posixpath.join("nbextensions", notebook_dest, entrypoint)
+
+
+def _resolve_notebook_entrypoint(source_dir: str) -> Optional[str]:
+    if os.path.exists(os.path.join(source_dir, "index.js")):
+        return "index"
+
+    if os.path.exists(os.path.join(source_dir, "index.min.js")):
+        return "index.min"
+
+    if os.path.exists(os.path.join(source_dir, "extension.js")):
+        return "extension"
+
+    js_files = sorted(
+        f for f in os.listdir(source_dir) if f.endswith(".js") and f != "extension.js"
+    )
+    if len(js_files) == 1:
+        return os.path.splitext(js_files[0])[0]
+
+    return None
+
+
+def _resolve_cdn_requirejs_target(module_name: str, version: str) -> Optional[str]:
+    if module_name != "@bokeh/jupyter_bokeh":
+        return None
+
+    cdn = SHINYWIDGETS_CDN.rstrip("/")
+    return f"{cdn}/{module_name}@{version}/dist/index"
 
 
 # Approximates what `jupyter nbextension install` does to discover and copy source files

@@ -28,7 +28,7 @@ from shiny.session import get_current_session, require_active_session, session_c
 from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
-from ._dependencies import require_dependency
+from ._dependencies import require_dependency, resolve_widget_dependency
 from ._render_widget_base import WidgetRenderContext
 from ._utils import package_dir
 
@@ -101,9 +101,16 @@ def init_shiny_widget(w: Widget):
     # (via handle_comm_open() -> new_model() -> loadClass() -> requireLoader())
     # actually point to directories served locally by shiny
     if SHINYWIDGETS_CDN_ONLY:
+        resolved_dep = None
         widget_dep = None
     else:
-        widget_dep = require_dependency(w, session, SHINYWIDGETS_EXTENSION_WARNING)
+        resolved_dep = resolve_widget_dependency(w)
+        widget_dep = require_dependency(
+            w,
+            session,
+            SHINYWIDGETS_EXTENSION_WARNING,
+            resolved=resolved_dep,
+        )
 
     # By the time we get here, the user has already had an opportunity to specify a model_id,
     # so it isn't yet populated, generate a random one so we can assign the same id to the comm
@@ -179,7 +186,13 @@ def init_shiny_widget(w: Widget):
     # we're setting the data-base-url attribute on the <body> (which we should
     # be doing on load in js/src/output.ts)
     # https://github.com/jupyter-widgets/widget-cookiecutter/blob/9694718/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js#L8
-    if widget_dep and widget_dep.source:
+    if resolved_dep and resolved_dep.source_dir:
+        session.app._dependency_handler.mount(
+            f"/nbextensions/{resolved_dep.notebook_dest}",
+            StaticFiles(directory=resolved_dep.source_dir),
+            name=f"{resolved_dep.notebook_dest}-nbextension-static-resources",
+        )
+    elif widget_dep and widget_dep.source:
         src_dir = widget_dep.source.get("subdir", "")
         if src_dir:
             session.app._dependency_handler.mount(
