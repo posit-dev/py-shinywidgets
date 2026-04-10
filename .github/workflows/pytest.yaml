@@ -48,9 +48,15 @@ jobs:
         run: |
           make pyright
 
-      #- name: Run unit tests
-      #  run: |
-      #    make test
+      - name: Install Playwright browser
+        if: matrix.python-version == '3.12'
+        run: |
+          python -m playwright install chromium
+
+      - name: Run Playwright tests
+        if: matrix.python-version == '3.12'
+        run: |
+          make test-playwright
 
   deploy:
     name: "Deploy to PyPI"

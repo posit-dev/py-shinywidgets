@@ -5,6 +5,10 @@ All notable changes to shinywidgets will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+* Hardened widget teardown for re-rendered views so replacing a plotly `FigureWidget` no longer emits known cleanup noise like `Widget is not attached` or dead-comm sync errors. Added a Playwright regression test for repeated plotly rerenders and wired that test into GitHub Actions on Python 3.12. (#223)
+
 ## [0.7.2] - 2026-04-09
 
 * Fixed an issue where widgets created inside `reactive.isolate()` could be cleaned up too early because cleanup was registered on the wrong reactive context. This also fixes plotly widgets disappearing in the `model-score` example. (#222)
