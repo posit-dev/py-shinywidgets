@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from typing import Any, Dict
 
@@ -285,6 +286,24 @@ def test_reactive_read_returns_values_and_delegates_depend(monkeypatch):
     assert seen[1][1] == ["a", "b"]
 
 
+def test_decode_comm_buffers_decodes_base64_and_preserves_existing_buffers():
+    import shinywidgets._shinywidgets as sw
+
+    existing = memoryview(b"\x02\x03")
+    msg = {
+        "buffers": [
+            base64.b64encode(b"\x00\x01").decode("ascii"),
+            existing,
+        ]
+    }
+
+    res = sw._decode_comm_buffers(msg)
+
+    assert res is msg
+    assert res["buffers"][0].tobytes() == b"\x00\x01"
+    assert res["buffers"][1] is existing
+
+
 def test_is_traitlet_instance_false_for_plain_object():
     import shinywidgets._shinywidgets as sw
 
@@ -352,3 +371,32 @@ def test_register_widget_uses_session_output_decorator(monkeypatch):
     assert res is w
     assert seen["output_id"] == "out1"
     assert seen["called"] is True
+
+
+def test_register_widget_without_session_uses_active_session(monkeypatch):
+    import shinywidgets._shinywidgets as sw
+
+    seen = {"output_id": None, "registered_fn": None}
+
+    class Sess:
+        def output(self, *, id):
+            seen["output_id"] = id
+
+            def deco(fn):
+                seen["registered_fn"] = fn
+                return fn
+
+            return deco
+
+    sess = Sess()
+    monkeypatch.setattr(sw, "render_widget", lambda fn: fn)
+    monkeypatch.setattr(sw, "as_widget", lambda x: x)
+    monkeypatch.setattr(sw, "require_active_session", lambda s: sess)
+
+    w = object()
+    res = sw.register_widget("out2", w)  # type: ignore[arg-type]
+
+    assert res is w
+    assert seen["output_id"] == "out2"
+    assert seen["registered_fn"] is not None
+    assert seen["registered_fn"]() is w

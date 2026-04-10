@@ -179,3 +179,13 @@ def test_msg_and_close_callbacks(monkeypatch):
     c.handle_close({"bye": "world"})
     assert seen["msg"] == {"hello": "world"}
     assert seen["close"] == {"bye": "world"}
+
+
+def test_orphaned_shiny_comm_methods_are_noops() -> None:
+    import shinywidgets._comm as comm
+
+    orphan = comm.OrphanedShinyComm("c1")
+
+    assert orphan.send() is None
+    assert orphan.close() is None
+    assert orphan.on_msg(lambda msg: msg) is None
