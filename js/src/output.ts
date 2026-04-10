@@ -63,16 +63,6 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
 }
 
 const manager = new OutputManager({ loader: shinyRequireLoader });
-let managerTaskQueue: Promise<unknown> = Promise.resolve();
-
-function enqueueManagerTask<T>(task: () => Promise<T> | T): Promise<T> {
-  const queuedTask = managerTaskQueue.then(() => task());
-  managerTaskQueue = queuedTask.then(
-    () => undefined,
-    () => undefined,
-  );
-  return queuedTask;
-}
 
 
 /******************************************************************************
@@ -105,7 +95,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
 
     // At this time point, we should've already handled an 'open' message, and so
     // the model should be ready to use
-    await managerTaskQueue;
     const model = await manager.get_model(data.model_id);
     if (!model) {
       throw new Error(`No model found for id ${data.model_id}`);
@@ -193,103 +182,95 @@ if (taskQueue) {
 // Initialize the comm and model when a new widget is created
 // This is basically our version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1144-L1176
 Shiny.addCustomMessageHandler("shinywidgets_comm_open", (msg_txt) => {
-  void enqueueManagerTask(async () => {
-    setBaseURL();
-    const msg = jsonParse(msg_txt);
-    Shiny.renderDependencies(msg.content.html_deps);
-    const comm = new ShinyComm(msg.content.comm_id);
-    await manager.handle_comm_open(comm, msg);
-  }).catch((err) => {
-    console.error("Error opening widget model:", err);
-  });
+  setBaseURL();
+  const msg = jsonParse(msg_txt);
+  Shiny.renderDependencies(msg.content.html_deps);
+  const comm = new ShinyComm(msg.content.comm_id);
+  manager.handle_comm_open(comm, msg);
 });
 
 // Handle any mutation of the model (e.g., add a marker to a map, without a full redraw)
 // Basically out version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1200-L1215
 Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
-  void enqueueManagerTask(async () => {
-    const msg = jsonParse(msg_txt);
-    const id = msg.content.comm_id;
-    const model = manager.get_model(id);
-    if (!model) {
-      console.error(`Couldn't handle message for model ${id} because it doesn't exist.`);
-      return;
-    }
-    try {
-      const m = await model;
-      // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
-      m.comm.handle_msg(msg);
-    } catch (err) {
-      console.error("Error handling message:", err);
-    }
-  });
+  const msg = jsonParse(msg_txt);
+  const id = msg.content.comm_id;
+  const model = manager.get_model(id);
+  if (!model) {
+    console.error(`Couldn't handle message for model ${id} because it doesn't exist.`);
+    return;
+  }
+  try {
+    const m = await model;
+    // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
+    m.comm.handle_msg(msg);
+  } catch (err) {
+    console.error("Error handling message:", err);
+  }
 });
 
 
 // Handle the closing of a widget/comm/model
 Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
-  void enqueueManagerTask(async () => {
-    const msg = jsonParse(msg_txt);
-    const id = msg.content.comm_id;
-    const model = manager.get_model(id);
-    if (!model) {
-      console.error(`Couldn't close model ${id} because it doesn't exist.`);
-      return;
-    }
+  const msg = jsonParse(msg_txt);
+  const id = msg.content.comm_id;
+  const model = manager.get_model(id);
+  if (!model) {
+    console.error(`Couldn't close model ${id} because it doesn't exist.`);
+    return;
+  }
 
-    try {
-      const m = await model;
+  try {
+    const m = await model;
 
-      // Some widget views need explicit teardown before model.close() removes them.
-      if (m.views) {
-        await Promise.all(
-          Object.values(m.views).map(async (viewPromise) => {
-          try {
-            const v = await viewPromise;
+    // Some widget views need explicit teardown before model.close() removes them.
+    if (m.views) {
+      await Promise.all(
+        Object.values(m.views).map(async (viewPromise) => {
+        try {
+          const v = await viewPromise;
 
-            // Plotly-backed views can leave DOM state and listeners behind unless
-            // destroy() runs before the view is removed.
-            if (hasMethod<DestroyMethod>(v, 'destroy')) {
-              v.destroy();
-              // Clearing the back-reference prevents later teardown from touching a
-              // model that is already being closed.
-              delete v.model;
-              v.remove();
-            }
-
-
-          } catch (err) {
-            console.error("Error cleaning up view:", err);
+          // Plotly-backed views can leave DOM state and listeners behind unless
+          // destroy() runs before the view is removed.
+          if (hasMethod<DestroyMethod>(v, 'destroy')) {
+            v.destroy();
+            // Clearing the back-reference prevents later teardown from touching a
+            // model that is already being closed.
+            delete v.model;
+            v.remove();
           }
-        })
-      );
-      }
 
-      // View removal updates _view_count. Mark the comm as inactive first so that
-      // save_changes() does not try to send those updates after the comm is gone.
-      m.comm_live = false;
 
-      // Close model after all views are cleaned up.
-      try {
-        await m.close();
-      } catch (closeErr) {
-        if (!isIgnorableTeardownError(closeErr)) {
-          console.error("Unexpected error while closing model:", closeErr);
+        } catch (err) {
+          console.error("Error cleaning up view:", err);
         }
-      }
-
-      // HTMLManager releases the model from its registry on comm:close.
-      try {
-        m.trigger("comm:close");
-      } catch (triggerErr) {
-        if (!isIgnorableTeardownError(triggerErr)) {
-          console.error("Unexpected error while triggering comm:close:", triggerErr);
-        }
-      }
-    } catch (err) {
-      console.error("Error during model cleanup:", err);
+      })
+    );
     }
-  });
+
+    // View removal updates _view_count. Mark the comm as inactive first so that
+    // save_changes() does not try to send those updates after the comm is gone.
+    m.comm_live = false;
+
+    // Close model after all views are cleaned up.
+    try {
+      await m.close();
+    } catch (closeErr) {
+      if (!isIgnorableTeardownError(closeErr)) {
+        console.error("Unexpected error while closing model:", closeErr);
+      }
+    }
+
+    // HTMLManager releases the model from its registry on comm:close.
+    try {
+      m.trigger("comm:close");
+    } catch (triggerErr) {
+      if (!isIgnorableTeardownError(triggerErr)) {
+        console.error("Unexpected error while triggering comm:close:", triggerErr);
+      }
+    }
+  } catch (err) {
+    console.error("Error during model cleanup:", err);
+  }
 });
 
 $(document).on("shiny:disconnected", () => {
