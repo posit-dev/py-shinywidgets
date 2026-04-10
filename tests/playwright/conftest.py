@@ -4,7 +4,11 @@ from playwright.sync_api import Page, expect
 from shiny.run import ShinyAppProc
 
 
-def assert_rerender_cleanup(page: Page, local_app: ShinyAppProc, ready_selector: str) -> None:
+def assert_rerender_cleanup(
+    page: Page,
+    local_app: ShinyAppProc,
+    ready_selector: str,
+) -> None:
     errors: list[str] = []
 
     page.on(
