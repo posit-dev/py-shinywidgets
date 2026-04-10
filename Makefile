@@ -1,102 +1,91 @@
-.PHONY: clean clean-test clean-pyc clean-build docs help
+.PHONY: help clean clean-build clean-pyc clean-test py-setup py-check-format py-check-types py-check-tests py-check py-check-tox py-build py-format py-coverage py-check-build test test-playwright coverage dist install pyright check
+
 .DEFAULT_GOAL := help
 
-define BROWSER_PYSCRIPT
-import os, webbrowser, sys
-
-from urllib.request import pathname2url
-
-webbrowser.open("file://" + pathname2url(os.path.abspath(sys.argv[1])))
-endef
-export BROWSER_PYSCRIPT
+PYTHON_PATHS := shinywidgets tests
+PYRIGHT_PATHS := shinywidgets tests/__init__.py tests/test_version_metadata.py
 
 define PRINT_HELP_PYSCRIPT
-import re, sys
+import re
+import sys
 
 for line in sys.stdin:
-	match = re.match(r'^([a-zA-Z_-]+):.*?## (.*)$$', line)
-	if match:
-		target, help = match.groups()
-		print("%-20s %s" % (target, help))
+    match = re.match(r"^([a-zA-Z0-9_/-]+):.*?## (.*)$$", line)
+    if match:
+        target, help = match.groups()
+        print(f"{target:20} {help}")
 endef
 export PRINT_HELP_PYSCRIPT
 
-BROWSER := python -c "$$BROWSER_PYSCRIPT"
+help: ## show help messages for make targets
+	@python3 -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
 
-help:
-	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
-
-clean: clean-build clean-pyc clean-test ## remove all build, test, coverage and Python artifacts
+clean: clean-build clean-pyc clean-test ## remove build, cache, and coverage artifacts
 
 clean-build: ## remove build artifacts
-	rm -fr build/
-	rm -fr dist/
-	rm -fr .eggs/
-	find . -name '*.egg-info' -exec rm -fr {} +
+	rm -rf build/ dist/ .eggs/
+	find . -name '*.egg-info' -exec rm -rf {} +
 	find . -name '*.egg' -exec rm -f {} +
 
-clean-pyc: ## remove Python file artifacts
+clean-pyc: ## remove Python cache artifacts
 	find . -name '*.pyc' -exec rm -f {} +
 	find . -name '*.pyo' -exec rm -f {} +
-	find . -name '*~' -exec rm -f {} +
-	find . -name '__pycache__' -exec rm -fr {} +
+	find . -name '__pycache__' -exec rm -rf {} +
 
 clean-test: ## remove test and coverage artifacts
-	rm -fr .tox/
+	rm -rf .tox/ .pytest_cache/ htmlcov/
 	rm -f .coverage
-	rm -fr htmlcov/
-	rm -fr .pytest_cache
 
-lint/flake8: ## check style with flake8
-	flake8 shinywidgets tests
-lint/black: ## check style with black
-	black --check shinywidgets tests
+py-setup: ## [py] sync the development environment with uv
+	uv sync --all-groups
 
-lint: lint/flake8 lint/black ## check style
+py-check-format: ## [py] run Ruff lint and format checks
+	uv run ruff check $(PYTHON_PATHS) --config pyproject.toml
+	uv run ruff format --check $(PYTHON_PATHS) --config pyproject.toml
 
-test: ## run tests quickly with the default Python
-	pytest
+py-check-types: ## [py] run pyright type checks
+	uv run pyright $(PYRIGHT_PATHS)
+
+py-check-tests: ## [py] run pytest checks
+	uv run pytest
+
+py-check: ## [py] run format, type, and test checks
+	$(MAKE) py-check-format
+	$(MAKE) py-check-types
+	$(MAKE) py-check-tests
+
+py-check-tox: ## [py] run test and type checks across supported Python versions
+	uv run tox run-parallel
+
+py-build: ## [py] build the source and wheel distributions
+	uv build
+
+py-format: ## [py] apply Ruff fixes and formatting
+	uv run ruff check --fix $(PYTHON_PATHS) --config pyproject.toml
+	uv run ruff format $(PYTHON_PATHS) --config pyproject.toml
+
+py-coverage: ## [py] run the test suite under coverage
+	uv run coverage run -m pytest
+	uv run coverage report
+
+py-check-build: ## [py] verify package build metadata is importable
+	uv build
+	uv run python -c "import shinywidgets; print(shinywidgets.__version__)"
+
+test: py-check-tests ## run pytest quickly with the default environment
 
 test-playwright: ## run Playwright regression tests
-	python -m pytest -c tests/playwright/playwright-pytest.ini tests/playwright
+	uv run playwright install chromium
+	uv run pytest -c tests/playwright/playwright-pytest.ini tests/playwright
 
-test-all: ## run tests on every Python version with tox
-	tox
+coverage: py-coverage ## run coverage checks
 
-coverage: ## check code coverage quickly with the default Python
-	coverage run --source shinywidgets -m pytest
-	coverage report -m
-	coverage html
-	$(BROWSER) htmlcov/index.html
+dist: py-build ## build source and wheel distributions
 
-docs: ## generate Sphinx HTML documentation, including API docs
-	rm -f docs/shinywidgets.rst
-	rm -f docs/modules.rst
-	sphinx-apidoc -o docs/ shinywidgets
-	$(MAKE) -C docs clean
-	$(MAKE) -C docs html
-	$(BROWSER) docs/_build/html/index.html
+install: py-build ## install the built wheel into the uv environment
+	uv run pip uninstall -y shinywidgets || true
+	uv run pip install dist/shinywidgets*.whl
 
-servedocs: docs ## compile the docs watching for changes
-	watchmedo shell-command -p '*.rst' -c '$(MAKE) -C docs html' -R -D .
+pyright: py-check-types ## run pyright type checks
 
-release: dist ## package and upload a release
-	twine upload dist/*
-
-dist: clean ## builds source and wheel package
-	python setup.py sdist
-	python setup.py bdist_wheel
-	ls -l dist
-
-install: dist ## install the package to the active Python's site-packages
-	pip uninstall -y shinywidgets
-	python3 -m pip install dist/shinywidgets*.whl
-
-pyright: ## type check with pyright
-	pyright --pythonversion=3.11
-
-check: pyright lint ## check code quality with pyright, flake8, black and isort
-	echo "Checking code with black."
-	black --check .
-	echo "Sorting imports with isort."
-	isort --check-only --diff .
+check: py-check ## run the full Python quality check suite

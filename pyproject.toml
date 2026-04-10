@@ -1,0 +1,210 @@
+[project]
+name = "shinywidgets"
+description = "Render ipywidgets in Shiny applications"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dynamic = ["version"]
+authors = [{ name = "Carson Sievert", email = "carson@posit.co" }]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Natural Language :: English",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+  "anywidget",
+  "ipywidgets>=7.6.5",
+  "jupyter_core",
+  "python-dateutil>=2.8.2",
+  "shiny>=0.6.1.9005",
+]
+
+[project.urls]
+Homepage = "https://github.com/rstudio/py-shinywidgets"
+Documentation = "https://github.com/rstudio/py-shinywidgets/"
+Source = "https://github.com/rstudio/py-shinywidgets/"
+Issues = "https://github.com/rstudio/py-shinywidgets/issues"
+
+[project.optional-dependencies]
+test = [
+  "altair",
+  "bokeh",
+  "coverage>=7",
+  "ipyleaflet>=0.20.0",
+  "jupyter_bokeh",
+  "playwright>=1.40.0",
+  "plotly>=5.0.0",
+  "pydeck",
+  "pyright>=1.1.284",
+  "pytest>=6.2.4",
+  "pytest-playwright>=0.3.0",
+  "tox-uv>=1",
+]
+dev = [
+  "altair",
+  "bokeh",
+  "coverage>=7",
+  "ipyleaflet>=0.20.0",
+  "jupyter_bokeh",
+  "playwright>=1.40.0",
+  "plotly>=5.0.0",
+  "pydeck",
+  "pyright>=1.1.284",
+  "pytest>=6.2.4",
+  "pytest-playwright>=0.3.0",
+  "ruff>=0.6.5",
+  "tox-uv>=1",
+]
+
+[dependency-groups]
+test = [
+  "altair",
+  "bokeh",
+  "coverage>=7",
+  "ipyleaflet>=0.20.0",
+  "jupyter_bokeh",
+  "playwright>=1.40.0",
+  "plotly>=5.0.0",
+  "pydeck",
+  "pyright>=1.1.284",
+  "pytest>=6.2.4",
+  "pytest-playwright>=0.3.0",
+  "tox-uv>=1",
+]
+dev = [
+  "ruff>=0.6.5",
+  { include-group = "test" },
+]
+
+[build-system]
+requires = ["hatchling>=1.26.0", "hatch-vcs>=0.4.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+skip-excluded-dirs = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["shinywidgets"]
+include = [
+  "shinywidgets/py.typed",
+  "shinywidgets/static/**",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/.github",
+  "/LICENSE",
+  "/Makefile",
+  "/README.md",
+  "/js",
+  "/pyproject.toml",
+  "/scripts",
+  "/shinywidgets",
+  "/tests",
+]
+
+[tool.hatch.version]
+source = "vcs"
+tag-pattern = "^v(?P<version>.*)$"
+
+[tool.hatch.version.raw-options]
+fallback_version = "0.0.0"
+git_describe_command = "git describe --dirty --tags --long --match 'v*'"
+local_scheme = "node-and-date"
+version_scheme = "no-guess-dev"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "shinywidgets/__version.py"
+
+[tool.pyright]
+include = ["shinywidgets", "tests"]
+exclude = [
+  ".venv",
+  ".worktrees",
+  "build",
+  "dist",
+  "examples",
+  "js",
+  "sandbox",
+  "tests/playwright",
+  "typings",
+]
+typeCheckingMode = "basic"
+reportPrivateUsage = "none"
+reportUnknownMemberType = "none"
+reportMissingTypeStubs = "none"
+
+[tool.pytest.ini_options]
+addopts = "--ignore=tests/playwright"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["shinywidgets"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+  "if TYPE_CHECKING:",
+  "pragma: no cover",
+]
+
+[tool.tox]
+legacy_tox_ini = """
+[tox]
+env_list = type-py3{10,11,12,13,14}, py3{10,11,12,13,14}
+isolated_build = True
+
+[testenv]
+package = wheel
+wheel_build_env = .pkg
+commands = pytest
+
+[testenv:type]
+commands = pyright
+"""
+
+[tool.ruff]
+src = ["shinywidgets", "tests"]
+exclude = [
+  ".git",
+  ".ipynb_checkpoints",
+  ".pytest_cache",
+  ".tox",
+  ".venv",
+  ".worktrees",
+  "build",
+  "dist",
+  "node_modules",
+  "sandbox",
+  "shinywidgets/__version.py",
+]
+line-length = 88
+indent-width = 4
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = [
+  "E203",
+  "E402",
+  "E501",
+  "F403",
+  "F405",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"shinywidgets/__init__.py" = ["F401"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
