@@ -2,7 +2,7 @@
 
 ## Summary
 
-Replace the current per-widget initial `comm_open` flow with a manager-state-first restore path modeled after `ipywidgets` bulk state restoration. The new path should materialize an entire widget dependency graph in the browser before rendering the root view, while preserving the existing live `comm_msg` and `comm_close` behavior for the restored models. The existing per-model `comm_open` path should remain part of live widget semantics for models introduced after initial restore. In v1, the old "everything initializes through per-model open" path should remain available only as an explicit opt-out and as a server-side escape hatch when bulk payload generation fails.
+Replace the current per-widget initial `comm_open` flow with a manager-state-first restore path modeled after `ipywidgets` bulk state restoration. The new path should materialize an entire widget dependency graph in the browser before rendering the root view, while preserving the existing live `comm_msg` and `comm_close` behavior for the restored models. The existing per-model `comm_open` path should remain part of live widget semantics for models introduced after initial restore. In v1, the old "everything initializes through per-model open" path should remain available only as an explicit opt-out and as a server-side escape hatch when bulk payload generation fails. Version 1 should also stay conservative about model ownership: bulk restore is for creating a fresh browser-side graph for the current output render, not for generically merging into already-live model ids.
 
 ## Problem
 
@@ -32,6 +32,7 @@ The short-term recursive Python fix works by forcing child-before-parent orderin
 - Designing a multi-output transactional restore in the first iteration.
 - Designing cross-output graph deduplication in the first iteration.
 - Designing automatic size-based fallback in the first iteration.
+- Designing generic browser-side model-id reuse during bulk restore in the first iteration.
 - Optimizing every widget workload immediately; correctness and architectural alignment come first.
 
 ## Background Reference
@@ -265,10 +266,18 @@ The closure builder should:
 - collect any `IPY_MODEL_*` references recursively
 - deduplicate shared models
 - preserve buffer paths and buffers in manager-state format
+- collect Shiny-side `html_deps` from every widget instance included in the final closure, not just from the root widget
 
 Version 1 should not use `ipywidgets.embed.dependency_state(...)` as the primary closure builder. Upstream documents that helper as incomplete for nested structures, which is too risky for a correctness-driven restore path.
 
 This means the current `_find_widget_model_refs(...)` style traversal is closer to the desired long-term design than the simpler `ipywidgets.embed.dependency_state(...)` helper.
+
+The dependency-closure algorithm therefore has two related outputs:
+
+- manager-state entries for every widget model id that frontend deserialization may resolve
+- the union of Shiny-rendered HTML dependencies needed to load those models' frontend classes
+
+Those two outputs come from related but not identical sources. Serialized widget state is the source of truth for model-id reachability, while live widget instances remain the source of truth for Shiny-specific dependency objects such as the `require.config(...)` wrappers currently attached during per-model open.
 
 ### Flush Integration
 
@@ -288,6 +297,15 @@ Version 1 should keep ownership narrow and explicit:
 - the widget construction hook remains responsible for ordinary live widget setup outside that initial bulk-owned path
 
 The design does not need to freeze exact helper names yet, but it should preserve that separation of responsibilities so graph materialization is driven by output lifecycle, not by incidental widget construction order.
+
+To keep the escape hatch viable, ownership transfer from "legacy per-model open pending" to "bulk-owned initial materialization" must happen only after the server has successfully built the complete bulk payload for that render. A safe v1 sequencing rule is:
+
+1. widgets are constructed in their existing legacy-open-pending state
+2. the output render path attempts full bulk payload generation before any initial transport is emitted
+3. only after payload generation succeeds does the output render path mark that closure as bulk-owned and suppress the legacy scheduled opens for those widgets
+4. if payload generation fails before that transfer, the server leaves the original per-model open scheduling intact and uses the legacy path
+
+This avoids a correctness hole where the design suppresses legacy initial opens but then has no authoritative owner left to emit the fallback transport.
 
 ### Initial Restore Versus Later Live Creation
 
@@ -318,6 +336,12 @@ The design requirement is:
 
 The exact mechanism can be decided during implementation, but the design should treat this suppression rule as mandatory, not incidental.
 
+Version 1 should additionally make the fallback transition explicit:
+
+- bulk ownership is transferred only after successful bulk payload generation
+- if payload generation fails before ownership transfer, the already-scheduled legacy per-model opens remain active
+- if the implementation ever needs to suppress first and decide later, it must also define an explicit server-side helper that can emit the legacy per-model graph materialization for those suppressed widgets before the flush completes
+
 Version 1 should restore one output at a time:
 
 - each render output computes and emits its own graph payload
@@ -335,11 +359,13 @@ That means the implementation should treat these as separate concerns:
 - restore ownership and stale-render coordination are per-output
 - model registration, lookup, and live comm routing are global
 
-The spec should not assume that a model id belongs exclusively to one output forever. In practice, v1 should prefer a simple ownership rule:
+The spec should not assume that a model id belongs exclusively to one output forever. However, v1 should remain conservative about what it will actually support during bulk restore:
 
 - models newly created during a restore are attributed to that restore for rollback purposes
 - the output only owns rendering of `root_model_id`
 - shared or pre-existing models remain global manager state and should not be aggressively deleted just because one output rerendered
+
+For version 1, bulk restore should only create model ids that are not already registered in the browser manager for that render. Generic "existing model id already live in the manager, now merge or reuse it during bulk restore" semantics should be treated as out of scope until the implementation also defines how to prevent stale deferred closes from tearing down the reused model.
 
 This is important because the highest-risk correctness bugs in this design are stale-output rendering, accidental recreation of already-registered models, over-eager cleanup of global state, and silent state divergence between server and browser after a failed restore.
 
@@ -351,6 +377,7 @@ Version 1 should support these fallback cases:
 
 - an explicit development flag disables bulk restore
 - server-side bulk payload generation fails before any bulk message is sent
+- the implementation detects an initial-render shape that would require underspecified browser-side model reuse instead of creating a fresh graph
 
 Version 1 should not include an automatic size-based fallback heuristic. The measured `ipyleaflet` many-marker case is already about 1.08 MB of manager-state JSON, which is well below Shiny's default local websocket size setting, and a conservative heuristic would route exactly the workloads that need this design back through the legacy path.
 
@@ -369,7 +396,7 @@ Add a new handler for the bulk manager-state message. It should:
 5. resolve or reject the restore promise
 6. make the restored root model available for normal Shiny output rendering
 
-`renderValue()` should not assume that the restore is already complete just because the custom message has been delivered. The implementation should first verify whether Shiny's existing websocket/task-queue ordering is already sufficient to serialize "bulk restore custom message, then output value" for the common case. If that guarantee proves sufficient in practice, the restore-token bookkeeping may be simplified or narrowed. If the implementation keeps explicit restore tokens, `renderValue()` should:
+`renderValue()` should not assume that the restore is already complete just because the custom message has been delivered. The implementation should first verify whether Shiny's existing websocket/task-queue ordering is already sufficient to serialize "bulk restore custom message, then output value" for the common case. The current `shinywidgets` transport already relies on Shiny flush ordering: initial opens are sent on `on_flush`, output values are delivered in the flush payload, and later live `comm_msg` / `comm_close` traffic waits until `on_flushed`. Version 1 should therefore treat Shiny's existing ordering as the base sequencing mechanism and use explicit restore tokens primarily to reject stale rerender completions, not as a second parallel ordering system for the normal case. If the implementation keeps explicit restore tokens, `renderValue()` should:
 
 1. read `output_id`, `restore_id`, and `root_model_id` from the render payload
 2. await the restore promise for that specific `restore_id`
@@ -395,19 +422,19 @@ This helper should:
   - register that comm in the browser-side lookup used by the existing `shinywidgets_comm_msg` and `shinywidgets_comm_close` handlers
   - pass the serialized model state into `new_model(...)` so that cross-model references resolve through already-registered model promises
 - for an existing model id:
-  - reuse the existing model and comm wiring
-  - deserialize and apply state in the same spirit as upstream `set_state(...)`
-  - do not blindly recreate the model or overwrite comm routing just because the id appears in the payload
-- treat "existing model id with materially different ownership or incompatible live comm assumptions" as a correctness error, not as an automatic overwrite case
+  - do not silently merge, recreate, or overwrite comm routing in v1
+  - treat the restore as unsupported for the bulk path unless the implementation can prove it is the same still-live model and can also prevent stale deferred close semantics from invalidating it
+- treat "existing model id appears during a v1 bulk restore" as a fail-fast condition by default, not as an automatic overwrite or reuse case
 - track which model ids were newly created by this restore versus merely updated by this restore
 - track restore-local comm registrations separately from pre-existing ones so rollback can distinguish owned state from shared global state
 
 The goal is to reuse the upstream restore semantics, not necessarily the exact `set_state(...)` API surface.
 
-Version 1 should prefer a conservative reuse rule:
+Version 1 should prefer a conservative ownership rule:
 
-- if a model id already exists because it is the same logical live model still owned by the global manager, reuse it
-- if a model id already exists only because a stale restore, failed cleanup, or conflicting rerender left manager state behind, surface an explicit restore error instead of attempting to merge semantics that the design does not define
+- if a model id is absent, bulk restore may create it
+- if a model id is already present, the implementation should prefer the legacy escape hatch or an explicit restore error rather than a merge path that v1 does not define
+- a future iteration may design explicit model reuse only together with generation-aware close suppression or an equivalent stale-close safety mechanism
 
 This keeps the v1 behavior biased toward fail-fast correctness instead of optimistic but underspecified reuse.
 
@@ -421,6 +448,7 @@ Version 1 should:
 - await dependency rendering before any `new_model(...)`, class loading, or manager-state deserialization work begins
 - rely on Shiny's existing dependency deduplication behavior rather than inventing a separate widget-specific deduper
 - treat dependency-render failure as a restore failure for that output
+- define `html_deps` as the deduplicated union of dependencies for every widget instance in the dependency closure, not merely the root widget's dependencies
 
 This ordering matters because widget model class loading may depend on dependency scripts or module path configuration being in place before `new_model(...)` begins loading classes.
 
@@ -443,6 +471,7 @@ The design should remain compatible with the current flush-delayed close behavio
 
 - If bulk payload generation fails before any bulk message is sent, log a structured error and use the per-model escape hatch.
 - If dependency collection encounters a missing referenced widget id, log enough detail to identify the root widget and the missing reference.
+- If the server detects that a render would require unsupported v1 model-id reuse semantics, log that fact explicitly and use the escape hatch or fail fast according to the configured policy.
 - Record bulk-restore telemetry so real deployment data can inform future chunking or transport work. At minimum:
   - payload bytes
   - model count
@@ -588,7 +617,7 @@ Minimum browser-side diagnostics:
 - restore failures
 - rollback failures
 - missing-model errors observed in `comm_msg` or `comm_close` handling after restore
-- whether a restore reused existing models
+- whether a restore encountered pre-existing model ids and used the escape hatch or failed fast
 
 Minimum server-side diagnostics:
 
@@ -606,9 +635,9 @@ Implement in stages:
 2. Add frontend restore bookkeeping keyed by `output_id` and `restore_id`.
 3. Add frontend bulk restore handling via a Shiny-specific restore helper that creates live comms for restored models.
 4. Wire initial output materialization to use the bulk path.
-5. Add the suppression rule that prevents the legacy scheduled initial per-model open from firing for bulk-owned widgets.
+5. Add the ownership-transfer and suppression rule that prevents the legacy scheduled initial per-model open from firing only after bulk payload generation has succeeded for those widgets.
 6. Preserve existing live `comm_msg`, `comm_close`, and post-restore live per-model `comm_open`.
-7. Keep the legacy initial per-model materialization path only as an explicit opt-out and server-side escape hatch.
+7. Keep the legacy initial per-model materialization path only as an explicit opt-out and server-side escape hatch, including cases where v1 detects unsupported model-id reuse shapes.
 8. Benchmark before and after.
 9. Remove the current recursive child-open workaround for initial materialization only after the bulk path is proven and the fallback remains healthy.
 
@@ -636,4 +665,4 @@ Implement in stages:
 
 ## Recommendation
 
-Adopt a manager-state-first protocol for initial widget graph materialization, keep `comm_msg` and `comm_close` unchanged, preserve live per-model `comm_open` for models created after initial restore, and keep the legacy initial per-model materialization path in v1 only as an explicit opt-out and server-side escape hatch. Do not make automatic size-based fallback part of the first iteration. Instead, implement one-output-at-a-time restore with explicit restore tokens, a Shiny-specific frontend restore helper that preserves live comm behavior, an explicit suppression rule for the legacy scheduled initial open path, and payload-size telemetry so future chunking or recovery work can be driven by real evidence. This is the best long-term direction because it addresses the real architectural gap: `shinywidgets` currently imitates live per-model widget creation but lacks the bulk graph registration path that `ipywidgets` already uses for complex state restoration.
+Adopt a manager-state-first protocol for initial widget graph materialization, keep `comm_msg` and `comm_close` unchanged, preserve live per-model `comm_open` for models created after initial restore, and keep the legacy initial per-model materialization path in v1 only as an explicit opt-out and server-side escape hatch. Do not make automatic size-based fallback part of the first iteration. Instead, implement one-output-at-a-time restore with explicit stale-render guards, a Shiny-specific frontend restore helper that preserves live comm behavior, an ownership-transfer rule that suppresses legacy initial opens only after successful bulk payload generation, closure-wide `html_deps` aggregation, and a conservative v1 policy that bulk restore creates fresh model ids instead of attempting underspecified browser-side model reuse. This is the best long-term direction because it addresses the real architectural gap: `shinywidgets` currently imitates live per-model widget creation but lacks the bulk graph registration path that `ipywidgets` already uses for complex state restoration.
