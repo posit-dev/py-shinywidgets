@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from base64 import b64decode
-
 import copy
 import json
 import os
+from base64 import b64decode
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Optional, Sequence, Union, cast
 from uuid import uuid4
