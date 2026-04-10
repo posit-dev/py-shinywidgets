@@ -4,10 +4,7 @@ import ipyleaflet as L
 from shiny import App, reactive, render, ui
 from shinywidgets import output_widget, render_widget
 
-
 POINTS = [(63.1016, -151.5129)] * 1000
-
-
 app_ui = ui.page_fluid(
     ui.input_action_button("rerender", "Rerender"),
     ui.output_text("render_count"),
