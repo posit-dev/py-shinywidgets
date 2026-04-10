@@ -5,7 +5,6 @@ import plotly.graph_objects as go
 from shiny import App, reactive, ui
 from shinywidgets import output_widget, render_widget
 
-
 app_ui = ui.page_fluid(
     ui.h4("plot_in"),
     output_widget("plot_in"),
