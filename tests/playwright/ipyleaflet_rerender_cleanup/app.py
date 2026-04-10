@@ -5,6 +5,9 @@ from shiny import App, reactive, render, ui
 from shinywidgets import output_widget, render_widget
 
 
+POINTS = [(63.1016, -151.5129)] * 1000
+
+
 app_ui = ui.page_fluid(
     ui.input_action_button("rerender", "Rerender"),
     ui.output_text("render_count"),
@@ -27,8 +30,12 @@ def server(input, output, session):
     @render_widget
     def plot():
         n = counter.get()
-        m = L.Map(center=(52 + n, 360 - n), zoom=4)
-        m.add(L.Marker(location=(52 + n, 360 - n)))
+        m = L.Map(center=(POINTS[0][0], POINTS[0][1] + n * 0.01), zoom=2)
+        markers = [
+            L.CircleMarker(location=location, radius=3, stroke=False, fill_opacity=0.7)
+            for location in POINTS
+        ]
+        m.add(L.LayerGroup(layers=markers))
         return m
 
 
