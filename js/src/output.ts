@@ -261,14 +261,18 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
     try {
       await m.close();
     } catch (closeErr) {
-      // Ignore close errors once teardown is underway.
+      if (!isIgnorableTeardownError(closeErr)) {
+        console.error("Unexpected error while closing model:", closeErr);
+      }
     }
 
     // Trigger comm:close event to remove manager's reference.
     try {
       m.trigger("comm:close");
     } catch (triggerErr) {
-      // Ignore trigger errors once teardown is underway.
+      if (!isIgnorableTeardownError(triggerErr)) {
+        console.error("Unexpected error while triggering comm:close:", triggerErr);
+      }
     }
   } catch (err) {
     console.error("Error during model cleanup:", err);
@@ -302,6 +306,21 @@ function setBaseURL(x: string = '') {
 // TypeGuard to safely check if an object has a method
 function hasMethod<T>(obj: any, methodName: keyof T): obj is T {
     return typeof obj[methodName] === 'function';
+}
+
+function isIgnorableTeardownError(err: unknown): boolean {
+  const msg = errorMessage(err).toLowerCase();
+  return (
+    msg.includes("widget is not attached") ||
+    msg.includes("no comm channel defined")
+  );
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return String(err);
 }
 
 interface DestroyMethod {
