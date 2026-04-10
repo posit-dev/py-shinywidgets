@@ -324,6 +324,17 @@ Examples of cases that should still use per-model `comm_open` after the initial 
 
 This rule is required for correctness because upstream `ipywidgets` still uses one `comm_open` per model for live creation, and the existing `shinywidgets` update path already depends on child models being opened before parent updates that reference them.
 
+### Same Python Widget Instance Across Rerenders
+
+The design should also be explicit about an important boundary case: a later output rerender may return the exact same Python widget instance that was returned earlier, rather than constructing a fresh widget tree.
+
+Version 1 should not treat that case as a normal bulk-restore reuse path. Re-rendering the same Python widget instance can imply that the browser may still hold old manager state, old deferred closes, or other lifecycle bookkeeping tied to the prior render. Until the implementation defines generation-aware close suppression or equivalent stale-close protection, v1 should treat this shape conservatively:
+
+- if the rerender produces a fresh widget graph with fresh browser-side model ids, bulk restore may proceed
+- if the rerender would require reusing already-registered browser model ids from a prior render of that same Python widget instance, the implementation should use the legacy escape hatch or raise the explicitly documented restore error
+
+This keeps the v1 contract aligned with the rest of the spec: bulk restore creates the browser graph for the current output render; it does not yet define full reuse semantics for still-live or ambiguously-live model ids.
+
 ### Suppressing Legacy Initial Auto-Open
 
 The current `init_shiny_widget(...)` hook schedules a per-widget initial open automatically. Version 1 must define how that path is suppressed for widgets that belong to a bulk-restored output, otherwise the system risks double initialization of the same model ids.
@@ -491,8 +502,22 @@ The design should remain compatible with the current flush-delayed close behavio
   - reject the restore for that output
   - surface a clear output error
   - do not automatically retry with the per-model path
-  - leave unrelated outputs functional
-  - acknowledge that the server may still believe the failed models exist until a later rerender, close, or session end reconciles them
+- leave unrelated outputs functional
+- acknowledge that the server may still believe the failed models exist until a later rerender, close, or session end reconciles them
+
+### Version 1 Failure Policy
+
+The v1 implementation should not leave failure handling as an open-ended runtime choice. At minimum, it should follow a documented policy like this:
+
+| Condition | When detected | Required v1 behavior |
+|---|---|---|
+| Bulk payload generation fails | Server, before ownership transfer and before any bulk message is sent | Keep legacy per-model open scheduling intact and use the server-side escape hatch |
+| Dependency closure includes unsupported v1 pre-existing browser model ids | Server if discoverable, otherwise frontend at restore start | Prefer the legacy escape hatch if the server can still choose it; otherwise reject the restore explicitly |
+| `html_deps` fail to render | Frontend, before model restore begins | Reject the restore for that output and do not partially create models |
+| Frontend restore fails after some models have been registered | Frontend, during restore | Attempt best-effort rollback, reject the restore, and surface a clear output error; do not silently retry with per-model open |
+| Output rerender returns the same Python widget instance and would require browser-side model reuse | Server if discoverable from current ownership state, otherwise frontend | Treat as unsupported for v1 bulk restore and route to the escape hatch or explicit error according to the same rule as other pre-existing model-id cases |
+
+The important property is not which side detects every case first. It is that v1 behavior stays deterministic: either the server intentionally falls back before ownership transfer, or the client fails explicitly without pretending that browser/server state has been fully reconciled.
 
 ### Rollback Semantics
 
@@ -586,6 +611,8 @@ The main performance hypothesis is:
 - Add a test hook to force the legacy per-model open path.
 - Verify the explicit opt-out path still renders and updates correctly.
 - Add coverage that server-side bulk payload generation failure uses the per-model escape hatch.
+- Add coverage that payload-generation failure happens before ownership transfer, so the already-scheduled legacy per-model opens still materialize the graph correctly.
+- Add coverage that a render shape requiring unsupported v1 pre-existing model-id reuse chooses the documented escape hatch or raises the documented explicit error.
 
 ### Failure-Isolation Coverage
 
@@ -594,6 +621,13 @@ The main performance hypothesis is:
 - Verify a different output on the same page continues to render and update correctly.
 - Verify partially created models from the failed restore are rolled back.
 - Verify the implementation does not claim automatic server/browser reconciliation after that failure unless an explicit recovery protocol exists.
+- Add coverage that `html_deps` render failure aborts the restore before any model creation work begins.
+
+### Lifecycle Boundary Coverage
+
+- Add coverage for rerendering the same Python widget instance across output invalidations.
+- Verify that if this shape would require browser-side model reuse, v1 does not silently merge manager state and instead follows the documented escape-hatch-or-error policy.
+- Add coverage that the old output's deferred close cannot tear down a newly restored graph in the supported fresh-model-id path.
 
 ### Performance Coverage
 
