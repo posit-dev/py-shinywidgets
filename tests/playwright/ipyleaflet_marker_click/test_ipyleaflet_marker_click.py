@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import time
-
 from playwright.sync_api import Page, expect
 
 
@@ -16,7 +14,14 @@ def test_ipyleaflet_marker_renders_on_first_click(page: Page, local_app) -> None
     page.goto(local_app.url)
     map_locator = page.locator(".leaflet-container")
     map_locator.wait_for(timeout=30000)
-    time.sleep(1)
+    page.wait_for_function(
+        """() =>
+        document
+            .querySelector(".leaflet-container")
+            ?.classList.contains("leaflet-touch-zoom")
+        """,
+        timeout=30000,
+    )
 
     map_bounds = map_locator.bounding_box()
     assert map_bounds is not None
