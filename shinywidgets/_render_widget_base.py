@@ -227,25 +227,46 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
 
 class WidgetRenderContext:
     """
-    Let the session when a widget is currently being rendered.
+    Let the session know when a widget is currently being rendered.
 
     This is used to ensure that widget's that are initialized in a render_widget()
     context are cleaned up properly when that context is re-entered.
+
+    The render Context is captured at __enter__ time so that init_shiny_widget can
+    register cleanup callbacks on the correct Context, even if the widget is
+    constructed inside a reactive.isolate() block (which temporarily replaces the
+    current Context with a short-lived temporary one).
     """
     def __init__(self, output_id):
         self.session = require_active_session(None)
         self.output_id = output_id
         self._old_id = vars(self.session).get("__shinywidget_current_output_id")
+        self._old_ctx = vars(self.session).get("__shinywidget_render_context")
 
     def __enter__(self):
         vars(self.session)["__shinywidget_current_output_id"] = self.output_id
+        vars(self.session)["__shinywidget_render_context"] = get_current_context()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         vars(self.session)["__shinywidget_current_output_id"] = self._old_id
+        vars(self.session)["__shinywidget_render_context"] = self._old_ctx
         return False
 
     @staticmethod
     def is_rendering_widget(session):
         id = vars(session).get("__shinywidget_current_output_id")
         return id is not None
+
+    @staticmethod
+    def get_render_context(session) -> Context:
+        """
+        Get the reactive Context that was active when the render function started.
+
+        This returns the render output's Context rather than the current Context,
+        which may be a temporary isolate Context.
+        """
+        ctx = vars(session).get("__shinywidget_render_context")
+        if ctx is None:
+            raise RuntimeError("Not currently rendering a widget")
+        return ctx

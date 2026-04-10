@@ -29,7 +29,7 @@ from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
 from ._dependencies import require_dependency
-from ._render_widget_base import WidgetRenderContext, has_current_context
+from ._render_widget_base import WidgetRenderContext
 from ._utils import package_dir
 
 __all__ = (
@@ -148,9 +148,12 @@ def init_shiny_widget(w: Widget):
         _open_shiny_comm.destroy()
 
     # If the widget initialized in a reactive _output_ context, then cleanup the widget
-    # when the context gets invalidated.
-    if has_current_context():
-        ctx = get_current_context()
+    # when the context gets invalidated. Use the render output's Context (captured by
+    # WidgetRenderContext) rather than the current Context, because the widget may be
+    # constructed inside a reactive.isolate() block whose temporary Context gets
+    # invalidated prematurely (e.g., when upstream reactive sources change).
+    if WidgetRenderContext.is_rendering_widget(session):
+        ctx = WidgetRenderContext.get_render_context(session)
 
         def on_close():
             with session_context(session):
@@ -165,8 +168,7 @@ def init_shiny_widget(w: Widget):
                 if id in WIDGET_INSTANCE_MAP:
                     del WIDGET_INSTANCE_MAP[id]
 
-        if WidgetRenderContext.is_rendering_widget(session):
-            ctx.on_invalidate(on_close)
+        ctx.on_invalidate(on_close)
 
     # Keep track of what session this widget belongs to (so we can close it when the
     # session ends)
