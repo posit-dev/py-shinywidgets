@@ -138,7 +138,7 @@ def init_shiny_widget(w: Widget):
             w.comm = ShinyComm(
                 comm_id=id,
                 comm_manager=COMM_MANAGER,
-                target_name="jupyter.widgets",
+                target_name="jupyter.widget",
                 data={"state": state, "buffer_paths": buffer_paths},
                 buffers=cast(BufferType, buffers),
                 # TODO: should this be hard-coded?

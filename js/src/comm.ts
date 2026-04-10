@@ -17,7 +17,7 @@ export class ShinyComm {
 
   // This might not be needed
   get target_name(): string {
-    return "jupyter.widgets";
+    return "jupyter.widget";
   }
 
   _msg_callback;
