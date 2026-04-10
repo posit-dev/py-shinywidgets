@@ -151,7 +151,6 @@ def init_shiny_widget(w: Widget):
                 metadata={"version": __protocol_version__},
                 html_deps=session._process_ui(TagList(widget_dep))["deps"],
             )
-
         _open_shiny_comm.destroy()
 
     # If the widget initialized in a reactive _output_ context, then cleanup the widget
