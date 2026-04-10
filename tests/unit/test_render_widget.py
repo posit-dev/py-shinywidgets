@@ -1,7 +1,6 @@
-from htmltools import HTMLDependency, div
-
 import shinywidgets._render_widget as rw
 import shinywidgets._render_widget_base as rwb
+from htmltools import HTMLDependency, div
 
 
 def test_render_bokeh_auto_output_ui_appends_bokeh_dependency(monkeypatch) -> None:

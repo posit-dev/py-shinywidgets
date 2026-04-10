@@ -1,7 +1,6 @@
 from types import SimpleNamespace
 
 import pytest
-
 import shinywidgets._utils as utils
 
 
