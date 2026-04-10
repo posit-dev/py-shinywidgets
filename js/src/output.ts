@@ -224,8 +224,9 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
 
     // Before .close()ing the model (which will .remove() each view), do some
     // additional cleanup that .remove() might miss
-    await Promise.all(
-      Object.values(m.views).map(async (viewPromise) => {
+    if (m.views) {
+      await Promise.all(
+        Object.values(m.views).map(async (viewPromise) => {
         try {
           const v = await viewPromise;
 
@@ -248,12 +249,27 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
         }
       })
     );
+    }
 
-    // Close model after all views are cleaned up
-    await m.close();
+    // Prevent sync errors during close. When m.close() removes views, they try to
+    // sync _view_count back to the server. But m.close() deletes the comm before
+    // removing views, causing "Syncing error: no comm channel defined".
+    // Setting comm_live=false prevents save_changes() from attempting to sync.
+    m.comm_live = false;
 
-    // Trigger comm:close event to remove manager's reference
-    m.trigger("comm:close");
+    // Close model after all views are cleaned up.
+    try {
+      await m.close();
+    } catch (closeErr) {
+      // Ignore close errors once teardown is underway.
+    }
+
+    // Trigger comm:close event to remove manager's reference.
+    try {
+      m.trigger("comm:close");
+    } catch (triggerErr) {
+      // Ignore trigger errors once teardown is underway.
+    }
   } catch (err) {
     console.error("Error during model cleanup:", err);
   }
