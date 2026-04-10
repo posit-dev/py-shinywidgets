@@ -104,6 +104,7 @@ def init_shiny_widget(w: Widget):
         widget_dep = None
     else:
         widget_dep = require_dependency(w, session, SHINYWIDGETS_EXTENSION_WARNING)
+    setattr(w, "_shinywidgets_widget_dep", widget_dep)
 
     # By the time we get here, the user has already had an opportunity to specify a model_id,
     # so it isn't yet populated, generate a random one so we can assign the same id to the comm
@@ -122,29 +123,7 @@ def init_shiny_widget(w: Widget):
     # is required to get a valid widget state.
     @reactive.effect(priority=99999)
     def _open_shiny_comm():
-
-        # Call _repr_mimebundle_() before get_state() since it may modify the widget
-        # in an important way (unfortunately, it does for plotly)
-        # # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
-        if hasattr(w, "_repr_mimebundle_") and callable(w._repr_mimebundle_):
-            w._repr_mimebundle_()
-
-        # Now, get the state
-        state, buffer_paths, buffers = _remove_buffers(w.get_state())
-
-        # Initialize the comm -- this sends widget state to the frontend
-        with widget_comm_patch():
-            w.comm = ShinyComm(
-                comm_id=id,
-                comm_manager=COMM_MANAGER,
-                target_name="jupyter.widgets",
-                data={"state": state, "buffer_paths": buffer_paths},
-                buffers=cast(BufferType, buffers),
-                # TODO: should this be hard-coded?
-                metadata={"version": __protocol_version__},
-                html_deps=session._process_ui(TagList(widget_dep))["deps"],
-            )
-
+        _open_shiny_comm_recursive(w, session, widget_dep, set())
         _open_shiny_comm.destroy()
 
     # If the widget initialized in a reactive _output_ context, then cleanup the widget
@@ -203,6 +182,67 @@ SESSION_WIDGET_ID_MAP: dict[str, list[str]] = {}
 # Dictionary of all "active" widgets (ipywidgets automatically adds to this dictionary as
 # new widgets are created, but they won't get removed until the widget is explictly closed)
 WIDGET_INSTANCE_MAP = cast(dict[str, Widget], Widget.widgets)
+
+
+def _open_shiny_comm_recursive(
+    widget: Widget,
+    session: Session,
+    widget_dep: Any,
+    visited: set[str],
+) -> None:
+    comm_id = cast(str, widget._model_id)
+    if comm_id in visited or not isinstance(widget.comm, OrphanedShinyComm):
+        return
+
+    visited.add(comm_id)
+
+    if hasattr(widget, "_repr_mimebundle_") and callable(widget._repr_mimebundle_):
+        widget._repr_mimebundle_()
+
+    state, buffer_paths, buffers = _remove_buffers(widget.get_state())
+
+    for child_comm_id in _find_widget_model_refs(state):
+        child_widget = WIDGET_INSTANCE_MAP.get(child_comm_id)
+        if child_widget is None:
+            continue
+        child_widget_dep = getattr(child_widget, "_shinywidgets_widget_dep", None)
+        _open_shiny_comm_recursive(child_widget, session, child_widget_dep, visited)
+
+    with widget_comm_patch():
+        widget.comm = ShinyComm(
+            comm_id=comm_id,
+            comm_manager=COMM_MANAGER,
+            target_name="jupyter.widgets",
+            data={"state": state, "buffer_paths": buffer_paths},
+            buffers=cast(BufferType, buffers),
+            metadata={"version": __protocol_version__},
+            html_deps=session._process_ui(TagList(widget_dep))["deps"],
+        )
+
+def _find_widget_model_refs(value: object) -> list[str]:
+    refs: list[str] = []
+    seen: set[str] = set()
+
+    def collect(x: object) -> None:
+        if isinstance(x, str):
+            if x.startswith("IPY_MODEL_"):
+                ref = x.removeprefix("IPY_MODEL_")
+                if ref not in seen:
+                    seen.add(ref)
+                    refs.append(ref)
+            return
+
+        if isinstance(x, dict):
+            for item in x.values():
+                collect(item)
+            return
+
+        if isinstance(x, (list, tuple, set)):
+            for item in x:
+                collect(item)
+
+    collect(value)
+    return refs
 
 # --------------------------------------
 # Reactivity
