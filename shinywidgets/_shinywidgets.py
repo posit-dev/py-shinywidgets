@@ -213,6 +213,7 @@ def _decode_comm_buffers(msg: dict[str, Any]) -> dict[str, Any]:
     msg["buffers"] = decoded_buffers
     return msg
 
+
 # Dictionary mapping session id to widget ids
 # The key is the session id, and the value is a list of widget ids
 SESSION_WIDGET_ID_MAP: dict[str, list[str]] = {}
