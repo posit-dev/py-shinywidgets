@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import altair as alt
-import pandas as pd
 from shiny import App, reactive, ui
 from shinywidgets import output_widget, render_widget
 
@@ -25,8 +24,12 @@ def server(input, output, session):
         n = counter.get()
         return (
             alt.Chart(
-                pd.DataFrame(
-                    {"x": [1, 2, 3], "y": [n, n + 1, n + 2]},
+                alt.Data(
+                    values=[
+                        {"x": 1, "y": n},
+                        {"x": 2, "y": n + 1},
+                        {"x": 3, "y": n + 2},
+                    ]
                 )
             )
             .mark_line(point=True)
