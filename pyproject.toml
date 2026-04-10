@@ -151,6 +151,7 @@ exclude = [
   "dist",
   "node_modules",
   "sandbox",
+  "shinywidgets/__version.py",
 ]
 line-length = 88
 indent-width = 4
