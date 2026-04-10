@@ -5,13 +5,16 @@ from importlib.metadata import version as package_version
 
 __author__ = """Carson Sievert"""
 __email__ = "carson@posit.co"
+__version__: str
+
 try:
-    from .__version import __version__
+    from .__version import __version__  # pyright: ignore[reportMissingImports]
 except ImportError:
     try:
         __version__ = package_version("shinywidgets")
     except PackageNotFoundError:
         __version__ = "0+unknown"
+
 from ._as_widget import as_widget
 from ._dependencies import bokeh_dependency
 from ._output_widget import output_widget
