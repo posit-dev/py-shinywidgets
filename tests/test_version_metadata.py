@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from importlib.metadata import version as package_version
 
+
 def test_package_exposes_generated_version_module() -> None:
     import shinywidgets
 
