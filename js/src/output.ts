@@ -65,6 +65,7 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
 const manager = new OutputManager({ loader: shinyRequireLoader });
 const modelOutputEl = new Map<string, HTMLElement>();
 const outputTaskQueue = new WeakMap<HTMLElement, Promise<void>>();
+let commMessageQueue: Promise<void> = Promise.resolve();
 
 function queueOutputTask(el: HTMLElement, task: () => Promise<void>): Promise<void> {
   const prev = outputTaskQueue.get(el) ?? Promise.resolve();
@@ -76,6 +77,14 @@ function queueOutputTask(el: HTMLElement, task: () => Promise<void>): Promise<vo
   });
   outputTaskQueue.set(el, tracked);
   return tracked;
+}
+
+function enqueueCommMessage(handler: () => void | Promise<void>): void {
+  commMessageQueue = commMessageQueue
+    .then(() => Promise.resolve(handler()))
+    .catch((err) => {
+      console.error("Error in shinywidgets comm queue:", err);
+    });
 }
 
 
@@ -94,7 +103,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
   }
   async renderValue(el: HTMLElement, data): Promise<void> {
     await queueOutputTask(el, async () => {
-
       // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
       if (!data) {
         el.style.visibility = "hidden";
@@ -110,7 +118,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
 
       // At this time point, we should've already handled an 'open' message, and so
       // the model should be ready to use
-      const model = await manager.get_model(data.model_id);
+      const model = await waitForModel(data.model_id);
       if (!model) {
         throw new Error(`No model found for id ${data.model_id}`);
       }
@@ -125,7 +133,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       this._markStaleRoots(el);
       try {
         const view = await manager.create_view(model, {});
-        await manager.display_view(view, {el: el});
+        await manager.display_view(view, { el: el });
       } finally {
         this._pruneStaleRoots(el);
         el.style.minHeight = priorMinHeight;
@@ -158,7 +166,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       }
     });
 
-    mo.observe(lmWidget, {childList: true});
+    mo.observe(lmWidget, { childList: true });
   }
   _markStaleRoots(el: HTMLElement): void {
     const roots = el.querySelectorAll(":scope > .lm-Widget");
@@ -223,110 +231,115 @@ if (taskQueue) {
 // Initialize the comm and model when a new widget is created
 // This is basically our version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1144-L1176
 Shiny.addCustomMessageHandler("shinywidgets_comm_open", (msg_txt) => {
-  setBaseURL();
-  const msg = jsonParse(msg_txt);
-  Shiny.renderDependencies(msg.content.html_deps);
-  const comm = new ShinyComm(msg.content.comm_id);
-  manager.handle_comm_open(comm, msg);
+  enqueueCommMessage(() => {
+    setBaseURL();
+    const msg = jsonParse(msg_txt);
+    Shiny.renderDependencies(msg.content.html_deps);
+    const comm = new ShinyComm(msg.content.comm_id);
+    manager.handle_comm_open(comm, msg);
+  });
 });
 
 // Handle any mutation of the model (e.g., add a marker to a map, without a full redraw)
 // Basically out version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1200-L1215
-Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
-  const msg = jsonParse(msg_txt);
-  const id = msg.content.comm_id;
-  const model = manager.get_model(id);
-  if (!model) {
-    console.error(`Couldn't handle message for model ${id} because it doesn't exist.`);
-    return;
-  }
-  try {
-    const m = await model;
-    // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
-    m.comm.handle_msg(msg);
-  } catch (err) {
-    console.error("Error handling message:", err);
-  }
+Shiny.addCustomMessageHandler("shinywidgets_comm_msg", (msg_txt) => {
+  enqueueCommMessage(async () => {
+    const msg = jsonParse(msg_txt);
+    const id = msg.content.comm_id;
+    const model = manager.get_model(id);
+    if (!model) {
+      console.error(`Couldn't handle message for model ${id} because it doesn't exist.`);
+      return;
+    }
+    try {
+      const m = await model;
+      // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
+      m.comm.handle_msg(msg);
+    } catch (err) {
+      console.error("Error handling message:", err);
+    }
+  });
 });
 
 
 // Handle the closing of a widget/comm/model
-Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
-  const msg = jsonParse(msg_txt);
-  const id = msg.content.comm_id;
-  const el = modelOutputEl.get(id);
+Shiny.addCustomMessageHandler("shinywidgets_comm_close", (msg_txt) => {
+  enqueueCommMessage(async () => {
+    const msg = jsonParse(msg_txt);
+    const id = msg.content.comm_id;
+    const el = modelOutputEl.get(id);
 
-  const closeModel = async () => {
-    const model = manager.get_model(id);
-    if (!model) {
-      modelOutputEl.delete(id);
+    const closeModel = async () => {
+      const model = manager.get_model(id);
+      if (!model) {
+        modelOutputEl.delete(id);
+        return;
+      }
+
+      try {
+        const m = await model;
+        // Prevent sync errors during teardown.
+        m.comm_live = false;
+
+        // Before .close()ing the model (which will .remove() each view), do some
+        // additional cleanup that .remove() might miss.
+        const views = m.views ? Object.values(m.views) : [];
+        await Promise.all(
+          views.map(async (viewPromise) => {
+            try {
+              const v = await viewPromise;
+
+              // Old versions of plotly need a .destroy() to properly clean up
+              // https://github.com/plotly/plotly.py/pull/3805/files#diff-259c92d
+              if (hasMethod<DestroyMethod>(v, 'destroy')) {
+                v.destroy();
+                // Also, empirically, when this destroy() is relevant, it also helps to
+                // delete the view's reference to the model, I think this is the only
+                // way to drop the resize event listener (see the diff in the link above)
+                // https://github.com/posit-dev/py-shinywidgets/issues/166
+                delete v.model;
+                // Ensure sure the lm-Widget container is also removed
+                v.remove();
+              }
+            } catch (err) {
+              if (!isIgnorableTeardownError(err)) {
+                console.error("Error cleaning up view:", err);
+              }
+            }
+          })
+        );
+
+        // Close model after all views are cleaned up.
+        try {
+          await m.close();
+        } catch (closeErr) {
+          if (!isIgnorableTeardownError(closeErr)) {
+            console.error("Unexpected error while closing model:", closeErr);
+          }
+        }
+
+        // Trigger comm:close event to remove manager's reference.
+        try {
+          m.trigger("comm:close");
+        } catch (triggerErr) {
+          if (!isIgnorableTeardownError(triggerErr)) {
+            console.error("Unexpected error while triggering comm:close:", triggerErr);
+          }
+        }
+      } catch (err) {
+        console.error("Error during model cleanup:", err);
+      } finally {
+        modelOutputEl.delete(id);
+      }
+    };
+
+    if (!el) {
+      await closeModel();
       return;
     }
 
-    try {
-      const m = await model;
-      // Prevent sync errors during teardown.
-      m.comm_live = false;
-
-      // Before .close()ing the model (which will .remove() each view), do some
-      // additional cleanup that .remove() might miss.
-      const views = m.views ? Object.values(m.views) : [];
-      await Promise.all(
-        views.map(async (viewPromise) => {
-        try {
-          const v = await viewPromise;
-
-          // Old versions of plotly need a .destroy() to properly clean up
-          // https://github.com/plotly/plotly.py/pull/3805/files#diff-259c92d
-          if (hasMethod<DestroyMethod>(v, 'destroy')) {
-            v.destroy();
-            // Also, empirically, when this destroy() is relevant, it also helps to
-            // delete the view's reference to the model, I think this is the only
-            // way to drop the resize event listener (see the diff in the link above)
-            // https://github.com/posit-dev/py-shinywidgets/issues/166
-            delete v.model;
-            // Ensure sure the lm-Widget container is also removed
-            v.remove();
-          }
-
-
-        } catch (err) {
-          if (!isIgnorableTeardownError(err)) {
-            console.error("Error cleaning up view:", err);
-          }
-        }
-      })
-    );
-
-      // Close model after all views are cleaned up.
-      try {
-        await m.close();
-      } catch (closeErr) {
-        if (!isIgnorableTeardownError(closeErr)) {
-          console.error("Unexpected error while closing model:", closeErr);
-        }
-      }
-
-      // Trigger comm:close event to remove manager's reference.
-      try {
-        m.trigger("comm:close");
-      } catch (triggerErr) {
-        if (!isIgnorableTeardownError(triggerErr)) {
-          console.error("Unexpected error while triggering comm:close:", triggerErr);
-        }
-      }
-    } catch (err) {
-      console.error("Error during model cleanup:", err);
-    } finally {
-      modelOutputEl.delete(id);
-    }
-  };
-
-  if (!el) {
-    await closeModel();
-    return;
-  }
-  await queueOutputTask(el, closeModel);
+    await queueOutputTask(el, closeModel);
+  });
 });
 
 $(document).on("shiny:disconnected", () => {
@@ -351,6 +364,17 @@ function setBaseURL(x: string = '') {
   if (!base_url) {
     document.querySelector('body').setAttribute('data-base-url', x);
   }
+}
+
+async function waitForModel(modelId: string, timeoutMs: number = 5000): Promise<any | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  let model = await manager.get_model(modelId);
+  while (!model && Date.now() < deadline) {
+    await commMessageQueue;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    model = await manager.get_model(modelId);
+  }
+  return model;
 }
 
 // TypeGuard to safely check if an object has a method

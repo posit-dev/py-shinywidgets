@@ -171,11 +171,14 @@ class ShinyComm:
         # N.B., if messages are sent immediately, run_coro_sync() could fail with
         # 'async function yielded control; it did not finish in one iteration.'
         # if executed outside of a reactive context.
-        if msg_type == "shinywidgets_comm_close":
+        if msg_type in ("shinywidgets_comm_close", "shinywidgets_comm_msg"):
             # The primary way widgets are closed are when a new widget is rendered in
             # its place (see render_widget_base). By sending close on_flushed(), we
             # ensure to close the 'old' widget after the new one is created. (avoiding a
-            # "flicker" of the old widget being removed before the new one is created)
+            # "flicker" of the old widget being removed before the new one is created).
+            # Likewise, delaying ordinary widget mutation messages gives newly created
+            # child widget comm_open effects a chance to register before parent models
+            # reference them in the browser.
             session.on_flushed(_send)
         else:
             session.on_flush(_send)
