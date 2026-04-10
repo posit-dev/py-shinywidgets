@@ -56,8 +56,20 @@ jobs:
       - name: Check types
         run: make py-check-types
 
-      - name: Run tests
+      - name: Run unit tests (coverage)
+        if: matrix.python-version == '3.12'
+        run: make coverage-ci
+
+      - name: Run unit tests
+        if: matrix.python-version != '3.12'
         run: make py-check-tests
+
+      - name: Upload coverage artifact
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
 
       - name: Run Playwright tests
         if: matrix.python-version == '3.12'
