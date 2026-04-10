@@ -1,0 +1,52 @@
+name: py-release.yaml
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.9.x"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  py-release:
+    name: Build and release Python package
+    if: startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --python ${{ env.PYTHON_VERSION }} --all-groups
+
+      - name: Check formatting
+        run: make py-check-format
+
+      - name: Check types
+        run: make py-check-types
+
+      - name: Run tests
+        run: make py-check-tests
+
+      - name: Build package
+        run: uv build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
