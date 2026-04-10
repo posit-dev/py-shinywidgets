@@ -39,7 +39,7 @@ def test_open_registers_and_schedules_on_flush(monkeypatch):
     _ = comm.ShinyComm(
         comm_id="c1",
         comm_manager=mgr,
-        target_name="jupyter.widgets",
+        target_name="jupyter.widget",
         data={"a": 1},
     )
 
@@ -53,7 +53,7 @@ def test_open_registers_and_schedules_on_flush(monkeypatch):
     msg = json.loads(cells["msg_txt"])
     assert msg["content"]["comm_id"] == "c1"
     assert msg["content"]["data"] == {"a": 1}
-    assert msg["content"]["target_name"] == "jupyter.widgets"
+    assert msg["content"]["target_name"] == "jupyter.widget"
     assert msg["content"]["target_module"] is None
     assert msg["buffers"] == []
     assert msg["ident"] == "comm-c1"
@@ -66,7 +66,7 @@ def test_send_schedules_on_flushed(monkeypatch):
     monkeypatch.setattr(comm, "get_current_session", lambda: session)
 
     mgr = comm.ShinyCommManager()
-    c = comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widgets")
+    c = comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widget")
     session._flush_handlers.clear()
 
     c.send(data={"k": "v"})
@@ -86,7 +86,7 @@ def test_close_is_idempotent_and_unregisters(monkeypatch):
     monkeypatch.setattr(comm, "get_current_session", lambda: session)
 
     mgr = comm.ShinyCommManager()
-    c = comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widgets")
+    c = comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widget")
     session._flush_handlers.clear()
     session._flushed_handlers.clear()
 
@@ -106,7 +106,7 @@ def test_close_does_not_publish_without_session(monkeypatch):
     monkeypatch.setattr(comm, "get_current_session", lambda: session)
 
     mgr = comm.ShinyCommManager()
-    c = comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widgets")
+    c = comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widget")
     session._flushed_handlers.clear()
 
     # Simulate leaving session context before closing.
@@ -123,7 +123,7 @@ def test_open_unregisters_if_publish_fails(monkeypatch):
 
     mgr = comm.ShinyCommManager()
     with pytest.raises(RuntimeError):
-        comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widgets")
+        comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widget")
     assert "c1" not in mgr.comms
 
 
@@ -134,7 +134,7 @@ def test_buffers_are_base64_encoded_and_validated(monkeypatch):
     monkeypatch.setattr(comm, "get_current_session", lambda: session)
 
     mgr = comm.ShinyCommManager()
-    c = comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widgets")
+    c = comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widget")
     session._flush_handlers.clear()
     session._flushed_handlers.clear()
 
@@ -169,7 +169,7 @@ def test_msg_and_close_callbacks(monkeypatch):
     monkeypatch.setattr(comm, "get_current_session", lambda: session)
 
     mgr = comm.ShinyCommManager()
-    c = comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widgets")
+    c = comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widget")
 
     seen: Dict[str, Any] = {"msg": None, "close": None}
     c.on_msg(lambda m: seen.__setitem__("msg", m))
