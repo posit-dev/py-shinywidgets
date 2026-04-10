@@ -23,6 +23,13 @@ uv run playwright install chromium
 cd js && yarn watch
 ```
 
+If you need the older editable-install flow for tooling compatibility, this
+also works:
+
+```sh
+pip install -e ".[dev]"
+```
+
 Common Python workflows:
 
 ```sh

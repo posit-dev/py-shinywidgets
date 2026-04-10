@@ -31,6 +31,37 @@ Documentation = "https://github.com/rstudio/py-shinywidgets/"
 Source = "https://github.com/rstudio/py-shinywidgets/"
 Issues = "https://github.com/rstudio/py-shinywidgets/issues"
 
+[project.optional-dependencies]
+test = [
+  "altair",
+  "bokeh",
+  "coverage>=7",
+  "ipyleaflet>=0.20.0",
+  "jupyter_bokeh",
+  "playwright>=1.40.0",
+  "plotly>=5.0.0",
+  "pydeck",
+  "pyright>=1.1.284",
+  "pytest>=6.2.4",
+  "pytest-playwright>=0.3.0",
+  "tox-uv>=1",
+]
+dev = [
+  "altair",
+  "bokeh",
+  "coverage>=7",
+  "ipyleaflet>=0.20.0",
+  "jupyter_bokeh",
+  "playwright>=1.40.0",
+  "plotly>=5.0.0",
+  "pydeck",
+  "pyright>=1.1.284",
+  "pytest>=6.2.4",
+  "pytest-playwright>=0.3.0",
+  "ruff>=0.6.5",
+  "tox-uv>=1",
+]
+
 [dependency-groups]
 test = [
   "altair",
