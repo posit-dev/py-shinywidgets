@@ -63,6 +63,19 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
 }
 
 const manager = new OutputManager({ loader: shinyRequireLoader });
+const outputTaskQueue = new WeakMap<HTMLElement, Promise<void>>();
+
+function queueOutputTask(el: HTMLElement, task: () => Promise<void>): Promise<void> {
+  const prev = outputTaskQueue.get(el) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(task);
+  const tracked = next.finally(() => {
+    if (outputTaskQueue.get(el) === tracked) {
+      outputTaskQueue.delete(el);
+    }
+  });
+  outputTaskQueue.set(el, tracked);
+  return tracked;
+}
 
 
 /******************************************************************************
@@ -79,7 +92,9 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     this.renderError(el, err);
   }
   async renderValue(el: HTMLElement, data): Promise<void> {
-
+    await queueOutputTask(el, () => this._renderValueQueued(el, data));
+  }
+  async _renderValueQueued(el: HTMLElement, data): Promise<void> {
     // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
     if (!data) {
       el.style.visibility = "hidden";
@@ -100,19 +115,12 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       throw new Error(`No model found for id ${data.model_id}`);
     }
 
-    const view = await manager.create_view(model, {});
-    await manager.display_view(view, {el: el});
+    await this._displayLatestView(el, model);
 
-    // Don't allow more than one .lmWidget container, which can happen
-    // when the view is displayed more than once
-    // N.B. It's probably better to get view(s) from m.views and .remove() them,
-    // but empirically, this seems to work better
-    while (el.childNodes.length > 1) {
-      el.removeChild(el.childNodes[0]);
+    const lmWidget = this._latestRoot(el);
+    if (!lmWidget) {
+      throw new Error("Expected rendered .lm-Widget root after display_view().");
     }
-
-    // The ipywidgets container (.lmWidget)
-    const lmWidget = el.children[0] as HTMLElement;
 
     if (fill) {
       this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
@@ -158,6 +166,39 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
   _hasImplementation(lmWidget: HTMLElement): boolean {
     const impl = lmWidget.children[0];
     return impl && (impl.children.length > 0 || impl.shadowRoot?.children.length > 0);
+  }
+  async _displayLatestView(el: HTMLElement, model: any): Promise<void> {
+    const priorHeight = el.getBoundingClientRect().height;
+    const priorMinHeight = el.style.minHeight;
+    if (priorHeight > 0) {
+      el.style.minHeight = `${priorHeight}px`;
+    }
+
+    this._markStaleRoots(el);
+    try {
+      const view = await manager.create_view(model, {});
+      await manager.display_view(view, { el: el });
+    } finally {
+      this._pruneStaleRoots(el);
+      el.style.minHeight = priorMinHeight;
+    }
+  }
+  _markStaleRoots(el: HTMLElement): void {
+    const roots = el.querySelectorAll(":scope > .lm-Widget");
+    roots.forEach((root) => {
+      root.classList.remove("lm-Widget");
+      root.classList.add("shinywidgets-stale-view");
+    });
+  }
+  _pruneStaleRoots(el: HTMLElement): void {
+    const staleRoots = el.querySelectorAll(":scope > .shinywidgets-stale-view");
+    staleRoots.forEach((root) => {
+      root.remove();
+    });
+  }
+  _latestRoot(el: HTMLElement): HTMLElement | null {
+    const roots = el.querySelectorAll(":scope > .lm-Widget:not(.shinywidgets-stale-view)");
+    return roots.length > 0 ? roots[roots.length - 1] as HTMLElement : null;
   }
 }
 
