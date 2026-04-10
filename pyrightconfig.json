@@ -1,5 +1,6 @@
 {
   "ignore": ["examples", "sandbox", "build", "dist", "typings"],
+  "exclude": ["tests/playwright"],
   "typeCheckingMode": "basic",
   "reportPrivateUsage": "none",
   "reportUnknownMemberType": "none",

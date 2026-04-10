@@ -222,23 +222,20 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
   try {
     const m = await model;
 
-    // Before .close()ing the model (which will .remove() each view), do some
-    // additional cleanup that .remove() might miss
-    await Promise.all(
-      Object.values(m.views).map(async (viewPromise) => {
+    // Some widget views need explicit teardown before model.close() removes them.
+    if (m.views) {
+      await Promise.all(
+        Object.values(m.views).map(async (viewPromise) => {
         try {
           const v = await viewPromise;
 
-          // Old versions of plotly need a .destroy() to properly clean up
-          // https://github.com/plotly/plotly.py/pull/3805/files#diff-259c92d
+          // Plotly-backed views can leave DOM state and listeners behind unless
+          // destroy() runs before the view is removed.
           if (hasMethod<DestroyMethod>(v, 'destroy')) {
             v.destroy();
-            // Also, empirically, when this destroy() is relevant, it also helps to
-            // delete the view's reference to the model, I think this is the only
-            // way to drop the resize event listener (see the diff in the link above)
-            // https://github.com/posit-dev/py-shinywidgets/issues/166
+            // Clearing the back-reference prevents later teardown from touching a
+            // model that is already being closed.
             delete v.model;
-            // Ensure sure the lm-Widget container is also removed
             v.remove();
           }
 
@@ -248,12 +245,29 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
         }
       })
     );
+    }
 
-    // Close model after all views are cleaned up
-    await m.close();
+    // View removal updates _view_count. Mark the comm as inactive first so that
+    // save_changes() does not try to send those updates after the comm is gone.
+    m.comm_live = false;
 
-    // Trigger comm:close event to remove manager's reference
-    m.trigger("comm:close");
+    // Close model after all views are cleaned up.
+    try {
+      await m.close();
+    } catch (closeErr) {
+      if (!isIgnorableTeardownError(closeErr)) {
+        console.error("Unexpected error while closing model:", closeErr);
+      }
+    }
+
+    // HTMLManager releases the model from its registry on comm:close.
+    try {
+      m.trigger("comm:close");
+    } catch (triggerErr) {
+      if (!isIgnorableTeardownError(triggerErr)) {
+        console.error("Unexpected error while triggering comm:close:", triggerErr);
+      }
+    }
   } catch (err) {
     console.error("Error during model cleanup:", err);
   }
@@ -286,6 +300,21 @@ function setBaseURL(x: string = '') {
 // TypeGuard to safely check if an object has a method
 function hasMethod<T>(obj: any, methodName: keyof T): obj is T {
     return typeof obj[methodName] === 'function';
+}
+
+function isIgnorableTeardownError(err: unknown): boolean {
+  const msg = errorMessage(err).toLowerCase();
+  return (
+    msg.includes("widget is not attached") ||
+    msg.includes("no comm channel defined")
+  );
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return String(err);
 }
 
 interface DestroyMethod {

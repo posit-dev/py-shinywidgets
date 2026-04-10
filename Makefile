@@ -57,6 +57,9 @@ lint: lint/flake8 lint/black ## check style
 test: ## run tests quickly with the default Python
 	pytest
 
+test-playwright: ## run Playwright regression tests
+	python -m pytest -c tests/playwright/playwright-pytest.ini tests/playwright
+
 test-all: ## run tests on every Python version with tox
 	tox
 
