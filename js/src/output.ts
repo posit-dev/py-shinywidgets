@@ -63,6 +63,19 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
 }
 
 const manager = new OutputManager({ loader: shinyRequireLoader });
+const outputTaskQueue = new WeakMap<HTMLElement, Promise<void>>();
+
+function queueOutputTask(el: HTMLElement, task: () => Promise<void>): Promise<void> {
+  const prev = outputTaskQueue.get(el) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(task);
+  const tracked = next.finally(() => {
+    if (outputTaskQueue.get(el) === tracked) {
+      outputTaskQueue.delete(el);
+    }
+  });
+  outputTaskQueue.set(el, tracked);
+  return tracked;
+}
 
 
 /******************************************************************************
@@ -79,45 +92,52 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     this.renderError(el, err);
   }
   async renderValue(el: HTMLElement, data): Promise<void> {
+    await queueOutputTask(el, async () => {
+      // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
+      if (!data) {
+        el.style.visibility = "hidden";
+        return;
+      } else {
+        el.style.visibility = "inherit";
+      }
 
-    // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
-    if (!data) {
-      el.style.visibility = "hidden";
-      return;
-    } else {
-      el.style.visibility = "inherit";
-    }
+      // Only forward the potential to fill if `output_widget(fillable=True)`
+      // _and_ the widget instance wants to fill
+      const fill = data.fill && el.classList.contains("html-fill-container");
+      if (fill) el.classList.add("forward-fill-potential");
 
-    // Only forward the potential to fill if `output_widget(fillable=True)`
-    // _and_ the widget instance wants to fill
-    const fill = data.fill && el.classList.contains("html-fill-container");
-    if (fill) el.classList.add("forward-fill-potential");
+      // At this time point, we should've already handled an 'open' message, and so
+      // the model should be ready to use
+      const model = await manager.get_model(data.model_id);
+      if (!model) {
+        throw new Error(`No model found for id ${data.model_id}`);
+      }
 
-    // At this time point, we should've already handled an 'open' message, and so
-    // the model should be ready to use
-    const model = await manager.get_model(data.model_id);
-    if (!model) {
-      throw new Error(`No model found for id ${data.model_id}`);
-    }
+      const priorHeight = el.getBoundingClientRect().height;
+      const priorMinHeight = el.style.minHeight;
+      if (priorHeight > 0) {
+        el.style.minHeight = `${priorHeight}px`;
+      }
 
-    const view = await manager.create_view(model, {});
-    await manager.display_view(view, {el: el});
+      this._markStaleRoots(el);
+      try {
+        const view = await manager.create_view(model, {});
+        await manager.display_view(view, { el: el });
+      } finally {
+        this._pruneStaleRoots(el);
+        el.style.minHeight = priorMinHeight;
+      }
 
-    // Don't allow more than one .lmWidget container, which can happen
-    // when the view is displayed more than once
-    // N.B. It's probably better to get view(s) from m.views and .remove() them,
-    // but empirically, this seems to work better
-    while (el.childNodes.length > 1) {
-      el.removeChild(el.childNodes[0]);
-    }
+      const lmWidget = this._latestRoot(el);
+      if (!lmWidget) {
+        throw new Error("Expected rendered .lm-Widget root after display_view().");
+      }
 
-    // The ipywidgets container (.lmWidget)
-    const lmWidget = el.children[0] as HTMLElement;
-
-    if (fill) {
-      this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
-    }
-    this._onImplementation(lmWidget, this._doResize);
+      if (fill) {
+        this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
+      }
+      this._onImplementation(lmWidget, this._doResize);
+    });
   }
   _onImplementation(lmWidget: HTMLElement, callback: () => void): void {
     if (this._hasImplementation(lmWidget)) {
@@ -135,6 +155,23 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     });
 
     mo.observe(lmWidget, {childList: true});
+  }
+  _markStaleRoots(el: HTMLElement): void {
+    const roots = el.querySelectorAll(":scope > .lm-Widget");
+    roots.forEach((root) => {
+      root.classList.remove("lm-Widget");
+      root.classList.add("shinywidgets-stale-view");
+    });
+  }
+  _pruneStaleRoots(el: HTMLElement): void {
+    const staleRoots = el.querySelectorAll(":scope > .shinywidgets-stale-view");
+    staleRoots.forEach((root) => {
+      root.remove();
+    });
+  }
+  _latestRoot(el: HTMLElement): HTMLElement | null {
+    const roots = el.querySelectorAll(":scope > .lm-Widget:not(.shinywidgets-stale-view)");
+    return roots.length > 0 ? roots[roots.length - 1] as HTMLElement : null;
   }
   // In most cases, we can get widgets to fill through Python/CSS, but some widgets
   // (e.g., quak) don't have a Python API and use shadow DOM, which can only access

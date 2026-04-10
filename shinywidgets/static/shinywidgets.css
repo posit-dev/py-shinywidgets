@@ -44,6 +44,21 @@
 }
 
 /*
+* During rerender swaps, old roots stay attached briefly for teardown.
+* Keep stale roots out of flex layout so new views never measure with two active roots.
+*/
+.shiny-ipywidget-output > .shinywidgets-stale-view {
+  position: absolute !important;
+  inline-size: 0 !important;
+  block-size: 0 !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+/*
 * Our fill.css ends up overriding this rule from bqplot...
 * https://github.com/bqplot/bqplot/blob/c186fcd/js/less/bqplot.less#L170
 */
