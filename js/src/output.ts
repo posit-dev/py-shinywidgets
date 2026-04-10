@@ -100,19 +100,26 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       throw new Error(`No model found for id ${data.model_id}`);
     }
 
-    const view = await manager.create_view(model, {});
-    await manager.display_view(view, {el: el});
-
-    // Don't allow more than one .lmWidget container, which can happen
-    // when the view is displayed more than once
-    // N.B. It's probably better to get view(s) from m.views and .remove() them,
-    // but empirically, this seems to work better
-    while (el.childNodes.length > 1) {
-      el.removeChild(el.childNodes[0]);
+    const priorHeight = el.getBoundingClientRect().height;
+    const priorMinHeight = el.style.minHeight;
+    if (priorHeight > 0) {
+      el.style.minHeight = `${priorHeight}px`;
     }
 
-    // The ipywidgets container (.lmWidget)
-    const lmWidget = el.children[0] as HTMLElement;
+    this._markStaleRoots(el);
+    try {
+      const view = await manager.create_view(model, {});
+      await manager.display_view(view, {el: el});
+    } finally {
+      this._pruneStaleRoots(el);
+      el.style.minHeight = priorMinHeight;
+    }
+
+    // The ipywidgets container (.lmWidget) for the latest render.
+    const lmWidget = this._latestRoot(el);
+    if (!lmWidget) {
+      throw new Error("Expected rendered .lm-Widget root after display_view().");
+    }
 
     if (fill) {
       this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
@@ -135,6 +142,23 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     });
 
     mo.observe(lmWidget, {childList: true});
+  }
+  _markStaleRoots(el: HTMLElement): void {
+    const roots = el.querySelectorAll(":scope > .lm-Widget");
+    roots.forEach((root) => {
+      root.classList.remove("lm-Widget");
+      root.classList.add("shinywidgets-stale-view");
+    });
+  }
+  _pruneStaleRoots(el: HTMLElement): void {
+    const staleRoots = el.querySelectorAll(":scope > .shinywidgets-stale-view");
+    staleRoots.forEach((root) => {
+      root.remove();
+    });
+  }
+  _latestRoot(el: HTMLElement): HTMLElement | null {
+    const roots = el.querySelectorAll(":scope > .lm-Widget:not(.shinywidgets-stale-view)");
+    return roots.length > 0 ? roots[roots.length - 1] as HTMLElement : null;
   }
   // In most cases, we can get widgets to fill through Python/CSS, but some widgets
   // (e.g., quak) don't have a Python API and use shadow DOM, which can only access

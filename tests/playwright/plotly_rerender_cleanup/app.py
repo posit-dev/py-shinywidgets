@@ -7,7 +7,9 @@ from shinywidgets import output_widget, render_widget
 
 app_ui = ui.page_fluid(
     ui.input_action_button("rerender", "Rerender"),
-    output_widget("plot"),
+    ui.card(
+        output_widget("plot"),
+    ),
 )
 
 
