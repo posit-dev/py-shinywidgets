@@ -1,7 +1,6 @@
 import asyncio
 
 import pytest
-
 import shinywidgets._render_widget_base as rwb
 
 
@@ -36,7 +35,9 @@ def test_value_and_widget_are_read_only() -> None:
         r.widget = object()  # type: ignore[misc]
 
 
-def test_value_access_before_render_in_reactive_context_invokes_req(monkeypatch) -> None:
+def test_value_access_before_render_in_reactive_context_invokes_req(
+    monkeypatch,
+) -> None:
     r = rwb.render_widget_base()
     ctx = FakeContext()
 
@@ -56,7 +57,9 @@ def test_value_access_before_render_in_reactive_context_invokes_req(monkeypatch)
 
 def test_value_access_outside_reactive_context_returns_none(monkeypatch) -> None:
     r = rwb.render_widget_base()
-    monkeypatch.setattr(rwb, "get_current_context", lambda: (_ for _ in ()).throw(RuntimeError()))
+    monkeypatch.setattr(
+        rwb, "get_current_context", lambda: (_ for _ in ()).throw(RuntimeError())
+    )
     assert r.value is None
 
 
@@ -134,7 +137,9 @@ def test_widget_render_context_restores_session_vars(monkeypatch) -> None:
 
     assert vars(session)["__shinywidget_current_output_id"] == "old-id"
     assert vars(session)["__shinywidget_render_context"] == "old-ctx"
-    assert rwb.WidgetRenderContext.is_rendering_widget(session) is True  # old-id is not None
+    assert (
+        rwb.WidgetRenderContext.is_rendering_widget(session) is True
+    )  # old-id is not None
 
 
 def test_widget_render_context_get_render_context_raises_outside() -> None:
@@ -143,7 +148,9 @@ def test_widget_render_context_get_render_context_raises_outside() -> None:
         rwb.WidgetRenderContext.get_render_context(session)
 
 
-def test_render_wraps_in_widget_render_context_and_restores_on_error(monkeypatch) -> None:
+def test_render_wraps_in_widget_render_context_and_restores_on_error(
+    monkeypatch,
+) -> None:
     session = FakeSession()
     ctx = FakeContext()
 
@@ -174,4 +181,3 @@ def test_render_wraps_in_widget_render_context_and_restores_on_error(monkeypatch
 
     assert vars(session)["__shinywidget_current_output_id"] == "old-id"
     assert vars(session)["__shinywidget_render_context"] == "old-ctx"
-

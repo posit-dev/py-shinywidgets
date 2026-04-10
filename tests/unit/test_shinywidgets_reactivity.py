@@ -1,5 +1,4 @@
 import pytest
-
 import shinywidgets._shinywidgets as sw
 
 
@@ -46,7 +45,8 @@ def test_reactive_depend_outside_context_raises(monkeypatch) -> None:
     w = FakeWidget({"x": 1})
 
     with pytest.raises(
-        RuntimeError, match=r"reactive_read\(\) must be called within a reactive context"
+        RuntimeError,
+        match=r"reactive_read\(\) must be called within a reactive context",
     ):
         sw.reactive_depend(w, "x")  # type: ignore[arg-type]
 
@@ -58,7 +58,8 @@ def test_reactive_read_outside_context_raises(monkeypatch) -> None:
     w = FakeWidget({"x": 1})
 
     with pytest.raises(
-        RuntimeError, match=r"reactive_read\(\) must be called within a reactive context"
+        RuntimeError,
+        match=r"reactive_read\(\) must be called within a reactive context",
     ):
         sw.reactive_read(w, "x")  # type: ignore[arg-type]
 

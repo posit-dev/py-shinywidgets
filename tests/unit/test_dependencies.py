@@ -3,10 +3,9 @@ import warnings
 from types import ModuleType
 
 import pytest
+import shinywidgets._dependencies as deps
 from htmltools import HTMLDependency
 from ipywidgets.widgets.domwidget import DOMWidget
-
-import shinywidgets._dependencies as deps
 from shinywidgets._dependencies import (
     jupyter_extension_destination,
     jupyter_extension_path,
@@ -35,7 +34,9 @@ def test_widget_pkg_uses_first_module_component() -> None:
     assert widget_pkg(Dummy()) == "somepkg"
 
 
-def test_jupyter_extension_path_finds_index_js(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_jupyter_extension_path_finds_index_js(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     module_name = "some-widget-module"
     module_dir = tmp_path / "nbextensions" / module_name
     module_dir.mkdir(parents=True)
@@ -91,7 +92,9 @@ def test_jupyter_extension_destination_falls_back_to_widget_pkg(
     assert jupyter_extension_destination(w) == "fakepkg"
 
 
-def test_jupyter_extension_destination_requires_module_file(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_jupyter_extension_destination_requires_module_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class DummyWidget:
         __module__ = "fakepkg.sub"
 
@@ -138,7 +141,9 @@ def test_require_dependency_missing_extension_warns_and_returns_none(
     monkeypatch.setattr(deps, "jupyter_extension_path", lambda name: None)
     monkeypatch.setattr(deps, "jupyter_extension_destination", lambda w: "some-dest")
 
-    with pytest.warns(UserWarning, match="Couldn't find local path to widget extension"):
+    with pytest.warns(
+        UserWarning, match="Couldn't find local path to widget extension"
+    ):
         assert require_dependency(w, session, warn_if_missing=True) is None
 
     with warnings.catch_warnings(record=True) as rec:

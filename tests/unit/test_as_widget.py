@@ -2,9 +2,8 @@ import sys
 from types import ModuleType
 
 import pytest
-from ipywidgets import Widget
-
 import shinywidgets._as_widget as asw
+from ipywidgets import Widget
 from shinywidgets._as_widget import (
     as_widget,
     as_widget_altair,
@@ -75,7 +74,9 @@ def test_as_widget_altair_import_error_path(monkeypatch: pytest.MonkeyPatch) -> 
         as_widget_altair(object())
 
 
-def test_as_widget_altair_success_with_fake_module(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_as_widget_altair_success_with_fake_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     altair = ModuleType("altair")
     altair.JupyterChart = lambda x: Widget.__new__(Widget)  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "altair", altair)

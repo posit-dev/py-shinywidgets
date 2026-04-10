@@ -106,7 +106,9 @@ def test_session_is_wired_once_and_open_effect_assigns_comm(
     assert len(root._ended_handlers) == 1
 
 
-def test_comm_send_handler_routes_to_existing_comm(monkeypatch, reset_shinywidgets_globals):
+def test_comm_send_handler_routes_to_existing_comm(
+    monkeypatch, reset_shinywidgets_globals
+):
     sw = reset_shinywidgets_globals["sw"]
     reactive = FakeReactive()
     comm_mgr = FakeCommManager()
@@ -128,7 +130,9 @@ def test_comm_send_handler_routes_to_existing_comm(monkeypatch, reset_shinywidge
     open_eff()
 
     send_eff = next(e for e in reactive.effects if e.fn.__name__ == "_")
-    root.input._shinywidgets_comm_send_value = json.dumps({"content": {"comm_id": "w1"}})
+    root.input._shinywidgets_comm_send_value = json.dumps(
+        {"content": {"comm_id": "w1"}}
+    )
     send_eff()
 
     assert comm_mgr.comms["w1"].last_msg == {"content": {"comm_id": "w1"}}
@@ -348,4 +352,3 @@ def test_register_widget_uses_session_output_decorator(monkeypatch):
     assert res is w
     assert seen["output_id"] == "out1"
     assert seen["called"] is True
-

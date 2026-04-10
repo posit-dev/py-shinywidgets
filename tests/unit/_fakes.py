@@ -32,7 +32,9 @@ class FakeDependencyHandler:
 @dataclass
 class FakeApp:
     lib_prefix: str = "/_lib"
-    _dependency_handler: FakeDependencyHandler = field(default_factory=FakeDependencyHandler)
+    _dependency_handler: FakeDependencyHandler = field(
+        default_factory=FakeDependencyHandler
+    )
 
 
 class FakeInput:
@@ -143,7 +145,9 @@ class FakeShinyComm:
 
 
 class FakeEffect:
-    def __init__(self, fn: Callable[[], Any], *, priority: Optional[int] = None) -> None:
+    def __init__(
+        self, fn: Callable[[], Any], *, priority: Optional[int] = None
+    ) -> None:
         self.fn = fn
         self.priority = priority
         self.destroyed = False
@@ -159,7 +163,9 @@ class FakeReactive:
     def __init__(self) -> None:
         self.effects: List[FakeEffect] = []
 
-    def event(self, _trigger: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def event(
+        self, _trigger: Any
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         def deco(fn: Callable[..., Any]) -> Callable[..., Any]:
             return fn
 
@@ -209,4 +215,3 @@ class FakeWidget:
     def unobserve(self, fn: Any, names: Any, type: Any) -> None:
         self.calls.append(f"unobserve:{names}:{type}")
         self._unobserved = (fn, names, type)
-

@@ -1,17 +1,16 @@
 import pytest
-from htmltools import HTMLDependency
-
 import shinywidgets._output_widget as ow
+from htmltools import HTMLDependency
 from shinywidgets._cdn import SHINYWIDGETS_CDN_ONLY
 from shinywidgets._output_widget import output_widget
 
 
-def test_output_widget_structure_and_head_content(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_output_widget_structure_and_head_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(ow, "resolve_id", lambda x: "resolved-id")
 
-    tag = output_widget(
-        "x", width="100%", height="400px", fill=False, fillable=False
-    )
+    tag = output_widget("x", width="100%", height="400px", fill=False, fillable=False)
 
     assert tag.attrs["id"] == "resolved-id"
     cls = tag.attrs["class"]
@@ -67,7 +66,9 @@ def test_output_widget_fill_and_fillable_default_inference(
     assert tag.attrs.get("data-test-fillable") == "1"
 
 
-def test_output_widget_includes_output_binding_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_output_widget_includes_output_binding_dependency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(ow, "resolve_id", lambda x: "resolved-id")
     monkeypatch.setattr(
         ow,
@@ -83,4 +84,3 @@ def test_output_widget_includes_output_binding_dependency(monkeypatch: pytest.Mo
 
     tag = output_widget("x", height="100px", fill=False, fillable=False)
     assert "sentinel" in [d.name for d in tag.get_dependencies()]
-

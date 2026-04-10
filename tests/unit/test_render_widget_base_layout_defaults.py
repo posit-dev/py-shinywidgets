@@ -1,5 +1,4 @@
 import pytest
-
 import shinywidgets._render_widget_base as rwb
 
 

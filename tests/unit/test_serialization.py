@@ -3,7 +3,6 @@ import json
 from datetime import date, datetime, timezone
 
 import pytest
-
 import shinywidgets._serialization as ser
 from shinywidgets._serialization import json_default, json_packer
 
@@ -55,4 +54,3 @@ def test_json_packer_returns_str_and_round_trips() -> None:
 def test_json_packer_rejects_nan() -> None:
     with pytest.raises(ValueError):
         json_packer({"x": float("nan")})
-
