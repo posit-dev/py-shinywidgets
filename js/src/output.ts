@@ -222,24 +222,20 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
   try {
     const m = await model;
 
-    // Before .close()ing the model (which will .remove() each view), do some
-    // additional cleanup that .remove() might miss
+    // Some widget views need explicit teardown before model.close() removes them.
     if (m.views) {
       await Promise.all(
         Object.values(m.views).map(async (viewPromise) => {
         try {
           const v = await viewPromise;
 
-          // Old versions of plotly need a .destroy() to properly clean up
-          // https://github.com/plotly/plotly.py/pull/3805/files#diff-259c92d
+          // Plotly-backed views can leave DOM state and listeners behind unless
+          // destroy() runs before the view is removed.
           if (hasMethod<DestroyMethod>(v, 'destroy')) {
             v.destroy();
-            // Also, empirically, when this destroy() is relevant, it also helps to
-            // delete the view's reference to the model, I think this is the only
-            // way to drop the resize event listener (see the diff in the link above)
-            // https://github.com/posit-dev/py-shinywidgets/issues/166
+            // Clearing the back-reference prevents later teardown from touching a
+            // model that is already being closed.
             delete v.model;
-            // Ensure sure the lm-Widget container is also removed
             v.remove();
           }
 
@@ -251,10 +247,8 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
     );
     }
 
-    // Prevent sync errors during close. When m.close() removes views, they try to
-    // sync _view_count back to the server. But m.close() deletes the comm before
-    // removing views, causing "Syncing error: no comm channel defined".
-    // Setting comm_live=false prevents save_changes() from attempting to sync.
+    // View removal updates _view_count. Mark the comm as inactive first so that
+    // save_changes() does not try to send those updates after the comm is gone.
     m.comm_live = false;
 
     // Close model after all views are cleaned up.
@@ -266,7 +260,7 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
       }
     }
 
-    // Trigger comm:close event to remove manager's reference.
+    // HTMLManager releases the model from its registry on comm:close.
     try {
       m.trigger("comm:close");
     } catch (triggerErr) {

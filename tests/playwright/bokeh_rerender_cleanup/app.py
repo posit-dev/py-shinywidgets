@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from bokeh.plotting import figure
-from shiny import App, reactive, ui
+from shiny import App, reactive, render, ui
 from shinywidgets import bokeh_dependency, output_widget, render_bokeh
 
 
 app_ui = ui.page_fluid(
     ui.input_action_button("rerender", "Rerender"),
+    ui.output_text("render_count"),
     output_widget("plot"),
     bokeh_dependency(),
 )
@@ -19,6 +20,10 @@ def server(input, output, session):
     @reactive.event(input.rerender)
     def _():
         counter.set(counter.get() + 1)
+
+    @render.text
+    def render_count():
+        return str(counter.get())
 
     @render_bokeh
     def plot():

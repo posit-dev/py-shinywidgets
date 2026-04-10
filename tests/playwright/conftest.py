@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import time
-
-from playwright.sync_api import Page
+from playwright.sync_api import Page, expect
 from shiny.run import ShinyAppProc
 
 
@@ -17,12 +15,13 @@ def assert_rerender_cleanup(page: Page, local_app: ShinyAppProc, ready_selector:
 
     page.goto(local_app.url)
     page.wait_for_selector(ready_selector, timeout=30000)
+    expect(page.locator("#render_count")).to_have_text("0")
 
-    for _ in range(3):
+    for i in range(1, 4):
         page.click("#rerender")
-        time.sleep(1)
+        expect(page.locator("#render_count")).to_have_text(str(i))
 
-    assert page.locator("#plot > .lm-Widget").count() == 1
-    assert page.locator(ready_selector).count() == 1
+    expect(page.locator("#plot > .lm-Widget")).to_have_count(1)
+    expect(page.locator(ready_selector)).to_have_count(1)
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel defined" in err.lower() for err in errors)
