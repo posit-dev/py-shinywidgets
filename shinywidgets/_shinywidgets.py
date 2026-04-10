@@ -4,7 +4,6 @@ import copy
 import json
 import os
 from contextlib import contextmanager
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional, Sequence, Union, cast
 from uuid import uuid4
 from weakref import WeakSet
@@ -89,8 +88,6 @@ def init_shiny_widget(w: Widget):
 
         def _cleanup_session_state():
             SESSIONS.remove(session)
-            PENDING_WIDGET_OPENS.pop(session.id, None)
-            OPEN_QUEUE_SCHEDULED.discard(session.id)
             # Cleanup any widgets that were created in this session
             for id in SESSION_WIDGET_ID_MAP[session.id]:
                 widget = WIDGET_INSTANCE_MAP.get(id)
@@ -107,6 +104,7 @@ def init_shiny_widget(w: Widget):
         widget_dep = None
     else:
         widget_dep = require_dependency(w, session, SHINYWIDGETS_EXTENSION_WARNING)
+    setattr(w, "_shinywidgets_widget_dep", widget_dep)
 
     # By the time we get here, the user has already had an opportunity to specify a model_id,
     # so it isn't yet populated, generate a random one so we can assign the same id to the comm
@@ -120,24 +118,13 @@ def init_shiny_widget(w: Widget):
     # comm, we just set the comm to a dummy comm for now (to avoid unnecessary work)
     w.comm = OrphanedShinyComm(id)
 
-    PENDING_WIDGET_OPENS.setdefault(session.id, []).append(
-        PendingWidgetOpen(widget=w, widget_dep=widget_dep)
-    )
-    if session.id not in OPEN_QUEUE_SCHEDULED:
-        OPEN_QUEUE_SCHEDULED.add(session.id)
-
-        @reactive.effect(priority=99999)
-        def _open_pending_widget_comms() -> None:
-            OPEN_QUEUE_SCHEDULED.discard(session.id)
-            pending = PENDING_WIDGET_OPENS.pop(session.id, [])
-            prepared = [
-                _prepare_pending_widget_open(session, pending_open)
-                for pending_open in pending
-            ]
-            for pending_open in _order_pending_widget_opens(prepared):
-                _open_shiny_comm(pending_open)
-
-            _open_pending_widget_comms.destroy()
+    # Schedule the opening of the comm to happen sometime after this init function.
+    # This is important for widgets like plotly that do additional initialization that
+    # is required to get a valid widget state.
+    @reactive.effect(priority=99999)
+    def _open_shiny_comm():
+        _open_shiny_comm_recursive(w, session, widget_dep, set())
+        _open_shiny_comm.destroy()
 
     # If the widget initialized in a reactive _output_ context, then cleanup the widget
     # when the context gets invalidated. Use the render output's Context (captured by
@@ -191,100 +178,58 @@ COMM_MANAGER = ShinyCommManager()
 # Dictionary mapping session id to widget ids
 # The key is the session id, and the value is a list of widget ids
 SESSION_WIDGET_ID_MAP: dict[str, list[str]] = {}
-PENDING_WIDGET_OPENS: dict[str, list["PendingWidgetOpen"]] = {}
-OPEN_QUEUE_SCHEDULED: set[str] = set()
 
 # Dictionary of all "active" widgets (ipywidgets automatically adds to this dictionary as
 # new widgets are created, but they won't get removed until the widget is explictly closed)
 WIDGET_INSTANCE_MAP = cast(dict[str, Widget], Widget.widgets)
 
 
-@dataclass
-class PendingWidgetOpen:
-    widget: Widget
-    widget_dep: Any
-
-
-@dataclass
-class PreparedWidgetOpen:
-    widget: Widget
-    comm_id: str
-    state: dict[str, object]
-    buffer_paths: list[object]
-    buffers: BufferType
-    html_deps: list[object]
-    child_comm_ids: set[str]
-
-
-def _prepare_pending_widget_open(
-    session: Session, pending: PendingWidgetOpen
-) -> PreparedWidgetOpen:
-    widget = pending.widget
+def _open_shiny_comm_recursive(
+    widget: Widget,
+    session: Session,
+    widget_dep: Any,
+    visited: set[str],
+) -> None:
     comm_id = cast(str, widget._model_id)
+    if comm_id in visited or not isinstance(widget.comm, OrphanedShinyComm):
+        return
+
+    visited.add(comm_id)
 
     if hasattr(widget, "_repr_mimebundle_") and callable(widget._repr_mimebundle_):
         widget._repr_mimebundle_()
 
     state, buffer_paths, buffers = _remove_buffers(widget.get_state())
-    return PreparedWidgetOpen(
-        widget=widget,
-        comm_id=comm_id,
-        state=state,
-        buffer_paths=buffer_paths,
-        buffers=cast(BufferType, buffers),
-        html_deps=session._process_ui(TagList(pending.widget_dep))["deps"],
-        child_comm_ids=_find_widget_model_refs(state),
-    )
 
+    for child_comm_id in _find_widget_model_refs(state):
+        child_widget = WIDGET_INSTANCE_MAP.get(child_comm_id)
+        if child_widget is None:
+            continue
+        child_widget_dep = getattr(child_widget, "_shinywidgets_widget_dep", None)
+        _open_shiny_comm_recursive(child_widget, session, child_widget_dep, visited)
 
-def _open_shiny_comm(pending: PreparedWidgetOpen) -> None:
     with widget_comm_patch():
-        pending.widget.comm = ShinyComm(
-            comm_id=pending.comm_id,
+        widget.comm = ShinyComm(
+            comm_id=comm_id,
             comm_manager=COMM_MANAGER,
             target_name="jupyter.widgets",
-            data={"state": pending.state, "buffer_paths": pending.buffer_paths},
-            buffers=pending.buffers,
+            data={"state": state, "buffer_paths": buffer_paths},
+            buffers=cast(BufferType, buffers),
             metadata={"version": __protocol_version__},
-            html_deps=pending.html_deps,
+            html_deps=session._process_ui(TagList(widget_dep))["deps"],
         )
 
-
-def _order_pending_widget_opens(
-    pending: Sequence[PreparedWidgetOpen],
-) -> list[PreparedWidgetOpen]:
-    pending_by_id = {widget.comm_id: widget for widget in pending}
-    ordered: list[PreparedWidgetOpen] = []
-    visited: set[str] = set()
-    visiting: set[str] = set()
-
-    def visit(comm_id: str) -> None:
-        if comm_id in visited or comm_id not in pending_by_id:
-            return
-        if comm_id in visiting:
-            return
-
-        visiting.add(comm_id)
-        widget = pending_by_id[comm_id]
-        for child_comm_id in widget.child_comm_ids:
-            visit(child_comm_id)
-        visiting.remove(comm_id)
-        visited.add(comm_id)
-        ordered.append(widget)
-
-    for widget in pending:
-        visit(widget.comm_id)
-
-    return ordered
-
-
-def _find_widget_model_refs(value: object) -> set[str]:
-    refs: set[str] = set()
+def _find_widget_model_refs(value: object) -> list[str]:
+    refs: list[str] = []
+    seen: set[str] = set()
 
     def collect(x: object) -> None:
         if isinstance(x, str):
             if x.startswith("IPY_MODEL_"):
-                refs.add(x.removeprefix("IPY_MODEL_"))
+                ref = x.removeprefix("IPY_MODEL_")
+                if ref not in seen:
+                    seen.add(ref)
+                    refs.append(ref)
             return
 
         if isinstance(x, dict):

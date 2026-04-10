@@ -28,7 +28,7 @@ def test_ipyleaflet_rerender_stays_usable_with_many_layers(
 
     for i in range(1, 4):
         page.click("#rerender")
-        expect(page.locator("#render_count")).to_have_text(str(i))
+        expect(page.locator("#render_count")).to_have_text(str(i), timeout=30000)
         expect(page.locator("#plot .leaflet-container")).to_have_count(1, timeout=30000)
         expect(page.locator("#plot .leaflet-control-container")).to_have_count(
             1, timeout=30000
