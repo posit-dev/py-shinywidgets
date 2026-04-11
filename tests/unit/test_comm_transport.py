@@ -181,6 +181,59 @@ def test_msg_and_close_callbacks(monkeypatch):
     assert seen["close"] == {"bye": "world"}
 
 
+def test_emit_open_false_registers_without_scheduling(monkeypatch):
+    import shinywidgets._comm as comm
+
+    session = FakeSession()
+    monkeypatch.setattr(comm, "get_current_session", lambda: session)
+
+    mgr = comm.ShinyCommManager()
+    c = comm.ShinyComm(
+        comm_id="c1",
+        comm_manager=mgr,
+        target_name="jupyter.widget",
+        emit_open=False,
+    )
+
+    # Comm is registered in the manager.
+    assert "c1" in mgr.comms
+    assert mgr.comms["c1"] is c
+    # No messages were scheduled (no open, no send, no close).
+    assert len(session._flush_handlers) == 0
+    assert len(session._flushed_handlers) == 0
+    # Comm is not closed (send/close should work).
+    assert c._closed is False
+
+
+def test_emit_open_false_send_and_close_still_work(monkeypatch):
+    import shinywidgets._comm as comm
+
+    session = FakeSession()
+    monkeypatch.setattr(comm, "get_current_session", lambda: session)
+
+    mgr = comm.ShinyCommManager()
+    c = comm.ShinyComm(
+        comm_id="c1",
+        comm_manager=mgr,
+        target_name="jupyter.widget",
+        emit_open=False,
+    )
+
+    # send() should schedule a comm_msg on flushed.
+    c.send(data={"k": "v"})
+    assert len(session._flushed_handlers) == 1
+    cells = closure_map(session._flushed_handlers[0])
+    assert cells["msg_type"] == "shinywidgets_comm_msg"
+
+    # close() should schedule a comm_close on flushed and unregister.
+    session._flushed_handlers.clear()
+    c.close()
+    assert "c1" not in mgr.comms
+    assert len(session._flushed_handlers) == 1
+    cells = closure_map(session._flushed_handlers[0])
+    assert cells["msg_type"] == "shinywidgets_comm_close"
+
+
 def test_orphaned_shiny_comm_methods_are_noops() -> None:
     import shinywidgets._comm as comm
 

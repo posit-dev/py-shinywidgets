@@ -45,12 +45,17 @@ class ShinyComm:
         data: DataType = None,
         metadata: MetadataType = None,
         buffers: BufferType = None,
+        emit_open: bool = True,
         **keys: object,
     ) -> None:
         self.comm_id = comm_id
         self.comm_manager = comm_manager
         self.target_name = target_name
-        self.open(data=data, metadata=metadata, buffers=buffers, **keys)
+        if emit_open:
+            self.open(data=data, metadata=metadata, buffers=buffers, **keys)
+        else:
+            self.comm_manager.register_comm(self)
+            self._closed = False
 
     def open(
         self,
