@@ -128,6 +128,7 @@ class FakeShinyComm:
         data: Optional[Dict[str, object]] = None,
         metadata: Optional[Dict[str, object]] = None,
         buffers: Optional[List[bytes]] = None,
+        emit_open: bool = True,
         **keys: object,
     ) -> None:
         self.comm_id = comm_id

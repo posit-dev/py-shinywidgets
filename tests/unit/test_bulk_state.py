@@ -248,3 +248,129 @@ def test_build_manager_state_calls_repr_mimebundle():
     )
 
     assert "root" in called
+
+
+# ---------------------------------------------------------------------------
+# materialize_bulk_comms tests
+# ---------------------------------------------------------------------------
+
+
+def test_materialize_bulk_comms_creates_comms_and_sets_flag():
+    from shinywidgets._bulk_state import materialize_bulk_comms
+    from tests.unit._fakes import FakeCommManager, FakeShinyComm
+
+    w1 = FakeBulkWidget("w1", {"v": 1})
+    w2 = FakeBulkWidget("w2", {"v": 2})
+    widget_map: dict[str, Any] = {"w1": w1, "w2": w2}
+    comm_mgr = FakeCommManager()
+
+    state_entries = {
+        "w1": {"state": {"v": 1}},
+        "w2": {"state": {"v": 2}},
+    }
+
+    class _nullcontext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a: object):
+            return False
+
+    materialize_bulk_comms(
+        state_entries=state_entries,
+        widget_instance_map=widget_map,
+        comm_manager=comm_mgr,
+        comm_class=FakeShinyComm,
+        widget_comm_patch=lambda: _nullcontext(),
+    )
+
+    assert w1.comm is not None
+    assert w1.comm.comm_id == "w1"
+    assert w1.comm.target_name == "jupyter.widget"
+    assert getattr(w1, "_shinywidgets_bulk_owned", False) is True
+    assert "w1" in comm_mgr.comms
+    assert getattr(w2, "_shinywidgets_bulk_owned", False) is True
+
+
+def test_materialize_bulk_comms_skips_missing_widgets():
+    from shinywidgets._bulk_state import materialize_bulk_comms
+    from tests.unit._fakes import FakeCommManager, FakeShinyComm
+
+    widget_map: dict[str, Any] = {}
+    comm_mgr = FakeCommManager()
+
+    class _nullcontext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a: object):
+            return False
+
+    # Should not raise even though "gone" is not in widget_map
+    materialize_bulk_comms(
+        state_entries={"gone": {"state": {}}},
+        widget_instance_map=widget_map,
+        comm_manager=comm_mgr,
+        comm_class=FakeShinyComm,
+        widget_comm_patch=lambda: _nullcontext(),
+    )
+
+    assert len(comm_mgr.comms) == 0
+
+
+# ---------------------------------------------------------------------------
+# _open_shiny_comm bulk-owned guard test
+# ---------------------------------------------------------------------------
+
+
+def test_open_shiny_comm_skips_bulk_owned_widget(monkeypatch):
+    """When _shinywidgets_bulk_owned is True, the scheduled open effect
+    should self-destruct without creating a ShinyComm."""
+    import shinywidgets._shinywidgets as sw
+    from tests.unit._fakes import (
+        FakeCommManager,
+        FakeReactive,
+        FakeSession,
+        FakeShinyComm,
+        FakeStaticFiles,
+        FakeWidget,
+    )
+
+    class _nullcontext:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a: object):
+            return False
+
+    reactive = FakeReactive()
+    comm_mgr = FakeCommManager()
+    root = FakeSession(session_id="root")
+
+    monkeypatch.setattr(sw, "get_current_session", lambda: root)
+    monkeypatch.setattr(sw, "reactive", reactive)
+    monkeypatch.setattr(sw, "COMM_MANAGER", comm_mgr)
+    monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
+    monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
+    monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
+    monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
+    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
+    monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
+    monkeypatch.setattr(sw, "SESSIONS", sw.WeakSet())
+    monkeypatch.setattr(sw, "SESSION_WIDGET_ID_MAP", {})
+    monkeypatch.setattr(sw, "WIDGET_INSTANCE_MAP", {})
+
+    w = FakeWidget()
+    # Simulate that the bulk path has already claimed this widget.
+    w._shinywidgets_bulk_owned = True  # type: ignore[attr-defined]
+
+    sw.init_shiny_widget(w)  # type: ignore[arg-type]
+
+    open_eff = next(e for e in reactive.effects if e.fn.__name__ == "_open_shiny_comm")
+    open_eff()
+
+    # Effect self-destructed without creating a real comm.
+    assert open_eff.destroyed is True
+    # The comm should still be the OrphanedShinyComm assigned by init_shiny_widget
+    # (not a FakeShinyComm from the open path).
+    assert not isinstance(w.comm, FakeShinyComm)

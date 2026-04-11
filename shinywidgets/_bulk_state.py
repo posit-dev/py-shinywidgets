@@ -73,6 +73,30 @@ def build_manager_state(
     }
 
 
+def materialize_bulk_comms(
+    state_entries: dict[str, dict[str, Any]],
+    widget_instance_map: dict[str, Any],
+    comm_manager: Any,
+    comm_class: type[Any],
+    widget_comm_patch: Callable[[], Any],
+) -> None:
+    """Create ``comm_class(emit_open=False)`` for each widget in the bulk closure
+    and set the ``_shinywidgets_bulk_owned`` flag so the legacy per-widget open
+    effect skips them."""
+    for wid in state_entries:
+        w = widget_instance_map.get(wid)
+        if w is None:
+            continue
+        with widget_comm_patch():
+            w.comm = comm_class(
+                comm_id=wid,
+                comm_manager=comm_manager,
+                target_name="jupyter.widget",
+                emit_open=False,
+            )
+        w._shinywidgets_bulk_owned = True
+
+
 def find_ipy_model_refs(state: dict[str, object]) -> set[str]:
     """Walk serialized widget state and return all referenced model IDs.
 

@@ -123,6 +123,11 @@ def init_shiny_widget(w: Widget):
     # is required to get a valid widget state.
     @reactive.effect(priority=99999)
     def _open_shiny_comm():
+        # If this widget was claimed by the bulk restore path, skip the
+        # per-widget open and self-destruct. See design spec for timing analysis.
+        if getattr(w, "_shinywidgets_bulk_owned", False):
+            _open_shiny_comm.destroy()
+            return
 
         # Call _repr_mimebundle_() before get_state() since it may modify the widget
         # in an important way (unfortunately, it does for plotly)
