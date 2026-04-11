@@ -109,7 +109,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     async def _send_bulk_state(self, widget: Widget, session: Any) -> None:
         from ._bulk_state import build_manager_state, materialize_bulk_comms
         from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
-        from ._comm import ShinyComm
+        from ._comm import OrphanedShinyComm, ShinyComm
         from ._dependencies import require_dependency
         from ._serialization import json_packer
         from ._shinywidgets import (
@@ -118,6 +118,14 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             _remove_buffers,
             widget_comm_patch,
         )
+
+        # If the root widget already has a live comm (not an OrphanedShinyComm),
+        # the legacy _open_shiny_comm effect already fired during the effects phase
+        # of this flush cycle. This happens when the widget was constructed outside
+        # @render_widget. The legacy per-widget comm_open messages are already
+        # scheduled, so skip the bulk path to avoid duplicate model registration.
+        if widget.comm is not None and not isinstance(widget.comm, OrphanedShinyComm):
+            return
 
         def collect_deps(w: Widget) -> list[dict[str, Any]]:
             if SHINYWIDGETS_CDN_ONLY:
