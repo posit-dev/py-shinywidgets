@@ -88,7 +88,11 @@ def test_find_ipy_model_refs_deduplicates():
 def test_find_ipy_model_refs_ignores_non_model_strings():
     from shinywidgets._bulk_state import find_ipy_model_refs
 
-    state = {"label": "IPY_MODEL_looks_like_ref", "title": "not IPY_MODEL_nope", "prefix": "IPY_MODE"}
+    state = {
+        "label": "IPY_MODEL_looks_like_ref",
+        "title": "not IPY_MODEL_nope",
+        "prefix": "IPY_MODE",
+    }
     # "IPY_MODEL_looks_like_ref" IS a ref (starts with IPY_MODEL_)
     # "not IPY_MODEL_nope" is NOT (doesn't start with prefix)
     # "IPY_MODE" is NOT (too short)
@@ -165,7 +169,9 @@ def test_build_manager_state_handles_buffers():
     root = FakeBulkWidget("root1", {"data": "some_data"})
     widget_map = {"root1": root}
 
-    def fake_remove_buffers(state: dict[str, Any]) -> tuple[dict[str, Any], list[list[str]], list[bytes]]:
+    def fake_remove_buffers(
+        state: dict[str, Any],
+    ) -> tuple[dict[str, Any], list[list[str]], list[bytes]]:
         return ({"data": None}, [["data"]], [b"\x00\x01\x02"])
 
     result = build_manager_state(
@@ -257,6 +263,7 @@ def test_build_manager_state_calls_repr_mimebundle():
 
 def test_materialize_bulk_comms_creates_comms_and_sets_flag():
     from shinywidgets._bulk_state import materialize_bulk_comms
+
     from tests.unit._fakes import FakeCommManager, FakeShinyComm
 
     w1 = FakeBulkWidget("w1", {"v": 1})
@@ -294,6 +301,7 @@ def test_materialize_bulk_comms_creates_comms_and_sets_flag():
 
 def test_materialize_bulk_comms_skips_missing_widgets():
     from shinywidgets._bulk_state import materialize_bulk_comms
+
     from tests.unit._fakes import FakeCommManager, FakeShinyComm
 
     widget_map: dict[str, Any] = {}
@@ -327,6 +335,7 @@ def test_open_shiny_comm_skips_bulk_owned_widget(monkeypatch):
     """When _shinywidgets_bulk_owned is True, the scheduled open effect
     should self-destruct without creating a ShinyComm."""
     import shinywidgets._shinywidgets as sw
+
     from tests.unit._fakes import (
         FakeCommManager,
         FakeReactive,

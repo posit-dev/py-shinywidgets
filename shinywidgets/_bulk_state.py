@@ -7,7 +7,9 @@ from typing import Any, Callable
 def build_manager_state(
     root_widget: Any,
     widget_instance_map: dict[str, Any],
-    remove_buffers: Callable[[dict[str, Any]], tuple[dict[str, Any], list[list[str]], list[bytes]]],
+    remove_buffers: Callable[
+        [dict[str, Any]], tuple[dict[str, Any], list[list[str]], list[bytes]]
+    ],
     collect_deps: Callable[[Any], list[dict[str, Any]]],
 ) -> dict[str, Any]:
     """Build a bulk manager-state payload for the full widget dependency closure.
@@ -42,11 +44,13 @@ def build_manager_state(
 
         encoded_buffers = []
         for path, buf in zip(buffer_paths, buffers):
-            encoded_buffers.append({
-                "path": path,
-                "encoding": "base64",
-                "data": b64encode(buf).decode("ascii"),
-            })
+            encoded_buffers.append(
+                {
+                    "path": path,
+                    "encoding": "base64",
+                    "data": b64encode(buf).decode("ascii"),
+                }
+            )
 
         visited[wid] = {
             "model_name": w._model_name,

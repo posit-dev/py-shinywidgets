@@ -115,7 +115,6 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         from ._shinywidgets import (
             COMM_MANAGER,
             WIDGET_INSTANCE_MAP,
-            __protocol_version__,
             _remove_buffers,
             widget_comm_patch,
         )
@@ -146,13 +145,15 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             widget_comm_patch=widget_comm_patch,
         )
 
-        msg = json_packer({
-            "root_model_id": payload["root_model_id"],
-            "version_major": 2,
-            "version_minor": 0,
-            "state": payload["state"],
-            "html_deps": payload["html_deps"],
-        })
+        msg = json_packer(
+            {
+                "root_model_id": payload["root_model_id"],
+                "version_major": 2,
+                "version_minor": 0,
+                "state": payload["state"],
+                "html_deps": payload["html_deps"],
+            }
+        )
 
         await session.send_custom_message(  # type: ignore[union-attr]
             "shinywidgets_manager_state", msg
