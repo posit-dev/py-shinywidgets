@@ -1,3 +1,4 @@
+import { base64ToBuffer, put_buffers } from '@jupyter-widgets/base';
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
 import { jsonParse } from './utils';
@@ -179,14 +180,83 @@ if (taskQueue) {
 * Handle messages from the server-side Widget
 ******************************************************************************/
 
-// Initialize the comm and model when a new widget is created
-// This is basically our version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1144-L1176
-Shiny.addCustomMessageHandler("shinywidgets_comm_open", (msg_txt) => {
+// ---------------------------------------------------------------------------
+// Bulk restore: materialize an entire widget dependency graph in one message
+// ---------------------------------------------------------------------------
+
+interface BulkBuffer {
+  path: (string | number)[];
+  encoding: string;
+  data: string;
+}
+
+interface ManagerStateEntry {
+  model_name: string;
+  model_module: string;
+  model_module_version: string;
+  state: Record<string, any>;
+  buffers?: BulkBuffer[];
+}
+
+async function restoreManagerState(
+  mgr: OutputManager,
+  state: Record<string, ManagerStateEntry>
+): Promise<void> {
+  // Iterate in any order — synchronous registration makes order irrelevant.
+  // new_model() calls register_model() synchronously before its first await,
+  // so all promises are registered before any deserialization begins.
+  const modelPromises = Object.entries(state).map(([modelId, entry]) => {
+    // Decode base64 buffers back into the state dict
+    if (entry.buffers && entry.buffers.length > 0) {
+      const bufferPaths = entry.buffers.map(b => b.path);
+      const buffers = entry.buffers.map(b => new DataView(base64ToBuffer(b.data)));
+      put_buffers(entry.state, bufferPaths, buffers);
+    }
+
+    const comm = new ShinyComm(modelId);
+
+    return mgr.new_model(
+      {
+        model_name: entry.model_name,
+        model_module: entry.model_module,
+        model_module_version: entry.model_module_version,
+        comm: comm as any,
+        model_id: modelId,
+      },
+      entry.state
+    );
+  });
+
+  await Promise.all(modelPromises);
+}
+
+Shiny.addCustomMessageHandler("shinywidgets_manager_state", async (msg_txt) => {
   setBaseURL();
-  const msg = jsonParse(msg_txt);
-  Shiny.renderDependencies(msg.content.html_deps);
-  const comm = new ShinyComm(msg.content.comm_id);
-  manager.handle_comm_open(comm, msg);
+  const payload = JSON.parse(msg_txt);
+
+  // Render html_deps first so widget JS modules are loadable before new_model.
+  if (payload.html_deps) {
+    Shiny.renderDependencies(payload.html_deps);
+  }
+
+  await restoreManagerState(manager, payload.state);
+});
+
+// Per-model comm_open for widgets created dynamically after initial restore.
+// Promise chain serializes processing so each model is fully registered before
+// the next begins.
+let openQueue: Promise<void> = Promise.resolve();
+
+Shiny.addCustomMessageHandler("shinywidgets_comm_open", (msg_txt) => {
+  openQueue = openQueue.then(async () => {
+    setBaseURL();
+    const msg = jsonParse(msg_txt);
+    Shiny.renderDependencies(msg.content.html_deps);
+    const comm = new ShinyComm(msg.content.comm_id);
+    await manager.handle_comm_open(comm, msg);
+  }).catch((err) => {
+    console.error("shinywidgets_comm_open failed:", err);
+  });
 });
 
 // Handle any mutation of the model (e.g., add a marker to a map, without a full redraw)
