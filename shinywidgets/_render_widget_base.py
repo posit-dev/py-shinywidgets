@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import warnings
-from typing import Generic, Optional, Tuple, TypeVar, cast
+from typing import Any, Generic, Optional, Tuple, TypeVar, cast
 
-from htmltools import Tag
+from htmltools import Tag, TagList
 from ipywidgets.widgets import DOMWidget, Layout, Widget
 from shiny import req
 from shiny.reactive import Context
@@ -96,10 +96,67 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         if not isinstance(widget, DOMWidget):
             return None
 
+        # Bulk restore: build the full dependency closure and send as one message
+        # before the render result reaches the client.
+        session = require_active_session(None).root_scope()
+        await self._send_bulk_state(widget, session)
+
         return {
             "model_id": str(widget.model_id),
             "fill": fill,
         }
+
+    async def _send_bulk_state(self, widget: Widget, session: Any) -> None:
+        from ._bulk_state import build_manager_state, materialize_bulk_comms
+        from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
+        from ._comm import ShinyComm
+        from ._dependencies import require_dependency
+        from ._serialization import json_packer
+        from ._shinywidgets import (
+            COMM_MANAGER,
+            WIDGET_INSTANCE_MAP,
+            __protocol_version__,
+            _remove_buffers,
+            widget_comm_patch,
+        )
+
+        def collect_deps(w: Widget) -> list[dict[str, Any]]:
+            if SHINYWIDGETS_CDN_ONLY:
+                return []
+            dep = require_dependency(w, session, SHINYWIDGETS_EXTENSION_WARNING)
+            if dep is None:
+                return []
+            return session._process_ui(TagList(dep))["deps"]  # type: ignore[no-any-return]
+
+        payload = build_manager_state(
+            root_widget=widget,
+            widget_instance_map=WIDGET_INSTANCE_MAP,
+            # ipywidgets._remove_buffers is loosely typed (returns tuple of
+            # union types) but always produces (dict, list[list[str]], list[bytes])
+            # for widget state dicts.
+            remove_buffers=_remove_buffers,  # type: ignore[arg-type]
+            collect_deps=collect_deps,
+        )
+
+        materialize_bulk_comms(
+            state_entries=payload["state"],
+            widget_instance_map=WIDGET_INSTANCE_MAP,
+            comm_manager=COMM_MANAGER,
+            comm_class=ShinyComm,
+            widget_comm_patch=widget_comm_patch,
+        )
+
+        msg = json_packer({
+            "root_model_id": payload["root_model_id"],
+            "version_major": 2,
+            "version_minor": 0,
+            "state": payload["state"],
+            "html_deps": payload["html_deps"],
+        })
+
+        await session.send_custom_message(  # type: ignore[union-attr]
+            "shinywidgets_manager_state", msg
+        )
 
     @property
     def value(self) -> ValueT | None:
