@@ -16,64 +16,60 @@ window.addEventListener("load", () => {
 // Let the world know about a value change so the Shiny input binding 
 // can subscribe to it (and thus call getValue() whenever that happens)
 class InputManager extends HTMLManager {
-  display_view(msg, view, options): ReturnType<typeof HTMLManager.prototype.display_view> {
+  async display_view(msg, viewPromise, options): Promise<void> {
+    const view = await super.display_view(msg, viewPromise, options);
 
-    return super.display_view(msg, view, options).then((view) => {
+    // Get the Shiny input container element for this view
+    const $el_input = view.$el.parents(INPUT_SELECTOR);
 
-      // Get the Shiny input container element for this view
-      const $el_input = view.$el.parents(INPUT_SELECTOR);
+    // At least currently, ipywidgets have a tagify method, meaning they can
+    // be directly statically rendered (i.e., without a input_ipywidget() container)
+    if ($el_input.length == 0) {
+      return;
+    }
 
-      // At least currently, ipywidgets have a tagify method, meaning they can 
-      // be directly statically rendered (i.e., without a input_ipywidget() container)
-      if ($el_input.length == 0) {
-        return;
-      }
+    // Most "input-like" widgets use the value property to encode their current value,
+    // but some multiple selection widgets (e.g., RadioButtons) use the index property
+    // instead.
+    let val = view.model.get("value");
+    if (val === undefined) {
+      val = view.model.get("index");
+    }
 
-      // Most "input-like" widgets use the value property to encode their current value,
-      // but some multiple selection widgets (e.g., RadioButtons) use the index property 
-      // instead.
-      let val = view.model.get("value");
-      if (val === undefined) {
-        val = view.model.get("index");
-      }
+    // Checkbox() apparently doesn't have a value/index property
+    // on the model on the initial render (but does in the change event,
+    // so this seems like an ipywidgets bug???)
+    if (val === undefined && view.hasOwnProperty("checkbox")) {
+      val = view.checkbox.checked;
+    }
 
-      // Checkbox() apparently doesn't have a value/index property
-      // on the model on the initial render (but does in the change event, 
-      // so this seems like an ipywidgets bug???)
-      if (val === undefined && view.hasOwnProperty("checkbox")) {
-        val = view.checkbox.checked;
-      }
-
-      // Button() doesn't have a value/index property, and clicking it doesn't trigger
-      // a change event, so we do that ourselves
-      if (val === undefined && view.tagName === "button") {
-        val = 0;
-        view.$el[0].addEventListener("click", () => {
-          val++;
-          _doChangeEvent($el_input[0], val);
-        });
-      }
-
-      // Mock a change event now so that we know Shiny binding has a chance to
-      // read the initial value. Also, do it on the next tick since the
-      // binding hasn't had a chance to subscribe to the change event yet.
-      setTimeout(() => { _doChangeEvent($el_input[0], val) }, 0);
-
-      // Relay changes to the model to the Shiny input binding 
-      view.model.on('change', (x) => {
-        let val;
-        if (x.attributes.hasOwnProperty("value")) {
-          val = x.attributes.value;
-        } else if (x.attributes.hasOwnProperty("index")) {
-          val = x.attributes.index;
-        } else {
-          throw new Error("Unknown change event" +  JSON.stringify(x.attributes));
-        }
+    // Button() doesn't have a value/index property, and clicking it doesn't trigger
+    // a change event, so we do that ourselves
+    if (val === undefined && view.tagName === "button") {
+      val = 0;
+      view.$el[0].addEventListener("click", () => {
+        val++;
         _doChangeEvent($el_input[0], val);
       });
+    }
 
+    // Mock a change event now so that we know Shiny binding has a chance to
+    // read the initial value. Also, do it on the next tick since the
+    // binding hasn't had a chance to subscribe to the change event yet.
+    setTimeout(() => { _doChangeEvent($el_input[0], val) }, 0);
+
+    // Relay changes to the model to the Shiny input binding
+    view.model.on('change', (x: any) => {
+      let val;
+      if (x.attributes.hasOwnProperty("value")) {
+        val = x.attributes.value;
+      } else if (x.attributes.hasOwnProperty("index")) {
+        val = x.attributes.index;
+      } else {
+        throw new Error("Unknown change event" +  JSON.stringify(x.attributes));
+      }
+      _doChangeEvent($el_input[0], val);
     });
-
   }
 }
 
