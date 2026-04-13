@@ -1,6 +1,6 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
-import { settlePlotlyOutput, waitForPlotlyGraphDiv } from './plotly';
+import { waitForPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { jsonParse } from './utils';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
@@ -139,19 +139,19 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       // Plotly FigureWidget may first render at its internal 360px fallback,
       // then resize after paint. Keep it hidden until a direct Plotly resize
       // completes so the first visible paint is already settled.
-      void this._settlePlotly(plotlyGraphDivReady).then(() => {
+      void this._waitForPlotlyReadyToReveal(plotlyGraphDivReady).then(() => {
         el.style.visibility = revealVisibility;
       });
     });
   }
-  async _settlePlotly(plotElReady: Promise<HTMLElement | null> | null): Promise<void> {
+  async _waitForPlotlyReadyToReveal(plotElReady: Promise<HTMLElement | null> | null): Promise<void> {
     const plotEl = await plotElReady;
     if (!plotEl) {
       this._doResize();
       return;
     }
 
-    await settlePlotlyOutput(plotEl, () => this._doResize());
+    await waitForPlotlyReadyToReveal(plotEl, () => this._doResize());
   }
   _onImplementation(lmWidget: HTMLElement, callback: () => void): void {
     if (this._hasImplementation(lmWidget)) {

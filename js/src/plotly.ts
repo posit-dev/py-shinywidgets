@@ -32,7 +32,7 @@ export function waitForPlotlyGraphDiv(root: HTMLElement): Promise<HTMLElement | 
   });
 }
 
-export async function settlePlotlyOutput(
+export async function waitForPlotlyReadyToReveal(
   plotEl: HTMLElement,
   dispatchResize: () => void,
 ): Promise<void> {
