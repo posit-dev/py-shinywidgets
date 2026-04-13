@@ -28,7 +28,13 @@
 * instead of adding html-fill-container/html-fill-item classes to these elements since
 * that causes a flash of incorrect sizing.
 */
-.forward-fill-potential > * {
+/*
+* Target .lm-Widget specifically (the ipywidgets/lumino container) rather than
+* all direct children. Some widgets (e.g., lonboard) inject transient tooltip
+* divs as siblings of .lm-Widget — using `> *` would give those elements flex
+* sizing, causing the widget to collapse when they appear.
+*/
+.forward-fill-potential > .lm-Widget {
   display: flex;
   flex-direction: column;
   flex: 1 1 400px !important;
@@ -37,11 +43,12 @@
   width: 100%;
 }
 
-.forward-fill-potential > * > *:not(.deckgl-ui-elements-overlay) {
+.forward-fill-potential > .lm-Widget > *:not(.deckgl-ui-elements-overlay) {
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
 }
+
 
 /*
 * Our fill.css ends up overriding this rule from bqplot...
