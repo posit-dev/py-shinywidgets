@@ -1,10 +1,12 @@
 from base64 import b64encode
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from shiny.session import get_current_session
 
 from ._serialization import json_packer
+
+_PENDING_UPDATES_ATTR = "__shinywidgets_pending_comm_updates"
 
 
 class ShinyCommManager:
@@ -141,6 +143,58 @@ class ShinyComm:
                         "Buffer objects must support the buffer protocol."
                     ) from e
 
+        session = get_current_session()
+        if session is None:
+            raise RuntimeError(
+                "Cannot send an ipywidget messages to the client outside of a Shiny session context."
+            )
+
+        # Coalesce state-update comm_msg messages for the same widget within a
+        # flush cycle. When multiple reactive effects modify the same widget
+        # (e.g., map.remove(old_layer) then map.add(new_layer)), each trait
+        # change sends a separate comm_msg. Intermediate states can cause race
+        # conditions in widget JS views (e.g., ipyleaflet's LayersControl losing
+        # track of layers). Coalescing sends only the final state per trait,
+        # similar to ipywidgets' hold_sync().
+        if msg_type == "shinywidgets_comm_msg" and data.get("method") == "update":
+            pending = _get_pending_updates(session)
+            if self.comm_id in pending:
+                _merge_pending_update(pending[self.comm_id], data, buffers)
+                return
+
+            state = data.get("state") or {}
+            buffer_paths = data.get("buffer_paths") or []
+            entry: Dict[str, Any] = {
+                "comm_id": self.comm_id,
+                "data": {
+                    "method": "update",
+                    "state": dict(state),  # type: ignore[arg-type]
+                    "buffer_paths": list(buffer_paths),  # type: ignore[arg-type]
+                },
+                "metadata": metadata,
+                "buffers": list(buffers),
+            }
+            pending[self.comm_id] = entry
+
+            async def _send_merged(cid: str = self.comm_id) -> None:
+                e = pending.pop(cid, None)
+                if e is None:
+                    return
+                msg = dict(
+                    content=dict(data=e["data"], comm_id=e["comm_id"]),
+                    metadata=e["metadata"],
+                    buffers=[b64encode(b).decode("ascii") for b in e["buffers"]],
+                    ident="comm-" + e["comm_id"],
+                    parent={},
+                )
+                await session.send_custom_message(
+                    "shinywidgets_comm_msg",
+                    json_packer(msg),  # type: ignore[arg-type]
+                )
+
+            session.on_flushed(_send_merged)
+            return
+
         # Construct the message payload
         msg = dict(
             content=dict(data=data, comm_id=self.comm_id, **keys),
@@ -157,12 +211,6 @@ class ShinyComm:
             parent={},  # self.kernel.get_parent("shell")
         )
 
-        session = get_current_session()
-        if session is None:
-            raise RuntimeError(
-                "Cannot send an ipywidget messages to the client outside of a Shiny session context."
-            )
-
         msg_txt = json_packer(msg)
 
         async def _send():
@@ -171,16 +219,15 @@ class ShinyComm:
         # N.B., if messages are sent immediately, run_coro_sync() could fail with
         # 'async function yielded control; it did not finish in one iteration.'
         # if executed outside of a reactive context.
-        if msg_type in ("shinywidgets_comm_close", "shinywidgets_comm_msg"):
+        if msg_type == "shinywidgets_comm_close":
             # The primary way widgets are closed are when a new widget is rendered in
             # its place (see render_widget_base). By sending close on_flushed(), we
             # ensure to close the 'old' widget after the new one is created. (avoiding a
             # "flicker" of the old widget being removed before the new one is created)
-            #
-            # Mutation messages also need to wait until flush is complete so any child
-            # widgets introduced by the update have already sent their comm_open
-            # messages. Without that ordering, the browser can receive a parent update
-            # that references child models it does not know about yet.
+            session.on_flushed(_send)
+        elif msg_type == "shinywidgets_comm_msg":
+            # Non-update comm_msg (e.g., method="custom") still needs on_flushed
+            # so child widget comm_open messages are sent first.
             session.on_flushed(_send)
         else:
             session.on_flush(_send)
@@ -199,6 +246,46 @@ class ShinyComm:
     def handle_close(self, msg: Dict[str, object]) -> None:
         if self._close_callback is not None:
             self._close_callback(msg)
+
+
+def _get_pending_updates(session: object) -> Dict[str, Dict[str, Any]]:
+    """Get the per-session dict of pending coalesced comm_msg updates."""
+    pending = vars(session).get(_PENDING_UPDATES_ATTR)
+    if pending is None:
+        pending = {}
+        vars(session)[_PENDING_UPDATES_ATTR] = pending
+    return pending
+
+
+def _merge_pending_update(
+    pending: Dict[str, Any],
+    new_data: Dict[str, object],
+    new_buffers: List[Any],
+) -> None:
+    """Merge a new state update into an existing pending entry.
+
+    For each trait key in the new update, the new value replaces the old one.
+    Buffer paths belonging to overridden keys are replaced as well.
+    """
+    new_state: Dict[str, Any] = new_data.get("state", {})  # type: ignore[assignment]
+    new_bpaths: List[List[str]] = new_data.get("buffer_paths", [])  # type: ignore[assignment]
+    overridden_keys = set(new_state.keys())
+
+    old_bpaths: List[List[str]] = pending["data"]["buffer_paths"]
+    old_buffers: List[Any] = pending["buffers"]
+
+    # Keep old buffer entries only for keys NOT being overridden
+    filtered_bpaths: List[List[str]] = []
+    filtered_buffers: List[Any] = []
+    for path, buf in zip(old_bpaths, old_buffers):
+        if path[0] not in overridden_keys:
+            filtered_bpaths.append(path)
+            filtered_buffers.append(buf)
+
+    # Merge state (new values win)
+    pending["data"]["state"].update(new_state)
+    pending["data"]["buffer_paths"] = filtered_bpaths + new_bpaths
+    pending["buffers"] = filtered_buffers + new_buffers
 
 
 @dataclass
