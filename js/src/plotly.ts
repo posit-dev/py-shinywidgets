@@ -1,0 +1,99 @@
+interface PlotlyEventEmitter {
+  on(eventName: string, callback: () => void): void;
+  once(eventName: string, callback: () => void): void;
+  removeListener(eventName: string, callback: () => void): void;
+}
+
+export function findPlotlyGraphDiv(root: HTMLElement): HTMLElement | null {
+  const plotlyEl = root.matches(".js-plotly-plot")
+    ? root
+    : root.querySelector(".js-plotly-plot");
+  return plotlyEl instanceof HTMLElement ? plotlyEl : null;
+}
+
+export async function settlePlotlyOutput(
+  plotEl: HTMLElement,
+  dispatchResize: () => void,
+): Promise<void> {
+  const plotly = (window as any).Plotly;
+  await waitForPlotlyWidgetRender(plotEl);
+  await waitForPlotlyAfterPlot(plotEl);
+
+  if (plotly?.Plots?.resize) {
+    const afterResize = waitForPlotlyAfterPlot(plotEl);
+    await plotly.Plots.resize(plotEl);
+    await afterResize;
+  } else {
+    dispatchResize();
+  }
+
+  dispatchResize();
+}
+
+function waitForPlotlyWidgetRender(plotEl: HTMLElement): Promise<void> {
+  if ((plotEl as any)._fullLayout) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    const onRender = (evt: Event) => {
+      const target = (evt as CustomEvent).detail?.element;
+      if (target !== plotEl) return;
+      cleanup();
+      resolve();
+    };
+
+    const cleanup = () => {
+      document.removeEventListener("plotlywidget-after-render", onRender);
+      window.clearTimeout(timeoutId);
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      cleanup();
+      resolve();
+    }, 1000);
+
+    document.addEventListener("plotlywidget-after-render", onRender);
+  });
+}
+
+function waitForPlotlyAfterPlot(plotEl: HTMLElement): Promise<void> {
+  return new Promise((resolve) => {
+    const handler = () => {
+      cleanup();
+      resolve();
+    };
+
+    const cleanup = () => {
+      if (hasMethod<PlotlyEventEmitter, "removeListener">(plotEl, "removeListener")) {
+        plotEl.removeListener("plotly_afterplot", handler);
+      }
+      window.clearTimeout(timeoutId);
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      cleanup();
+      resolve();
+    }, 1000);
+
+    if (hasMethod<PlotlyEventEmitter, "once">(plotEl, "once")) {
+      plotEl.once("plotly_afterplot", handler);
+      return;
+    }
+
+    if (hasMethod<PlotlyEventEmitter, "on">(plotEl, "on")) {
+      plotEl.on("plotly_afterplot", handler);
+      return;
+    }
+
+    cleanup();
+    resolve();
+  });
+}
+
+function hasMethod<T, K extends keyof T>(
+  x: unknown,
+  key: K,
+): x is T & Record<K, (...args: any[]) => unknown> {
+  return !!x && typeof (x as any)[key] === "function";
+}

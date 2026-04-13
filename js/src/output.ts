@@ -1,5 +1,6 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
+import { findPlotlyGraphDiv, settlePlotlyOutput } from './plotly';
 import { jsonParse } from './utils';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
@@ -79,14 +80,18 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     this.renderError(el, err);
   }
   async renderValue(el: HTMLElement, data): Promise<void> {
+    const hiddenVisibility = "hidden";
+    const revealVisibility = "inherit";
 
     // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
     if (!data) {
-      el.style.visibility = "hidden";
+      el.style.visibility = hiddenVisibility;
       return;
-    } else {
-      el.style.visibility = "hidden";
     }
+
+    // Treat widget outputs as hidden by default and only reveal them once
+    // their initial display conditions are satisfied.
+    el.style.visibility = hiddenVisibility;
 
     // Only forward the potential to fill if `output_widget(fillable=True)`
     // _and_ the widget instance wants to fill
@@ -120,14 +125,14 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     this._onImplementation(lmWidget, () => {
       if (data.widget_pkg !== "plotly") {
         this._doResize();
-        el.style.visibility = "inherit";
+        el.style.visibility = revealVisibility;
         return;
       }
 
-      const plotlyGraphDiv = this._findPlotlyGraphDiv(lmWidget);
+      const plotlyGraphDiv = findPlotlyGraphDiv(lmWidget);
       if (!plotlyGraphDiv) {
         this._doResize();
-        el.style.visibility = "inherit";
+        el.style.visibility = revealVisibility;
         return;
       }
 
@@ -135,24 +140,12 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       // then resize after paint. Keep it hidden until a direct Plotly resize
       // completes so the first visible paint is already settled.
       void this._settlePlotly(plotlyGraphDiv).then(() => {
-        el.style.visibility = "inherit";
+        el.style.visibility = revealVisibility;
       });
     });
   }
   async _settlePlotly(plotEl: HTMLElement): Promise<void> {
-    const plotly = (window as any).Plotly;
-    await this._waitForPlotlyWidgetRender(plotEl);
-    await this._waitForPlotlyAfterPlot(plotEl);
-
-    if (plotly?.Plots?.resize) {
-      const afterResize = this._waitForPlotlyAfterPlot(plotEl);
-      await plotly.Plots.resize(plotEl);
-      await afterResize;
-    } else {
-      this._doResize();
-    }
-
-    this._doResize();
+    await settlePlotlyOutput(plotEl, () => this._doResize());
   }
   _onImplementation(lmWidget: HTMLElement, callback: () => void): void {
     if (this._hasImplementation(lmWidget)) {
@@ -170,65 +163,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     });
 
     mo.observe(lmWidget, {childList: true});
-  }
-  _waitForPlotlyWidgetRender(plotEl: HTMLElement): Promise<void> {
-    if ((plotEl as any)._fullLayout) {
-      return Promise.resolve();
-    }
-
-    return new Promise((resolve) => {
-      const onRender = (evt: Event) => {
-        const target = (evt as CustomEvent).detail?.element;
-        if (target !== plotEl) return;
-        cleanup();
-        resolve();
-      };
-
-      const cleanup = () => {
-        document.removeEventListener("plotlywidget-after-render", onRender);
-        window.clearTimeout(timeoutId);
-      };
-
-      const timeoutId = window.setTimeout(() => {
-        cleanup();
-        resolve();
-      }, 1000);
-
-      document.addEventListener("plotlywidget-after-render", onRender);
-    });
-  }
-  _waitForPlotlyAfterPlot(plotEl: HTMLElement): Promise<void> {
-    return new Promise((resolve) => {
-      const handler = () => {
-        cleanup();
-        resolve();
-      };
-
-      const cleanup = () => {
-        if (hasMethod<PlotlyEventEmitter>(plotEl, "removeListener")) {
-          plotEl.removeListener("plotly_afterplot", handler);
-        }
-        window.clearTimeout(timeoutId);
-      };
-
-      const timeoutId = window.setTimeout(() => {
-        cleanup();
-        resolve();
-      }, 1000);
-
-      if (hasMethod<PlotlyEventEmitter>(plotEl, "once")) {
-        plotEl.once("plotly_afterplot", handler);
-        return;
-      }
-
-      if (hasMethod<PlotlyEventEmitter>(plotEl, "on")) {
-        plotEl.on("plotly_afterplot", handler);
-        return;
-      }
-
-      cleanup();
-      resolve();
-    });
   }
   // In most cases, we can get widgets to fill through Python/CSS, but some widgets
   // (e.g., quak) don't have a Python API and use shadow DOM, which can only access
@@ -248,12 +182,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     setTimeout(() => {
       window.dispatchEvent(new Event('resize'))
     }, 0);
-  }
-  _findPlotlyGraphDiv(root: HTMLElement): HTMLElement | null {
-    const plotlyEl = root.matches(".js-plotly-plot")
-      ? root
-      : root.querySelector(".js-plotly-plot");
-    return plotlyEl instanceof HTMLElement ? plotlyEl : null;
   }
   _hasImplementation(lmWidget: HTMLElement): boolean {
     const impl = lmWidget.children[0];
@@ -419,10 +347,4 @@ function errorMessage(err: unknown): string {
 
 interface DestroyMethod {
     destroy(): void;
-}
-
-interface PlotlyEventEmitter {
-    on(eventName: string, callback: () => void): void;
-    once(eventName: string, callback: () => void): void;
-    removeListener(eventName: string, callback: () => void): void;
 }
