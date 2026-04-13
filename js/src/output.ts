@@ -1,6 +1,6 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
-import { findPlotlyGraphDiv, settlePlotlyOutput } from './plotly';
+import { settlePlotlyOutput, waitForPlotlyGraphDiv } from './plotly';
 import { jsonParse } from './utils';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
@@ -97,6 +97,9 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // _and_ the widget instance wants to fill
     const fill = data.fill && el.classList.contains("html-fill-container");
     if (fill) el.classList.add("forward-fill-potential");
+    const plotlyGraphDivReady = data.widget_pkg === "plotly"
+      ? waitForPlotlyGraphDiv(el)
+      : null;
 
     // At this time point, we should've already handled an 'open' message, and so
     // the model should be ready to use
@@ -133,22 +136,21 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     }
 
     this._onImplementation(lmWidget, () => {
-      const plotlyGraphDiv = findPlotlyGraphDiv(lmWidget);
-      if (!plotlyGraphDiv) {
-        this._doResize();
-        el.style.visibility = revealVisibility;
-        return;
-      }
-
       // Plotly FigureWidget may first render at its internal 360px fallback,
       // then resize after paint. Keep it hidden until a direct Plotly resize
       // completes so the first visible paint is already settled.
-      void this._settlePlotly(plotlyGraphDiv).then(() => {
+      void this._settlePlotly(plotlyGraphDivReady).then(() => {
         el.style.visibility = revealVisibility;
       });
     });
   }
-  async _settlePlotly(plotEl: HTMLElement): Promise<void> {
+  async _settlePlotly(plotElReady: Promise<HTMLElement | null> | null): Promise<void> {
+    const plotEl = await plotElReady;
+    if (!plotEl) {
+      this._doResize();
+      return;
+    }
+
     await settlePlotlyOutput(plotEl, () => this._doResize());
   }
   _onImplementation(lmWidget: HTMLElement, callback: () => void): void {

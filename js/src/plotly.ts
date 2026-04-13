@@ -4,11 +4,32 @@ interface PlotlyEventEmitter {
   removeListener(eventName: string, callback: () => void): void;
 }
 
-export function findPlotlyGraphDiv(root: HTMLElement): HTMLElement | null {
-  const plotlyEl = root.matches(".js-plotly-plot")
-    ? root
-    : root.querySelector(".js-plotly-plot");
-  return plotlyEl instanceof HTMLElement ? plotlyEl : null;
+export function waitForPlotlyGraphDiv(root: HTMLElement): Promise<HTMLElement | null> {
+  const existingPlotEl = findRenderedPlotlyGraphDiv(root);
+  if (existingPlotEl) {
+    return Promise.resolve(existingPlotEl);
+  }
+
+  return new Promise((resolve) => {
+    const onRender = (evt: Event) => {
+      const target = (evt as CustomEvent).detail?.element;
+      if (!(target instanceof HTMLElement) || !root.contains(target)) return;
+      cleanup();
+      resolve(target);
+    };
+
+    const cleanup = () => {
+      document.removeEventListener("plotlywidget-after-render", onRender);
+      window.clearTimeout(timeoutId);
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      cleanup();
+      resolve(findRenderedPlotlyGraphDiv(root));
+    }, 1000);
+
+    document.addEventListener("plotlywidget-after-render", onRender);
+  });
 }
 
 export async function settlePlotlyOutput(
@@ -16,7 +37,6 @@ export async function settlePlotlyOutput(
   dispatchResize: () => void,
 ): Promise<void> {
   const plotly = (window as any).Plotly;
-  await waitForPlotlyWidgetRender(plotEl);
   await waitForPlotlyAfterPlot(plotEl);
 
   if (plotly?.Plots?.resize) {
@@ -30,31 +50,18 @@ export async function settlePlotlyOutput(
   dispatchResize();
 }
 
-function waitForPlotlyWidgetRender(plotEl: HTMLElement): Promise<void> {
-  if ((plotEl as any)._fullLayout) {
-    return Promise.resolve();
+function findRenderedPlotlyGraphDiv(root: HTMLElement): HTMLElement | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  let currentNode: Node | null = root;
+
+  while (currentNode) {
+    if (currentNode instanceof HTMLElement && (currentNode as any)._fullLayout) {
+      return currentNode;
+    }
+    currentNode = walker.nextNode();
   }
 
-  return new Promise((resolve) => {
-    const onRender = (evt: Event) => {
-      const target = (evt as CustomEvent).detail?.element;
-      if (target !== plotEl) return;
-      cleanup();
-      resolve();
-    };
-
-    const cleanup = () => {
-      document.removeEventListener("plotlywidget-after-render", onRender);
-      window.clearTimeout(timeoutId);
-    };
-
-    const timeoutId = window.setTimeout(() => {
-      cleanup();
-      resolve();
-    }, 1000);
-
-    document.addEventListener("plotlywidget-after-render", onRender);
-  });
+  return null;
 }
 
 function waitForPlotlyAfterPlot(plotEl: HTMLElement): Promise<void> {
