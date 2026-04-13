@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from playwright.sync_api import Page
-from playwright.sync_api import expect
+from playwright.sync_api import Page, expect
 from tests.playwright.conftest import assert_rerender_cleanup
 
 
