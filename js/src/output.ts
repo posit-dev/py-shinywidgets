@@ -83,6 +83,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
   async renderValue(el: HTMLElement, data): Promise<void> {
     const hiddenVisibility = "hidden";
     const revealVisibility = "inherit";
+    const renderToken = this._nextRenderToken(el);
 
     // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
     if (!data) {
@@ -125,8 +126,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     if (!isPlotlyWidget) {
       this._onImplementation(lmWidget, () => this._doResize());
     } else {
-      const renderToken = this._nextRenderToken(el);
-
       this._onImplementation(lmWidget, () => {
         if (!this._isCurrentRenderToken(el, renderToken)) {
           return;
