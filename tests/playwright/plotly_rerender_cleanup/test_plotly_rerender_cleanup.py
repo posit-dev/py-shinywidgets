@@ -68,9 +68,7 @@ def _sample_transient_swap_state(page: Page) -> dict[str, Any]:
     )
 
 
-def test_plotly_rerender_does_not_log_cleanup_errors(
-    page: Page, local_app
-) -> None:
+def test_plotly_rerender_does_not_log_cleanup_errors(page: Page, local_app) -> None:
     errors: list[str] = []
     page.on(
         "console",
@@ -87,7 +85,9 @@ def test_plotly_rerender_does_not_log_cleanup_errors(
         page.wait_for_selector(f"text=render {rerender_id}", timeout=30000)
 
     max_lm_widget_children = max(sample["maxChildren"] for sample in transient_samples)
-    max_direct_children = max(sample["maxDirectChildren"] for sample in transient_samples)
+    max_direct_children = max(
+        sample["maxDirectChildren"] for sample in transient_samples
+    )
     min_height_ratio = min(
         sample["minHeight"] / sample["startHeight"]
         for sample in transient_samples
