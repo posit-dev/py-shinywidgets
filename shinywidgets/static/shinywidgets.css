@@ -7,6 +7,14 @@
 }
 
 /*
+* Plotly can briefly measure against an intermediate container state on first paint.
+* Keep the output hidden until the mounted plot has survived a couple of animation frames.
+*/
+.shiny-ipywidget-output.shinywidgets-await-plotly-first-paint {
+  visibility: hidden;
+}
+
+/*
 * At least one exception is .vega-embed, which needs to be visible.
 * This especially important for things like FacetChart or MosaicWidget, where responsive
 * sizing isn't supported.

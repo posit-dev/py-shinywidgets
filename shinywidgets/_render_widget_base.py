@@ -89,6 +89,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         # Ensure we have a widget & smart layout defaults
         widget = as_widget(value)
         widget, fill = set_layout_defaults(widget)
+        plotly_first_paint = fill and widget_pkg(widget) == "plotly"
 
         self._widget = cast(WidgetT, widget)
 
@@ -99,6 +100,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         return {
             "model_id": str(widget.model_id),
             "fill": fill,
+            "plotly_first_paint": plotly_first_paint,
         }
 
     @property

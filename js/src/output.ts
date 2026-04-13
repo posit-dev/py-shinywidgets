@@ -95,11 +95,13 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     await queueOutputTask(el, () => this._renderValueQueued(el, data));
   }
   async _renderValueQueued(el: HTMLElement, data): Promise<void> {
+    const plotlyFirstPaint = !!data?.plotly_first_paint;
+
     // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
     if (!data) {
       el.style.visibility = "hidden";
       return;
-    } else {
+    } else if (!plotlyFirstPaint) {
       el.style.visibility = "inherit";
     }
 
@@ -125,7 +127,12 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     if (fill) {
       this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
     }
-    this._onImplementation(lmWidget, this._doResize);
+    if (plotlyFirstPaint) {
+      el.classList.add("shinywidgets-await-plotly-first-paint");
+      this._onImplementation(lmWidget, () => this._completePlotlyFirstPaint(el));
+    } else {
+      this._onImplementation(lmWidget, this._doResize);
+    }
   }
   _onImplementation(lmWidget: HTMLElement, callback: () => void): void {
     if (this._hasImplementation(lmWidget)) {
@@ -199,6 +206,15 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       this._pruneStaleRoots(el);
       el.style.minHeight = priorMinHeight;
     }
+  }
+  _completePlotlyFirstPaint(el: HTMLElement): void {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        el.classList.remove("shinywidgets-await-plotly-first-paint");
+        el.style.visibility = "inherit";
+        this._doResize();
+      });
+    });
   }
 }
 
