@@ -1,5 +1,6 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
+import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { jsonParse } from './utils';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
@@ -76,17 +77,22 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
   }
   onValueError(el: HTMLElement, err: ErrorsMessageValue): void {
     Shiny.unbindAll(el);
+    el.style.visibility = "inherit";
     this.renderError(el, err);
   }
   async renderValue(el: HTMLElement, data): Promise<void> {
+    const hiddenVisibility = "hidden";
+    const revealVisibility = "inherit";
+    const renderToken = this._nextRenderToken(el);
 
     // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
     if (!data) {
-      el.style.visibility = "hidden";
+      el.style.visibility = hiddenVisibility;
       return;
-    } else {
-      el.style.visibility = "inherit";
     }
+
+    const isPlotlyWidget = data.widget_pkg === "plotly";
+    el.style.visibility = isPlotlyWidget ? hiddenVisibility : revealVisibility;
 
     // Only forward the potential to fill if `output_widget(fillable=True)`
     // _and_ the widget instance wants to fill
@@ -117,7 +123,42 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     if (fill) {
       this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
     }
-    this._onImplementation(lmWidget, this._doResize);
+    if (!isPlotlyWidget) {
+      this._onImplementation(lmWidget, () => this._doResize());
+    } else {
+      this._onImplementation(lmWidget, () => {
+        if (!this._isCurrentRenderToken(el, renderToken)) {
+          return;
+        }
+
+        const plotEl = findPlotlyGraphDiv(lmWidget);
+        if (!plotEl) {
+          this._doResize();
+          if (this._isCurrentRenderToken(el, renderToken)) {
+            el.style.visibility = revealVisibility;
+          }
+          return;
+        }
+
+        // Plotly FigureWidget may first render at its internal 360px fallback,
+        // then resize after paint. Keep it hidden until a direct Plotly resize
+        // completes so the first visible paint is already settled.
+        void waitForPlotlyReadyToReveal(plotEl, () => this._doResize()).finally(() => {
+          if (this._isCurrentRenderToken(el, renderToken)) {
+            el.style.visibility = revealVisibility;
+          }
+        });
+      });
+    }
+  }
+  _nextRenderToken(el: HTMLElement): number {
+    const trackedEl = el as HTMLElement & { __shinywidgetsRenderToken?: number };
+    const nextToken = (trackedEl.__shinywidgetsRenderToken ?? 0) + 1;
+    trackedEl.__shinywidgetsRenderToken = nextToken;
+    return nextToken;
+  }
+  _isCurrentRenderToken(el: HTMLElement, token: number): boolean {
+    return (el as HTMLElement & { __shinywidgetsRenderToken?: number }).__shinywidgetsRenderToken === token;
   }
   _onImplementation(lmWidget: HTMLElement, callback: () => void): void {
     if (this._hasImplementation(lmWidget)) {
@@ -127,7 +168,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
 
     // Some widget implementation (e.g., ipyleaflet, pydeck) won't actually
     // have rendered to the DOM at this point, so wait until they do
-    const mo = new MutationObserver((mutations) => {
+    const mo = new MutationObserver((_mutations) => {
       if (this._hasImplementation(lmWidget)) {
         mo.disconnect();
         callback();

@@ -99,6 +99,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         return {
             "model_id": str(widget.model_id),
             "fill": fill,
+            "widget_pkg": widget_pkg(widget),
         }
 
     @property
