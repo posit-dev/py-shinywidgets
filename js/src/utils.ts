@@ -1,4 +1,4 @@
-import { decode } from 'base64-arraybuffer';
+import { decode, encode } from 'base64-arraybuffer';
 
 // On the server, we're using jupyter_client.session.json_packer to serialize messages,
 // and it encodes binary data (i.e., buffers) as base64, so decode it before passing it
@@ -7,6 +7,29 @@ function jsonParse(x: string) {
   const msg = JSON.parse(x);
   msg.buffers = msg.buffers.map((base64: string) => new DataView(decode(base64)));
   return msg;
+}
+
+function normalizeBufferPayload(payload: ArrayBuffer | ArrayBufferView): ArrayBuffer {
+  if (!ArrayBuffer.isView(payload)) {
+    return payload;
+  }
+
+  const view = payload as ArrayBufferView;
+  if (view.byteOffset === 0 && view.byteLength === view.buffer.byteLength) {
+    return view.buffer;
+  }
+
+  return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+}
+
+function base64EncodeBuffer(payload: ArrayBuffer | ArrayBufferView): string {
+  return encode(normalizeBufferPayload(payload));
+}
+
+function base64EncodeBuffers(
+  buffers: ArrayBuffer[] | ArrayBufferView[]
+): string[] {
+  return buffers.map(base64EncodeBuffer);
 }
 
 class Throttler {
@@ -65,4 +88,4 @@ class Throttler {
 }
 
 
-export { jsonParse, Throttler };
+export { base64EncodeBuffers, jsonParse, Throttler };

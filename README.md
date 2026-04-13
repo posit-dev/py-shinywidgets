@@ -17,6 +17,23 @@ pip install shinywidgets
 If you want to do development on `{shinywidgets}`, run:
 
 ```sh
-pip install -e ".[dev,test]"
+uv sync --all-groups
+uv run pre-commit install
+uv run playwright install chromium
 cd js && yarn watch
+```
+
+If you need the older editable-install flow for tooling compatibility, this
+also works:
+
+```sh
+pip install -e ".[dev]"
+```
+
+Common Python workflows:
+
+```sh
+make py-check
+make test-playwright
+make py-build
 ```

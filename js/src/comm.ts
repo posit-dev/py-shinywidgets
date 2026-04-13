@@ -1,4 +1,4 @@
-import { Throttler } from "./utils";
+import { base64EncodeBuffers, Throttler } from "./utils";
 
 // This class is a striped down version of Comm from @jupyter-widgets/base
 // https://github.com/jupyter-widgets/ipywidgets/blob/88cec8/packages/base/src/services-shim.ts#L192-L335
@@ -17,7 +17,7 @@ export class ShinyComm {
 
   // This might not be needed
   get target_name(): string {
-    return "jupyter.widgets";
+    return "jupyter.widget";
   }
 
   _msg_callback;
@@ -32,8 +32,7 @@ export class ShinyComm {
     const msg = {
       content: {comm_id: this.comm_id, data: data},
       metadata: metadata,
-      // TODO: need to _encode_ any buffers into base64 (JSON.stringify just drops them)
-      buffers: buffers || [],
+      buffers: base64EncodeBuffers(buffers || []),
       // this doesn't seem relevant to the widget?
       header: {}
     };

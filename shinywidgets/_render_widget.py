@@ -23,15 +23,16 @@ __all__ = (
     "render_pydeck",
 )
 
+
 # In the generic case, just relay whatever the user's return type is
 # since we're not doing any coercion
-class render_widget(render_widget_base[WidgetT, WidgetT]):
-    ...
+class render_widget(render_widget_base[WidgetT, WidgetT]): ...
+
 
 # Package specific renderers that require coercion (via as_widget())
 # NOTE: the types on these classes should mirror what as_widget() does
-class render_altair(render_widget_base[ValueT, JupyterChart]):
-    ...
+class render_altair(render_widget_base[ValueT, JupyterChart]): ...
+
 
 class render_bokeh(render_widget_base[ValueT, BokehModel]):
     def auto_output_ui(self) -> Tag:
@@ -39,8 +40,9 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         res.children.append(bokeh_dependency())
         return res
 
+
 class render_plotly(render_widget_base[ValueT, FigureWidget]):  # pyright: ignore[reportInvalidTypeArguments]
     ...
 
-class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
-    ...
+
+class render_pydeck(render_widget_base[ValueT, DeckGLWidget]): ...

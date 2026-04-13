@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+from base64 import b64decode
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Optional, Sequence, Union, cast
 from uuid import uuid4
@@ -80,7 +81,7 @@ def init_shiny_widget(w: Widget):
         @reactive.event(session.input.shinywidgets_comm_send)
         def _():
             msg_txt = session.input.shinywidgets_comm_send()
-            msg = json.loads(msg_txt)
+            msg = _decode_comm_buffers(json.loads(msg_txt))
             comm_id = msg["content"]["comm_id"]
             if comm_id in COMM_MANAGER.comms:
                 comm: ShinyComm = COMM_MANAGER.comms[comm_id]
@@ -137,7 +138,7 @@ def init_shiny_widget(w: Widget):
             w.comm = ShinyComm(
                 comm_id=id,
                 comm_manager=COMM_MANAGER,
-                target_name="jupyter.widgets",
+                target_name="jupyter.widget",
                 data={"state": state, "buffer_paths": buffer_paths},
                 buffers=cast(BufferType, buffers),
                 # TODO: should this be hard-coded?
@@ -195,6 +196,23 @@ Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
 # Use WeakSet() over Set() so that the session can be garbage collected
 SESSIONS: WeakSet[Session] = WeakSet()
 COMM_MANAGER = ShinyCommManager()
+
+
+def _decode_comm_buffers(msg: dict[str, Any]) -> dict[str, Any]:
+    buffers = msg.get("buffers")
+    if not buffers:
+        return msg
+
+    decoded_buffers = []
+    for buf in buffers:
+        if isinstance(buf, str):
+            decoded_buffers.append(memoryview(b64decode(buf)))
+        else:
+            decoded_buffers.append(buf)
+
+    msg["buffers"] = decoded_buffers
+    return msg
+
 
 # Dictionary mapping session id to widget ids
 # The key is the session id, and the value is a list of widget ids

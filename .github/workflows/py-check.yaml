@@ -1,0 +1,76 @@
+name: py-check.yaml
+
+on:
+  push:
+    branches: ["main", "rc-*"]
+    paths:
+      - "shinywidgets/**/*"
+      - "tests/**/*"
+      - "Makefile"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/py-check.yaml"
+  pull_request:
+    paths:
+      - "shinywidgets/**/*"
+      - "tests/**/*"
+      - "Makefile"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/py-check.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.9.x"
+
+jobs:
+  py-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --python ${{ matrix.python-version }} --all-groups
+
+      - name: Check formatting
+        run: make py-check-format
+
+      - name: Check types
+        run: make py-check-types
+
+      - name: Run unit tests (coverage)
+        if: matrix.python-version == '3.12'
+        run: make coverage-ci
+
+      - name: Run unit tests
+        if: matrix.python-version != '3.12'
+        run: make py-check-tests
+
+      - name: Upload coverage artifact
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+      - name: Run Playwright tests
+        if: matrix.python-version == '3.12'
+        run: make test-playwright

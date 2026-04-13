@@ -4,7 +4,6 @@ from bokeh.plotting import figure
 from shiny import App, reactive, render, ui
 from shinywidgets import bokeh_dependency, output_widget, render_bokeh
 
-
 app_ui = ui.page_fluid(
     ui.input_action_button("rerender", "Rerender"),
     ui.output_text("render_count"),
