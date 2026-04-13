@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 from playwright.sync_api import Page
-from shiny.pytest import create_app_fixture
-
-app = create_app_fixture("../../../examples/plotly/app.py")
 
 
 def test_example_plotly_first_visible_afterplot_is_already_resized(
-    page: Page, app
+    page: Page, local_app
 ) -> None:
     page.add_init_script(
         """
@@ -37,7 +34,7 @@ def test_example_plotly_first_visible_afterplot_is_already_resized(
         """
     )
 
-    page.goto(app.url)
+    page.goto(local_app.url)
     page.wait_for_function(
         "() => window.__plotlyAfterplotProbe.firstVisibleAfterplot !== null",
         timeout=30000,
