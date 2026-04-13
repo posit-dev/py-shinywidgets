@@ -89,13 +89,14 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         # Ensure we have a widget & smart layout defaults
         widget = as_widget(value)
         widget, fill = set_layout_defaults(widget)
-        plotly_first_paint = fill and widget_pkg(widget) == "plotly"
 
         self._widget = cast(WidgetT, widget)
 
         # Don't actually display anything unless this is a DOMWidget
         if not isinstance(widget, DOMWidget):
             return None
+
+        plotly_first_paint = fill and widget_pkg(widget) == "plotly"
 
         return {
             "model_id": str(widget.model_id),
