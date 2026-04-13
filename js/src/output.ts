@@ -119,13 +119,17 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;
 
+    if (data.widget_pkg !== "plotly") {
+      el.style.visibility = revealVisibility;
+      if (fill) {
+        this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
+      }
+      this._onImplementation(lmWidget, () => this._doResize());
+      return;
+    }
+
     if (fill) {
       this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
-    }
-    if (data.widget_pkg !== "plotly") {
-      this._onImplementation(lmWidget, () => this._doResize());
-      el.style.visibility = revealVisibility;
-      return;
     }
 
     this._onImplementation(lmWidget, () => {
