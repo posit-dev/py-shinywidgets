@@ -120,6 +120,30 @@ def test_render_returns_none_when_widget_is_not_domwidget(monkeypatch) -> None:
     assert asyncio.run(r._render()) is None
 
 
+def test_render_includes_widget_package_for_domwidgets(monkeypatch) -> None:
+    class FakeDOMWidget:
+        def __init__(self) -> None:
+            self.model_id = "widget-1"
+
+    widget = FakeDOMWidget()
+    r = rwb.render_widget_base()
+
+    @r
+    async def _():  # noqa: ANN202
+        return widget
+
+    monkeypatch.setattr(rwb, "DOMWidget", FakeDOMWidget)
+    monkeypatch.setattr(rwb, "as_widget", lambda value: widget)
+    monkeypatch.setattr(rwb, "set_layout_defaults", lambda w: (w, True))
+    monkeypatch.setattr(rwb, "widget_pkg", lambda w: "plotly")
+
+    assert asyncio.run(r._render()) == {
+        "model_id": "widget-1",
+        "fill": True,
+        "widget_pkg": "plotly",
+    }
+
+
 def test_widget_render_context_restores_session_vars(monkeypatch) -> None:
     session = FakeSession()
     ctx = FakeContext()

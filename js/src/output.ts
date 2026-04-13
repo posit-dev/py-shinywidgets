@@ -118,6 +118,12 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
     }
     this._onImplementation(lmWidget, () => {
+      if (data.widget_pkg !== "plotly") {
+        this._doResize();
+        el.style.visibility = "inherit";
+        return;
+      }
+
       const plotlyGraphDiv = this._findPlotlyGraphDiv(lmWidget);
       if (!plotlyGraphDiv) {
         this._doResize();
