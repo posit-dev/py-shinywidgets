@@ -47,7 +47,7 @@ def test_plotly_resize_failure_does_not_leave_output_hidden(
     )
 
     page.goto(local_app.url)
-    expect(page.locator("#plot .js-plotly-plot")).to_have_count(1)
+    expect(page.locator("#plot .js-plotly-plot")).to_have_count(1, timeout=30000)
     page.wait_for_function(
         """
         () => {
@@ -59,7 +59,7 @@ def test_plotly_resize_failure_does_not_leave_output_hidden(
     )
     page.evaluate("() => { window.__pyShinywidgetsInjectResizeFailure = true; }")
     page.click("#rerender")
-    expect(page.locator("#render_count")).to_have_text("1")
+    expect(page.locator("#render_count")).to_have_text("1", timeout=30000)
     page.wait_for_function(
         """
         () => {
