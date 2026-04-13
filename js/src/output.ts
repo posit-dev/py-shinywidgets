@@ -92,52 +92,40 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     this.renderError(el, err);
   }
   async renderValue(el: HTMLElement, data): Promise<void> {
-    await queueOutputTask(el, async () => {
-      // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
-      if (!data) {
-        el.style.visibility = "hidden";
-        return;
-      } else {
-        el.style.visibility = "inherit";
-      }
+    await queueOutputTask(el, () => this._renderValueQueued(el, data));
+  }
+  async _renderValueQueued(el: HTMLElement, data): Promise<void> {
+    // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
+    if (!data) {
+      el.style.visibility = "hidden";
+      return;
+    } else {
+      el.style.visibility = "inherit";
+    }
 
-      // Only forward the potential to fill if `output_widget(fillable=True)`
-      // _and_ the widget instance wants to fill
-      const fill = data.fill && el.classList.contains("html-fill-container");
-      if (fill) el.classList.add("forward-fill-potential");
+    // Only forward the potential to fill if `output_widget(fillable=True)`
+    // _and_ the widget instance wants to fill
+    const fill = data.fill && el.classList.contains("html-fill-container");
+    if (fill) el.classList.add("forward-fill-potential");
 
-      // At this time point, we should've already handled an 'open' message, and so
-      // the model should be ready to use
-      const model = await manager.get_model(data.model_id);
-      if (!model) {
-        throw new Error(`No model found for id ${data.model_id}`);
-      }
+    // At this time point, we should've already handled an 'open' message, and so
+    // the model should be ready to use
+    const model = await manager.get_model(data.model_id);
+    if (!model) {
+      throw new Error(`No model found for id ${data.model_id}`);
+    }
 
-      const priorHeight = el.getBoundingClientRect().height;
-      const priorMinHeight = el.style.minHeight;
-      if (priorHeight > 0) {
-        el.style.minHeight = `${priorHeight}px`;
-      }
+    await this._displayLatestView(el, model);
 
-      this._markStaleRoots(el);
-      try {
-        const view = await manager.create_view(model, {});
-        await manager.display_view(view, { el: el });
-      } finally {
-        this._pruneStaleRoots(el);
-        el.style.minHeight = priorMinHeight;
-      }
+    const lmWidget = this._latestRoot(el);
+    if (!lmWidget) {
+      throw new Error("Expected rendered .lm-Widget root after display_view().");
+    }
 
-      const lmWidget = this._latestRoot(el);
-      if (!lmWidget) {
-        throw new Error("Expected rendered .lm-Widget root after display_view().");
-      }
-
-      if (fill) {
-        this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
-      }
-      this._onImplementation(lmWidget, this._doResize);
-    });
+    if (fill) {
+      this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
+    }
+    this._onImplementation(lmWidget, this._doResize);
   }
   _onImplementation(lmWidget: HTMLElement, callback: () => void): void {
     if (this._hasImplementation(lmWidget)) {
@@ -195,6 +183,22 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
   _hasImplementation(lmWidget: HTMLElement): boolean {
     const impl = lmWidget.children[0];
     return impl && (impl.children.length > 0 || impl.shadowRoot?.children.length > 0);
+  }
+  async _displayLatestView(el: HTMLElement, model: any): Promise<void> {
+    const priorHeight = el.getBoundingClientRect().height;
+    const priorMinHeight = el.style.minHeight;
+    if (priorHeight > 0) {
+      el.style.minHeight = `${priorHeight}px`;
+    }
+
+    this._markStaleRoots(el);
+    try {
+      const view = await manager.create_view(model, {});
+      await manager.display_view(view, { el: el });
+    } finally {
+      this._pruneStaleRoots(el);
+      el.style.minHeight = priorMinHeight;
+    }
   }
 }
 
