@@ -77,6 +77,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
   }
   onValueError(el: HTMLElement, err: ErrorsMessageValue): void {
     Shiny.unbindAll(el);
+    el.style.visibility = "inherit";
     this.renderError(el, err);
   }
   async renderValue(el: HTMLElement, data): Promise<void> {
@@ -89,9 +90,8 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       return;
     }
 
-    // Treat widget outputs as hidden by default and only reveal them once
-    // their initial display conditions are satisfied.
-    el.style.visibility = hiddenVisibility;
+    const isPlotlyWidget = data.widget_pkg === "plotly";
+    el.style.visibility = isPlotlyWidget ? hiddenVisibility : revealVisibility;
 
     // Only forward the potential to fill if `output_widget(fillable=True)`
     // _and_ the widget instance wants to fill
@@ -122,27 +122,44 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     if (fill) {
       this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
     }
-    if (data.widget_pkg !== "plotly") {
-      el.style.visibility = revealVisibility;
+    if (!isPlotlyWidget) {
       this._onImplementation(lmWidget, () => this._doResize());
-      return;
     } else {
+      const renderToken = this._nextRenderToken(el);
+
       this._onImplementation(lmWidget, () => {
+        if (!this._isCurrentRenderToken(el, renderToken)) {
+          return;
+        }
+
         const plotEl = findPlotlyGraphDiv(lmWidget);
         if (!plotEl) {
           this._doResize();
-          el.style.visibility = revealVisibility;
+          if (this._isCurrentRenderToken(el, renderToken)) {
+            el.style.visibility = revealVisibility;
+          }
           return;
         }
 
         // Plotly FigureWidget may first render at its internal 360px fallback,
         // then resize after paint. Keep it hidden until a direct Plotly resize
         // completes so the first visible paint is already settled.
-        void waitForPlotlyReadyToReveal(plotEl, () => this._doResize()).then(() => {
-          el.style.visibility = revealVisibility;
+        void waitForPlotlyReadyToReveal(plotEl, () => this._doResize()).finally(() => {
+          if (this._isCurrentRenderToken(el, renderToken)) {
+            el.style.visibility = revealVisibility;
+          }
         });
       });
     }
+  }
+  _nextRenderToken(el: HTMLElement): number {
+    const trackedEl = el as HTMLElement & { __shinywidgetsRenderToken?: number };
+    const nextToken = (trackedEl.__shinywidgetsRenderToken ?? 0) + 1;
+    trackedEl.__shinywidgetsRenderToken = nextToken;
+    return nextToken;
+  }
+  _isCurrentRenderToken(el: HTMLElement, token: number): boolean {
+    return (el as HTMLElement & { __shinywidgetsRenderToken?: number }).__shinywidgetsRenderToken === token;
   }
   _onImplementation(lmWidget: HTMLElement, callback: () => void): void {
     if (this._hasImplementation(lmWidget)) {

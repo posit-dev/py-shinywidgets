@@ -4,6 +4,8 @@ interface PlotlyEventEmitter {
   removeListener(eventName: string, callback: () => void): void;
 }
 
+const plotlyAfterPlotTimeoutMs = 5000;
+
 export function findPlotlyGraphDiv(root: HTMLElement): HTMLElement | null {
   const plotlyEl = root.matches(".js-plotly-plot")
     ? root
@@ -19,11 +21,13 @@ export async function waitForPlotlyReadyToReveal(
   await waitForPlotlyAfterPlot(plotEl);
 
   if (plotly?.Plots?.resize) {
-    const afterResize = waitForPlotlyAfterPlot(plotEl);
-    await plotly.Plots.resize(plotEl);
-    await afterResize;
-  } else {
-    dispatchResize();
+    try {
+      const afterResize = waitForPlotlyAfterPlot(plotEl);
+      await plotly.Plots.resize(plotEl);
+      await afterResize;
+    } catch (err) {
+      console.error("Error resizing Plotly widget before reveal:", err);
+    }
   }
 
   dispatchResize();
@@ -46,7 +50,7 @@ function waitForPlotlyAfterPlot(plotEl: HTMLElement): Promise<void> {
     const timeoutId = window.setTimeout(() => {
       cleanup();
       resolve();
-    }, 1000);
+    }, plotlyAfterPlotTimeoutMs);
 
     if (hasMethod<PlotlyEventEmitter, "once">(plotEl, "once")) {
       plotEl.once("plotly_afterplot", handler);

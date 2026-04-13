@@ -17,6 +17,7 @@ def test_example_plotly_first_visible_afterplot_is_already_resized(
             gd.on("plotly_afterplot", () => {
               if (window.__plotlyAfterplotProbe.firstVisibleAfterplot) return;
               const out = document.querySelector("#scatterplot");
+              if (!out) return;
               const visibility = getComputedStyle(out).visibility;
               const layoutHeight = gd?._fullLayout?.height ?? null;
               const outHeight = out.getBoundingClientRect().height;
