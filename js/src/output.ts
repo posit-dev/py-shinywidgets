@@ -114,92 +114,62 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;
 
-    await this._settleView(el, lmWidget, fill);
-  }
-  async _settleView(el: HTMLElement, lmWidget: HTMLElement, fill: boolean): Promise<void> {
-    await this._waitForImplementation(lmWidget);
-
     if (fill) {
-      this._doAddFillClasses(lmWidget);
+      this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
     }
+    this._onImplementation(lmWidget, () => {
+      const plotlyGraphDiv = this._findPlotlyGraphDiv(lmWidget);
+      if (!plotlyGraphDiv) {
+        this._doResize();
+        el.style.visibility = "inherit";
+        return;
+      }
 
-    const plotlyGraphDiv = this._findPlotlyGraphDiv(lmWidget);
-    if (plotlyGraphDiv) {
       // Plotly FigureWidget may first render at its internal 360px fallback,
       // then resize after paint. Keep it hidden until a direct Plotly resize
       // completes so the first visible paint is already settled.
-      await this._settlePlotly(plotlyGraphDiv);
-      el.style.visibility = "inherit";
-      return;
-    }
-
-    await this._waitForAnimationFrames(2);
-    this._dispatchResize();
-    await this._waitForAnimationFrames(2);
-    this._dispatchResize();
-    await this._waitForAnimationFrames(2);
-
-    el.style.visibility = "inherit";
+      void this._settlePlotly(plotlyGraphDiv).then(() => {
+        el.style.visibility = "inherit";
+      });
+    });
   }
   async _settlePlotly(plotEl: HTMLElement): Promise<void> {
     const plotly = (window as any).Plotly;
-    if (!plotly?.Plots?.resize) {
-      await this._waitForAnimationFrames(2);
-      this._dispatchResize();
-      await this._waitForAnimationFrames(2);
+    await this._waitForPlotlyWidgetRender(plotEl);
+    await this._waitForPlotlyAfterPlot(plotEl);
+
+    if (plotly?.Plots?.resize) {
+      const afterResize = this._waitForPlotlyAfterPlot(plotEl);
+      await plotly.Plots.resize(plotEl);
+      await afterResize;
+    } else {
+      this._doResize();
+    }
+
+    this._doResize();
+  }
+  _onImplementation(lmWidget: HTMLElement, callback: () => void): void {
+    if (this._hasImplementation(lmWidget)) {
+      callback();
       return;
     }
 
-    await this._waitForPlotlyWidgetRender(plotEl);
-    await this._waitForPlotlyAfterPlot(plotEl);
-    await this._waitForAnimationFrames(1);
+    // Some widget implementation (e.g., ipyleaflet, pydeck) won't actually
+    // have rendered to the DOM at this point, so wait until they do
+    const mo = new MutationObserver((_mutations) => {
+      if (this._hasImplementation(lmWidget)) {
+        mo.disconnect();
+        callback();
+      }
+    });
 
-    const afterResize = this._waitForPlotlyAfterPlot(plotEl);
-    await plotly.Plots.resize(plotEl);
-    await afterResize;
-
-    this._dispatchResize();
-    await this._waitForAnimationFrames(1);
+    mo.observe(lmWidget, {childList: true});
   }
-  _waitForImplementation(lmWidget: HTMLElement): Promise<void> {
-    if (this._hasImplementation(lmWidget)) {
+  _waitForPlotlyWidgetRender(plotEl: HTMLElement): Promise<void> {
+    if ((plotEl as any)._fullLayout) {
       return Promise.resolve();
     }
 
-    // Some widget implementations won't actually populate their implementation
-    // subtree until after display_view() resolves, so observe the subtree rather
-    // than just lmWidget's direct children.
-    return new Promise((resolve) => {
-      const mo = new MutationObserver(() => {
-        if (this._hasImplementation(lmWidget)) {
-          mo.disconnect();
-          resolve();
-        }
-      });
-
-      mo.observe(lmWidget, {childList: true, subtree: true});
-
-      // Avoid keeping the widget hidden forever if the implementation never
-      // produces child nodes that we can observe.
-      window.setTimeout(() => {
-        mo.disconnect();
-        resolve();
-      }, 1000);
-    });
-  }
-  _waitForAnimationFrames(n: number): Promise<void> {
-    return new Promise((resolve) => {
-      const tick = (remaining: number) => {
-        if (remaining <= 0) {
-          resolve();
-          return;
-        }
-        requestAnimationFrame(() => tick(remaining - 1));
-      };
-      tick(n);
-    });
-  }
-  _waitForPlotlyWidgetRender(plotEl: HTMLElement): Promise<void> {
     return new Promise((resolve) => {
       const onRender = (evt: Event) => {
         const target = (evt as CustomEvent).detail?.element;
@@ -266,8 +236,12 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       quakWidget.style.maxHeight = "unset";
     }
   }
-  _dispatchResize(): void {
-    window.dispatchEvent(new Event('resize'));
+  _doResize(): void {
+    // Trigger resize event to force layout (setTimeout() is needed for altair)
+    // TODO: debounce this call?
+    setTimeout(() => {
+      window.dispatchEvent(new Event('resize'))
+    }, 0);
   }
   _findPlotlyGraphDiv(root: HTMLElement): HTMLElement | null {
     const plotlyEl = root.matches(".js-plotly-plot")
