@@ -97,10 +97,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // _and_ the widget instance wants to fill
     const fill = data.fill && el.classList.contains("html-fill-container");
     if (fill) el.classList.add("forward-fill-potential");
-    const plotlyGraphDivReady = data.widget_pkg === "plotly"
-      ? waitForPlotlyGraphDiv(el)
-      : null;
-
     // At this time point, we should've already handled an 'open' message, and so
     // the model should be ready to use
     const model = await manager.get_model(data.model_id);
@@ -130,6 +126,8 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       this._onImplementation(lmWidget, () => this._doResize());
       return;
     }
+
+    const plotlyGraphDivReady = waitForPlotlyGraphDiv(el);
 
     if (fill) {
       this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
