@@ -16,8 +16,9 @@ window.addEventListener("load", () => {
 // Let the world know about a value change so the Shiny input binding 
 // can subscribe to it (and thus call getValue() whenever that happens)
 class InputManager extends HTMLManager {
-  async display_view(msg, viewPromise, options): Promise<void> {
-    const view = await super.display_view(msg, viewPromise, options);
+  async display_view(viewOrPromise: any, el: HTMLElement): Promise<void> {
+    const view = await viewOrPromise;
+    await super.display_view(view, el);
 
     // Get the Shiny input container element for this view
     const $el_input = view.$el.parents(INPUT_SELECTOR);
