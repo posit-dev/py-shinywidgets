@@ -126,26 +126,23 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       el.style.visibility = revealVisibility;
       this._onImplementation(lmWidget, () => this._doResize());
       return;
-    }
+    } else {
+      this._onImplementation(lmWidget, () => {
+        const plotEl = findPlotlyGraphDiv(lmWidget);
+        if (!plotEl) {
+          this._doResize();
+          el.style.visibility = revealVisibility;
+          return;
+        }
 
-    this._onImplementation(lmWidget, () => {
-      const plotEl = findPlotlyGraphDiv(lmWidget);
-      if (!plotEl) {
-        this._doResize();
-        el.style.visibility = revealVisibility;
-        return;
-      }
-
-      // Plotly FigureWidget may first render at its internal 360px fallback,
-      // then resize after paint. Keep it hidden until a direct Plotly resize
-      // completes so the first visible paint is already settled.
-      void this._waitForPlotlyReadyToReveal(plotEl).then(() => {
-        el.style.visibility = revealVisibility;
+        // Plotly FigureWidget may first render at its internal 360px fallback,
+        // then resize after paint. Keep it hidden until a direct Plotly resize
+        // completes so the first visible paint is already settled.
+        void waitForPlotlyReadyToReveal(plotEl, () => this._doResize()).then(() => {
+          el.style.visibility = revealVisibility;
+        });
       });
-    });
-  }
-  async _waitForPlotlyReadyToReveal(plotEl: HTMLElement): Promise<void> {
-    await waitForPlotlyReadyToReveal(plotEl, () => this._doResize());
+    }
   }
   _onImplementation(lmWidget: HTMLElement, callback: () => void): void {
     if (this._hasImplementation(lmWidget)) {
