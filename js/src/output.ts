@@ -118,20 +118,17 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;
 
+    if (fill) {
+      this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
+    }
+
     if (data.widget_pkg !== "plotly") {
       el.style.visibility = revealVisibility;
-      if (fill) {
-        this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
-      }
       this._onImplementation(lmWidget, () => this._doResize());
       return;
     }
 
     const plotlyGraphDivReady = waitForPlotlyGraphDiv(el);
-
-    if (fill) {
-      this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
-    }
 
     this._onImplementation(lmWidget, () => {
       // Plotly FigureWidget may first render at its internal 360px fallback,
