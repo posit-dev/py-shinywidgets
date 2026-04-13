@@ -109,6 +109,10 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // _and_ the widget instance wants to fill
     const fill = data.fill && el.classList.contains("html-fill-container");
     if (fill) el.classList.add("forward-fill-potential");
+    if (plotlyFirstPaint) {
+      el.classList.add("shinywidgets-await-plotly-first-paint");
+      await this._waitForStableOutputSize(el);
+    }
 
     // At this time point, we should've already handled an 'open' message, and so
     // the model should be ready to use
@@ -128,11 +132,67 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
     }
     if (plotlyFirstPaint) {
-      el.classList.add("shinywidgets-await-plotly-first-paint");
       this._onImplementation(lmWidget, () => this._completePlotlyFirstPaint(el));
     } else {
       this._onImplementation(lmWidget, this._doResize);
     }
+  }
+  async _waitForStableOutputSize(el: HTMLElement): Promise<void> {
+    const epsilon = 0.5;
+    const quietMs = 125;
+    const minWaitMs = 1000;
+    const timeoutMs = 2000;
+    const start = performance.now();
+
+    let lastRect = el.getBoundingClientRect();
+    let lastChangeAt = start;
+
+    await new Promise<void>((resolve) => {
+      const ro = new ResizeObserver(() => {
+        const rect = el.getBoundingClientRect();
+        if (this._rectChanged(lastRect, rect, epsilon)) {
+          lastRect = rect;
+          lastChangeAt = performance.now();
+        }
+      });
+
+      const finish = (): void => {
+        ro.disconnect();
+        resolve();
+      };
+
+      ro.observe(el);
+
+      const tick = () => {
+        const rect = el.getBoundingClientRect();
+        if (this._rectChanged(lastRect, rect, epsilon)) {
+          lastRect = rect;
+          lastChangeAt = performance.now();
+        }
+
+        const hasStableSize = rect.width > 0 &&
+          rect.height > 0 &&
+          performance.now() - lastChangeAt >= quietMs;
+        const hasWaitedLongEnough = performance.now() - start >= minWaitMs;
+
+        if ((hasStableSize && hasWaitedLongEnough) || performance.now() - start >= timeoutMs) {
+          finish();
+          return;
+        }
+
+        requestAnimationFrame(tick);
+      };
+
+      requestAnimationFrame(tick);
+    });
+  }
+  _rectChanged(
+    prev: DOMRect | DOMRectReadOnly,
+    next: DOMRect | DOMRectReadOnly,
+    epsilon = 0.5,
+  ): boolean {
+    return Math.abs(prev.width - next.width) > epsilon ||
+      Math.abs(prev.height - next.height) > epsilon;
   }
   _onImplementation(lmWidget: HTMLElement, callback: () => void): void {
     if (this._hasImplementation(lmWidget)) {

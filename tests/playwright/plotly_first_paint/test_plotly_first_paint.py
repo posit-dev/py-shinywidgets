@@ -79,9 +79,22 @@ def test_plotly_stays_hidden_until_plot_root_exists(page: Page, local_app) -> No
     hidden_plot_frames = [
         item for item in timeline if item["hasPlot"] and item["outputVis"] == "hidden"
     ]
+    height_changes = []
+    prior_height = None
+    for item in timeline:
+        height = item["outputH"]
+        if prior_height is None or abs(height - prior_height) > 0.5:
+            height_changes.append(item)
+            prior_height = height
+    last_height_change = height_changes[-1]
 
     assert plot_found["hasPlot"] is True, timeline
     assert plot_found["outputVis"] == "hidden", timeline
     assert hidden_plot_frames, timeline
     assert first_visible_with_plot is not None, timeline
     assert first_visible_with_plot["t"] > plot_found["t"], timeline
+    assert plot_found["t"] > last_height_change["t"], {
+        "plotFound": plot_found,
+        "lastHeightChange": last_height_change,
+        "timeline": timeline,
+    }
