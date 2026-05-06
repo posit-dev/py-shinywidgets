@@ -34,6 +34,12 @@ export async function waitForPlotlyReadyToReveal(
 }
 
 function waitForPlotlyAfterPlot(plotEl: HTMLElement): Promise<void> {
+  // If Plotly has already completed its render, _fullLayout will be populated.
+  // This avoids waiting for an event that already fired before we subscribed.
+  if ((plotEl as any)._fullLayout) {
+    return Promise.resolve();
+  }
+
   return new Promise((resolve) => {
     const handler = () => {
       cleanup();
