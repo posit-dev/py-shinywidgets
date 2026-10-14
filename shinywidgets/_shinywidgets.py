@@ -153,8 +153,8 @@ def init_shiny_widget(w: Widget):
     # WidgetRenderContext) rather than the current Context, because the widget may be
     # constructed inside a reactive.isolate() block whose temporary Context gets
     # invalidated prematurely (e.g., when upstream reactive sources change).
-    if WidgetRenderContext.is_rendering_widget(session):
-        ctx = WidgetRenderContext.get_render_context(session)
+    if WidgetRenderContext.is_rendering_widget():
+        ctx = WidgetRenderContext.get_render_context()
 
         def on_close():
             with session_context(session):
