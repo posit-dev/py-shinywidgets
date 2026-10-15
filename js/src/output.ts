@@ -9,26 +9,68 @@ import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shi
  * Define a custom HTMLManager for use with Shiny
  ******************************************************************************/
 
+interface ModelWaiter {
+  resolve: (p: Promise<any>) => void;
+  reject: (e: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 class OutputManager extends HTMLManager {
   // Shiny delivers comm_open messages one at a time with microtask breaks
   // between them. A parent model's deserialization may reference a child model
   // whose comm_open hasn't been processed yet. The base get_model throws
   // synchronously for missing models, so we override it to wait for late
   // arrivals (with a timeout to avoid silent hangs).
-  private _modelWaiters = new Map<string, Array<(p: Promise<any>) => void>>();
+  private _modelWaiters = new Map<string, ModelWaiter[]>();
+
+  // html-manager 1.0 posts a lumino `resize` message to every displayed view
+  // on every window `resize` (0.20 had no such forwarding). ipywidgets-7-era
+  // widgets (e.g. ipyleaflet 0.17) can throw when that message arrives before
+  // they finish initializing (e.g. `this.obj.invalidateSize()` on a
+  // not-yet-created leaflet map). Message delivery is asynchronous
+  // (MessageLoop.flush), so the throw can't be caught at the post site; wrap
+  // the view's message handler instead and downgrade errors to warnings.
+  async display_view(viewOrPromise: any, el: HTMLElement): Promise<void> {
+    const view = await viewOrPromise;
+    this._guardLuminoMessageHandlers(view);
+    await super.display_view(view, el);
+  }
+
+  private _guardLuminoMessageHandlers(view: any): void {
+    // base 1.x (ipywidgets 7) routes through `processPhosphorMessage`,
+    // base 2.x+ (ipywidgets 8) through `processLuminoMessage`; wrap both.
+    for (const method of ['processLuminoMessage', 'processPhosphorMessage']) {
+      const original = view?.[method];
+      if (typeof original !== 'function' || original.__shinywidgetsGuarded) {
+        continue;
+      }
+      const guarded = function (this: any, msg: any) {
+        try {
+          return original.call(this, msg);
+        } catch (e) {
+          console.warn('shinywidgets: widget message handler failed', e);
+        }
+      };
+      guarded.__shinywidgetsGuarded = true;
+      view[method] = guarded;
+    }
+  }
 
   async get_model(model_id: string): Promise<any> {
     if (this.has_model(model_id)) {
       return super.get_model(model_id);
     }
     return new Promise<any>((resolve, reject) => {
+      const waiter = { resolve, reject } as ModelWaiter;
+      // Use a generous timeout: heavy sessions (1000s of comm_opens) or slow
+      // networks can legitimately delay a child's comm_open well past 10s.
+      waiter.timer = setTimeout(() => {
+        this._dropWaiter(model_id, waiter);
+        reject(new Error(`Timeout waiting for widget model ${model_id}`));
+      }, 30000);
       const waiters = this._modelWaiters.get(model_id) || [];
-      waiters.push(resolve);
+      waiters.push(waiter);
       this._modelWaiters.set(model_id, waiters);
-      setTimeout(
-        () => reject(new Error(`Timeout waiting for widget model ${model_id}`)),
-        10000
-      );
     });
   }
 
@@ -37,9 +79,37 @@ class OutputManager extends HTMLManager {
     const waiters = this._modelWaiters.get(model_id);
     if (waiters) {
       this._modelWaiters.delete(model_id);
-      for (const resolve of waiters) {
-        resolve(modelPromise);
+      for (const waiter of waiters) {
+        clearTimeout(waiter.timer);
+        waiter.resolve(modelPromise);
       }
+    }
+  }
+
+  async clear_state(): Promise<void> {
+    // Settle pending waiters so they don't linger until their timeouts fire
+    for (const [model_id, waiters] of this._modelWaiters) {
+      for (const waiter of waiters) {
+        clearTimeout(waiter.timer);
+        waiter.reject(
+          new Error(`Widget state cleared while waiting for model ${model_id}`)
+        );
+      }
+    }
+    this._modelWaiters.clear();
+    await super.clear_state();
+  }
+
+  private _dropWaiter(model_id: string, waiter: ModelWaiter): void {
+    const waiters = this._modelWaiters.get(model_id);
+    if (!waiters) {
+      return;
+    }
+    const remaining = waiters.filter((w) => w !== waiter);
+    if (remaining.length > 0) {
+      this._modelWaiters.set(model_id, remaining);
+    } else {
+      this._modelWaiters.delete(model_id);
     }
   }
 }
@@ -122,7 +192,9 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // the model should be ready to use
     const model = await manager.get_model(data.model_id);
 
-    const view = await manager.create_view(model, { el });
+    // N.B. no `{ el }` option: base-manager just passes options through to
+    // `view.options`, which nothing reads; attachment happens in display_view
+    const view = await manager.create_view(model);
     await manager.display_view(view, el);
 
     // Don't allow more than one .lmWidget container, which can happen
