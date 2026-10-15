@@ -145,7 +145,7 @@ def test_widget_render_context_records_the_render(monkeypatch) -> None:
     monkeypatch.setattr(rwb, "get_current_context", lambda: ctx)
 
     assert rwb.WidgetRenderContext.is_rendering_widget() is False
-    with rwb.WidgetRenderContext("new-id"):
+    with rwb.WidgetRenderContext():
         assert rwb.WidgetRenderContext.is_rendering_widget() is True
         assert rwb.WidgetRenderContext.get_render_context() is ctx
     assert rwb.WidgetRenderContext.is_rendering_widget() is False
@@ -155,9 +155,9 @@ def test_widget_render_context_restores_an_enclosing_render(monkeypatch) -> None
     outer, inner = FakeContext(), FakeContext()
 
     monkeypatch.setattr(rwb, "get_current_context", lambda: outer)
-    with rwb.WidgetRenderContext("outer"):
+    with rwb.WidgetRenderContext():
         monkeypatch.setattr(rwb, "get_current_context", lambda: inner)
-        with rwb.WidgetRenderContext("inner"):
+        with rwb.WidgetRenderContext():
             assert rwb.WidgetRenderContext.get_render_context() is inner
         assert rwb.WidgetRenderContext.get_render_context() is outer
 
@@ -177,7 +177,7 @@ def test_interleaved_renders_each_see_their_own_context(monkeypatch) -> None:
 
     async def render(name: str, delay: float) -> None:
         current["ctx"] = contexts[name]
-        with rwb.WidgetRenderContext(name):
+        with rwb.WidgetRenderContext():
             await asyncio.sleep(delay)
             seen[name] = rwb.WidgetRenderContext.get_render_context()
 
@@ -201,7 +201,7 @@ def test_task_started_during_a_render_is_not_rendering_after_it(monkeypatch) -> 
             await release.wait()
             seen.append(rwb.WidgetRenderContext.is_rendering_widget())
 
-        with rwb.WidgetRenderContext("out"):
+        with rwb.WidgetRenderContext():
             task = asyncio.create_task(later())
             await asyncio.sleep(0)
         release.set()

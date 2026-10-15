@@ -71,7 +71,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._contexts: set[Context] = set()
 
     async def render(self) -> Jsonifiable | None:
-        with WidgetRenderContext(self.output_id):
+        with WidgetRenderContext():
             return await self._render()
 
     async def _render(self) -> Jsonifiable | None:
@@ -230,7 +230,6 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
 
 @dataclass
 class _RenderingWidget:
-    output_id: str
     context: Context
     active: bool = True
 
@@ -245,7 +244,7 @@ _rendering_widget: ContextVar[_RenderingWidget | None] = ContextVar(
 
 class WidgetRenderContext:
     """
-    Record which output is rendering a widget.
+    Record the widget render that is running in the current asyncio task.
 
     This is used to ensure that widget's that are initialized in a render_widget()
     context are cleaned up properly when that context is re-entered.
@@ -256,13 +255,12 @@ class WidgetRenderContext:
     current Context with a short-lived temporary one).
     """
 
-    def __init__(self, output_id: str):
-        self.output_id = output_id
+    def __init__(self):
         self._rendering: _RenderingWidget | None = None
         self._token: Token[_RenderingWidget | None] | None = None
 
     def __enter__(self):
-        self._rendering = _RenderingWidget(self.output_id, get_current_context())
+        self._rendering = _RenderingWidget(get_current_context())
         self._token = _rendering_widget.set(self._rendering)
         return self
 
