@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import warnings
+from contextvars import ContextVar, Token
+from dataclasses import dataclass
 from typing import Generic, Optional, Tuple, TypeVar, cast
 
 from htmltools import Tag
@@ -11,7 +13,6 @@ from shiny.reactive._core import (
     get_current_context,  # pyright: ignore[reportPrivateImportUsage]
 )
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
-from shiny.session import require_active_session
 
 from ._as_widget import as_widget
 from ._dependencies import widget_pkg
@@ -70,7 +71,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._contexts: set[Context] = set()
 
     async def render(self) -> Jsonifiable | None:
-        with WidgetRenderContext(self.output_id):
+        with WidgetRenderContext():
             return await self._render()
 
     async def _render(self) -> Jsonifiable | None:
@@ -227,9 +228,23 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
     return (widget, fill)
 
 
+@dataclass
+class _RenderingWidget:
+    context: Context
+    active: bool = True
+
+
+# The render that is running in the current asyncio task. A ContextVar, because Shiny
+# can run a session's outputs as concurrent tasks that interleave at each `await`, and
+# each task needs to see only its own render.
+_rendering_widget: ContextVar[_RenderingWidget | None] = ContextVar(
+    "shinywidgets_rendering_widget", default=None
+)
+
+
 class WidgetRenderContext:
     """
-    Let the session know when a widget is currently being rendered.
+    Record the widget render that is running in the current asyncio task.
 
     This is used to ensure that widget's that are initialized in a render_widget()
     context are cleaned up properly when that context is re-entered.
@@ -240,36 +255,44 @@ class WidgetRenderContext:
     current Context with a short-lived temporary one).
     """
 
-    def __init__(self, output_id):
-        self.session = require_active_session(None)
-        self.output_id = output_id
-        self._old_id = vars(self.session).get("__shinywidget_current_output_id")
-        self._old_ctx = vars(self.session).get("__shinywidget_render_context")
+    def __init__(self):
+        self._rendering: _RenderingWidget | None = None
+        self._token: Token[_RenderingWidget | None] | None = None
 
     def __enter__(self):
-        vars(self.session)["__shinywidget_current_output_id"] = self.output_id
-        vars(self.session)["__shinywidget_render_context"] = get_current_context()
+        self._rendering = _RenderingWidget(get_current_context())
+        self._token = _rendering_widget.set(self._rendering)
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        vars(self.session)["__shinywidget_current_output_id"] = self._old_id
-        vars(self.session)["__shinywidget_render_context"] = self._old_ctx
+        assert self._rendering is not None and self._token is not None
+        # A task started during the render has a copy of this render's value. Mark
+        # it inactive, so a widget that such a task builds later is not tied to
+        # this output.
+        self._rendering.active = False
+        _rendering_widget.reset(self._token)
         return False
 
     @staticmethod
-    def is_rendering_widget(session):
-        id = vars(session).get("__shinywidget_current_output_id")
-        return id is not None
+    def _current() -> _RenderingWidget | None:
+        rendering = _rendering_widget.get()
+        if rendering is None or not rendering.active:
+            return None
+        return rendering
 
     @staticmethod
-    def get_render_context(session) -> Context:
+    def is_rendering_widget() -> bool:
+        return WidgetRenderContext._current() is not None
+
+    @staticmethod
+    def get_render_context() -> Context:
         """
         Get the reactive Context that was active when the render function started.
 
         This returns the render output's Context rather than the current Context,
         which may be a temporary isolate Context.
         """
-        ctx = vars(session).get("__shinywidget_render_context")
-        if ctx is None:
+        rendering = WidgetRenderContext._current()
+        if rendering is None:
             raise RuntimeError("Not currently rendering a widget")
-        return ctx
+        return rendering.context

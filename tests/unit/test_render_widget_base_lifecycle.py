@@ -21,10 +21,6 @@ class FakeContext:
             fn()
 
 
-class FakeSession:
-    pass
-
-
 def test_value_and_widget_are_read_only() -> None:
     r = rwb.render_widget_base()
 
@@ -144,41 +140,81 @@ def test_render_includes_widget_package_for_domwidgets(monkeypatch) -> None:
     }
 
 
-def test_widget_render_context_restores_session_vars(monkeypatch) -> None:
-    session = FakeSession()
+def test_widget_render_context_records_the_render(monkeypatch) -> None:
     ctx = FakeContext()
-
-    monkeypatch.setattr(rwb, "require_active_session", lambda _session: session)
     monkeypatch.setattr(rwb, "get_current_context", lambda: ctx)
 
-    vars(session)["__shinywidget_current_output_id"] = "old-id"
-    vars(session)["__shinywidget_render_context"] = "old-ctx"
+    assert rwb.WidgetRenderContext.is_rendering_widget() is False
+    with rwb.WidgetRenderContext():
+        assert rwb.WidgetRenderContext.is_rendering_widget() is True
+        assert rwb.WidgetRenderContext.get_render_context() is ctx
+    assert rwb.WidgetRenderContext.is_rendering_widget() is False
 
-    with rwb.WidgetRenderContext("new-id"):
-        assert vars(session)["__shinywidget_current_output_id"] == "new-id"
-        assert vars(session)["__shinywidget_render_context"] is ctx
-        assert rwb.WidgetRenderContext.is_rendering_widget(session) is True
 
-    assert vars(session)["__shinywidget_current_output_id"] == "old-id"
-    assert vars(session)["__shinywidget_render_context"] == "old-ctx"
-    assert (
-        rwb.WidgetRenderContext.is_rendering_widget(session) is True
-    )  # old-id is not None
+def test_widget_render_context_restores_an_enclosing_render(monkeypatch) -> None:
+    outer, inner = FakeContext(), FakeContext()
+
+    monkeypatch.setattr(rwb, "get_current_context", lambda: outer)
+    with rwb.WidgetRenderContext():
+        monkeypatch.setattr(rwb, "get_current_context", lambda: inner)
+        with rwb.WidgetRenderContext():
+            assert rwb.WidgetRenderContext.get_render_context() is inner
+        assert rwb.WidgetRenderContext.get_render_context() is outer
 
 
 def test_widget_render_context_get_render_context_raises_outside() -> None:
-    session = FakeSession()
     with pytest.raises(RuntimeError, match="Not currently rendering a widget"):
-        rwb.WidgetRenderContext.get_render_context(session)
+        rwb.WidgetRenderContext.get_render_context()
+
+
+def test_interleaved_renders_each_see_their_own_context(monkeypatch) -> None:
+    # Shiny can run a session's outputs as concurrent tasks. Each render must see its
+    # own Context after an `await`, even when another render started meanwhile.
+    contexts = {"a": FakeContext(), "b": FakeContext()}
+    current = {"ctx": None}
+    monkeypatch.setattr(rwb, "get_current_context", lambda: current["ctx"])
+    seen: dict[str, object] = {}
+
+    async def render(name: str, delay: float) -> None:
+        current["ctx"] = contexts[name]
+        with rwb.WidgetRenderContext():
+            await asyncio.sleep(delay)
+            seen[name] = rwb.WidgetRenderContext.get_render_context()
+
+    async def main() -> None:
+        await asyncio.gather(render("a", 0.01), render("b", 0.02))
+        assert rwb.WidgetRenderContext.is_rendering_widget() is False
+
+    asyncio.run(main())
+    assert seen == {"a": contexts["a"], "b": contexts["b"]}
+
+
+def test_task_started_during_a_render_is_not_rendering_after_it(monkeypatch) -> None:
+    monkeypatch.setattr(rwb, "get_current_context", lambda: FakeContext())
+    seen: list[bool] = []
+
+    async def main() -> None:
+        release = asyncio.Event()
+
+        async def later() -> None:
+            seen.append(rwb.WidgetRenderContext.is_rendering_widget())
+            await release.wait()
+            seen.append(rwb.WidgetRenderContext.is_rendering_widget())
+
+        with rwb.WidgetRenderContext():
+            task = asyncio.create_task(later())
+            await asyncio.sleep(0)
+        release.set()
+        await task
+
+    asyncio.run(main())
+    assert seen == [True, False]
 
 
 def test_render_wraps_in_widget_render_context_and_restores_on_error(
     monkeypatch,
 ) -> None:
-    session = FakeSession()
     ctx = FakeContext()
-
-    monkeypatch.setattr(rwb, "require_active_session", lambda _session: session)
     monkeypatch.setattr(rwb, "get_current_context", lambda: ctx)
 
     r = rwb.render_widget_base()
@@ -187,15 +223,12 @@ def test_render_wraps_in_widget_render_context_and_restores_on_error(
     async def _():  # noqa: ANN202
         return 1
 
-    vars(session)["__shinywidget_current_output_id"] = "old-id"
-    vars(session)["__shinywidget_render_context"] = "old-ctx"
-
     class _Boom(Exception):
         pass
 
     async def _render_boom():  # type: ignore[no-untyped-def]
-        assert rwb.WidgetRenderContext.is_rendering_widget(session) is True
-        assert rwb.WidgetRenderContext.get_render_context(session) is ctx
+        assert rwb.WidgetRenderContext.is_rendering_widget() is True
+        assert rwb.WidgetRenderContext.get_render_context() is ctx
         raise _Boom()
 
     monkeypatch.setattr(r, "_render", _render_boom)
@@ -203,5 +236,4 @@ def test_render_wraps_in_widget_render_context_and_restores_on_error(
     with pytest.raises(_Boom):
         asyncio.run(r.render())
 
-    assert vars(session)["__shinywidget_current_output_id"] == "old-id"
-    assert vars(session)["__shinywidget_render_context"] == "old-ctx"
+    assert rwb.WidgetRenderContext.is_rendering_widget() is False

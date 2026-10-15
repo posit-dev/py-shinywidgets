@@ -191,10 +191,10 @@ def test_render_context_invalidation_closes_widget_and_preserves_model_id(
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
 
     monkeypatch.setattr(
-        sw.WidgetRenderContext, "is_rendering_widget", staticmethod(lambda _s: True)
+        sw.WidgetRenderContext, "is_rendering_widget", staticmethod(lambda: True)
     )
     monkeypatch.setattr(
-        sw.WidgetRenderContext, "get_render_context", staticmethod(lambda _s: ctx)
+        sw.WidgetRenderContext, "get_render_context", staticmethod(lambda: ctx)
     )
     monkeypatch.setattr(sw, "session_context", lambda _s: _nullcontext())
 
