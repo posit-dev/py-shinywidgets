@@ -44,6 +44,25 @@
 }
 
 /*
+* Allow Shiny's busy indicator (spinner) to show while recalculating, even though
+* renderValue() puts `visibility: hidden` on the output element (both when the
+* widget value is None/null and while a plotly widget is settling). This mirrors
+* Shiny's own handling of htmlwidgets (.html-widget-output) in busy-indicators.css.
+* https://github.com/posit-dev/py-shinywidgets/issues/213
+*/
+[data-shiny-busy-spinners] .recalculating.shiny-ipywidget-output {
+  visibility: inherit !important;
+}
+
+[data-shiny-busy-spinners] .recalculating.shiny-ipywidget-output > * {
+  visibility: hidden;
+}
+
+[data-shiny-busy-spinners] .recalculating.shiny-ipywidget-output :after {
+  visibility: visible;
+}
+
+/*
 * Our fill.css ends up overriding this rule from bqplot...
 * https://github.com/bqplot/bqplot/blob/c186fcd/js/less/bqplot.less#L170
 */
