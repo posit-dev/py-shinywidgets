@@ -12,7 +12,7 @@ from shiny._connection import MockConnection
 from shiny.reactive._core import Context
 from shiny.session import session_context
 from shinywidgets import session_lifetime
-from shinywidgets._lifecycle import get_lifecycle
+from shinywidgets._lifecycle import SessionLifecycle, get_lifecycle
 from shinywidgets._render_widget_base import WidgetRenderContext, render_widget_base
 
 
@@ -331,6 +331,126 @@ def test_cross_session_widget_rejected(widget_session: Session) -> None:
         asyncio.run(other_session.close())
 
 
+def test_closed_widget_rejected_after_owning_session_is_collected(
+    widget_session: Session,
+) -> None:
+    widget, owner_reference = closed_widget_from_ended_session()
+    gc.collect()
+    assert owner_reference() is None
+
+    with session_context(widget_session):
+        renderer = render_widget_base()
+
+        @renderer
+        async def _() -> HTML:
+            return widget
+
+        with Context()():
+            with pytest.raises(RuntimeError, match="session has ended"):
+                asyncio.run(renderer.render())
+
+
+def test_closed_widget_rejected_when_model_id_is_reused(
+    widget_session: Session,
+) -> None:
+    with session_context(widget_session):
+        old = HTML(value="old", model_id="reused-id")
+        old.close()
+        replacement = HTML(value="replacement", model_id="reused-id")
+        assert old._model_id == replacement.model_id
+
+        renderer = render_widget_base()
+
+        @renderer
+        async def _() -> HTML:
+            return old
+
+        with Context()():
+            with pytest.raises(RuntimeError, match="has been closed"):
+                asyncio.run(renderer.render())
+
+
+def test_child_task_widget_closes_when_inherited_render_retires(
+    widget_session: Session,
+) -> None:
+    async def run() -> None:
+        release = asyncio.Event()
+
+        async def create_widget() -> HTML:
+            await release.wait()
+            return HTML(value="late")
+
+        with session_context(widget_session):
+            lifecycle = get_lifecycle(widget_session)
+            context = Context()
+            with context():
+                with WidgetRenderContext():
+                    task = asyncio.create_task(create_widget())
+            release.set()
+            widget = await task
+            model_id = widget.model_id
+            await reactive.flush()
+            context.invalidate()
+            await reactive.flush()
+
+        assert model_id not in lifecycle.records
+        assert model_id not in lifecycle.comm_manager.comms
+
+    asyncio.run(run())
+
+
+def test_child_task_rejects_construction_after_inherited_render_retires(
+    widget_session: Session,
+) -> None:
+    async def run() -> None:
+        release = asyncio.Event()
+
+        async def create_widget() -> HTML:
+            await release.wait()
+            return HTML(value="late")
+
+        with session_context(widget_session):
+            context = Context()
+            with context():
+                with WidgetRenderContext():
+                    task = asyncio.create_task(create_widget())
+            context.invalidate()
+            release.set()
+            with pytest.raises(RuntimeError, match="retired lifetime"):
+                await task
+            await reactive.flush()
+
+    asyncio.run(run())
+
+
+def test_child_task_can_explicitly_select_session_after_render_retires(
+    widget_session: Session,
+) -> None:
+    async def run() -> None:
+        release = asyncio.Event()
+
+        async def create_widget() -> HTML:
+            await release.wait()
+            with session_lifetime():
+                return HTML(value="retained")
+
+        with session_context(widget_session):
+            lifecycle = get_lifecycle(widget_session)
+            context = Context()
+            with context():
+                with WidgetRenderContext():
+                    task = asyncio.create_task(create_widget())
+            context.invalidate()
+            release.set()
+            widget = await task
+            await reactive.flush()
+
+        assert widget.model_id in lifecycle.records
+        assert widget.model_id in lifecycle.comm_manager.comms
+
+    asyncio.run(run())
+
+
 def test_closed_metadata_does_not_retain_widget(widget_session: Session) -> None:
     with session_context(widget_session):
         widget = HTML(value="released")
@@ -461,3 +581,16 @@ def test_module_render_publishes_through_root_session(
     assert publication.root_id == model_id
     assert result["offer_id"] == publication.offer_id
     assert result["candidate_lease_id"] == publication.provisional_lease_id
+
+
+def closed_widget_from_ended_session() -> tuple[
+    HTML, weakref.ReferenceType[SessionLifecycle]
+]:
+    app = App(ui.page_fluid(), lambda input, output, session: None)
+    session = app._create_session(MockConnection())
+    with session_context(session):
+        widget = HTML(value="cached")
+        owner_reference = weakref.ref(get_lifecycle(session))
+        asyncio.run(session.close())
+        asyncio.run(reactive.flush())
+    return widget, owner_reference
