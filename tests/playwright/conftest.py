@@ -65,3 +65,72 @@ def assert_rerender_cleanup(
     expect(page.locator(ready_selector)).to_have_count(1)
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel defined" in err.lower() for err in errors)
+
+
+# Samples canvases under a selector and returns True if any contains enough
+# opaque, non-white pixels (i.e., something was actually drawn). Only works
+# for 2D canvases (WebGL canvases return null from getContext('2d')).
+CANVAS_HAS_PIXELS_JS = """(sel) => {
+  // Collect canvases, piercing shadow roots (bokeh 3 renders into shadow DOM,
+  // which querySelectorAll alone doesn't reach)
+  const canvases = [];
+  const walk = (root) => {
+    if (root.tagName === 'CANVAS') canvases.push(root);
+    for (const el of root.querySelectorAll('*')) {
+      if (el.tagName === 'CANVAS') canvases.push(el);
+      if (el.shadowRoot) walk(el.shadowRoot);
+    }
+  };
+  for (const root of document.querySelectorAll(sel)) walk(root);
+  for (const c of canvases) {
+    let ctx = null;
+    try { ctx = c.getContext('2d'); } catch (e) { continue; }
+    if (!ctx || !c.width || !c.height) continue;
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let nonblank = 0;
+    for (let i = 0; i < d.length; i += 4 * 397) {
+      if (d[i + 3] > 0 && (d[i] < 250 || d[i + 1] < 250 || d[i + 2] < 250)) nonblank++;
+    }
+    if (nonblank > 10) return true;
+  }
+  return false;
+}"""
+
+
+def collect_errors(page: Page) -> tuple[list[str], list[str]]:
+    """Collect browser console errors and failed (>= 400) request URLs."""
+    errors: list[str] = []
+    failed_requests: list[str] = []
+    page.on(
+        "console",
+        lambda msg: errors.append(msg.text) if msg.type == "error" else None,
+    )
+    page.on("pageerror", lambda err: errors.append(str(err)))
+    page.on(
+        "response",
+        lambda res: failed_requests.append(res.url) if res.status >= 400 else None,
+    )
+    return errors, failed_requests
+
+
+def assert_no_unexpected_errors(
+    errors: list[str],
+    failed_requests: list[str],
+    allowed_404s: tuple[str, ...] = (),
+) -> None:
+    """Assert no unexpected browser errors.
+
+    Failed requests whose URL contains one of `allowed_404s` are tolerated, along
+    with the generic "Failed to load resource" console error they produce (the
+    console message doesn't include the URL, so it can't be matched precisely).
+    """
+    assert all(
+        any(allowed in url for allowed in allowed_404s) for url in failed_requests
+    )
+    tolerate_resource_errors = len(failed_requests) > 0
+    unexpected = [
+        err
+        for err in errors
+        if not (tolerate_resource_errors and "Failed to load resource" in err)
+    ]
+    assert not unexpected
