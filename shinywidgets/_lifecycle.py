@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Literal, cast
 from uuid import uuid4
@@ -8,6 +10,7 @@ from weakref import WeakKeyDictionary
 
 from ipywidgets import Widget
 from shiny import Session
+from shiny.session import get_current_session
 
 from ._comm import OrphanedShinyComm, ShinyCommManager
 
@@ -18,7 +21,43 @@ __all__ = (
     "SessionLifecycle",
     "WidgetRecord",
     "get_lifecycle",
+    "session_lifetime",
+    "use_lifetime",
 )
+
+
+@contextmanager
+def session_lifetime() -> Iterator[None]:
+    """
+    Retain widgets constructed inside this block for the current Shiny session.
+
+    Widgets created while rendering an output are temporary: they are closed
+    when that render is retired. Constructing a widget inside
+    `session_lifetime()` gives it the session's lifetime instead, so it
+    survives re-renders and can be displayed again later (for example, a widget
+    cached per dataset).
+
+    Exiting the block restores the previous construction policy; it does not
+    close widgets created inside the block. Referencing, assigning, or
+    returning an existing widget inside the block does not transfer that
+    widget's lifetime. Retained widgets are closed when the session ends.
+
+    Raises
+    ------
+    RuntimeError
+        If there is no active Shiny session.
+    """
+    session = get_current_session()
+    if session is None:
+        raise RuntimeError("session_lifetime() requires an active Shiny session")
+    # On the Express discovery pass, there is no real session yet; the same app
+    # source runs again on the real session pass.
+    if session.is_stub_session():
+        yield
+        return
+    lifecycle = get_lifecycle(session.root_scope())
+    with use_lifetime(lifecycle.session_lifetime):
+        yield
 
 
 @dataclass(eq=False)
@@ -155,6 +194,27 @@ class SessionLifecycle:
         if instances.get(model_id) is widget:
             del instances[model_id]
 
+    def new_render_lifetime(self) -> Lifetime:
+        if not self.session_lifetime.accepting:
+            raise RuntimeError("Cannot render widgets: the Shiny session has ended")
+        lifetime = Lifetime(
+            session_id=self.session.id, kind="render", generation_id=uuid4().hex
+        )
+        self.render_lifetimes.add(lifetime)
+        return lifetime
+
+    def retire_render(self, lifetime: Lifetime) -> None:
+        if lifetime.kind != "render":
+            raise ValueError("retire_render() expects a render lifetime")
+        if lifetime not in self.render_lifetimes:
+            return
+        # Stop admission of new temporary work before closing this phase's
+        # temporary records.
+        lifetime.accepting = False
+        self.render_lifetimes.discard(lifetime)
+        for model_id in list(lifetime.roots):
+            self.close_record(model_id, reason="render-retired")
+
     def close_session(self) -> None:
         self.session_lifetime.accepting = False
         for lifetime in self.render_lifetimes:
@@ -178,3 +238,21 @@ class SessionLifecycle:
 
 
 _lifecycles: WeakKeyDictionary[Session, SessionLifecycle] = WeakKeyDictionary()
+
+# The explicitly selected construction lifetime for the current context
+# (e.g., inside a `session_lifetime()` block). Overrides the render/session
+# defaults until the block exits.
+selected_lifetime: ContextVar[Lifetime | None] = ContextVar(
+    "shinywidgets_lifetime", default=None
+)
+
+
+@contextmanager
+def use_lifetime(lifetime: Lifetime) -> Iterator[None]:
+    if not lifetime.accepting:
+        raise RuntimeError("Cannot construct widgets in a retired lifetime")
+    token = selected_lifetime.set(lifetime)
+    try:
+        yield
+    finally:
+        selected_lifetime.reset(token)

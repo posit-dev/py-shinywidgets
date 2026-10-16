@@ -28,7 +28,12 @@ from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, PendingShinyComm, ShinyComm
 from ._dependencies import require_dependency
-from ._lifecycle import Lifetime, SessionLifecycle, get_lifecycle
+from ._lifecycle import (
+    Lifetime,
+    SessionLifecycle,
+    get_lifecycle,
+    selected_lifetime,
+)
 from ._render_widget_base import WidgetRenderContext
 from ._utils import package_dir
 
@@ -124,20 +129,6 @@ def init_shiny_widget(w: Widget):
 
     lifecycle.set_initializer(record, _open_shiny_comm.destroy)
 
-    # If the widget initialized in a reactive _output_ context, then cleanup the widget
-    # when the context gets invalidated. Use the render output's Context (captured by
-    # WidgetRenderContext) rather than the current Context, because the widget may be
-    # constructed inside a reactive.isolate() block whose temporary Context gets
-    # invalidated prematurely (e.g., when upstream reactive sources change).
-    if WidgetRenderContext.is_rendering_widget():
-        ctx = WidgetRenderContext.get_render_context()
-
-        def on_close():
-            with session_context(session):
-                lifecycle.close_record(id, reason="render-retired")
-
-        ctx.on_invalidate(on_close)
-
     # Some widget's JS make external requests for static files (e.g.,
     # ipyleaflet markers) under this resource path. Note that this assumes that
     # we're setting the data-base-url attribute on the <body> (which we should
@@ -162,6 +153,12 @@ def current_lifetime(lifecycle: SessionLifecycle) -> Lifetime:
     in `_render_widget_base.WidgetRenderContext`; explicit selection is a
     `_lifecycle` ContextVar.)
     """
+    lifetime = selected_lifetime.get()
+    if lifetime is not None:
+        return lifetime
+    render_lifetime = WidgetRenderContext.get_render_lifetime()
+    if render_lifetime is not None:
+        return render_lifetime
     return lifecycle.session_lifetime
 
 

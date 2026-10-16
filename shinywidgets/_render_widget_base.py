@@ -13,9 +13,11 @@ from shiny.reactive._core import (
     get_current_context,  # pyright: ignore[reportPrivateImportUsage]
 )
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
+from shiny.session import get_current_session
 
 from ._as_widget import as_widget
 from ._dependencies import widget_pkg
+from ._lifecycle import Lifetime, get_lifecycle
 from ._output_widget import output_widget
 
 __all__ = (
@@ -231,6 +233,7 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
 @dataclass
 class _RenderingWidget:
     context: Context
+    lifetime: Lifetime | None = None
     active: bool = True
 
 
@@ -260,7 +263,17 @@ class WidgetRenderContext:
         self._token: Token[_RenderingWidget | None] | None = None
 
     def __enter__(self):
-        self._rendering = _RenderingWidget(get_current_context())
+        context = get_current_context()
+        lifetime: Lifetime | None = None
+        session = get_current_session()
+        if session is not None and not session.is_stub_session():
+            lifecycle = get_lifecycle(session.root_scope())
+            lifetime = lifecycle.new_render_lifetime()
+            # Register retirement before any widget construction: Shiny invokes
+            # late invalidation registration immediately, so a render whose
+            # context is already invalidated never admits new temporary widgets.
+            context.on_invalidate(lambda: lifecycle.retire_render(lifetime))
+        self._rendering = _RenderingWidget(context, lifetime)
         self._token = _rendering_widget.set(self._rendering)
         return self
 
@@ -283,6 +296,18 @@ class WidgetRenderContext:
     @staticmethod
     def is_rendering_widget() -> bool:
         return WidgetRenderContext._current() is not None
+
+    @staticmethod
+    def get_render_lifetime() -> Lifetime | None:
+        """
+        The durable lifetime of the render running in the current asyncio task,
+        if any. Unlike the lexical context manager, this lifetime survives the
+        render block (it is retired when the render's Context invalidates).
+        """
+        rendering = WidgetRenderContext._current()
+        if rendering is None:
+            return None
+        return rendering.lifetime
 
     @staticmethod
     def get_render_context() -> Context:

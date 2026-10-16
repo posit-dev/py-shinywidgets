@@ -176,30 +176,26 @@ def test_session_end_cleanup_closes_widgets_and_clears_maps(
     assert root not in reset_shinywidgets_globals["lifecycles"]
 
 
-def test_render_context_invalidation_closes_widget_and_preserves_model_id(
+def test_render_lifetime_retirement_closes_widget_and_preserves_model_id(
     monkeypatch, reset_shinywidgets_globals
 ):
     sw = reset_shinywidgets_globals["sw"]
     lc = reset_shinywidgets_globals["lc"]
     reactive = FakeReactive()
     root = FakeSession(session_id="root")
-    ctx = FakeContext()
 
     _patch_common(monkeypatch, sw, lc, root, reactive)
     _patch_model_id(monkeypatch, lc, "w1")
 
-    monkeypatch.setattr(
-        sw.WidgetRenderContext, "is_rendering_widget", staticmethod(lambda: True)
-    )
-    monkeypatch.setattr(
-        sw.WidgetRenderContext, "get_render_context", staticmethod(lambda: ctx)
-    )
+    lifecycle = sw.get_lifecycle(root)
+    lifetime = lifecycle.new_render_lifetime()
+    monkeypatch.setattr(sw, "current_lifetime", lambda _lc: lifetime)
 
     w = FakeWidget()
     sw.init_shiny_widget(w)  # type: ignore[arg-type]
+    assert lifecycle.records["w1"].lifetime is lifetime
 
-    lifecycle = sw.get_lifecycle(root)
-    ctx.run_on_invalidate()
+    lifecycle.retire_render(lifetime)
     assert w.closed is True
     assert "w1" not in lifecycle.records
     # The stable model ID is preserved as inert metadata on the closed widget.
