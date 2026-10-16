@@ -57,6 +57,14 @@ class HiddenTargetWidget(Widget):
     hidden = Any().tag(sync=True, to_json=hidden_serializer)
 
 
+def unadapted_hidden_serializer(value: object, widget: object) -> object:
+    return hidden_serializer(value, widget)
+
+
+class UnadaptedHiddenWidget(Widget):
+    hidden = Any().tag(sync=True, to_json=unadapted_hidden_serializer)
+
+
 def test_references_are_objects_not_strings(widget_session: Session) -> None:
     with session_context(widget_session):
         child = HTML(value="child")
@@ -308,3 +316,92 @@ def test_new_child_of_live_shared_parent_is_retained(
         asyncio.run(reactive.flush())
     assert child_id in lifecycle.records
     assert child_id in lifecycle.comm_manager.comms
+
+
+def test_live_opaque_root_retains_hidden_target(widget_session: Session) -> None:
+    with session_context(widget_session):
+        lifecycle = get_lifecycle(widget_session)
+        with session_lifetime():
+            source = UnadaptedHiddenWidget()
+        context = Context()
+        with context():
+            with WidgetRenderContext():
+                hidden_target = HTML(value="hidden")
+                other_temporary = HTML(value="temporary")
+                hidden_id = hidden_target.model_id
+                other_id = other_temporary.model_id
+        source.hidden = HiddenReference(hidden_target)
+        asyncio.run(reactive.flush())
+        with pytest.warns(RuntimeWarning, match="custom trait serializer"):
+            context.invalidate()
+            asyncio.run(reactive.flush())
+        # While a live root reaches an opaque serializer, collection retains
+        # records rather than risk closing a hidden dependency.
+        assert hidden_id in lifecycle.records
+        assert hidden_id in lifecycle.comm_manager.comms
+        assert other_id in lifecycle.records
+
+        # Once the opaque source is gone, a complete snapshot resumes
+        # collection.
+        source.close()
+        lifecycle.collect()
+    assert hidden_id not in lifecycle.records
+    assert other_id not in lifecycle.records
+
+
+def test_link_unlink_disposer_runs_at_retirement(widget_session: Session) -> None:
+    from ipywidgets import link
+
+    with session_context(widget_session):
+        lifecycle = get_lifecycle(widget_session)
+        context = Context()
+        with context():
+            with WidgetRenderContext():
+                s1 = IntSlider(value=1)
+                s2 = IntSlider(value=2)
+                observer_link = link((s1, "value"), (s2, "value"))
+                lifetime = lifecycle.records[s1.model_id].lifetime
+
+        # Widget-model graph collection alone cannot remove the observer link.
+        lifecycle.add_disposer(lifetime, observer_link.unlink)
+        asyncio.run(reactive.flush())
+        context.invalidate()
+        asyncio.run(reactive.flush())
+        s1.value = 5
+    assert s2.value == 1
+
+
+def test_disposer_failure_reports_and_continues(widget_session: Session) -> None:
+    with session_context(widget_session):
+        lifecycle = get_lifecycle(widget_session)
+        context = Context()
+        with context():
+            with WidgetRenderContext():
+                widget = HTML(value="x")
+                lifetime = lifecycle.records[widget.model_id].lifetime
+        ran: list[str] = []
+
+        def failing() -> None:
+            raise ValueError("dispose failed")
+
+        lifecycle.add_disposer(lifetime, failing)
+        lifecycle.add_disposer(lifetime, lambda: ran.append("second"))
+        with pytest.warns(RuntimeWarning, match="dispose failed"):
+            context.invalidate()
+    assert ran == ["second"]
+
+
+def test_late_disposer_registration_runs_immediately(
+    widget_session: Session,
+) -> None:
+    with session_context(widget_session):
+        lifecycle = get_lifecycle(widget_session)
+        context = Context()
+        with context():
+            with WidgetRenderContext():
+                widget = HTML(value="x")
+                lifetime = lifecycle.records[widget.model_id].lifetime
+        context.invalidate()
+        ran: list[str] = []
+        lifecycle.add_disposer(lifetime, lambda: ran.append("late"))
+    assert ran == ["late"]

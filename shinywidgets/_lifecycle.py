@@ -102,6 +102,7 @@ class Lifetime:
     generation_id: str
     accepting: bool = True
     roots: set[str] = field(default_factory=set)
+    disposers: list[Callable[[], None]] = field(default_factory=list)
 
 
 @dataclass
@@ -275,6 +276,22 @@ class SessionLifecycle:
         self.render_lifetimes.add(lifetime)
         return lifetime
 
+    def add_disposer(self, lifetime: Lifetime, disposer: Callable[[], None]) -> None:
+        """
+        Register cleanup for a non-model resource (e.g., a Python `link()`'s
+        `unlink`) owned by a lifetime. Disposers run once, after the
+        lifetime's admission closes. Registering with an already-retired
+        lifetime invokes the disposer immediately.
+        """
+        if lifetime.session_id != self.session.id:
+            raise RuntimeError(
+                "Cannot register a disposer for another session's lifetime"
+            )
+        if not lifetime.accepting:
+            disposer()
+            return
+        lifetime.disposers.append(disposer)
+
     def retire_render(self, lifetime: Lifetime) -> None:
         if lifetime.kind != "render":
             raise ValueError("retire_render() expects a render lifetime")
@@ -286,6 +303,20 @@ class SessionLifecycle:
         lifetime.accepting = False
         self.render_lifetimes.discard(lifetime)
         self.collect()
+        self._run_disposers(lifetime)
+
+    def _run_disposers(self, lifetime: Lifetime) -> None:
+        disposers = lifetime.disposers
+        lifetime.disposers = []
+        for dispose in disposers:
+            try:
+                dispose()
+            except Exception as e:
+                warnings.warn(
+                    f"Error disposing a widget resource: {e}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
 
     def collect(self) -> None:
         """
@@ -374,7 +405,9 @@ class SessionLifecycle:
         self.session_lifetime.accepting = False
         for lifetime in self.render_lifetimes:
             lifetime.accepting = False
+            self._run_disposers(lifetime)
         self.render_lifetimes.clear()
+        self._run_disposers(self.session_lifetime)
         # Disable new sends before closing records so close() doesn't attempt to
         # publish on a terminated connection.
         self.comm_manager.active = False
