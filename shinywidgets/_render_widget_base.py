@@ -286,9 +286,7 @@ class WidgetRenderContext:
 
     def __exit__(self, exc_type, exc_value, traceback):
         assert self._rendering is not None and self._token is not None
-        # A task started during the render has a copy of this render's value. Mark
-        # it inactive, so a widget that such a task builds later is not tied to
-        # this output.
+        # Child tasks share this value, so mark their lexical render inactive too.
         self._rendering.active = False
         _rendering_widget.reset(self._token)
         return False
@@ -311,7 +309,7 @@ class WidgetRenderContext:
         if any. Unlike the lexical context manager, this lifetime survives the
         render block (it is retired when the render's Context invalidates).
         """
-        rendering = WidgetRenderContext._current()
+        rendering = _rendering_widget.get()
         if rendering is None:
             return None
         return rendering.lifetime
