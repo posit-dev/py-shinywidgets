@@ -235,18 +235,24 @@ class SessionLifecycle:
         widget is not evidence that the widget is still live.
         """
         owner_ref = _widget_owners.get(widget)
-        owner = owner_ref() if owner_ref is not None else None
-        if owner is not None and owner is not self:
+        if owner_ref is None:
+            return
+        owner = owner_ref()
+        if owner is None:
+            raise RuntimeError(
+                "This widget's Shiny session has ended and it can't be rendered again."
+            )
+        if owner is not self:
             raise RuntimeError(
                 "This widget belongs to a different Shiny session. Widgets "
                 "can't be shared across sessions; construct one widget per "
                 "session instead."
             )
-        if owner is None:
-            return
         model_id = cast(str | None, getattr(widget, "_model_id", None))
-        if model_id is not None and model_id in self.records:
-            return
+        if model_id is not None:
+            record = self.records.get(model_id)
+            if record is not None and record.widget is widget:
+                return
         closed = self._closed_widgets.get(widget)
         if closed is not None and closed.reason == "render-retired":
             raise RuntimeError(
