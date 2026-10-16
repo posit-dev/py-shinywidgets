@@ -19,6 +19,7 @@ __all__ = (
     "render_widget",
     "render_altair",
     "render_bokeh",
+    "render_holoviews",
     "render_plotly",
     "render_pydeck",
 )
@@ -39,6 +40,11 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         res = super().auto_output_ui()
         res.children.append(bokeh_dependency())
         return res
+
+
+# holoviews objects are coerced to bokeh figures (via hv.render()), so this
+# renderer shares render_bokeh's need for the bokeh JS dependency
+class render_holoviews(render_bokeh): ...
 
 
 class render_plotly(render_widget_base[ValueT, FigureWidget]):  # pyright: ignore[reportInvalidTypeArguments]

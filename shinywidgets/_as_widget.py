@@ -63,6 +63,23 @@ def as_widget_bokeh(x: object) -> Optional[Widget]:
     return BokehModel(x)  # type: ignore
 
 
+def as_widget_holoviews(x: object) -> Optional[Widget]:
+    # holoviews is guaranteed to be installed here since this function is only
+    # called when x comes from the holoviews package
+    import holoviews as hv
+    from holoviews.core.dimension import Dimensioned
+
+    if not isinstance(x, Dimensioned):
+        raise TypeError(
+            f"Don't know how to coerce {x} into a holoviews Dimensioned object."
+        )
+
+    # Render to a bokeh figure, then reuse the bokeh coercion. Note this drops
+    # HoloViews-specific server-side interactivity (e.g., streams on
+    # DynamicMaps), but retains bokeh-level interactivity (pan/zoom/etc).
+    return as_widget_bokeh(hv.render(x, backend="bokeh"))  # type: ignore
+
+
 def as_widget_plotly(x: object) -> Optional[Widget]:
     # Don't need a try import here since this won't be called unless x is a plotly object
     import plotly.graph_objects as go
@@ -99,6 +116,7 @@ def as_widget_pydeck(x: object) -> Optional[Widget]:
 AS_WIDGET_MAP = {
     "altair": as_widget_altair,
     "bokeh": as_widget_bokeh,
+    "holoviews": as_widget_holoviews,
     "plotly": as_widget_plotly,
     "pydeck": as_widget_pydeck,
 }
