@@ -5,7 +5,7 @@
 REPO_ROOT ?= $(shell git rev-parse --show-toplevel 2>/dev/null || pwd)
 
 PYTHON_PATHS := shinywidgets tests
-PYRIGHT_PATHS := shinywidgets tests/__init__.py tests/unit/test_version_metadata.py
+PYRIGHT_PATHS := shinywidgets tests/__init__.py tests/unit/test_version_metadata.py tests/unit/test_widget_lifecycle.py tests/unit/test_widget_dependencies.py
 PYTEST_UNIT := uv run pytest -c "$(REPO_ROOT)/pytest.ini" --confcutdir "$(REPO_ROOT)"
 PYTEST_PLAYWRIGHT := uv run pytest -c "$(REPO_ROOT)/tests/playwright/playwright-pytest.ini" --confcutdir "$(REPO_ROOT)/tests/playwright" "$(REPO_ROOT)/tests/playwright"
 
