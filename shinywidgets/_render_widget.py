@@ -11,9 +11,7 @@ if TYPE_CHECKING:
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
-        object
-    )
+    JupyterChart = BokehModel = MapWidget = FigureWidget = DeckGLWidget = object
 
 from ._dependencies import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
@@ -39,8 +37,6 @@ class render_altair(render_widget_base[ValueT, JupyterChart]): ...
 
 
 class render_maplibre(render_widget_base[ValueT, MapWidget]): ...
-
-
 
 
 class render_bokeh(render_widget_base[ValueT, BokehModel]):
