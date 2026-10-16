@@ -10,6 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking changes
 
 * shinywidgets now requires ipywidgets 8 or newer. (#237)
+* A widget created while rendering an output now belongs to that render: it is closed when the output re-renders, and rendering it again raises an error. To reuse a widget across re-renders, construct it inside `session_lifetime()` (see below). (#248)
+
+### New features
+
+* Added `session_lifetime()`. Widgets constructed inside this block stay alive until the Shiny session ends, so you can cache a widget and render it again later, without recreating it. For example, to cache one Plotly figure per dataset: (#248)
+
+  ```python
+  import plotly.graph_objects as go
+  from shinywidgets import render_plotly, session_lifetime
+
+  cache = {}
+
+  @render_plotly
+  def plot():
+      name = input.dataset()
+      if name not in cache:
+          with session_lifetime():
+              cache[name] = go.FigureWidget(make_figure(name))
+      return cache[name]
+  ```
+
+  Note that a widget still belongs to the session that created it, so keep one cache per session: a cached widget can't be shared across sessions. Also, putting an existing widget inside the block does not extend that widget's lifetime; only newly constructed widgets get the session's lifetime.
 
 ### Bug fixes
 
@@ -17,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed an issue where an ipyleaflet map with many markers could turn gray and show no markers when re-rendered. (#215, #237)
 * Fixed an issue where fonts used by widget CSS, such as FontAwesome icons, failed to load (404). (#237)
 * Replacing, clearing, or showing an error in a widget output now removes its previous view through the widget lifecycle, so detached views do not remain tracked by the browser manager. Reusing the same widget across renders keeps its model alive. (#246)
+* Fixed an issue where a widget closed before its deferred initialization ran (for example, because the output re-rendered or the session ended right after construction) was reopened by the scheduled initialization. (#248)
+* Fixed an issue where widget messages could go through the wrong browser session when multiple sessions were active at the same time. Each session now owns its widgets, and their messages go only to the session that created them. (#248)
 
 ## [0.8.2] - 2026-10-15
 

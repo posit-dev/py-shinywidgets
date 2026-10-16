@@ -13,9 +13,11 @@ from shiny.reactive._core import (
     get_current_context,  # pyright: ignore[reportPrivateImportUsage]
 )
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
+from shiny.session import get_current_session
 
 from ._as_widget import as_widget
 from ._dependencies import widget_pkg
+from ._lifecycle import Lifetime, get_lifecycle
 from ._output_widget import output_widget
 
 __all__ = (
@@ -89,6 +91,13 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
         # Ensure we have a widget & smart layout defaults
         widget = as_widget(value)
+
+        # Reject widgets that can't be displayed (closed, retired, or owned by
+        # another session) before initialization/display.
+        session = get_current_session()
+        if session is not None and not session.is_stub_session():
+            get_lifecycle(session.root_scope()).check_displayable(widget)
+
         widget, fill = set_layout_defaults(widget)
 
         self._widget = cast(WidgetT, widget)
@@ -231,6 +240,7 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
 @dataclass
 class _RenderingWidget:
     context: Context
+    lifetime: Lifetime | None = None
     active: bool = True
 
 
@@ -260,15 +270,23 @@ class WidgetRenderContext:
         self._token: Token[_RenderingWidget | None] | None = None
 
     def __enter__(self):
-        self._rendering = _RenderingWidget(get_current_context())
+        context = get_current_context()
+        lifetime: Lifetime | None = None
+        session = get_current_session()
+        if session is not None and not session.is_stub_session():
+            lifecycle = get_lifecycle(session.root_scope())
+            lifetime = lifecycle.new_render_lifetime()
+            # Register retirement before any widget construction: Shiny invokes
+            # late invalidation registration immediately, so a render whose
+            # context is already invalidated never admits new temporary widgets.
+            context.on_invalidate(lambda: lifecycle.retire_render(lifetime))
+        self._rendering = _RenderingWidget(context, lifetime)
         self._token = _rendering_widget.set(self._rendering)
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         assert self._rendering is not None and self._token is not None
-        # A task started during the render has a copy of this render's value. Mark
-        # it inactive, so a widget that such a task builds later is not tied to
-        # this output.
+        # Child tasks share this value, so mark their lexical render inactive too.
         self._rendering.active = False
         _rendering_widget.reset(self._token)
         return False
@@ -283,6 +301,18 @@ class WidgetRenderContext:
     @staticmethod
     def is_rendering_widget() -> bool:
         return WidgetRenderContext._current() is not None
+
+    @staticmethod
+    def get_render_lifetime() -> Lifetime | None:
+        """
+        The durable lifetime of the render running in the current asyncio task,
+        if any. Unlike the lexical context manager, this lifetime survives the
+        render block (it is retired when the render's Context invalidates).
+        """
+        rendering = _rendering_widget.get()
+        if rendering is None:
+            return None
+        return rendering.lifetime
 
     @staticmethod
     def get_render_context() -> Context:

@@ -6,8 +6,6 @@ import os
 from base64 import b64decode
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Optional, Sequence, Union, cast
-from uuid import uuid4
-from weakref import WeakSet
 
 import ipywidgets
 
@@ -28,8 +26,14 @@ from shiny.session import get_current_session, require_active_session, session_c
 
 from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
-from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
+from ._comm import BufferType, PendingShinyComm, ShinyComm
 from ._dependencies import require_dependency
+from ._lifecycle import (
+    Lifetime,
+    SessionLifecycle,
+    get_lifecycle,
+    selected_lifetime,
+)
 from ._render_widget_base import WidgetRenderContext
 from ._utils import package_dir
 
@@ -63,40 +67,8 @@ def init_shiny_widget(w: Widget):
     # will be some module-specific copy.
     session = session.root_scope()
 
-    # If this is the first time we've seen this session, initialize some things
-    if session not in SESSIONS:
-        SESSIONS.add(session)
-
-        # Somewhere inside ipywidgets, it makes requests for static files
-        # under the publicPath set by the webpack.config.js file.
-        session.app._dependency_handler.mount(
-            "/dist/",
-            StaticFiles(directory=os.path.join(package_dir("shinywidgets"), "static")),
-            name="shinywidgets-static-resources",
-        )
-
-        # Handle messages from the client. Note that widgets like qgrid send client->server messages
-        # to figure out things like what filter to be shown in the table.
-        @reactive.effect
-        @reactive.event(session.input.shinywidgets_comm_send)
-        def _():
-            msg_txt = session.input.shinywidgets_comm_send()
-            msg = _decode_comm_buffers(json.loads(msg_txt))
-            comm_id = msg["content"]["comm_id"]
-            if comm_id in COMM_MANAGER.comms:
-                comm: ShinyComm = COMM_MANAGER.comms[comm_id]
-                comm.handle_msg(msg)
-
-        def _cleanup_session_state():
-            SESSIONS.remove(session)
-            # Cleanup any widgets that were created in this session
-            for id in SESSION_WIDGET_ID_MAP[session.id]:
-                widget = WIDGET_INSTANCE_MAP.get(id)
-                if widget:
-                    widget.close()
-            del SESSION_WIDGET_ID_MAP[session.id]
-
-        session.on_ended(_cleanup_session_state)
+    lifecycle = get_lifecycle(session)
+    wire_session(session, lifecycle)
 
     # Make sure window.require() calls made by 3rd party widgets
     # (via handle_comm_open() -> new_model() -> loadClass() -> requireLoader())
@@ -106,23 +78,32 @@ def init_shiny_widget(w: Widget):
     else:
         widget_dep = require_dependency(w, session, SHINYWIDGETS_EXTENSION_WARNING)
 
-    # By the time we get here, the user has already had an opportunity to specify a model_id,
-    # so it isn't yet populated, generate a random one so we can assign the same id to the comm
-    if getattr(w, "_model_id", None) is None:
-        w._model_id = uuid4().hex
-
-    id = cast(str, w._model_id)
+    record = lifecycle.register(w, current_lifetime(lifecycle))
+    id = record.model_id
 
     # Since the actual ShinyComm() is initialized _after_ the Widget is initialized,
     # and Widget.__init__() includes a call to Widget.open() which opens an unnecessary
-    # comm, we just set the comm to a dummy comm for now (to avoid unnecessary work)
-    w.comm = OrphanedShinyComm(id)
+    # comm, we just set the comm to a dummy comm for now (to avoid unnecessary work).
+    # Unlike OrphanedShinyComm, closing this comm is observable, so that closing the
+    # widget before initialization cancels the scheduled open (instead of letting it
+    # reopen the closed widget).
+    w.comm = PendingShinyComm(id, notify_closed=lambda: lifecycle.close_record(id))
 
     # Schedule the opening of the comm to happen sometime after this init function.
     # This is important for widgets like plotly that do additional initialization that
     # is required to get a valid widget state.
+    # N.B. this closure deliberately avoids capturing the widget or its record: the
+    # effect object is retained by the session until it ends, and capturing them
+    # would retain closed widgets for the whole session.
     @reactive.effect(priority=99999)
     def _open_shiny_comm():
+        record = lifecycle.records.get(id)
+        if record is None or record.state == "closed":
+            _open_shiny_comm.destroy()
+            return
+
+        record.state = "opening"
+        w = record.widget
 
         # Call _repr_mimebundle_() before get_state() since it may modify the widget
         # in an important way (unfortunately, it does for plotly)
@@ -137,43 +118,21 @@ def init_shiny_widget(w: Widget):
         with widget_comm_patch():
             w.comm = ShinyComm(
                 comm_id=id,
-                comm_manager=COMM_MANAGER,
+                comm_manager=lifecycle.comm_manager,
                 target_name="jupyter.widget",
+                session=session,
                 data={"state": state, "buffer_paths": buffer_paths},
                 buffers=cast(BufferType, buffers),
                 # TODO: should this be hard-coded?
                 metadata={"version": __protocol_version__},
                 html_deps=session._process_ui(TagList(widget_dep))["deps"],
+                on_closed=lambda: lifecycle.close_record(id),
             )
 
+        record.state = "open"
         _open_shiny_comm.destroy()
 
-    # If the widget initialized in a reactive _output_ context, then cleanup the widget
-    # when the context gets invalidated. Use the render output's Context (captured by
-    # WidgetRenderContext) rather than the current Context, because the widget may be
-    # constructed inside a reactive.isolate() block whose temporary Context gets
-    # invalidated prematurely (e.g., when upstream reactive sources change).
-    if WidgetRenderContext.is_rendering_widget():
-        ctx = WidgetRenderContext.get_render_context()
-
-        def on_close():
-            with session_context(session):
-                w.close()
-                # By closing the widget, we also close the comm, which sets w.comm to
-                # None. Unfortunately, the w.model_id property looks up w.comm.comm_id
-                # at runtime, and some packages like ipyleaflet want to use this id
-                # to manage references between widgets.
-                w.comm = OrphanedShinyComm(id)
-                # Assigning a comm has the side-effect of adding back a reference to
-                # the widget instance, so remove it again
-                if id in WIDGET_INSTANCE_MAP:
-                    del WIDGET_INSTANCE_MAP[id]
-
-        ctx.on_invalidate(on_close)
-
-    # Keep track of what session this widget belongs to (so we can close it when the
-    # session ends)
-    SESSION_WIDGET_ID_MAP.setdefault(session.id, []).append(id)
+    lifecycle.set_initializer(record, _open_shiny_comm.destroy)
 
     # Some widget's JS make external requests for static files (e.g.,
     # ipyleaflet markers) under this resource path. Note that this assumes that
@@ -190,12 +149,57 @@ def init_shiny_widget(w: Widget):
             )
 
 
+def current_lifetime(lifecycle: SessionLifecycle) -> Lifetime:
+    """
+    The lifetime that widgets constructed right now belong to.
+
+    Selection precedence is an explicit `session_lifetime()` selection, then the
+    current widget render, then the root session. (Render lifetimes are captured
+    in `_render_widget_base.WidgetRenderContext`; explicit selection is a
+    `_lifecycle` ContextVar.)
+    """
+    lifetime = selected_lifetime.get()
+    if lifetime is not None:
+        return lifetime
+    render_lifetime = WidgetRenderContext.get_render_lifetime()
+    if render_lifetime is not None:
+        return render_lifetime
+    return lifecycle.session_lifetime
+
+
+def wire_session(session: Session, lifecycle: SessionLifecycle) -> None:
+    """
+    Set up session-level widget machinery (static mounts, client->server message
+    routing) the first time a session constructs a widget.
+    """
+    if lifecycle.wired:
+        return
+    lifecycle.wired = True
+
+    # Somewhere inside ipywidgets, it makes requests for static files
+    # under the publicPath set by the webpack.config.js file.
+    session.app._dependency_handler.mount(
+        "/dist/",
+        StaticFiles(directory=os.path.join(package_dir("shinywidgets"), "static")),
+        name="shinywidgets-static-resources",
+    )
+
+    with session_context(session):
+        # Handle messages from the client. Note that widgets like qgrid send client->server messages
+        # to figure out things like what filter to be shown in the table.
+        @reactive.effect
+        @reactive.event(session.input.shinywidgets_comm_send)
+        def _():
+            msg_txt = session.input.shinywidgets_comm_send()
+            msg = _decode_comm_buffers(json.loads(msg_txt))
+            comm_id = msg["content"]["comm_id"]
+            comm = lifecycle.comm_manager.comms.get(comm_id)
+            if comm is not None:
+                comm.handle_msg(msg)
+
+
 # TODO: can we restore the widget constructor in a sensible way?
 Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
-
-# Use WeakSet() over Set() so that the session can be garbage collected
-SESSIONS: WeakSet[Session] = WeakSet()
-COMM_MANAGER = ShinyCommManager()
 
 
 def _decode_comm_buffers(msg: dict[str, Any]) -> dict[str, Any]:
@@ -213,14 +217,6 @@ def _decode_comm_buffers(msg: dict[str, Any]) -> dict[str, Any]:
     msg["buffers"] = decoded_buffers
     return msg
 
-
-# Dictionary mapping session id to widget ids
-# The key is the session id, and the value is a list of widget ids
-SESSION_WIDGET_ID_MAP: dict[str, list[str]] = {}
-
-# Dictionary of all "active" widgets (ipywidgets automatically adds to this dictionary as
-# new widgets are created, but they won't get removed until the widget is explictly closed)
-WIDGET_INSTANCE_MAP = cast(dict[str, Widget], Widget.widgets)
 
 # --------------------------------------
 # Reactivity

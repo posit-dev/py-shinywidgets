@@ -17,6 +17,7 @@ except ImportError:
 
 from ._as_widget import as_widget
 from ._dependencies import bokeh_dependency
+from ._lifecycle import session_lifetime
 from ._output_widget import output_widget
 from ._render_widget import (
     render_altair,
@@ -39,6 +40,8 @@ __all__ = (
     "reactive_read",
     # UI methods third
     "output_widget",
+    # Widget lifetimes
+    "session_lifetime",
     # Other methods last
     "as_widget",
     "bokeh_dependency",
