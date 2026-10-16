@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### New features
 
 * Added a `render_maplibre()` renderer, and `as_widget()` now coerces a [maplibre](https://eoda-dev.github.io/py-maplibregl/) `Map` into its `MapWidget` (requires `pip install 'maplibre[anywidget]'`). Note that maplibre also ships its own native Shiny bindings, but the widget route gives you `reactive_read()` access to map state (e.g., `view_state`, `clicked`).
-* Added a `render_matplotlib()` renderer, and `as_widget()` now coerces matplotlib `Figure` (and `Axes`) objects into an interactive [ipympl](https://matplotlib.org/ipympl/) widget. This covers anything that produces a matplotlib figure (e.g., seaborn, `pandas.DataFrame.plot()`, scikit-learn displays) and requires `pip install ipympl`.
+* Added a `render_matplotlib()` renderer, and `as_widget()` now coerces matplotlib `Figure` (and `Axes`) objects into an interactive [ipympl](https://matplotlib.org/ipympl/) widget. This covers anything that produces a matplotlib figure (e.g., seaborn, `pandas.DataFrame.plot()`, scikit-learn displays) and requires `pip install ipympl`. Figures fill their container (and resize with it) in filling layouts, and pyplot figures rendered this way are automatically deregistered from pyplot's global figure registry when the render retires, so repeated re-renders don't leak figures (or trigger "More than 20 figures have been opened" warnings).
 
 ### Breaking changes
 

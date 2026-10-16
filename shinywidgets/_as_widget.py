@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Optional, cast
 
 from htmltools import HTMLDependency
@@ -9,6 +11,7 @@ from ._dependencies import widget_pkg
 if TYPE_CHECKING:
     from bokeh.models import LayoutDOM
     from jupyter_bokeh import BokehModel
+    from matplotlib.figure import Figure
     from panel.viewable import Viewable
 
 __all__ = ("as_widget",)
@@ -129,19 +132,59 @@ def as_widget_mpl(x: object) -> Optional[Widget]:
         )
 
     try:
-        from ipympl.backend_nbagg import _Backend_ipympl
+        from ipympl.backend_nbagg import Canvas, FigureManager
     except ImportError:
         raise ImportError(
             "Install the ipympl package to use matplotlib with shinywidgets (pip install ipympl)."
         )
 
-    # Canvas(figure=x) alone isn't enough -- ipympl's message handling requires
-    # a FigureManager, which the backend normally creates. Use the backend's own
-    # helper (the same one %matplotlib widget uses) so the canvas is functional.
-    manager = _Backend_ipympl.new_figure_manager_given_figure(
-        getattr(x, "number", id(x)), x
-    )
-    return manager.canvas  # type: ignore
+    # Canvas(figure=x) alone isn't enough -- ipympl's browser message handling
+    # goes through canvas.manager (e.g., a resize message calls
+    # manager.handle_json()), so the canvas needs a FigureManager (which also
+    # wires up the toolbar).
+    canvas = Canvas(x)
+    FigureManager(canvas, getattr(x, "number", id(x)))
+
+    _close_mpl_figure_with_lifetime(x)
+
+    return canvas
+
+
+def _close_mpl_figure_with_lifetime(fig: Figure) -> None:
+    """
+    Deregister a pyplot figure (via plt.close()) when the current widget
+    lifetime ends.
+
+    Figures created through pyplot (e.g., plt.subplots()) stay registered in
+    pyplot's global figure manager, which leaks memory (and triggers "More
+    than 20 figures have been opened" warnings) as renders repeat. The widget
+    lifecycle already closes the ipympl canvas; this takes care of the pyplot
+    registration.
+    """
+    num = getattr(fig, "number", None)
+    if num is None:
+        # Not a pyplot-managed figure, so there's nothing to deregister
+        return
+
+    import matplotlib.pyplot as plt
+
+    if num not in plt.get_fignums():
+        return
+
+    from shiny.session import get_current_session
+
+    session = get_current_session()
+    if session is None or session.is_stub_session():
+        return
+
+    # Imported here to avoid a circular import at module load time
+    from ._lifecycle import get_lifecycle
+    from ._shinywidgets import current_lifetime
+
+    lifecycle = get_lifecycle(session)
+    # plt.close(fig) deregisters by figure identity (Gcf.destroy_fig()), so
+    # it's safe even if the user already closed it or the number was reused
+    lifecycle.add_disposer(current_lifetime(lifecycle), lambda: plt.close(fig))
 
 
 def as_widget_plotly(x: object) -> Optional[Widget]:
