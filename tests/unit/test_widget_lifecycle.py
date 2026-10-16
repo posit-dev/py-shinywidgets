@@ -118,6 +118,7 @@ def test_interleaved_renders_keep_separate_lifetimes(
                 await asyncio.sleep(delay)
                 return HTML(value=name)
 
+            renderer.output_id = name
             ctx = Context()
             contexts[name] = ctx
             with ctx():
@@ -139,6 +140,13 @@ def test_interleaved_renders_keep_separate_lifetimes(
 
         contexts["a"].invalidate()
         asyncio.run(reactive.flush())
+
+        # The published value's provisional display lease keeps the old widget
+        # alive until the browser's presentation is replaced (simulated here
+        # by retracting the output's publication).
+        assert model_ids["a"] in lifecycle.records
+        lifecycle.retract("a")
+        lifecycle.collect()
 
         assert model_ids["a"] not in lifecycle.records
         assert model_ids["b"] in lifecycle.records

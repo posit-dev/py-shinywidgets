@@ -42,9 +42,13 @@ class FakeInput:
         self._shinywidgets_comm_send_value: str = json.dumps(
             {"content": {"comm_id": "missing"}}
         )
+        self._shinywidgets_display_value: str = json.dumps({})
 
     def shinywidgets_comm_send(self) -> str:
         return self._shinywidgets_comm_send_value
+
+    def shinywidgets_display(self) -> str:
+        return self._shinywidgets_display_value
 
 
 class FakeSession:

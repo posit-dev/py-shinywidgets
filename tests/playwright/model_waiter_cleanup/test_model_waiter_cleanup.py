@@ -1,158 +1,123 @@
+"""
+Model-waiter mechanics on the epoch-owned registry.
+
+The #237 clearing-counter cases these replace have epoch-based successors in
+`tests/playwright/lifecycle_epochs/` (retirement is permanent now, so "clear
+then resume on the same manager" no longer exists). What remains here are the
+waiter mechanics themselves: late-child resolution, prompt retirement
+rejection, and waiter accounting in the lifecycle snapshot.
+"""
+
+from __future__ import annotations
+
 import pytest
-from playwright.sync_api import Page, Route
+from playwright.sync_api import Page
 from shiny.run import ShinyAppProc
+from tests.playwright.conftest import open_lifecycle_page
 
-
-def test_clear_cancels_wait_created_by_pending_model(manager_page: Page) -> None:
-    result = manager_page.evaluate(
-        """async () => {
-            const manager = window.widgetManager;
-            const parent = manager.new_model({
-                model_id: 'parent',
-                model_name: 'HTMLModel',
-                model_module: '@jupyter-widgets/controls',
-                model_module_version: '2.0.0'
-            }, {layout: 'IPY_MODEL_missing-layout'});
-            const cleared = await Promise.race([
-                manager.clear_state().then(() => true),
-                new Promise(resolve => setTimeout(() => resolve(false), 1000))
-            ]);
-            if (!cleared) {
-                return {cleared};
-            }
-            await parent;
-            return {cleared, parentRegistered: manager.has_model('parent')};
-        }"""
-    )
-
-    assert result["cleared"], "Cleanup stalled on a child lookup started after clearing"
-    assert not result["parentRegistered"]
-
-
-def test_clear_cancels_existing_waits_and_restores_waiting(manager_page: Page) -> None:
-    result = manager_page.evaluate(
-        """async () => {
-            const manager = window.widgetManager;
-            const existing = manager.get_model('missing').then(
-                () => 'resolved', error => error.message
-            );
-            await manager.clear_state();
-            const cancelled = await Promise.race([
-                existing,
-                new Promise(resolve => setTimeout(() => resolve('pending'), 1000))
-            ]);
-            const lookup = manager.get_model('later');
-            const model = await manager.new_model({
-                model_id: 'later',
-                model_name: 'HTMLModel',
-                model_module: '@jupyter-widgets/controls',
-                model_module_version: '2.0.0'
-            });
-            return {cancelled, resumed: await lookup === model};
-        }"""
-    )
-
-    assert result == {
-        "cancelled": "Widget state cleared while waiting for model missing",
-        "resumed": True,
-    }
-
-
-def test_missing_lookup_rejects_until_all_clears_finish(manager_page: Page) -> None:
-    result = manager_page.evaluate(
-        """async () => {
-            const manager = window.widgetManager;
-            const Model = await manager.loadModelClass(
-                'HTMLModel', '@jupyter-widgets/controls', '2.0.0'
-            );
-            const firstModel = new Model({}, {widget_manager: manager, model_id: 'first'});
-            const secondModel = new Model({}, {widget_manager: manager, model_id: 'second'});
-            let releaseFirst;
-            let releaseSecond;
-            manager.register_model('first', new Promise(resolve => { releaseFirst = resolve; }));
-            const firstClear = manager.clear_state();
-            manager.register_model('second', new Promise(resolve => { releaseSecond = resolve; }));
-            let secondFinished = false;
-            const secondClear = manager.clear_state().then(() => { secondFinished = true; });
-            const registeredLookup = manager.get_model('second');
-            releaseFirst(firstModel);
-            await firstClear;
-            const secondStillPending = !secondFinished;
-            const missingLookup = manager.get_model('missing').then(
-                () => 'resolved', error => error.message
-            );
-            const duringClear = await Promise.race([
-                missingLookup,
-                new Promise(resolve => setTimeout(() => resolve('pending'), 1000))
-            ]);
-            releaseSecond(secondModel);
-            await secondClear;
-            const registeredResolved = await registeredLookup === secondModel;
-            const laterLookup = manager.get_model('later');
-            const laterModel = new Model({}, {widget_manager: manager, model_id: 'later'});
-            manager.register_model('later', Promise.resolve(laterModel));
-            return {
-                secondStillPending,
-                duringClear,
-                registeredResolved,
-                resumed: await laterLookup === laterModel
-            };
-        }"""
-    )
-
-    assert result == {
-        "secondStillPending": True,
-        "duringClear": "Widget state cleared while waiting for model missing",
-        "registeredResolved": True,
-        "resumed": True,
-    }
-
-
-def test_model_waiting_resumes_after_clear_failure(manager_page: Page) -> None:
-    result = manager_page.evaluate(
-        """async () => {
-            const manager = window.widgetManager;
-            const model = await manager.new_model({
-                model_id: 'throwing',
-                model_name: 'HTMLModel',
-                model_module: '@jupyter-widgets/controls',
-                model_module_version: '2.0.0'
-            });
-            model.close = () => { throw new Error('Injected close failure'); };
-            const error = await manager.clear_state().then(
-                () => null, error => error.message
-            );
-            const lookup = manager.get_model('later').catch(() => null);
-            const laterModel = await manager.new_model({
-                model_id: 'later',
-                model_name: 'HTMLModel',
-                model_module: '@jupyter-widgets/controls',
-                model_module_version: '2.0.0'
-            });
-            return {error, resumed: await lookup === laterModel};
-        }"""
-    )
-
-    assert result == {"error": "Injected close failure", "resumed": True}
+HELLO = "{session_id: 's', model_namespace: 'n', epoch_id: 'e1'}"
+NEW_MODEL = """{
+    model_name: 'HTMLModel',
+    model_module: '@jupyter-widgets/controls',
+    model_module_version: '2.0.0'
+}"""
 
 
 @pytest.fixture
-def manager_page(page: Page, local_app: ShinyAppProc) -> Page:
-    def expose_manager(route: Route) -> None:
-        response = route.fetch()
-        original = "const manager = new OutputManager({ loader: _lifecycle_loader__WEBPACK_IMPORTED_MODULE_2__.shinyRequireLoader });"
-        text = response.text()
-        assert original in text
-        # Keep the manager's test access out of the shipped bundle.
-        route.fulfill(
-            response=response,
-            body=text.replace(
-                original,
-                "const manager = window.widgetManager = new OutputManager({ loader: _lifecycle_loader__WEBPACK_IMPORTED_MODULE_2__.shinyRequireLoader });",
-            ),
-        )
+def lifecycle_page(page: Page, local_app: ShinyAppProc) -> Page:
+    # This app renders no widgets, so no server hello can interfere with the
+    # epochs minted by the tests.
+    return open_lifecycle_page(page, local_app)
 
-    page.route("**/output.js", expose_manager)
-    page.goto(local_app.url)
-    page.wait_for_function("!!window.widgetManager")
-    return page
+
+def test_waiter_resolves_with_registered_promise_identity(
+    lifecycle_page: Page,
+) -> None:
+    result = lifecycle_page.evaluate(
+        f"""async () => {{
+            const manager = window.widgetLifecycle.handleEpochHello({HELLO});
+            const waiting = manager.get_model('late');
+            let resolveRegistration;
+            manager.register_model(
+                'late', new Promise(resolve => {{ resolveRegistration = resolve; }})
+            );
+            const Model = await manager.loadModelClass(
+                'HTMLModel', '@jupyter-widgets/controls', '2.0.0'
+            );
+            const model = new Model({{}}, {{widget_manager: manager, model_id: 'late'}});
+            resolveRegistration(model);
+            const resolved = await waiting;
+            return {{
+                sameModel: resolved === model,
+                waiters: window.widgetLifecycle.snapshot().waiters,
+            }};
+        }}"""
+    )
+
+    assert result == {"sameModel": True, "waiters": 0}
+
+
+def test_retirement_rejects_existing_waiters_promptly(lifecycle_page: Page) -> None:
+    result = lifecycle_page.evaluate(
+        f"""async () => {{
+            const lifecycle = window.widgetLifecycle;
+            const manager = lifecycle.handleEpochHello({HELLO});
+            const first = manager.get_model('missing-a').then(
+                () => 'resolved', (error) => error.name
+            );
+            const second = manager.get_model('missing-b').then(
+                () => 'resolved', (error) => error.name
+            );
+            await manager.retire();
+            const outcomes = await Promise.race([
+                Promise.all([first, second]),
+                new Promise(resolve => setTimeout(() => resolve('timeout'), 5000)),
+            ]);
+            return {{
+                outcomes,
+                waiters: lifecycle.snapshot().waiters,
+                retired: manager.retired,
+            }};
+        }}"""
+    )
+
+    assert result == {
+        "outcomes": ["EpochRetiredError", "EpochRetiredError"],
+        "waiters": 0,
+        "retired": True,
+    }
+
+
+def test_waiter_timeout_removes_only_that_waiter(lifecycle_page: Page) -> None:
+    result = lifecycle_page.evaluate(
+        f"""async () => {{
+            const manager = window.widgetLifecycle.handleEpochHello({HELLO});
+            // Patch the timeout down for this test only: expiry must remove
+            // just the expired waiter (other waiters keep waiting).
+            const realSetTimeout = window.setTimeout;
+            window.setTimeout = (fn, ms, ...args) => realSetTimeout(fn, 50, ...args);
+            try {{
+                const expired = manager.get_model('never-arrives').then(
+                    () => 'resolved', (error) => error.message
+                );
+                const stillWaiting = manager.get_model('arrives-later');
+                const expiredMessage = await expired;
+                // new_model registers synchronously and resolves the waiter.
+                await manager.new_model(
+                    Object.assign({{model_id: 'arrives-later'}}, {NEW_MODEL})
+                );
+                const resolved = await stillWaiting;
+                return {{
+                    expiredMessage,
+                    resolvedIsModel: !!resolved && resolved.get('_model_name') === 'HTMLModel',
+                    waiters: window.widgetLifecycle.snapshot().waiters,
+                }};
+            }} finally {{
+                window.setTimeout = realSetTimeout;
+            }}
+        }}"""
+    )
+
+    assert result["expiredMessage"].startswith("Timeout waiting for widget model")
+    assert result["resolvedIsModel"] is True
+    assert result["waiters"] == 0

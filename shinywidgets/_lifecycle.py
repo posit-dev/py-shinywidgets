@@ -167,6 +167,20 @@ class Publication:
     provisional_lease_id: str
 
 
+@dataclass
+class OutputClaimState:
+    """
+    The current claim sequence/outcome terminal for one output. Storing only
+    the latest terminal (rather than every mount's history) keeps claims
+    idempotent and bounded.
+    """
+
+    latest_seq: int = 0
+    latest_mount_id: str = ""
+    latest_outcome: dict[str, object] = field(default_factory=dict)
+    cancelled_seqs: set[int] = field(default_factory=set)
+
+
 def get_lifecycle(session: Session) -> SessionLifecycle:
     """
     Get (or create) the widget lifecycle manager for a Shiny session.
@@ -210,6 +224,7 @@ class SessionLifecycle:
         self.render_lifetimes: set[Lifetime] = set()
         self.publications: dict[str, Publication] = {}
         self.display_leases: dict[str, DisplayLease] = {}
+        self._claim_states: dict[str, OutputClaimState] = {}
         self.wired: bool = False
         self._closed_widgets: WidgetWeakMap[ClosedWidget] = WidgetWeakMap()
         self._revision: int = 0
@@ -316,6 +331,126 @@ class SessionLifecycle:
 
     def release_display(self, lease_id: str) -> None:
         self.display_leases.pop(lease_id, None)
+        # Releasing a display lease can make its root collectible.
+        self.collect()
+
+    def handle_display_events(self, packet: object) -> dict[str, object]:
+        """
+        Validate and process a display-events packet (claims, releases, and
+        claim cancellations) atomically for this session, and produce the
+        per-event results to return to the browser.
+        """
+        events = validate_display_events(self.epoch, packet)
+        results: list[dict[str, object]] = []
+        for event in events:
+            action = event["action"]
+            if action == "claim":
+                results.append(self._process_claim(event))
+            elif action == "release":
+                results.append(self._process_release(event))
+            elif action == "cancel-claim":
+                results.append(self._process_cancel(event))
+        return {
+            "sw": 1,
+            "version": 1,
+            "session_id": self.epoch.session_id,
+            "model_namespace": self.epoch.model_namespace,
+            "epoch_id": self.epoch.epoch_id,
+            "results": results,
+        }
+
+    def _process_claim(self, event: dict[str, object]) -> dict[str, object]:
+        output_id = cast(str, event["output_id"])
+        mount_id = cast(str, event["mount_id"])
+        seq = cast(int, event["claim_seq"])
+        state = self._claim_states.setdefault(output_id, OutputClaimState())
+        result = {
+            "event_id": event["event_id"],
+            "output_id": output_id,
+            "mount_id": mount_id,
+            "claim_seq": seq,
+        }
+        # Idempotent replay: the same mount repeating the current terminal
+        # sequence gets the recorded outcome (never acquires twice).
+        if (
+            seq == state.latest_seq
+            and mount_id == state.latest_mount_id
+            and state.latest_outcome
+        ):
+            return {**result, "outcome": dict(state.latest_outcome)}
+        if seq < state.latest_seq:
+            return {**result, "outcome": {"refused": "superseded"}}
+        publication = self.publications.get(output_id)
+        outcome: dict[str, object]
+        if publication is None or publication.offer_id != event["offer_id"]:
+            outcome = {"refused": "stale-offer"}
+        elif publication.root_id != event["root_id"]:
+            outcome = {"refused": "stale-offer"}
+        elif publication.root_id not in self.records:
+            # Never reopen or resurrect a collected widget.
+            outcome = {"refused": "root-closed"}
+        else:
+            state.latest_seq = seq
+            state.latest_mount_id = mount_id
+            lease = self.display_leases.get(publication.provisional_lease_id)
+            if lease is not None and lease.mount_id is None:
+                lease.mount_id = mount_id
+                lease.claim_seq = seq
+                outcome = {"claimed": lease.lease_id}
+            else:
+                # The provisional lease was already consumed (e.g., a cached
+                # value replay on a new mount); renew with a fresh lease.
+                new_lease = self.acquire_display(
+                    publication.output_id,
+                    publication.generation_id,
+                    publication.root_id,
+                    publication.offer_id,
+                )
+                new_lease.mount_id = mount_id
+                new_lease.claim_seq = seq
+                outcome = {"claimed": new_lease.lease_id}
+            state.latest_outcome = outcome
+            return {**result, "outcome": outcome}
+        return {**result, "outcome": outcome}
+
+    def _process_release(self, event: dict[str, object]) -> dict[str, object]:
+        lease_id = cast(str, event["lease_id"])
+        result = {
+            "event_id": event["event_id"],
+            "output_id": event["output_id"],
+            "mount_id": event["mount_id"],
+        }
+        lease = self.display_leases.get(lease_id)
+        if lease is None:
+            # An unknown inactive release is an acknowledged no-op (leases are
+            # never re-minted, so it can't refer to a future lease).
+            return {**result, "outcome": {"acked": True}}
+        if lease.output_id != event["output_id"] or lease.mount_id != event["mount_id"]:
+            raise RuntimeError(
+                "Display release doesn't match the lease's recorded "
+                "output/mount association"
+            )
+        self.release_display(lease_id)
+        return {**result, "outcome": {"acked": True}}
+
+    def _process_cancel(self, event: dict[str, object]) -> dict[str, object]:
+        output_id = cast(str, event["output_id"])
+        mount_id = cast(str, event["mount_id"])
+        seq = cast(int, event["claim_seq"])
+        state = self._claim_states.setdefault(output_id, OutputClaimState())
+        if seq >= state.latest_seq:
+            # Record a terminal cancellation so a late claim for this sequence
+            # is refused.
+            state.latest_seq = seq
+            state.latest_mount_id = mount_id
+            state.latest_outcome = {"refused": "cancelled"}
+        return {
+            "event_id": event["event_id"],
+            "output_id": output_id,
+            "mount_id": mount_id,
+            "claim_seq": seq,
+            "outcome": {"acked": True},
+        }
 
     def set_initializer(self, record: WidgetRecord, cancel: Callable[[], None]) -> None:
         if record.state == "closed":
@@ -476,6 +611,10 @@ class SessionLifecycle:
         roots = set(self.session_lifetime.roots)
         for lifetime in self.render_lifetimes:
             roots |= lifetime.roots
+        # Displayed roots stay alive while their display lease is active; the
+        # browser releases the lease after removing the presentation.
+        for lease in self.display_leases.values():
+            roots.add(lease.root_id)
         snapshots = {
             model_id: dependencies(record.widget)
             for model_id, record in self.records.items()
@@ -528,6 +667,9 @@ class SessionLifecycle:
             self._run_disposers(lifetime)
         self.render_lifetimes.clear()
         self._run_disposers(self.session_lifetime)
+        self.publications.clear()
+        self.display_leases.clear()
+        self._claim_states.clear()
         # Disable new sends before closing records so close() doesn't attempt to
         # publish on a terminated connection.
         self.comm_manager.active = False
@@ -544,6 +686,72 @@ class SessionLifecycle:
             render_lifetimes=len(self.render_lifetimes),
             display_leases=len(self.display_leases),
         )
+
+
+def validate_display_events(
+    epoch: EpochIdentity, packet: object
+) -> list[dict[str, object]]:
+    """
+    Strictly validate a display-events packet against the session's epoch and
+    return its events. Invalid packets are never acknowledged as successful.
+    """
+    if not isinstance(packet, dict) or packet.get("sw") != 1:
+        raise RuntimeError(
+            "Received a legacy shinywidgets display packet (missing the "
+            "versioned envelope)"
+        )
+    if packet.get("version") != 1:
+        raise RuntimeError("Unsupported shinywidgets display packet version")
+    if (
+        packet.get("session_id") != epoch.session_id
+        or packet.get("model_namespace") != epoch.model_namespace
+        or packet.get("epoch_id") != epoch.epoch_id
+    ):
+        raise RuntimeError(
+            "Received shinywidgets display events for a different session/epoch"
+        )
+    events = packet.get("events")
+    if not isinstance(events, list):
+        raise RuntimeError("Malformed shinywidgets display packet (no events)")
+    validated: list[dict[str, object]] = []
+    required: dict[str, set[str]] = {
+        "claim": {
+            "event_id",
+            "output_id",
+            "offer_id",
+            "candidate_lease_id",
+            "generation_id",
+            "root_id",
+            "mount_id",
+            "claim_seq",
+        },
+        "release": {
+            "event_id",
+            "output_id",
+            "lease_id",
+            "mount_id",
+            "presentation_removed",
+            "reason",
+            "cleanup",
+        },
+        "cancel-claim": {"event_id", "output_id", "mount_id", "claim_seq"},
+    }
+    for event in events:
+        if not isinstance(event, dict):
+            raise RuntimeError("Malformed shinywidgets display event")
+        action = event.get("action")
+        fields = required.get(cast(str, action))
+        if fields is None:
+            raise RuntimeError(f"Unknown shinywidgets display action: {action!r}")
+        missing = fields - set(event)
+        if missing:
+            raise RuntimeError(
+                f"Malformed shinywidgets display event (missing {sorted(missing)})"
+            )
+        if "claim_seq" in fields and not isinstance(event["claim_seq"], int):
+            raise RuntimeError("claim_seq must be an integer")
+        validated.append(event)
+    return validated
 
 
 _lifecycles: WeakKeyDictionary[Session, SessionLifecycle] = WeakKeyDictionary()

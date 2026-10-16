@@ -236,6 +236,18 @@ def wire_session(session: Session, lifecycle: SessionLifecycle) -> None:
             if comm is not None:
                 comm.handle_msg(msg)
 
+        # Display-lease claims/releases from the browser's presentation
+        # mounts.
+        @reactive.effect
+        @reactive.event(session.input.shinywidgets_display)
+        async def _():
+            packet = json.loads(session.input.shinywidgets_display())
+            response = lifecycle.handle_display_events(packet)
+            if response["results"]:
+                await session.send_custom_message(
+                    "shinywidgets_display_result", response
+                )
+
 
 # TODO: can we restore the widget constructor in a sensible way?
 Widget.on_widget_constructed(init_shiny_widget)  # type: ignore

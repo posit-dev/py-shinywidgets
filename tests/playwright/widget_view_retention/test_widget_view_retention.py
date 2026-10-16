@@ -1,14 +1,26 @@
+"""
+View disposal and cached-model retention under mount ownership.
+
+The six parameterized cases are the mount-era successors of #246's
+WeakMap/`_viewList` instrumentation: views are owned by output mounts and
+models by the current epoch's registry. Assertions still require real view
+disposal/detachment, current content, popup interaction, and exact
+cached-model identity -- zero DOM children alone is insufficient.
+"""
+
+from __future__ import annotations
+
 import pytest
-from playwright.sync_api import Page, Route, expect
+from playwright.sync_api import Page, expect
 from shiny.run import ShinyAppProc
+from tests.playwright.conftest import open_lifecycle_page
 
 
 @pytest.mark.parametrize("mode", ["cached", "popup"])
 def test_replaced_views_are_removed(
     page: Page, local_app: ShinyAppProc, mode: str
 ) -> None:
-    page.route("**/output.js", expose_manager)
-    page.goto(f"{local_app.url}?mode={mode}")
+    open_lifecycle_page(page, local_app, f"{local_app.url}?mode={mode}")
     expect(page.locator("#render_count")).to_have_text("0")
     expect(page.locator("#widget > .lm-Widget")).to_have_count(1)
     if mode == "popup":
@@ -18,7 +30,8 @@ def test_replaced_views_are_removed(
 
     page.evaluate(
         """() => {
-            window.previousView = [...window.widgetManager._viewList][0];
+            const el = document.querySelector('#widget');
+            window.previousView = window.widgetLifecycle.acceptedViewFor(el);
         }"""
     )
     for n in range(1, 4):
@@ -36,21 +49,33 @@ def test_replaced_views_are_removed(
 
     state = page.evaluate(
         """() => {
-            const manager = window.widgetManager;
+            const el = document.querySelector('#widget');
+            const lifecycle = window.widgetLifecycle;
             const previous = window.previousView;
             return {
-                trackedViews: manager._viewList.size,
-                previousTracked: manager._viewList.has(previous),
+                hasPresentation: lifecycle.acceptedViewFor(el) !== null,
                 previousDisposed: previous.luminoWidget.isDisposed,
                 previousAttached: previous.luminoWidget.isAttached,
-                previousModelRegistered: manager.has_model(previous.model.model_id)
+                previousModelRegistered: lifecycle.epoch.has_model(previous.model.model_id)
             };
         }"""
     )
-    assert state["trackedViews"] == 1, "The old view remains tracked after replacement"
-    assert not state["previousTracked"]
-    assert state["previousDisposed"]
+    if mode == "popup":
+        # The temporary model is collected after the browser releases the old
+        # display lease (a round trip after the replacement attaches).
+        page.wait_for_function(
+            """() => !window.widgetLifecycle.epoch.has_model(
+                window.previousView.model.model_id
+            )"""
+        )
+        state["previousModelRegistered"] = page.evaluate(
+            """() => window.widgetLifecycle.epoch.has_model(
+                window.previousView.model.model_id
+            )"""
+        )
+    assert state["hasPresentation"], "No accepted presentation after replacement"
     assert not state["previousAttached"]
+    assert state["previousDisposed"]
     assert state["previousModelRegistered"] == (mode == "cached")
 
     if mode == "popup":
@@ -64,12 +89,12 @@ def test_replaced_views_are_removed(
 def test_cleared_outputs_remove_the_previous_view(
     page: Page, local_app: ShinyAppProc, mode: str
 ) -> None:
-    page.route("**/output.js", expose_manager)
-    page.goto(local_app.url)
+    open_lifecycle_page(page, local_app, local_app.url)
     expect(page.locator("#widget")).to_have_text("Persistent widget")
     page.evaluate(
         """() => {
-            window.previousView = [...window.widgetManager._viewList][0];
+            const el = document.querySelector('#widget');
+            window.previousView = window.widgetLifecycle.acceptedViewFor(el);
         }"""
     )
 
@@ -83,20 +108,22 @@ def test_cleared_outputs_remove_the_previous_view(
     expect(page.locator("#widget > .lm-Widget")).to_have_count(0)
     state = page.evaluate(
         """() => {
-            const manager = window.widgetManager;
+            const el = document.querySelector('#widget');
+            const lifecycle = window.widgetLifecycle;
             const previous = window.previousView;
             return {
-                trackedViews: manager._viewList.size,
+                hasPresentation: lifecycle.acceptedViewFor(el) !== null,
                 previousDisposed: previous.luminoWidget.isDisposed,
                 previousAttached: previous.luminoWidget.isAttached,
-                previousModelRegistered: manager.has_model(previous.model.model_id)
+                previousModelRegistered: lifecycle.epoch.has_model(previous.model.model_id)
             };
         }"""
     )
     assert state == {
-        "trackedViews": 0,
+        "hasPresentation": False,
         "previousDisposed": True,
         "previousAttached": False,
+        # A session-retained model survives view-only retirement.
         "previousModelRegistered": True,
     }
 
@@ -105,12 +132,12 @@ def test_cleared_outputs_remove_the_previous_view(
 def test_widget_recovers_after_output_is_cleared(
     page: Page, local_app: ShinyAppProc, mode: str
 ) -> None:
-    page.route("**/output.js", expose_manager)
-    page.goto(local_app.url)
+    open_lifecycle_page(page, local_app, local_app.url)
     expect(page.locator("#widget")).to_have_text("Persistent widget")
     page.evaluate(
         """() => {
-            window.cachedModel = [...window.widgetManager._viewList][0].model;
+            const el = document.querySelector('#widget');
+            window.cachedModel = window.widgetLifecycle.acceptedViewFor(el).model;
         }"""
     )
     page.select_option("#mode", mode)
@@ -127,29 +154,17 @@ def test_widget_recovers_after_output_is_cleared(
     expect(page.locator("#widget > .lm-Widget")).to_have_count(1)
     assert page.evaluate(
         """() => {
-            const manager = window.widgetManager;
+            const el = document.querySelector('#widget');
+            const lifecycle = window.widgetLifecycle;
+            const accepted = lifecycle.acceptedViewFor(el);
             return {
-                trackedViews: manager._viewList.size,
-                cachedModelRegistered: manager.has_model(window.cachedModel.model_id),
-                cachedModelReused: [...manager._viewList][0].model === window.cachedModel
+                hasPresentation: accepted !== null,
+                cachedModelRegistered: lifecycle.epoch.has_model(window.cachedModel.model_id),
+                cachedModelReused: accepted !== null && accepted.model === window.cachedModel
             };
         }"""
     ) == {
-        "trackedViews": 1,
+        "hasPresentation": True,
         "cachedModelRegistered": True,
         "cachedModelReused": True,
     }
-
-
-def expose_manager(route: Route) -> None:
-    response = route.fetch()
-    text = response.text()
-    original = "const manager = new OutputManager({ loader: _lifecycle_loader__WEBPACK_IMPORTED_MODULE_2__.shinyRequireLoader });"
-    assert original in text
-    route.fulfill(
-        response=response,
-        body=text.replace(
-            original,
-            "const manager = window.widgetManager = new OutputManager({ loader: _lifecycle_loader__WEBPACK_IMPORTED_MODULE_2__.shinyRequireLoader });",
-        ),
-    )

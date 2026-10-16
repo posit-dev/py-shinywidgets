@@ -1,132 +1,341 @@
 """
-Reproduction evidence for the connection-clearing failure modes that motivate
-epoch-bound managers (plan 3, task 1).
+Epoch-bound manager contract tests (plan 3).
 
-These tests run against the *current* shared OutputManager (exposed through the
-same route interception as `model_waiter_cleanup`) and document what actually
-happens today when a pending `clear_state()` overlaps fresh work. They are
-replaced by epoch-based contract tests in the same directory once the
-epoch-bound controller ships (plan 3, task 11).
+Each test mints epoch owners through the lifecycle controller's real hello
+path (route-instrumented exposure only) and asserts registry/model identity
+and actual view attachment, never just DOM text. These are the epoch-based
+successors of the `model_waiter_cleanup` clearing-counter cases; the shared
+clearing implementation they replaced is gone (retirement is permanent).
 """
 
 from __future__ import annotations
 
 import pytest
-from playwright.sync_api import Page, Route
+from playwright.sync_api import Page
 from shiny.run import ShinyAppProc
+from tests.playwright.conftest import open_lifecycle_page
 
 
 @pytest.fixture
-def manager_page(page: Page, local_app: ShinyAppProc) -> Page:
-    def expose_manager(route: Route) -> None:
-        response = route.fetch()
-        original = "const manager = new OutputManager({ loader: _lifecycle_loader__WEBPACK_IMPORTED_MODULE_2__.shinyRequireLoader });"
-        text = response.text()
-        assert original in text
-        route.fulfill(
-            response=response,
-            body=text.replace(
-                original,
-                "const manager = window.widgetManager = new OutputManager({ loader: _lifecycle_loader__WEBPACK_IMPORTED_MODULE_2__.shinyRequireLoader });",
-            ),
-        )
-
-    page.route("**/output.js", expose_manager)
-    page.goto(local_app.url)
-    page.wait_for_function("!!window.widgetManager")
+def lifecycle_page(page: Page, local_app: ShinyAppProc) -> Page:
+    page = open_lifecycle_page(page, local_app)
+    # This app renders a widget, so the server's epoch hello always arrives;
+    # wait for it so a late hello can't retire test-minted epoch owners.
+    page.wait_for_function("!!window.widgetLifecycle.epoch")
     return page
 
 
-def test_pending_clear_removes_newly_registered_model(manager_page: Page) -> None:
+def test_retirement_cancels_pending_deserialization_lookup(
+    lifecycle_page: Page,
+) -> None:
     """
-    A model registered while an older clear is still pending is removed by
-    that clear, even though it was created after the clear began.
+    Retirement cancels a child lookup reached by already-pending parent
+    deserialization: it rejects promptly (no 30s timeout), never resolves
+    into a successful ErrorWidget, and the retired parent can't remain
+    registered.
     """
-    result = manager_page.evaluate(
+    result = lifecycle_page.evaluate(
         """async () => {
-            const manager = window.widgetManager;
-            const Model = await manager.loadModelClass(
-                'HTMLModel', '@jupyter-widgets/controls', '2.0.0'
-            );
-            // Hold the old model's registration promise pending: clear_state()
-            // snapshots the registry and waits for the snapshot to resolve
-            // before replacing the whole registry.
-            let releaseOld;
-            manager.register_model('old', new Promise(resolve => { releaseOld = resolve; }));
-            const clearing = manager.clear_state();
-
-            // Fresh work registers a new model while the old clear's snapshot
-            // is still pending.
-            const freshModel = new Model({}, {widget_manager: manager, model_id: 'fresh'});
-            manager.register_model('fresh', Promise.resolve(freshModel));
-
-            // Releasing the old snapshot lets the clear replace the registry.
-            releaseOld(new Model({}, {widget_manager: manager, model_id: 'old'}));
-            await clearing;
-
-            const freshRegistered = manager.has_model('fresh');
-            return {
-                freshRegistered,
-                freshModel: freshRegistered
-                    ? (await manager.get_model('fresh')).model_id
-                    : null,
-            };
-        }"""
-    )
-
-    # The failure mode: the fresh model is gone after the old clear finishes.
-    assert result == {"freshRegistered": False, "freshModel": None}
-
-
-def test_fresh_parent_late_child_becomes_error_widget(manager_page: Page) -> None:
-    """
-    A parent whose child lookup is pending when an older clear runs has its
-    wait cancelled; the parent resolves to an ErrorWidget instead of its real
-    view, even though the child's registration arrives right after.
-    """
-    result = manager_page.evaluate(
-        """async () => {
-            const manager = window.widgetManager;
-            const parentPromise = manager.new_model({
+            const lifecycle = window.widgetLifecycle;
+            const manager = lifecycle.handleEpochHello({
+                session_id: 's', model_namespace: 'n', epoch_id: 'e1'
+            });
+            const parent = manager.new_model({
                 model_id: 'parent',
                 model_name: 'HTMLModel',
                 model_module: '@jupyter-widgets/controls',
                 model_module_version: '2.0.0'
-            }, {layout: 'IPY_MODEL_late-layout'});
-            await manager.clear_state();
-            const parent = await parentPromise;
-            // The child's comm_open arrives just after the clear.
-            const child = await manager.new_model({
-                model_id: 'late-layout',
-                model_name: 'LayoutModel',
-                model_module: '@jupyter-widgets/controls',
-                model_module_version: '2.0.0'
+            }, {layout: 'IPY_MODEL_missing-layout'});
+            // Retire the epoch while the parent's child lookup is pending.
+            lifecycle.handleEpochHello({
+                session_id: 's', model_namespace: 'n', epoch_id: 'e2'
             });
+            const outcome = await Promise.race([
+                parent.then(
+                    () => 'resolved',
+                    (error) => error.name
+                ),
+                new Promise(resolve => setTimeout(() => resolve('timeout'), 5000))
+            ]);
+            await manager.retire();
             return {
-                parentName: parent.get('_view_name'),
-                isErrorWidget: parent.get('_view_name') === 'ErrorWidgetView',
-                childRegistered: manager.has_model('late-layout'),
+                outcome,
+                managerRetired: manager.retired,
+                parentRegistered: manager.has_model('parent'),
             };
         }"""
     )
 
-    # The failure mode: the fresh parent is an ErrorWidget even though its
-    # child legitimately arrived late.
-    assert result["isErrorWidget"], result
+    assert result == {
+        "outcome": "EpochRetiredError",
+        "managerRetired": True,
+        "parentRegistered": False,
+    }
 
 
-def test_frontend_controller_model_creation_probe(manager_page: Page) -> None:
+def test_fresh_owner_resolves_late_child_during_old_retirement(
+    lifecycle_page: Page,
+) -> None:
     """
-    Boundary evidence for frontend-initiated model creation: core
-    ControllerModel creates button/axis models via `new_widget()` without a
-    model ID; the installed manager answers `_create_comm()` with a dummy comm
-    that has no comm_id and no backend channel. This is not a functioning
-    contract, so the epoch manager rejects new backend comm creation
-    explicitly instead of pretending the dummy establishes one.
+    An old owner's existing waits reject promptly; a fresh owner waits for
+    and resolves its actual late child while the old owner's cleanup is
+    still pending.
     """
-    result = manager_page.evaluate(
+    result = lifecycle_page.evaluate(
         """async () => {
-            const manager = window.widgetManager;
+            const lifecycle = window.widgetLifecycle;
+            const old = lifecycle.handleEpochHello({
+                session_id: 's', model_namespace: 'n', epoch_id: 'e1'
+            });
+            const staleWait = old.get_model('missing').then(
+                () => 'resolved',
+                (error) => error.name
+            );
+            // Hold the old owner's cleanup: its model's close never settles
+            // until we release it.
+            await old.new_model({
+                model_id: 'held',
+                model_name: 'HTMLModel',
+                model_module: '@jupyter-widgets/controls',
+                model_module_version: '2.0.0'
+            });
+            const heldModel = await old.get_model('held');
+            let releaseClose;
+            heldModel.close = () => new Promise(resolve => { releaseClose = resolve; });
+
+            const fresh = lifecycle.handleEpochHello({
+                session_id: 's', model_namespace: 'n', epoch_id: 'e2'
+            });
+            const childWait = fresh.get_model('child');
+            const cancelled = await staleWait;
+            const child = await fresh.new_model({
+                model_id: 'child',
+                model_name: 'HTMLModel',
+                model_module: '@jupyter-widgets/controls',
+                model_module_version: '2.0.0'
+            });
+            const freshResolved = (await childWait) === child;
+            releaseClose();
+            await old.retire();
+            return {
+                cancelled,
+                freshResolved,
+                freshRetired: fresh.retired,
+                oldRetired: old.retired,
+            };
+        }"""
+    )
+
+    assert result == {
+        "cancelled": "EpochRetiredError",
+        "freshResolved": True,
+        "freshRetired": False,
+        "oldRetired": True,
+    }
+
+
+def test_overlapping_retired_cleanups_cannot_remove_fresh_models(
+    lifecycle_page: Page,
+) -> None:
+    """
+    Two retired owners hold pending cleanups and finish in both orders.
+    Neither can admit new lookups/registration, same-ID models in the fresh
+    epoch can't be removed by old close listeners, and the fresh owner works
+    independently throughout.
+    """
+    result = lifecycle_page.evaluate(
+        """async () => {
+            const lifecycle = window.widgetLifecycle;
+            const holdClose = async (manager) => {
+                await manager.new_model({
+                    model_id: 'shared-suffix',
+                    model_name: 'HTMLModel',
+                    model_module: '@jupyter-widgets/controls',
+                    model_module_version: '2.0.0'
+                });
+                const held = {};
+                held.model = await manager.get_model('shared-suffix');
+                held.model.close = () => new Promise(resolve => {
+                    held.release = resolve;
+                });
+                return held;
+            };
+
+            const first = lifecycle.handleEpochHello({
+                session_id: 's', model_namespace: 'n', epoch_id: 'e1'
+            });
+            const firstHeld = await holdClose(first);
+            const second = lifecycle.handleEpochHello({
+                session_id: 's', model_namespace: 'n', epoch_id: 'e2'
+            });
+            const secondHeld = await holdClose(second);
+            const fresh = lifecycle.handleEpochHello({
+                session_id: 's', model_namespace: 'n', epoch_id: 'e3'
+            });
+            // Same full model ID in the fresh epoch.
+            const freshModel = await fresh.new_model({
+                model_id: 'shared-suffix',
+                model_name: 'HTMLModel',
+                model_module: '@jupyter-widgets/controls',
+                model_module_version: '2.0.0'
+            });
+
+            // Old owners reject new lookups and registration while their
+            // cleanups are pending.
+            const oldLookup = await first.get_model('anything').then(
+                () => 'resolved',
+                (error) => error.name
+            );
+            let oldRegister;
+            try {
+                first.register_model('x', Promise.resolve(freshModel));
+                oldRegister = 'registered';
+            } catch (error) {
+                oldRegister = error.name;
+            }
+
+            // Finish the retired cleanups in reverse retirement order.
+            secondHeld.release();
+            await second.retire();
+            const freshAfterSecond = fresh.has_model('shared-suffix');
+            firstHeld.release();
+            await first.retire();
+
+            return {
+                oldLookup,
+                oldRegister,
+                freshAfterSecond,
+                freshRegistered: fresh.has_model('shared-suffix'),
+                freshModelIsOurs:
+                    (await fresh.get_model('shared-suffix')) === freshModel,
+            };
+        }"""
+    )
+
+    assert result == {
+        "oldLookup": "EpochRetiredError",
+        "oldRegister": "EpochRetiredError",
+        "freshAfterSecond": True,
+        "freshRegistered": True,
+        "freshModelIsOurs": True,
+    }
+
+
+def test_failed_old_cleanup_reports_and_fresh_epoch_continues(
+    lifecycle_page: Page,
+) -> None:
+    """
+    An injected old-close failure is reported by the old owner's close task;
+    it can't reopen the retired owner or poison the fresh owner's waiting.
+    """
+    result = lifecycle_page.evaluate(
+        """async () => {
+            const lifecycle = window.widgetLifecycle;
+            const old = lifecycle.handleEpochHello({
+                session_id: 's', model_namespace: 'n', epoch_id: 'e1'
+            });
+            const model = await old.new_model({
+                model_id: 'throwing',
+                model_name: 'HTMLModel',
+                model_module: '@jupyter-widgets/controls',
+                model_module_version: '2.0.0'
+            });
+            model.close = () => { throw new Error('Injected close failure'); };
+
+            const fresh = lifecycle.handleEpochHello({
+                session_id: 's', model_namespace: 'n', epoch_id: 'e2'
+            });
+            const error = await old.retire().then(
+                () => null,
+                (closeError) => closeError.message
+            );
+            const lookup = fresh.get_model('later').catch(() => null);
+            const later = await fresh.new_model({
+                model_id: 'later',
+                model_name: 'HTMLModel',
+                model_module: '@jupyter-widgets/controls',
+                model_module_version: '2.0.0'
+            });
+            return {
+                error,
+                resolved: (await lookup) === later,
+                oldStillRetired: old.retired,
+                freshRetired: fresh.retired,
+            };
+        }"""
+    )
+
+    assert result == {
+        "error": "Errors while retiring widget epoch: Error: Injected close failure",
+        "resolved": True,
+        "oldStillRetired": True,
+        "freshRetired": False,
+    }
+
+
+def test_fresh_parent_resolves_its_actual_late_child(lifecycle_page: Page) -> None:
+    """
+    The regression that motivated epochs: a fresh parent whose child lookup
+    is pending resolves to its real view once the child arrives (never an
+    ErrorWidget), and the view actually attaches.
+    """
+    result = lifecycle_page.evaluate(
+        """async () => {
+            const lifecycle = window.widgetLifecycle;
+            const manager = lifecycle.handleEpochHello({
+                session_id: 's', model_namespace: 'n', epoch_id: 'e1'
+            });
+            const parentPromise = manager.new_model({
+                model_id: 'parent-box',
+                model_name: 'BoxModel',
+                model_module: '@jupyter-widgets/controls',
+                model_module_version: '2.0.0'
+            }, {children: ['IPY_MODEL_late-child']});
+            // The child's comm_open arrives late.
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const child = await manager.new_model({
+                model_id: 'late-child',
+                model_name: 'HTMLModel',
+                model_module: '@jupyter-widgets/controls',
+                model_module_version: '2.0.0'
+            }, {value: 'late child content'});
+            const parent = await parentPromise;
+            const el = document.createElement('div');
+            document.body.appendChild(el);
+            const mount = window.widgetLifecycle.mountFor(el);
+            const view = await manager.create_view(parent, {
+                lifecycle_scope: mount
+            });
+            const lumino = view.luminoWidget ?? view.pWidget;
+            const { LuminoWidget } = await new Promise((resolve, reject) =>
+                require(['shinywidgets-internals'], (...m) => resolve(m[0]), reject)
+            );
+            LuminoWidget.attach(lumino, el);
+            return {
+                parentViewName: parent.get('_view_name'),
+                attachedContent: el.textContent,
+                childRegistered: manager.has_model('late-child'),
+            };
+        }"""
+    )
+
+    assert result["parentViewName"] == "BoxView"
+    assert "late child content" in result["attachedContent"]
+    assert result["childRegistered"] is True
+
+
+def test_frontend_controller_model_creation_probe(lifecycle_page: Page) -> None:
+    """
+    Frontend-initiated model creation has no functioning backend contract
+    (measured against the previous manager: the dummy comm never reached
+    `new_model`). The epoch manager keeps it an explicit failure.
+    """
+    result = lifecycle_page.evaluate(
+        """async () => {
+            const lifecycle = window.widgetLifecycle;
+            const manager = lifecycle.handleEpochHello({
+                session_id: 's', model_namespace: 'n', epoch_id: 'e1'
+            });
             const ControllerModel = await manager.loadModelClass(
                 'ControllerModel', '@jupyter-widgets/controls', '2.0.0'
             );
@@ -150,33 +359,31 @@ def test_frontend_controller_model_creation_probe(manager_page: Page) -> None:
         }"""
     )
 
-    # Frontend-initiated creation has no functioning contract today: the
-    # dummy comm never reaches new_model, which rejects. The epoch manager
-    # keeps this an explicit failure (via _create_comm) rather than pretending
-    # a dummy comm establishes a backend channel.
-    assert result["button"] == {
-        "error": "Error: Neither comm nor model_id provided in options object. "
-        "At least one must exist."
+    expected = {
+        "error": "Error: Frontend-initiated widget creation (new_widget "
+        "without a comm) is not supported by shinywidgets; construct "
+        "widgets on the server."
     }
-    assert result["axis"] == result["button"]
+    assert result["button"] == expected
+    assert result["axis"] == expected
 
 
-def test_served_runtime_module_identity_and_assets(manager_page: Page) -> None:
+def test_served_runtime_module_identity_and_assets(lifecycle_page: Page) -> None:
     """
     The served runtime (libembed-amd.js + runtime-register.js) resolves the
     official AMD modules and "shinywidgets-internals" through RequireJS with
     shared constructor identity, and serves font/module assets without 404s.
     """
     failures: list[str] = []
-    manager_page.on(
+    lifecycle_page.on(
         "response",
-        lambda response: failures.append(response.url)
-        if response.status >= 400
-        else None,
+        lambda response: (
+            failures.append(response.url) if response.status >= 400 else None
+        ),
     )
-    manager_page.wait_for_selector("#button button")
+    lifecycle_page.wait_for_selector("#button button")
 
-    result = manager_page.evaluate(
+    result = lifecycle_page.evaluate(
         """async () => {
             const [base, controls, html, internals] = await new Promise(
                 (resolve, reject) => require(
@@ -190,23 +397,24 @@ def test_served_runtime_module_identity_and_assets(manager_page: Page) -> None:
                     reject,
                 )
             );
-            const manager = window.widgetManager;
-            const models = await Promise.all(
-                Object.keys(manager._models).map((id) => manager.get_model(id))
-            );
-            const model = models.find(
-                (m) => m.get('_model_name') === 'ButtonModel'
-            );
-            if (!model) throw new Error('ButtonModel not registered');
+            const manager = window.widgetLifecycle.epoch;
+            const modelId = document.querySelector('#button').dataset
+                .shinywidgetsModelId;
+            const model = await manager.get_model(modelId);
+            const el = document.querySelector('#button');
+            const mount = window.widgetLifecycle.mountFor(el);
+            const scope = mount.childScope();
             return {
                 modelIsBaseWidget: model instanceof base.WidgetModel,
                 managerIsManagerBase: manager instanceof internals.ManagerBase,
-                htmlManagerShared: manager instanceof html.HTMLManager,
                 serializeState: typeof internals.serialize_state,
                 luminoWidget: typeof internals.LuminoWidget,
                 viewLuminoShared: await (async () => {
-                    const view = await manager.create_view(model);
-                    return view.luminoWidget instanceof internals.LuminoWidget;
+                    const view = await manager.create_view(model, {
+                        lifecycle_scope: scope
+                    });
+                    const lumino = view.luminoWidget ?? view.pWidget;
+                    return lumino instanceof internals.LuminoWidget;
                 })(),
             };
         }"""
@@ -215,7 +423,6 @@ def test_served_runtime_module_identity_and_assets(manager_page: Page) -> None:
     assert result == {
         "modelIsBaseWidget": True,
         "managerIsManagerBase": True,
-        "htmlManagerShared": True,
         "serializeState": "function",
         "luminoWidget": "function",
         "viewLuminoShared": True,

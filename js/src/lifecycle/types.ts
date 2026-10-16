@@ -25,6 +25,18 @@ export interface EpochIdentity {
   readonly epoch_id: EpochId;
 }
 
+/**
+ * Expected cancellation of work owned by a retired transport epoch. This is
+ * never a user-visible rendering failure and never produces a successful
+ * ErrorWidget fallback.
+ */
+export class EpochRetiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EpochRetiredError";
+  }
+}
+
 export interface WidgetValue extends EpochIdentity {
   readonly version: 1;
   readonly kind: "widget";
@@ -77,6 +89,7 @@ export interface DisplayCancelClaim {
 }
 
 export interface DisplayEvents extends EpochIdentity {
+  readonly sw: 1;
   readonly version: 1;
   readonly events: readonly (DisplayClaim | DisplayRelease | DisplayCancelClaim)[];
 }
