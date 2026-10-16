@@ -25,7 +25,7 @@ from ._render_widget import (
     render_pydeck,
     render_widget,
 )
-from ._shinywidgets import reactive_read, register_widget
+from ._shinywidgets import reactive_read, register_widget, session_lifetime
 
 __all__ = (
     "__version__",
@@ -44,4 +44,5 @@ __all__ = (
     "bokeh_dependency",
     # Soft deprecated
     "register_widget",
+    "session_lifetime",
 )
