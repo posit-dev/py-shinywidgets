@@ -2,7 +2,7 @@ import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { jsonParse } from './utils';
-import type { WidgetModel } from '@jupyter-widgets/base';
+import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
 
@@ -139,23 +139,33 @@ const manager = new OutputManager({ loader: shinyRequireLoader });
 * Define the Shiny binding
 ******************************************************************************/
 
+interface WidgetOutputValue {
+  model_id: string;
+  fill: boolean;
+  widget_pkg: string;
+}
+
 // Ideally we'd extend Shiny's HTMLOutputBinding, but the implementation isn't exported
 class IPyWidgetOutput extends Shiny.OutputBinding {
+  private _views = new WeakMap<HTMLElement, DOMWidgetView>();
+
   find(scope: HTMLElement): JQuery<HTMLElement> {
     return $(scope).find(".shiny-ipywidget-output");
   }
   onValueError(el: HTMLElement, err: ErrorsMessageValue): void {
+    this._removeView(el);
     Shiny.unbindAll(el);
     el.style.visibility = "inherit";
     this.renderError(el, err);
   }
-  async renderValue(el: HTMLElement, data): Promise<void> {
+  async renderValue(el: HTMLElement, data: WidgetOutputValue | null): Promise<void> {
     const hiddenVisibility = "hidden";
     const revealVisibility = "inherit";
     const renderToken = this._nextRenderToken(el);
 
     // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
     if (!data) {
+      this._removeView(el);
       el.style.visibility = hiddenVisibility;
       return;
     }
@@ -175,15 +185,15 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // N.B. no `{ el }` option: base-manager just passes options through to
     // `view.options`, which nothing reads; attachment happens in display_view
     const view = await manager.create_view(model);
+    this._removeView(el);
+    el.replaceChildren();
     await manager.display_view(view, el);
-
-    // Don't allow more than one .lmWidget container, which can happen
-    // when the view is displayed more than once
-    // N.B. It's probably better to get view(s) from m.views and .remove() them,
-    // but empirically, this seems to work better
-    while (el.childNodes.length > 1) {
-      el.removeChild(el.childNodes[0]);
-    }
+    this._views.set(el, view);
+    view.once("remove", () => {
+      if (this._views.get(el) === view) {
+        this._views.delete(el);
+      }
+    });
 
     // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;
@@ -268,6 +278,11 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
   _hasImplementation(lmWidget: HTMLElement): boolean {
     const impl = lmWidget.children[0];
     return impl && (impl.children.length > 0 || impl.shadowRoot?.children.length > 0);
+  }
+  private _removeView(el: HTMLElement): void {
+    const view = this._views.get(el);
+    this._views.delete(el);
+    view?.remove();
   }
 }
 
