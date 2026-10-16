@@ -1,12 +1,15 @@
 import types
 import warnings
+from pathlib import Path
 from types import ModuleType
 
+import bokeh
 import pytest
 import shinywidgets._dependencies as deps
 from htmltools import HTMLDependency
 from ipywidgets.widgets.domwidget import DOMWidget
 from shinywidgets._dependencies import (
+    bokeh_dependency,
     jupyter_extension_destination,
     jupyter_extension_path,
     output_binding_dependency,
@@ -15,6 +18,17 @@ from shinywidgets._dependencies import (
     require_dependency,
     widget_pkg,
 )
+
+
+def test_bokeh_dependency_serves_installed_core_scripts() -> None:
+    dep = bokeh_dependency()
+    source = dep.source_path_map()["source"]
+
+    assert source is not None
+    assert dep.script
+    assert str(dep.version) == bokeh.__version__
+    for script in dep.script:
+        assert (Path(source) / script["src"]).is_file()
 
 
 def test_parse_version_strips_semver_prefixes() -> None:

@@ -415,10 +415,19 @@ if (taskQueue) {
 
 // Initialize the comm and model when a new widget is created
 // This is basically our version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1144-L1176
-Shiny.addCustomMessageHandler("shinywidgets_comm_open", (msg_txt) => {
+Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
   setBaseURL();
   const msg = jsonParse(msg_txt);
-  Shiny.renderDependencies(msg.content.html_deps);
+  const deps = msg.content.html_deps as NonNullable<
+    Parameters<typeof Shiny.renderDependenciesAsync>[0]
+  >;
+  // Dependencies (e.g. BokehJS) must finish loading before the model is
+  // constructed below; otherwise require() of the widget's module fails.
+  if (typeof Shiny.renderDependenciesAsync === "function") {
+    await Shiny.renderDependenciesAsync(deps);
+  } else {
+    Shiny.renderDependencies(deps);
+  }
   const comm = new ShinyComm(msg.content.comm_id);
   // An explicit model_id survives widget re-creation on the Python side, so
   // an id can reopen after being closed; it must not stay marked closed or

@@ -36,7 +36,7 @@ from shiny.session import get_current_session, require_active_session, session_c
 from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
-from ._dependencies import require_dependency
+from ._dependencies import bokeh_dependencies, require_dependency
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -124,6 +124,8 @@ def init_shiny_widget(w: Widget):
 
     id = cast(str, w._model_id)
 
+    bokeh_deps = bokeh_dependencies(w)
+
     # Since the actual ShinyComm() is initialized _after_ the Widget is initialized,
     # and Widget.__init__() includes a call to Widget.open() which opens an unnecessary
     # comm, we just set the comm to a dummy comm for now (to avoid unnecessary work)
@@ -143,6 +145,7 @@ def init_shiny_widget(w: Widget):
     # is required to get a valid widget state.
     @reactive.effect(priority=99999)
     def _open_shiny_comm():
+
         _open_shiny_comm.destroy()
 
         # Closed before it was opened (explicitly, or because its render was
@@ -172,7 +175,7 @@ def init_shiny_widget(w: Widget):
             buffers=cast(BufferType, buffers),
             # TODO: should this be hard-coded?
             metadata={"version": __protocol_version__},
-            html_deps=session._process_ui(TagList(widget_dep))["deps"],
+            html_deps=session._process_ui(TagList(*bokeh_deps, widget_dep))["deps"],
         )
 
     # If the widget initialized in a reactive _output_ context, then cleanup the widget
