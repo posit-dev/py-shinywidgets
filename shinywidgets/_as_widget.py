@@ -63,6 +63,34 @@ def as_widget_bokeh(x: object) -> Optional[Widget]:
     return BokehModel(x)  # type: ignore
 
 
+def as_widget_maplibre(x: object) -> Optional[Widget]:
+    # maplibre is guaranteed to be installed here since this function is only
+    # called when x comes from the maplibre package
+    from maplibre.map import Map
+
+    if not isinstance(x, Map):
+        raise TypeError(f"Don't know how to coerce {x} into a maplibre Map object.")
+
+    try:
+        from maplibre.ipywidget import MapWidget
+    except (ImportError, NameError):
+        # maplibre.ipywidget requires anywidget, and unfortunately raises a
+        # NameError (not ImportError) when it's missing
+        raise ImportError(
+            "Install maplibre's anywidget extra to use maplibre with shinywidgets (pip install 'maplibre[anywidget]')."
+        )
+
+    # MapWidget.__init__() expects MapOptions (not the dict that Map stores), and
+    # provides no way to pass queued calls, so transfer the state after
+    # construction. Map.to_dict() returns exactly the state the frontend needs
+    # (map options plus the queued JS calls that get replayed on render).
+    state = x.to_dict()  # type: ignore
+    res = MapWidget()
+    res.map_options = state["mapOptions"]
+    res._message_queue = state["calls"]
+    return res  # type: ignore
+
+
 def as_widget_plotly(x: object) -> Optional[Widget]:
     # Don't need a try import here since this won't be called unless x is a plotly object
     import plotly.graph_objects as go
@@ -99,6 +127,7 @@ def as_widget_pydeck(x: object) -> Optional[Widget]:
 AS_WIDGET_MAP = {
     "altair": as_widget_altair,
     "bokeh": as_widget_bokeh,
+    "maplibre": as_widget_maplibre,
     "plotly": as_widget_plotly,
     "pydeck": as_widget_pydeck,
 }
