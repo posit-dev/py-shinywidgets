@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### New features
+
+* Added a `render_holoviews()` renderer, and `as_widget()` now coerces [HoloViews](https://holoviews.org/) objects (including [hvPlot](https://hvplot.holoviz.org/) plots) into a bokeh widget via `holoviews.render()`. Note this drops HoloViews-specific server-side interactivity (e.g., streams on `DynamicMap`s), but retains bokeh-level interactivity (pan/zoom/etc).
+
 ### Breaking changes
 
 * shinywidgets now requires ipywidgets 8 or newer. (#237)
