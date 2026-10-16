@@ -19,7 +19,7 @@ classifiers = [
 ]
 dependencies = [
   "anywidget",
-  "ipywidgets>=7.6.5",
+  "ipywidgets>=8.0.0",
   "jupyter_core",
   "python-dateutil>=2.8.2",
   "shiny>=0.6.1.9005",
