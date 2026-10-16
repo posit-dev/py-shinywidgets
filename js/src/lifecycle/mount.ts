@@ -7,7 +7,9 @@
  * disposing a mount never closes a session-retained shared *model*.
  ******************************************************************************/
 
+import { DOMWidgetView } from "@jupyter-widgets/base";
 import type { WidgetView } from "@jupyter-widgets/base";
+import { MessageLoop, LuminoWidget } from "shinywidgets-internals";
 import type { EpochManager } from "./manager";
 import type {
   DisplayLeaseId,
@@ -74,6 +76,34 @@ export class MountScope {
 
   untrackView(view: WidgetView): void {
     this._views.delete(view);
+  }
+
+  removeViewTree(view: WidgetView): void {
+    const errors: unknown[] = [];
+    for (const child of [...this.walkViews()].reverse()) {
+      let parent = (child.options as { parent?: WidgetView }).parent;
+      while (parent) {
+        if (parent === view) {
+          try {
+            removeView(child);
+          } catch (error) {
+            errors.push(error);
+          }
+          break;
+        }
+        parent = (parent.options as { parent?: WidgetView }).parent;
+      }
+    }
+    try {
+      removeView(view);
+    } catch (error) {
+      errors.push(error);
+    }
+    if (errors.length > 0) {
+      throw new Error(
+        `Errors while removing widget view tree: ${errors.map(String).join("; ")}`
+      );
+    }
   }
 
   get views(): ReadonlySet<WidgetView> {
@@ -148,7 +178,7 @@ export class MountScope {
     // detaches. An already-removed presentation satisfies the disposal goal.
     for (const view of [...this._views].reverse()) {
       try {
-        view.remove();
+        removeView(view);
       } catch (error) {
         if (error instanceof Error && error.message === "Widget is not attached.") {
           continue;
@@ -300,4 +330,17 @@ export class RootMount extends MountScope {
     await this.retireAccepted();
     return lease;
   }
+}
+
+function removeView(view: WidgetView): void {
+  if (view instanceof DOMWidgetView) {
+    const widget = view.luminoWidget;
+    // Native containers can detach DOM without notifying Lumino. Complete its
+    // public detach protocol so dispose() can emit the view's removal event.
+    if (widget.parent === null && widget.isAttached && !widget.node.isConnected) {
+      MessageLoop.sendMessage(widget, LuminoWidget.Msg.BeforeDetach);
+      MessageLoop.sendMessage(widget, LuminoWidget.Msg.AfterDetach);
+    }
+  }
+  view.remove();
 }

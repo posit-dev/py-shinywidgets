@@ -88,6 +88,53 @@ def test_shared_model_survives_disposing_one_view(
     expect(page.locator("#snapshot")).to_have_text(BASELINE)
 
 
+def test_disconnected_box_child_receives_one_detach_cycle(
+    page: Page, local_app: ShinyAppProc
+) -> None:
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.on(
+        "console",
+        lambda message: (
+            errors.append(message.text) if message.type == "error" else None
+        ),
+    )
+    open_lifecycle_page(page, local_app)
+    expect(page.locator("#box")).to_have_text("child 0")
+    observed = page.evaluate_handle(
+        """() => {
+            const el = document.querySelector('#box');
+            const root = window.widgetLifecycle.acceptedViewFor(el);
+            const child = [...window.widgetLifecycle.existingMountFor(el).walkViews()]
+                .find(view => view.model.get('value') === 'child 0');
+            const widget = child.luminoWidget;
+            if (widget.parent === null) {
+                throw new Error('Expected a child managed by the Box layout');
+            }
+            const observed = {widget, messages: []};
+            const process = widget.processMessage.bind(widget);
+            widget.processMessage = message => {
+                if (message.type === 'before-detach' || message.type === 'after-detach') {
+                    observed.messages.push(message.type);
+                }
+                process(message);
+            };
+            root.el.remove();
+            return observed;
+        }"""
+    )
+    page.locator("#rerender").click()
+    expect(page.locator("#box")).to_have_text("child 1")
+    expect(page.locator("#snapshot")).to_have_text(BASELINE)
+    assert observed.evaluate("observed => observed.messages") == [
+        "before-detach",
+        "after-detach",
+    ]
+    assert observed.evaluate("observed => observed.widget.isDisposed")
+    observed.dispose()
+    assert not errors, errors
+
+
 def test_slow_candidate_never_attaches(page: Page, local_app: ShinyAppProc) -> None:
     open_lifecycle_page(page, local_app)
     expect(page.locator("#box")).to_have_text("child 0")

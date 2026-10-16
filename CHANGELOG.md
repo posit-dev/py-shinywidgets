@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Replacing, clearing, or showing an error in a widget output now removes its previous view through the widget lifecycle, so detached views do not remain tracked by the browser manager. Widgets with a session lifetime retain their models across renders. (#246)
 * Widget cleanup now preserves shared dependencies, collects unreachable reference cycles, and cancels pending initialization after retirement. Browser views release their display leases after removal. Retired connections cannot mutate models in a fresh session.
 * Pending and closed widget comms now support ipywidgets 8.0.0, including its comm trait validation and instance registry.
+* Closing or replacing an ipyleaflet map now stops its native callbacks and removes child views while preserving session-retained popup and control widgets.
 
 ## [0.8.2] - 2026-10-15
 

@@ -1,7 +1,7 @@
 # Issue #101 repro: marker popup with HTML child (ipywidgets 8), plus a
 # session-retained popup whose style is materialized by a temporary borrower's
 # default factory.
-from ipyleaflet import Map, Marker
+from ipyleaflet import Map, Marker, WidgetControl
 from ipywidgets import HTML
 from ipywidgets.widgets.widget_string import HTMLStyle
 from shiny import App, Inputs, Outputs, Session, reactive, render, ui
@@ -11,7 +11,9 @@ from traitlets import default
 
 app_ui = ui.page_fluid(
     ui.input_action_button("rerender", "Rerender"),
+    ui.input_action_button("close_map", "Close map"),
     ui.output_text("style_lifetime"),
+    ui.output_text("closed_map"),
     output_widget("map", height="400px"),
 )
 
@@ -19,6 +21,8 @@ app_ui = ui.page_fluid(
 def server(input: Inputs, output: Outputs, session: Session) -> None:
     counter = reactive.value(0)
     style_origin = reactive.value("")
+    closed_id = reactive.value("")
+    retained_control = HTML(value="retained control")
     shared_popup: HTML | None = None
 
     @reactive.effect
@@ -27,7 +31,7 @@ def server(input: Inputs, output: Outputs, session: Session) -> None:
         counter.set(counter.get() + 1)
 
     @render_widget
-    def map():
+    def map() -> Map:
         n = counter.get()
         m = Map(center=(52.204793 + n * 0.001, 0.121558), zoom=13)
         marker = Marker(location=(52.204793 + n * 0.001, 0.121558), draggable=False)
@@ -49,7 +53,21 @@ def server(input: Inputs, output: Outputs, session: Session) -> None:
             shared_popup.value = f"shared popup {n}"
             marker.popup = shared_popup
         m.add(marker)
+        m.add(WidgetControl(widget=retained_control, position="topright"))
         return m
+
+    @reactive.effect
+    @reactive.event(input.close_map)
+    def close_map() -> None:
+        widget = map.widget
+        if widget is not None:
+            model_id = widget.model_id
+            widget.close()
+            closed_id.set(model_id)
+
+    @render.text
+    def closed_map() -> str:
+        return closed_id.get()
 
     @render.text
     def style_lifetime() -> str:
