@@ -8,6 +8,7 @@ from shinywidgets._as_widget import (
     as_widget,
     as_widget_altair,
     as_widget_bokeh,
+    as_widget_maplibre,
     as_widget_plotly,
     as_widget_pydeck,
 )
@@ -18,6 +19,11 @@ def _inject_package(monkeypatch: pytest.MonkeyPatch, name: str) -> ModuleType:
     pkg.__path__ = []  # mark as a package for submodule imports
     monkeypatch.setitem(sys.modules, name, pkg)
     return pkg
+
+
+class StubSession:
+    def is_stub_session(self) -> bool:
+        return True
 
 
 def test_as_widget_passthrough_widget() -> None:
@@ -141,6 +147,99 @@ def test_as_widget_plotly_success_and_type_check_with_fakes(
 
     with pytest.raises(TypeError, match="plotly.graph_objects.FigureWidget"):
         as_widget_plotly(object())
+
+
+def _fake_maplibre(monkeypatch: pytest.MonkeyPatch):
+    _inject_package(monkeypatch, "maplibre")
+
+    class Map:
+        def __init__(self):
+            self._state = {
+                "mapOptions": {"style": "dark-matter"},
+                "calls": [["addSource", ("src", {"type": "geojson"})]],
+            }
+
+        def to_dict(self):
+            return self._state
+
+    map_mod = ModuleType("maplibre.map")
+    map_mod.Map = Map  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "maplibre.map", map_mod)
+
+    ipywidget_mod = ModuleType("maplibre.ipywidget")
+
+    def MapWidget():
+        return Widget.__new__(Widget)
+
+    ipywidget_mod.MapWidget = MapWidget  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "maplibre.ipywidget", ipywidget_mod)
+
+    return Map
+
+
+def test_as_widget_maplibre_rejects_non_map(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_maplibre(monkeypatch)
+    with pytest.raises(TypeError, match="maplibre"):
+        as_widget_maplibre(object())
+
+
+def test_as_widget_maplibre_anywidget_import_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Map = _fake_maplibre(monkeypatch)
+    # maplibre.ipywidget exists, but MapWidget isn't defined (e.g., because
+    # anywidget isn't installed)
+    monkeypatch.setitem(
+        sys.modules, "maplibre.ipywidget", ModuleType("maplibre.ipywidget")
+    )
+    with pytest.raises(ImportError, match=r"maplibre\[anywidget\]"):
+        as_widget_maplibre(Map())
+
+
+def test_as_widget_maplibre_transfers_map_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Map = _fake_maplibre(monkeypatch)
+
+    m = Map()
+    res = as_widget_maplibre(m)
+    assert isinstance(res, Widget)
+    assert res.map_options == m.to_dict()["mapOptions"]  # type: ignore[attr-defined]
+    assert res._message_queue == m.to_dict()["calls"]  # type: ignore[attr-defined]
+
+
+def test_as_widget_maplibre_dispatch_via_as_widget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Map = _fake_maplibre(monkeypatch)
+
+    MlMap = type("Map", (Map,), {"__module__": "maplibre.map"})
+
+    res = as_widget(MlMap())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_maplibre_real_map_widget(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("maplibre")
+    pytest.importorskip("anywidget")
+
+    import shinywidgets._shinywidgets as sw
+
+    monkeypatch.setattr(sw, "get_current_session", lambda: StubSession())
+
+    from maplibre import Map
+    from maplibre.ipywidget import MapWidget
+
+    m = Map()
+    m.add_source(
+        "src",
+        {"type": "geojson", "data": {"type": "FeatureCollection", "features": []}},
+    )
+
+    res = as_widget(m)
+    assert isinstance(res, MapWidget)
+    assert res.map_options == m.to_dict()["mapOptions"]
+    assert res._message_queue == m.to_dict()["calls"]
 
 
 def test_as_widget_pydeck_missing_show_errors() -> None:

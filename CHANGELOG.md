@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### New features
+
+* Added a `render_maplibre()` renderer, and `as_widget()` now coerces a [maplibre](https://eoda-dev.github.io/py-maplibregl/) `Map` into its `MapWidget` (requires `pip install 'maplibre[anywidget]'`). Note that maplibre also ships its own native Shiny bindings, but the widget route gives you `reactive_read()` access to map state (e.g., `view_state`, `clicked`).
+
 ### Breaking changes
 
 * shinywidgets now requires ipywidgets 8 or newer. (#237)
