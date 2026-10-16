@@ -41,8 +41,6 @@ class render_altair(render_widget_base[ValueT, JupyterChart]): ...
 class render_maplibre(render_widget_base[ValueT, MapWidget]): ...
 
 
-
-
 class render_bokeh(render_widget_base[ValueT, BokehModel]):
     def auto_output_ui(self) -> Tag:
         res = super().auto_output_ui()
