@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug fixes
 
-* Fixed an issue where widgets nested inside other widgets didn't render with ipywidgets 8. Examples include ipyleaflet marker popups with `HTML` children (#101) and `WidgetControl` children (#137). Widget outputs inserted dynamically, such as `output_widget()` inside `@render.ui`, now render too. The cause was that shinywidgets still bundled the ipywidgets 7-era JavaScript widget manager (`@jupyter-widgets/html-manager` 0.20); it now uses 1.0. (#237)
+* Fixed an issue where widgets nested inside other widgets didn't work reliably with ipywidgets 8. Depending on the widget, they either didn't render at all (e.g., an `HTML` child with a `style`, or a Plotly `FigureWidget`, inside an ipyleaflet popup) or rendered while logging errors like `Class HTMLStyleModel not found` (e.g., ipyleaflet popups, `WidgetControl` children, and leafmap legends). Widget outputs inserted dynamically, such as `output_widget()` inside `@render.ui`, had the same problem. The cause was that shinywidgets still bundled the ipywidgets 7-era JavaScript widget manager (`@jupyter-widgets/html-manager` 0.20); it now uses 1.0. (#75, #101, #137, #157, #194, #237)
+* Fixed an issue where an ipyleaflet map with many markers could turn gray and show no markers when re-rendered. (#215, #237)
 * Fixed an issue where fonts used by widget CSS, such as FontAwesome icons, failed to load (404). (#237)
 
 ## [0.8.2] - 2026-10-15
