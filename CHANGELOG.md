@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Widgets closed before their deferred initialization no longer reopen. This also applies when an output re-render or session end closes a widget before initialization. (#248)
 * Widget messages now use the Shiny session that created the widget, even when another session is active. Each session also has its own widget comm registry. (#248)
 * Widget cleanup now preserves dependencies of live widgets and collects unreachable widget cycles. (#252)
+* Widget models now remain available until output replacement removes their views. Cleanup from an old connection no longer interferes with widgets in a new connection. (#254)
 
 
 ## [0.8.2] - 2026-10-15

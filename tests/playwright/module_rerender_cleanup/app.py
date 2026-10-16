@@ -26,9 +26,6 @@ def slider_ui():
 @module.server
 def slider_server(input, output, session):
     counter = reactive.value(0)
-    # Lets the count output re-render only after the widget is (re)built,
-    # so the widget count it reports is never stale.
-    rendered = reactive.value(0)
 
     @reactive.effect
     @reactive.event(input.rerender)
@@ -38,15 +35,18 @@ def slider_server(input, output, session):
     @render_widget
     def w():
         counter.get()
-        widget = ipywidgets.IntSlider()
-        with reactive.isolate():
-            rendered.set(rendered.get() + 1)
-        return widget
+        return ipywidgets.IntSlider()
+
+    # The old widget is collected only after the browser releases its display
+    # lease (a round trip after the replacement attaches), so the count is
+    # eventually consistent rather than flush-synchronous.
+    @reactive.poll(lambda: live_sliders(session), 0.1)
+    def widget_count() -> int:
+        return live_sliders(session)
 
     @render.text
     def count():
-        rendered.get()
-        return f"renders={counter.get()} widgets={live_sliders(session)}"
+        return f"renders={counter.get()} widgets={widget_count()}"
 
 
 app_ui = ui.page_fluid(slider_ui("mod"))

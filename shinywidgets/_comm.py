@@ -2,11 +2,63 @@ from __future__ import annotations
 
 from base64 import b64encode
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from shiny import Session
 
 from ._serialization import json_packer
+
+if TYPE_CHECKING:
+    from ._lifecycle import EpochIdentity
+
+
+class ForeignPacketError(RuntimeError):
+    """
+    A well-formed packet for a different session/epoch (e.g., a stale packet
+    racing a reconnect). Well-formed foreign packets are dropped (not fatal);
+    legacy or malformed packets remain hard protocol errors.
+    """
+
+
+def pack_envelope(epoch: EpochIdentity, msg: Dict[str, Any]) -> Dict[str, object]:
+    """
+    Wrap a comm packet in the versioned shinywidgets envelope carrying the
+    session's model namespace and transport epoch.
+    """
+    return {
+        "sw": 1,
+        "session_id": epoch.session_id,
+        "model_namespace": epoch.model_namespace,
+        "epoch_id": epoch.epoch_id,
+        "msg": msg,
+    }
+
+
+def unpack_envelope(epoch: EpochIdentity, packet: object) -> Dict[str, object]:
+    """
+    Validate a received packet against the session's epoch and return the
+    inner comm packet. Legacy packets (no envelope) and foreign packets
+    (different session/namespace/epoch) are rejected explicitly.
+    """
+    if not isinstance(packet, dict) or packet.get("sw") != 1:
+        raise RuntimeError(
+            "Received a legacy shinywidgets packet (missing the versioned "
+            "envelope); the Python package and its JavaScript bundle are out "
+            "of sync."
+        )
+    if (
+        packet.get("session_id") != epoch.session_id
+        or packet.get("model_namespace") != epoch.model_namespace
+        or packet.get("epoch_id") != epoch.epoch_id
+    ):
+        raise ForeignPacketError(
+            "Received a shinywidgets packet for a different session/epoch; "
+            "it can't mutate this session's widgets."
+        )
+    msg = packet.get("msg")
+    if not isinstance(msg, dict):
+        raise RuntimeError("Malformed shinywidgets packet (missing 'msg').")
+    return msg
 
 
 class ShinyCommManager:
@@ -53,6 +105,7 @@ class ShinyComm:
         comm_manager: ShinyCommManager,
         target_name: str,
         session: Session,
+        epoch: EpochIdentity,
         data: DataType = None,
         metadata: MetadataType = None,
         buffers: BufferType = None,
@@ -65,6 +118,7 @@ class ShinyComm:
         # Messages are always published through the session that opened this
         # comm, even if another session is currently active at send time.
         self.session = session
+        self.epoch = epoch
         self._on_closed = on_closed
         self._msg_callback = None
         self._close_callback = None
@@ -187,7 +241,7 @@ class ShinyComm:
 
         session = self.session
 
-        msg_txt = json_packer(msg)
+        msg_txt = json_packer(pack_envelope(self.epoch, msg))
 
         async def _send():
             await session.send_custom_message(msg_type, msg_txt)  # type: ignore

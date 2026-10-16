@@ -5,8 +5,11 @@ import json
 from typing import Any, Dict
 
 import pytest
+from shinywidgets._lifecycle import EpochIdentity
 
 from tests.unit._fakes import FakeSession
+
+EPOCH = EpochIdentity(session_id="s1", model_namespace="ns", epoch_id="ep")
 
 
 def closure_map(fn: Any) -> Dict[str, Any]:
@@ -32,6 +35,7 @@ def test_open_registers_and_schedules_on_flush():
         comm_manager=mgr,
         target_name="jupyter.widget",
         session=session,  # type: ignore[arg-type]
+        epoch=EPOCH,
         data={"a": 1},
     )
 
@@ -43,7 +47,12 @@ def test_open_registers_and_schedules_on_flush():
     cells = closure_map(payloads["flush"][0])
     assert cells["msg_type"] == "shinywidgets_comm_open"
     assert cells["session"] is session
-    msg = json.loads(cells["msg_txt"])
+    packet = json.loads(cells["msg_txt"])
+    assert packet["sw"] == 1
+    assert packet["session_id"] == "s1"
+    assert packet["model_namespace"] == "ns"
+    assert packet["epoch_id"] == "ep"
+    msg = packet["msg"]
     assert msg["content"]["comm_id"] == "c1"
     assert msg["content"]["data"] == {"a": 1}
     assert msg["content"]["target_name"] == "jupyter.widget"
@@ -62,6 +71,7 @@ def test_send_schedules_on_flushed():
         comm_manager=mgr,
         target_name="jupyter.widget",
         session=session,  # type: ignore[arg-type]
+        epoch=EPOCH,
     )
     session._flush_handlers.clear()
 
@@ -70,7 +80,7 @@ def test_send_schedules_on_flushed():
     assert len(payloads["flushed"]) == 1
     cells = closure_map(payloads["flushed"][0])
     assert cells["msg_type"] == "shinywidgets_comm_msg"
-    msg = json.loads(cells["msg_txt"])
+    msg = json.loads(cells["msg_txt"])["msg"]
     assert msg["content"]["comm_id"] == "c1"
     assert msg["content"]["data"] == {"k": "v"}
 
@@ -85,6 +95,7 @@ def test_close_is_idempotent_and_unregisters():
         comm_manager=mgr,
         target_name="jupyter.widget",
         session=session,  # type: ignore[arg-type]
+        epoch=EPOCH,
     )
     session._flush_handlers.clear()
     session._flushed_handlers.clear()
@@ -109,6 +120,7 @@ def test_close_notifies_and_unregister_checks_identity():
         comm_manager=mgr,
         target_name="jupyter.widget",
         session=session,  # type: ignore[arg-type]
+        epoch=EPOCH,
         on_closed=lambda: notified.append("c1"),
     )
     c.close()
@@ -123,6 +135,7 @@ def test_close_notifies_and_unregister_checks_identity():
         comm_manager=mgr,
         target_name="jupyter.widget",
         session=session,  # type: ignore[arg-type]
+        epoch=EPOCH,
     )
     assert mgr.unregister_comm(c) is None
     assert mgr.comms["c1"] is other
@@ -138,6 +151,7 @@ def test_close_does_not_publish_when_session_ended():
         comm_manager=mgr,
         target_name="jupyter.widget",
         session=session,  # type: ignore[arg-type]
+        epoch=EPOCH,
     )
     session._flushed_handlers.clear()
 
@@ -161,6 +175,7 @@ def test_open_unregisters_if_publish_fails():
             comm_manager=mgr,
             target_name="jupyter.widget",
             session=session,  # type: ignore[arg-type]
+            epoch=EPOCH,
         )
     assert "c1" not in mgr.comms
 
@@ -175,13 +190,14 @@ def test_buffers_are_base64_encoded_and_validated(monkeypatch):
         comm_manager=mgr,
         target_name="jupyter.widget",
         session=session,  # type: ignore[arg-type]
+        epoch=EPOCH,
     )
     session._flush_handlers.clear()
     session._flushed_handlers.clear()
 
     c.send(data={"buffer_paths": [["x"]]}, buffers=[b"\x00\x01"])
     cells = closure_map(session._flushed_handlers[0])
-    msg = json.loads(cells["msg_txt"])
+    msg = json.loads(cells["msg_txt"])["msg"]
     assert msg["buffers"] == [base64.b64encode(b"\x00\x01").decode("ascii")]
 
     # Non-contiguous buffers must raise.
@@ -213,6 +229,7 @@ def test_msg_and_close_callbacks():
         comm_manager=mgr,
         target_name="jupyter.widget",
         session=session,  # type: ignore[arg-type]
+        epoch=EPOCH,
     )
 
     seen: Dict[str, Any] = {"msg": None, "close": None}

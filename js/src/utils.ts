@@ -5,8 +5,12 @@ import { decode, encode } from 'base64-arraybuffer';
 // along to the comm logic
 function jsonParse(x: string) {
   const msg = JSON.parse(x);
-  msg.buffers = msg.buffers.map((base64: string) => new DataView(decode(base64)));
+  decodeBuffers(msg);
   return msg;
+}
+
+function decodeBuffers(msg: any) {
+  msg.buffers = msg.buffers.map((base64: string) => new DataView(decode(base64)));
 }
 
 function normalizeBufferPayload(payload: ArrayBuffer | ArrayBufferView): ArrayBuffer {
@@ -88,4 +92,4 @@ class Throttler {
 }
 
 
-export { base64EncodeBuffers, jsonParse, Throttler };
+export { base64EncodeBuffers, decodeBuffers, jsonParse, Throttler };

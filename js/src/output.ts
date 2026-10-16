@@ -1,219 +1,336 @@
-import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
+import type { DOMWidgetView, WidgetView } from '@jupyter-widgets/base';
+import { MessageLoop, LuminoWidget } from 'shinywidgets-internals';
 import { ShinyComm } from './comm';
+import { WidgetLifecycle, newEventId } from './lifecycle/epoch';
+import { shinyRequireLoader } from './lifecycle/loader';
+import { MountScope, RootMount } from './lifecycle/mount';
+import {
+  parseEpochHello,
+  parseWidgetValue,
+  unpackComm,
+} from './lifecycle/protocol';
+import type {
+  DisplayClaim,
+  DisplayRelease,
+  EpochIdentity,
+  WidgetValue,
+} from './lifecycle/types';
+import { EpochRetiredError } from './lifecycle/types';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
-import { jsonParse } from './utils';
-import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
+import { decodeBuffers } from './utils';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
 
 /******************************************************************************
- * Define a custom HTMLManager for use with Shiny
+ * The document lifecycle controller (one per page).
+ *
+ * This line is the stable route-interception point for browser tests; the
+ * factory is intentionally local (no shipped window registry).
  ******************************************************************************/
+const lifecycle = createWidgetLifecycle();
 
-interface ModelWaiter {
-  resolve: (p: Promise<WidgetModel>) => void;
-  reject: (e: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
-}
-
-class OutputManager extends HTMLManager {
-  // Shiny delivers comm_open messages one at a time with microtask breaks
-  // between them. A parent model's deserialization may reference a child model
-  // whose comm_open hasn't been processed yet. The base get_model rejects
-  // missing models, so we override it to wait for late
-  // arrivals (with a timeout to avoid silent hangs).
-  private _modelWaiters = new Map<string, ModelWaiter[]>();
-  private _activeClears = 0;
-
-  async get_model(model_id: string): Promise<WidgetModel> {
-    if (this.has_model(model_id)) {
-      return super.get_model(model_id);
-    }
-    if (this._activeClears > 0) {
-      throw new Error(`Widget state cleared while waiting for model ${model_id}`);
-    }
-    return new Promise<WidgetModel>((resolve, reject) => {
-      // Use a generous timeout: heavy sessions (1000s of comm_opens) or slow
-      // networks can legitimately delay a child's comm_open well past 10s.
-      const waiter: ModelWaiter = {
-        resolve,
-        reject,
-        timer: setTimeout(() => {
-          this._dropWaiter(model_id, waiter);
-          reject(new Error(`Timeout waiting for widget model ${model_id}`));
-        }, 30000),
-      };
-      const waiters = this._modelWaiters.get(model_id) || [];
-      waiters.push(waiter);
-      this._modelWaiters.set(model_id, waiters);
-    });
-  }
-
-  register_model(model_id: string, modelPromise: Promise<WidgetModel>): void {
-    super.register_model(model_id, modelPromise);
-    const waiters = this._modelWaiters.get(model_id);
-    if (waiters) {
-      this._modelWaiters.delete(model_id);
-      for (const waiter of waiters) {
-        clearTimeout(waiter.timer);
-        waiter.resolve(modelPromise);
-      }
-    }
-  }
-
-  async clear_state(): Promise<void> {
-    // Model deserialization can reach get_model() after the waiter sweep.
-    this._activeClears++;
-    try {
-      for (const [model_id, waiters] of this._modelWaiters) {
-        for (const waiter of waiters) {
-          clearTimeout(waiter.timer);
-          waiter.reject(
-            new Error(`Widget state cleared while waiting for model ${model_id}`)
-          );
-        }
-      }
-      this._modelWaiters.clear();
-      await super.clear_state();
-    } finally {
-      this._activeClears--;
-    }
-  }
-
-  private _dropWaiter(model_id: string, waiter: ModelWaiter): void {
-    const waiters = this._modelWaiters.get(model_id);
-    if (!waiters) {
-      return;
-    }
-    const remaining = waiters.filter((w) => w !== waiter);
-    if (remaining.length > 0) {
-      this._modelWaiters.set(model_id, remaining);
-    } else {
-      this._modelWaiters.delete(model_id);
-    }
-  }
-}
-
-// Define our own custom module loader for Shiny
-const shinyRequireLoader = async function(moduleName: string, moduleVersion: string): Promise<any> {
-
-  // shiny provides a shim of require.js which allows <script>s with anonymous
-  // define()s to be loaded without error. When an anonymous define() occurs,
-  // the shim uses the data-requiremodule attribute (set by require.js) on the script
-  // to determine the module name.
-  // https://github.com/posit-dev/py-shiny/blob/230940c/scripts/define-shims.js#L10-L16
-  // In the context of shinywidgets, when a widget gets rendered, it should
-  // come with another <script> tag that does `require.config({paths: {...}})`
-  // which maps the module name to a URL of the widget's JS file.
-  const oldAmd = (window as any).define.amd;
-
-  // This is probably not necessary, but just in case -- especially now in a
-  // anywidget/ES6 world, we probably don't want to load AMD modules
-  // (plotly is one example of a widget that will fail to load if AMD is enabled)
-  (window as any).define.amd = false;
-
-  // Store jQuery global since loading we load a module, it may overwrite it
-  // (qgrid is one good example)
-  const old$ = (window as any).$;
-  const oldJQ = (window as any).jQuery;
-
-  if (moduleName === 'qgrid') {
-    // qgrid wants to use base/js/dialog (if it's available) for full-screen tables
-    // https://github.com/quantopian/qgrid/blob/877b420/js/src/qgrid.widget.js#L11-L16
-    // Maybe that's worth supporting someday, but for now, we define it to be nothing
-    // to avoid require('qgrid') from producing an error
-    (window as any).define("base/js/dialog", [], function() { return null });
-  }
-
-  return requireLoader(moduleName, moduleVersion).finally(() => {
-    (window as any).define.amd = oldAmd;
-    (window as any).$ = old$;
-    (window as any).jQuery = oldJQ;
+function createWidgetLifecycle(): WidgetLifecycle {
+  const controller = new WidgetLifecycle({
+    loader: shinyRequireLoader,
+    sendEvents: (packet) => {
+      Shiny.setInputValue("shinywidgets_display", JSON.stringify(packet), {
+        priority: "event",
+      });
+    },
   });
-}
 
-const manager = new OutputManager({ loader: shinyRequireLoader });
+  // One document resize handler over active owned views (never one listener
+  // per manager/mount).
+  window.addEventListener("resize", () => {
+    for (const view of controller.activeViews()) {
+      const lumino = (view as any).luminoWidget ?? (view as any).pWidget;
+      if (lumino !== undefined && !lumino.isDisposed) {
+        MessageLoop.postMessage(lumino, LuminoWidget.ResizeMessage.UnknownSize);
+      }
+    }
+  });
+
+  return controller;
+}
 
 
 /******************************************************************************
-* Define the Shiny binding
-******************************************************************************/
+ * Presentation helpers
+ ******************************************************************************/
 
-interface WidgetOutputValue {
-  model_id: string;
-  fill: boolean;
-  widget_pkg: string;
+// An old task must never set or clear the identity attribute of a newer mount.
+function setCurrentModelId(el: HTMLElement, mount: RootMount, modelId: string): void {
+  el.dataset.shinywidgetsModelId = modelId;
 }
 
-// Ideally we'd extend Shiny's HTMLOutputBinding, but the implementation isn't exported
-class IPyWidgetOutput extends Shiny.OutputBinding {
-  private _views = new WeakMap<HTMLElement, DOMWidgetView>();
+function clearCurrentModelId(el: HTMLElement): void {
+  delete el.dataset.shinywidgetsModelId;
+}
 
+// Package-specific view teardown (e.g., Plotly leaves DOM state and listeners
+// behind unless destroy() runs before removal). Runs once per view.
+function destroyViewAdapter(view: WidgetView): () => void {
+  return () => {
+    const v = view as any;
+    if (typeof v.destroy === "function" && v.model !== undefined) {
+      v.destroy();
+      delete v.model;
+    }
+  };
+}
+
+function sendRelease(
+  mount: RootMount,
+  leaseId: string,
+  reason: DisplayRelease["reason"],
+  cleanup: DisplayRelease["cleanup"]
+): void {
+  lifecycle.sendDisplayEvent(
+    {
+      action: "release",
+      event_id: newEventId(),
+      output_id: mount.outputId,
+      lease_id: leaseId as DisplayRelease["lease_id"],
+      mount_id: mount.mountId,
+      presentation_removed: true,
+      reason,
+      cleanup,
+    },
+    false
+  );
+}
+
+function sendCancelClaim(mount: RootMount, claimSeq: number): void {
+  lifecycle.sendDisplayEvent(
+    {
+      action: "cancel-claim",
+      event_id: newEventId(),
+      output_id: mount.outputId,
+      mount_id: mount.mountId,
+      claim_seq: claimSeq,
+    },
+    false
+  );
+}
+
+function reportTerminalTask(error: unknown): void {
+  if (error instanceof EpochRetiredError) {
+    // Expected retirement cancellation, not a user-visible failure.
+    return;
+  }
+  console.error("shinywidgets presentation task failed:", error);
+}
+
+
+/******************************************************************************
+ * The output binding
+ ******************************************************************************/
+
+class IPyWidgetOutput extends Shiny.OutputBinding {
   find(scope: HTMLElement): JQuery<HTMLElement> {
     return $(scope).find(".shiny-ipywidget-output");
   }
+
   onValueError(el: HTMLElement, err: ErrorsMessageValue): void {
-    this._removeView(el);
+    // Invalidate admission synchronously; cleanup/release is a tracked task
+    // (Shiny doesn't await onValueError). The error markup is presented only
+    // after the mount has removed the old presentation: replacing the
+    // element's content first would break Lumino's detach precondition.
+    clearCurrentModelId(el);
     Shiny.unbindAll(el);
     el.style.visibility = "inherit";
-    this.renderError(el, err);
+    const mount = lifecycle.existingMountFor(el);
+    const present = () => this.renderError(el, err);
+    if (mount === null) {
+      present();
+      return;
+    }
+    void mount
+      .retirePresentation()
+      .catch((error) => {
+        console.error("shinywidgets: cleanup failed after output error:", error);
+        return null;
+      })
+      .then((lease) => {
+        present();
+        if (lease !== null) {
+          sendRelease(mount, lease, "error", "complete");
+        }
+      });
   }
-  async renderValue(el: HTMLElement, data: WidgetOutputValue | null): Promise<void> {
-    const hiddenVisibility = "hidden";
-    const revealVisibility = "inherit";
-    const renderToken = this._nextRenderToken(el);
 
-    // Allow for a None/null value to hide the widget (css inspired by htmlwidgets)
+  renderValue(el: HTMLElement, data: unknown): void {
+    // Synchronously start/record the candidate task and return; Shiny's
+    // dispatch queue must not wait on later protocol/model messages.
     if (!data) {
-      this._removeView(el);
-      el.style.visibility = hiddenVisibility;
+      // A null value can arrive before any widget (or epoch hello) exists,
+      // and doesn't need one: hide and release any existing presentation.
+      clearCurrentModelId(el);
+      el.style.visibility = "hidden";
+      const mount = lifecycle.existingMountFor(el);
+      if (mount !== null) {
+        void mount
+          .retirePresentation()
+          .then((lease) => {
+            if (lease !== null) {
+              sendRelease(mount, lease, "null", "complete");
+            }
+          })
+          .catch(reportTerminalTask);
+      }
       return;
     }
 
-    const isPlotlyWidget = data.widget_pkg === "plotly";
-    el.style.visibility = isPlotlyWidget ? hiddenVisibility : revealVisibility;
+    const value = parseWidgetValue(data);
+    const task = this._prepareCandidate(el, value);
+    task.catch(reportTerminalTask);
+  }
+
+  /**
+   * Prepare a replacement candidate: claim its display lease and prepare its
+   * view concurrently. Once the current candidate has a claimed lease and a
+   * prepared view, the old presentation is removed and the new one attaches.
+   */
+  private async _prepareCandidate(
+    el: HTMLElement,
+    value: WidgetValue
+  ): Promise<void> {
+    // The hello can legitimately arrive after the first value; wait for it
+    // outside Shiny's dispatch queue.
+    const epoch = await lifecycle.waitForEpoch();
+    const mount = lifecycle.mountFor(el, value.output_id);
+    mount.outputId = value.output_id;
+    const candidate = mount.startCandidate();
+    const task = this._prepareCandidateWithEpoch(el, mount, candidate, value);
+    mount.trackTask(task);
+    await task;
+  }
+
+  private async _prepareCandidateWithEpoch(
+    el: HTMLElement,
+    mount: RootMount,
+    candidate: MountScope,
+    value: WidgetValue
+  ): Promise<void> {
+    const epoch = mount.epoch;
+    const claimSeq = mount.nextClaimSeq();
+    const claim: DisplayClaim = {
+      action: "claim",
+      event_id: newEventId(),
+      output_id: value.output_id,
+      offer_id: value.offer_id,
+      candidate_lease_id: value.candidate_lease_id,
+      generation_id: value.generation_id,
+      root_id: value.model_id,
+      mount_id: mount.mountId,
+      claim_seq: claimSeq,
+    };
+    const claimResult = lifecycle.sendDisplayEvent(claim, true);
+    if (claimResult === null) {
+      throw new EpochRetiredError("no active epoch for display claim");
+    }
+
+    // Prepare the view concurrently with the claim round-trip.
+    const model = await epoch.get_model(value.model_id);
+    candidate.checkAdmission("prepare");
+    const view = await epoch.create_view(model as any, {
+      lifecycle_scope: candidate,
+    });
+    candidate.onDispose(destroyViewAdapter(view));
+    candidate.checkAdmission("prepare");
+
+    const result = await claimResult;
+    candidate.checkAdmission("prepare");
+    if (!("claimed" in result.outcome)) {
+      mount.retireCandidate(candidate);
+      if (
+        result.outcome.refused === "root-closed" ||
+        result.outcome.refused === "stale-offer"
+      ) {
+        // A cached replay of a collected widget can never be resurrected.
+        this.renderError(el, {
+          message:
+            "This widget's render lifetime has ended. Create reusable " +
+            "widgets inside session_lifetime(), or re-render the output.",
+        } as ErrorsMessageValue);
+      }
+      return;
+    }
+    const leaseId = result.outcome.claimed;
+
+    // Accept: remove the old presentation (through its mount), attach the
+    // prepared view, then release the old lease after observable cleanup.
+    // A genuine teardown failure is reported and marked on the release, but
+    // never blocks the replacement: the presentation is already absent.
+    const oldLease = mount.acceptedLease;
+    clearCurrentModelId(el);
+    let oldCleanup: "complete" | "failed" = "complete";
+    try {
+      await mount.retireAccepted();
+    } catch (error) {
+      oldCleanup = "failed";
+      console.error("shinywidgets: error disposing replaced presentation:", error);
+    }
+    mount.acceptCandidate(candidate, value, leaseId, view);
+    try {
+      this._attach(el, view, value);
+    } catch (error) {
+      // Attachment failure releases the candidate lease and removes any
+      // partial presentation.
+      mount.retireCandidate(candidate);
+      await mount.retireAccepted();
+      sendRelease(mount, leaseId, "error", "failed");
+      throw error;
+    }
+    setCurrentModelId(el, mount, value.model_id);
+    if (oldLease !== null) {
+      sendRelease(mount, oldLease, "replaced", oldCleanup);
+    }
+    this._postAttach(el, candidate, value);
+  }
+
+  private _attach(el: HTMLElement, view: WidgetView, value: WidgetValue): void {
+    // Clear stale error markup/residual content before attaching the new
+    // presentation (#246 recovery ordering).
+    el.replaceChildren();
+    const lumino = (view as any).luminoWidget ?? (view as any).pWidget;
+    LuminoWidget.attach(lumino, el);
+  }
+
+  private _postAttach(
+    el: HTMLElement,
+    candidate: MountScope,
+    value: WidgetValue
+  ): void {
+    const isPlotlyWidget = value.widget_pkg === "plotly";
+    el.style.visibility = isPlotlyWidget ? "hidden" : "inherit";
 
     // Only forward the potential to fill if `output_widget(fillable=True)`
     // _and_ the widget instance wants to fill
-    const fill = data.fill && el.classList.contains("html-fill-container");
+    const fill = value.fill && el.classList.contains("html-fill-container");
     if (fill) el.classList.add("forward-fill-potential");
 
-    // At this time point, we should've already handled an 'open' message, and so
-    // the model should be ready to use
-    const model = await manager.get_model(data.model_id);
-
-    // N.B. no `{ el }` option: base-manager just passes options through to
-    // `view.options`, which nothing reads; attachment happens in display_view
-    const view = await manager.create_view(model);
-    this._removeView(el);
-    el.replaceChildren();
-    await manager.display_view(view, el);
-    this._views.set(el, view);
-    view.once("remove", () => {
-      if (this._views.get(el) === view) {
-        this._views.delete(el);
-      }
-    });
-
-    // The ipywidgets container (.lmWidget)
+    // The ipywidgets container (.lm-Widget)
     const lmWidget = el.children[0] as HTMLElement;
 
     if (fill) {
-      this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
+      this._onImplementation(lmWidget, candidate, () =>
+        this._doAddFillClasses(lmWidget)
+      );
     }
     if (!isPlotlyWidget) {
-      this._onImplementation(lmWidget, () => this._doResize());
+      this._onImplementation(lmWidget, candidate, () => this._doResize());
     } else {
-      this._onImplementation(lmWidget, () => {
-        if (!this._isCurrentRenderToken(el, renderToken)) {
+      this._onImplementation(lmWidget, candidate, () => {
+        if (!candidate.accepting) {
           return;
         }
 
         const plotEl = findPlotlyGraphDiv(lmWidget);
         if (!plotEl) {
           this._doResize();
-          if (this._isCurrentRenderToken(el, renderToken)) {
-            el.style.visibility = revealVisibility;
+          if (candidate.accepting) {
+            el.style.visibility = "inherit";
           }
           return;
         }
@@ -221,24 +338,24 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
         // Plotly FigureWidget may first render at its internal 360px fallback,
         // then resize after paint. Keep it hidden until a direct Plotly resize
         // completes so the first visible paint is already settled.
-        void waitForPlotlyReadyToReveal(plotEl, () => this._doResize()).finally(() => {
-          if (this._isCurrentRenderToken(el, renderToken)) {
-            el.style.visibility = revealVisibility;
+        const reveal = waitForPlotlyReadyToReveal(plotEl, () => this._doResize());
+        candidate.onDispose(() => {
+          void reveal;
+        });
+        void reveal.finally(() => {
+          if (candidate.accepting) {
+            el.style.visibility = "inherit";
           }
         });
       });
     }
   }
-  _nextRenderToken(el: HTMLElement): number {
-    const trackedEl = el as HTMLElement & { __shinywidgetsRenderToken?: number };
-    const nextToken = (trackedEl.__shinywidgetsRenderToken ?? 0) + 1;
-    trackedEl.__shinywidgetsRenderToken = nextToken;
-    return nextToken;
-  }
-  _isCurrentRenderToken(el: HTMLElement, token: number): boolean {
-    return (el as HTMLElement & { __shinywidgetsRenderToken?: number }).__shinywidgetsRenderToken === token;
-  }
-  _onImplementation(lmWidget: HTMLElement, callback: () => void): void {
+
+  _onImplementation(
+    lmWidget: HTMLElement,
+    candidate: MountScope,
+    callback: () => void
+  ): void {
     if (this._hasImplementation(lmWidget)) {
       callback();
       return;
@@ -252,9 +369,11 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
         callback();
       }
     });
+    candidate.onDispose(() => mo.disconnect());
 
-    mo.observe(lmWidget, {childList: true});
+    mo.observe(lmWidget, { childList: true });
   }
+
   // In most cases, we can get widgets to fill through Python/CSS, but some widgets
   // (e.g., quak) don't have a Python API and use shadow DOM, which can only access
   // from JS
@@ -266,35 +385,56 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       const quakWidget = impl.shadowRoot.querySelector(".quak") as HTMLElement;
       quakWidget.style.maxHeight = "unset";
     }
-
   }
+
   _doResize(): void {
     // Trigger resize event to force layout (setTimeout() is needed for altair)
-    // TODO: debounce this call?
     setTimeout(() => {
-      window.dispatchEvent(new Event('resize'))
+      window.dispatchEvent(new Event("resize"));
     }, 0);
   }
+
   _hasImplementation(lmWidget: HTMLElement): boolean {
     const impl = lmWidget.children[0];
     return impl && (impl.children.length > 0 || impl.shadowRoot?.children.length > 0);
-  }
-  private _removeView(el: HTMLElement): void {
-    const view = this._views.get(el);
-    this._views.delete(el);
-    view?.remove();
   }
 }
 
 Shiny.outputBindings.register(new IPyWidgetOutput(), "shiny.IPyWidgetOutput");
 
+// Release the exact server lease when an output element is unbound (e.g.,
+// dynamic UI removal). Admission is invalidated synchronously first.
+$(document).on("shiny:unbound", (event: any) => {
+  if (event.bindingType !== "output") {
+    return;
+  }
+  const el = event.target as HTMLElement;
+  if (!el.classList || !el.classList.contains("shiny-ipywidget-output")) {
+    return;
+  }
+  const mount = lifecycle.existingMountFor(el);
+  if (mount === null) {
+    return;
+  }
+  clearCurrentModelId(el);
+  void mount
+    .retirePresentation()
+    .then((lease) => {
+      if (lease !== null) {
+        sendRelease(mount, lease, "unbound", "complete");
+      }
+      lifecycle.forgetMount(el);
+    })
+    .catch(reportTerminalTask);
+});
 
-// Due to the way HTMLManager (and widget implementations) get loaded (via
-// require.js), the binding registration above can happen _after_ Shiny has
-// already bound the DOM, especially in the dynamic UI case (i.e., output_binding()'s
-// dependencies don't come in until after initial page load). And, in the dynamic UI
-// case, UI is rendered asychronously via Shiny.shinyapp.taskQueue, so if it exists,
-// we probably need to re-bind the DOM after the taskQueue is done.
+// Due to the way widget implementations get loaded (via require.js), the
+// binding registration above can happen _after_ Shiny has already bound the
+// DOM, especially in the dynamic UI case (i.e., output_binding()'s
+// dependencies don't come in until after initial page load). And, in the
+// dynamic UI case, UI is rendered asychronously via Shiny.shinyapp.taskQueue,
+// so if it exists, we probably need to re-bind the DOM after the taskQueue is
+// done.
 const taskQueue = Shiny?.shinyapp?.taskQueue;
 if (taskQueue) {
   taskQueue.enqueue(() => Shiny.bindAll(document.body));
@@ -304,100 +444,110 @@ if (taskQueue) {
 * Handle messages from the server-side Widget
 ******************************************************************************/
 
+Shiny.addCustomMessageHandler("shinywidgets_epoch", (message) => {
+  const identity = parseEpochHello(
+    typeof message === "string" ? JSON.parse(message) : message
+  );
+  lifecycle.handleEpochHello(identity);
+});
+
+Shiny.addCustomMessageHandler("shinywidgets_display_result", (message) => {
+  lifecycle.handleDisplayResult(
+    typeof message === "string" ? JSON.parse(message) : message
+  );
+});
+
 // Initialize the comm and model when a new widget is created
 // This is basically our version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1144-L1176
 Shiny.addCustomMessageHandler("shinywidgets_comm_open", (msg_txt) => {
   setBaseURL();
-  const msg = jsonParse(msg_txt);
-  Shiny.renderDependencies(msg.content.html_deps);
-  const comm = new ShinyComm(msg.content.comm_id);
-  manager.handle_comm_open(comm, msg);
+  const epoch = lifecycle.currentEpoch();
+  const msg = unpackComm(epoch.identity, JSON.parse(msg_txt));
+  decodeBuffers(msg);
+  Shiny.renderDependencies((msg.content as any).html_deps);
+  // Parse, validate, and enqueue epoch-owned work synchronously; never return
+  // the model initialization promise (a parent's deserialization may need a
+  // later child's comm_open, and Shiny awaits handler promises).
+  const comm = new ShinyComm((msg.content as any).comm_id, epoch.identity);
+  void epoch.handle_comm_open(comm, msg as any).catch((error: unknown) => {
+    reportTerminalTask(error);
+  });
 });
 
 // Handle any mutation of the model (e.g., add a marker to a map, without a full redraw)
 // Basically out version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1200-L1215
-Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
-  const msg = jsonParse(msg_txt);
-  const id = msg.content.comm_id;
-  if (!manager.has_model(id)) {
-    console.error(`Couldn't handle message for model ${id} because it doesn't exist.`);
-    return;
-  }
-  try {
-    const m = await manager.get_model(id);
-    // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
-    m.comm.handle_msg(msg);
-  } catch (err) {
-    console.error("Error handling message:", err);
-  }
+Shiny.addCustomMessageHandler("shinywidgets_comm_msg", (msg_txt) => {
+  const epoch = lifecycle.currentEpoch();
+  const msg = unpackComm(epoch.identity, JSON.parse(msg_txt));
+  decodeBuffers(msg);
+  const id = (msg.content as any).comm_id;
+  void (async () => {
+    if (!epoch.has_model(id)) {
+      console.error(`Couldn't handle message for model ${id} because it doesn't exist.`);
+      return;
+    }
+    try {
+      const m = await epoch.get_model(id);
+      (m.comm as any).handle_msg(msg);
+    } catch (err) {
+      if (err instanceof EpochRetiredError) {
+        return;
+      }
+      console.error("Error handling message:", err);
+    }
+  })();
 });
 
-
 // Handle the closing of a widget/comm/model
-Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
-  const msg = jsonParse(msg_txt);
-  const id = msg.content.comm_id;
-  if (!manager.has_model(id)) {
-    console.error(`Couldn't close model ${id} because it doesn't exist.`);
-    return;
-  }
-
-  try {
-    const m = await manager.get_model(id);
-
-    // Some widget views need explicit teardown before model.close() removes them.
-    if (m.views) {
-      await Promise.all(
-        Object.values(m.views).map(async (viewPromise) => {
-        try {
-          const v = await viewPromise;
-
-          // Plotly-backed views can leave DOM state and listeners behind unless
-          // destroy() runs before the view is removed.
-          if (hasMethod<DestroyMethod>(v, 'destroy')) {
-            v.destroy();
-            // Clearing the back-reference prevents later teardown from touching a
-            // model that is already being closed.
-            delete (v as any).model;
-            (v as any).remove();
-          }
-
-
-        } catch (err) {
-          console.error("Error cleaning up view:", err);
-        }
-      })
-    );
+Shiny.addCustomMessageHandler("shinywidgets_comm_close", (msg_txt) => {
+  const epoch = lifecycle.currentEpoch();
+  const msg = unpackComm(epoch.identity, JSON.parse(msg_txt));
+  const id = (msg.content as any).comm_id;
+  void (async () => {
+    if (!epoch.has_model(id)) {
+      console.error(`Couldn't close model ${id} because it doesn't exist.`);
+      return;
     }
-
-    // View removal updates _view_count. Mark the comm as inactive first so that
-    // save_changes() does not try to send those updates after the comm is gone.
-    m.comm_live = false;
-
-    // Close model after all views are cleaned up.
     try {
+      const m = await epoch.get_model(id);
+
+      // Some widget views need explicit teardown before model.close() removes
+      // them (e.g., Plotly leaves DOM state and listeners behind).
+      if (m.views) {
+        await Promise.all(
+          Object.values(m.views).map(async (viewPromise) => {
+            try {
+              const view = await viewPromise;
+              destroyViewAdapter(view)();
+              view.remove();
+            } catch (err) {
+              console.error("Error cleaning up view:", err);
+            }
+          })
+        );
+      }
+
+      // View removal updates _view_count. Mark the comm as inactive first so
+      // that save_changes() does not try to send those updates after the comm
+      // is gone.
+      m.comm_live = false;
+
+      // Close model after all views are cleaned up.
       await m.close();
-    } catch (closeErr) {
-      if (!isIgnorableTeardownError(closeErr)) {
-        console.error("Unexpected error while closing model:", closeErr);
-      }
-    }
 
-    // HTMLManager releases the model from its registry on comm:close.
-    try {
+      // Releases the model from its epoch registry on comm:close.
       m.trigger("comm:close");
-    } catch (triggerErr) {
-      if (!isIgnorableTeardownError(triggerErr)) {
-        console.error("Unexpected error while triggering comm:close:", triggerErr);
+    } catch (err) {
+      if (err instanceof EpochRetiredError) {
+        return;
       }
+      console.error("Error during model cleanup:", err);
     }
-  } catch (err) {
-    console.error("Error during model cleanup:", err);
-  }
+  })();
 });
 
 $(document).on("shiny:disconnected", () => {
-  manager.clear_state();
+  lifecycle.handleDisconnected();
 });
 
 // When in filling layout, some widgets (specifically, altair) incorrectly think their
@@ -418,28 +568,4 @@ function setBaseURL(x: string = '') {
   if (!base_url) {
     document.querySelector('body').setAttribute('data-base-url', x);
   }
-}
-
-// TypeGuard to safely check if an object has a method
-function hasMethod<T>(obj: any, methodName: keyof T): obj is T {
-    return typeof obj[methodName] === 'function';
-}
-
-function isIgnorableTeardownError(err: unknown): boolean {
-  const msg = errorMessage(err).toLowerCase();
-  return (
-    msg.includes("widget is not attached") ||
-    msg.includes("no comm channel defined")
-  );
-}
-
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) {
-    return err.message;
-  }
-  return String(err);
-}
-
-interface DestroyMethod {
-    destroy(): void;
 }

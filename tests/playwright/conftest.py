@@ -1,7 +1,34 @@
 from __future__ import annotations
 
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Page, Route, expect
 from shiny.run import ShinyAppProc
+
+
+def open_lifecycle_page(
+    page: Page, local_app: ShinyAppProc, url: str | None = None
+) -> Page:
+    """
+    Open an app page with the served output bundle's lifecycle controller
+    exposed for test instrumentation (route-local only; no production global).
+    """
+
+    def expose_lifecycle(route: Route) -> None:
+        response = route.fetch()
+        text = response.text()
+        original = "const lifecycle = createWidgetLifecycle();"
+        assert text.count(original) == 1
+        route.fulfill(
+            response=response,
+            body=text.replace(
+                original,
+                "const lifecycle = window.widgetLifecycle = createWidgetLifecycle();",
+            ),
+        )
+
+    page.route("**/output.js", expose_lifecycle)
+    page.goto(url or local_app.url)
+    page.wait_for_function("!!window.widgetLifecycle")
+    return page
 
 
 def assert_rerender_cleanup(

@@ -100,19 +100,19 @@ def test_session_is_wired_once_and_open_effect_assigns_comm(
     assert len(root._ended_handlers) == 1
 
     # Widget got an id, a record, and a pending comm immediately.
-    assert w1._model_id == "w1"
-    record = lifecycle.records["w1"]
+    assert w1._model_id == "sw-w1-w1"
+    record = lifecycle.records["sw-w1-w1"]
     assert record.widget is w1
     assert record.state == "pending"
-    assert getattr(w1.comm, "comm_id", None) == "w1"
-    assert "w1" in lifecycle.session_lifetime.roots
+    assert getattr(w1.comm, "comm_id", None) == "sw-w1-w1"
+    assert "sw-w1-w1" in lifecycle.session_lifetime.roots
 
     open_eff = next(e for e in reactive.effects if e.fn.__name__ == "_open_shiny_comm")
     assert open_eff.priority == 99999
     open_eff()
     assert open_eff.destroyed is True
     assert isinstance(w1.comm, FakeShinyComm)
-    assert lifecycle.comm_manager.comms["w1"] is w1.comm
+    assert lifecycle.comm_manager.comms["sw-w1-w1"] is w1.comm
     assert w1.comm.target_name == "jupyter.widget"
     assert w1.comm.keys["session"] is root
     assert "_repr_mimebundle_" in w1.calls
@@ -146,11 +146,19 @@ def test_comm_send_handler_routes_to_existing_comm(
     lifecycle = sw.get_lifecycle(root)
     send_eff = next(e for e in reactive.effects if e.fn.__name__ == "_")
     root.input._shinywidgets_comm_send_value = json.dumps(
-        {"content": {"comm_id": "w1"}}
+        {
+            "sw": 1,
+            "session_id": lifecycle.epoch.session_id,
+            "model_namespace": lifecycle.epoch.model_namespace,
+            "epoch_id": lifecycle.epoch.epoch_id,
+            "msg": {"content": {"comm_id": "sw-w1-w1"}},
+        }
     )
     send_eff()
 
-    assert lifecycle.comm_manager.comms["w1"].last_msg == {"content": {"comm_id": "w1"}}
+    assert lifecycle.comm_manager.comms["sw-w1-w1"].last_msg == {
+        "content": {"comm_id": "sw-w1-w1"}
+    }
 
 
 def test_session_end_cleanup_closes_widgets_and_clears_maps(
@@ -167,7 +175,7 @@ def test_session_end_cleanup_closes_widgets_and_clears_maps(
     w = FakeWidget()
     sw.init_shiny_widget(w)  # type: ignore[arg-type]
     lifecycle = sw.get_lifecycle(root)
-    assert "w1" in lifecycle.records
+    assert "sw-w1-w1" in lifecycle.records
 
     root.end()
     assert w.closed is True
@@ -202,13 +210,13 @@ def test_render_lifetime_retirement_closes_widget_and_preserves_model_id(
 
     w = FakeWidget()
     sw.init_shiny_widget(w)  # type: ignore[arg-type]
-    assert lifecycle.records["w1"].lifetime is lifetime
+    assert lifecycle.records["sw-w1-w1"].lifetime is lifetime
 
     lifecycle.retire_render(lifetime)
     assert w.closed is True
-    assert "w1" not in lifecycle.records
+    assert "sw-w1-w1" not in lifecycle.records
     # The stable model ID is preserved as inert metadata on the closed widget.
-    assert getattr(w.comm, "comm_id", None) == "w1"
+    assert getattr(w.comm, "comm_id", None) == "sw-w1-w1"
 
 
 def test_nbextensions_mount_when_widget_dep_has_subdir(

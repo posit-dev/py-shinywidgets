@@ -118,6 +118,7 @@ def test_interleaved_renders_keep_separate_lifetimes(
                 await asyncio.sleep(delay)
                 return HTML(value=name)
 
+            renderer.output_id = name
             ctx = Context()
             contexts[name] = ctx
             with ctx():
@@ -139,6 +140,13 @@ def test_interleaved_renders_keep_separate_lifetimes(
 
         contexts["a"].invalidate()
         asyncio.run(reactive.flush())
+
+        # The published value's provisional display lease keeps the old widget
+        # alive until the browser's presentation is replaced (simulated here
+        # by retracting the output's publication).
+        assert model_ids["a"] in lifecycle.records
+        lifecycle.retract("a")
+        lifecycle.collect()
 
         assert model_ids["a"] not in lifecycle.records
         assert model_ids["b"] in lifecycle.records
@@ -465,6 +473,117 @@ def test_session_end_removes_lifecycle(widget_session: Session) -> None:
         get_lifecycle(widget_session)
     asyncio.run(widget_session.close())
     assert widget_session not in lc._lifecycles
+
+
+def test_model_ids_are_session_namespaced(widget_session: Session) -> None:
+    with session_context(widget_session):
+        lifecycle = get_lifecycle(widget_session)
+        widget = HTML(value="x")
+        namespace = lifecycle.epoch.model_namespace
+        assert (
+            widget.model_id
+            == f"sw-{namespace}-{widget.model_id.removeprefix(f'sw-{namespace}-')}"
+        )
+        assert widget.model_id.startswith(f"sw-{namespace}-")
+        # A full ID in the same namespace is accepted opaquely.
+        same = lifecycle.qualify_model_id(widget.model_id)
+        assert same == widget.model_id
+        # A full ID from another namespace is rejected.
+        with pytest.raises(RuntimeError, match="different session namespace"):
+            lifecycle.qualify_model_id("sw-othernamespace-abc")
+
+
+def test_envelope_round_trip_and_legacy_rejection(widget_session: Session) -> None:
+    from shinywidgets._comm import pack_envelope, unpack_envelope
+
+    with session_context(widget_session):
+        lifecycle = get_lifecycle(widget_session)
+        msg = {"content": {"comm_id": "c1", "data": {"x": 1}}, "buffers": []}
+        packet = pack_envelope(lifecycle.epoch, msg)
+        assert packet["sw"] == 1
+        assert unpack_envelope(lifecycle.epoch, packet) is msg
+
+        with pytest.raises(RuntimeError, match="legacy shinywidgets packet"):
+            unpack_envelope(lifecycle.epoch, {"content": {"comm_id": "c1"}})
+        with pytest.raises(RuntimeError, match="different session/epoch"):
+            unpack_envelope(
+                lifecycle.epoch,
+                {
+                    "sw": 1,
+                    "session_id": lifecycle.epoch.session_id,
+                    "model_namespace": lifecycle.epoch.model_namespace,
+                    "epoch_id": "some-other-epoch",
+                    "msg": msg,
+                },
+            )
+        with pytest.raises(RuntimeError, match="Malformed shinywidgets packet"):
+            unpack_envelope(
+                lifecycle.epoch,
+                {
+                    "sw": 1,
+                    "session_id": lifecycle.epoch.session_id,
+                    "model_namespace": lifecycle.epoch.model_namespace,
+                    "epoch_id": lifecycle.epoch.epoch_id,
+                },
+            )
+
+
+def test_publication_transitions_release_unclaimed_provisional_lease(
+    widget_session: Session,
+) -> None:
+    with session_context(widget_session):
+        lifecycle = get_lifecycle(widget_session)
+        first = lifecycle.publish("out", "gen-1", "root-1")
+        assert lifecycle.snapshot().display_leases == 1
+        # Publishing a newer value releases the unclaimed provisional lease.
+        second = lifecycle.publish("out", "gen-2", "root-2")
+        assert second.offer_id != first.offer_id
+        assert first.provisional_lease_id not in lifecycle.display_leases
+        assert second.provisional_lease_id in lifecycle.display_leases
+        # A claimed lease is kept until its presentation release.
+        claimed = lifecycle.display_leases[second.provisional_lease_id]
+        claimed.mount_id = "mount-1"
+        claimed.claim_seq = 1
+        third = lifecycle.publish("out", "gen-3", "root-3")
+        assert second.provisional_lease_id in lifecycle.display_leases
+        # Null/error publication invalidates the offer.
+        lifecycle.retract("out")
+        assert "out" not in lifecycle.publications
+        assert third.provisional_lease_id not in lifecycle.display_leases
+        assert second.provisional_lease_id in lifecycle.display_leases
+        lifecycle.release_display(second.provisional_lease_id)
+        assert lifecycle.snapshot().display_leases == 0
+
+
+def test_module_render_publishes_through_root_session(
+    widget_session: Session,
+) -> None:
+    scoped = widget_session.make_scope("mod")
+    with session_context(scoped):
+        lifecycle = get_lifecycle(widget_session)
+        context = Context()
+        with context():
+            with WidgetRenderContext():
+                widget = HTML(value="module")
+                model_id = widget.model_id
+
+        renderer = render_widget_base()
+
+        @renderer
+        async def out() -> HTML:  # noqa: ANN202
+            return widget
+
+        render_context = Context()
+        with render_context():
+            result = asyncio.run(renderer.render())
+
+    assert isinstance(result, dict)
+    # The renderer's local output_id is resolved with the module's namespace.
+    assert result["output_id"] == "mod-out"
+    publication = lifecycle.publications["mod-out"]
+    assert publication.root_id == model_id
+    assert result["offer_id"] == publication.offer_id
+    assert result["candidate_lease_id"] == publication.provisional_lease_id
 
 
 def closed_widget_from_ended_session() -> tuple[

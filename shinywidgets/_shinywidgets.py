@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import warnings
 from base64 import b64decode
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Optional, Sequence, Union, cast
@@ -26,7 +27,13 @@ from shiny.session import get_current_session, require_active_session, session_c
 
 from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
-from ._comm import BufferType, PendingShinyComm, ShinyComm
+from ._comm import (
+    BufferType,
+    ForeignPacketError,
+    PendingShinyComm,
+    ShinyComm,
+    unpack_envelope,
+)
 from ._dependencies import require_dependency
 from ._lifecycle import (
     Lifetime,
@@ -106,6 +113,12 @@ def init_shiny_widget(w: Widget):
         record.state = "opening"
         w = record.widget
 
+        # Publish the session's epoch hello just before its first comm_open,
+        # so it always precedes any comm/value envelope the browser's
+        # lifecycle controller must validate. (Scheduling it earlier, e.g. at
+        # wire time, can put it ahead of the output binding's script load.)
+        schedule_epoch_hello(session, lifecycle)
+
         try:
             # Prepare state under the record's own lifetime: defaults and
             # children materialized here (e.g., Layout/Style) belong to the
@@ -141,6 +154,7 @@ def init_shiny_widget(w: Widget):
                 comm_manager=lifecycle.comm_manager,
                 target_name="jupyter.widget",
                 session=session,
+                epoch=lifecycle.epoch,
                 data={"state": state, "buffer_paths": buffer_paths},
                 buffers=cast(BufferType, buffers),
                 # TODO: should this be hard-coded?
@@ -167,6 +181,25 @@ def init_shiny_widget(w: Widget):
                 StaticFiles(directory=src_dir),
                 name=f"{widget_dep.name}-nbextension-static-resources",
             )
+
+
+def schedule_epoch_hello(session: Session, lifecycle: SessionLifecycle) -> None:
+    if lifecycle.hello_scheduled:
+        return
+    lifecycle.hello_scheduled = True
+
+    async def _send_epoch_hello():
+        await session.send_custom_message(
+            "shinywidgets_epoch",
+            {
+                "sw": 1,
+                "session_id": lifecycle.epoch.session_id,
+                "model_namespace": lifecycle.epoch.model_namespace,
+                "epoch_id": lifecycle.epoch.epoch_id,
+            },
+        )
+
+    session.on_flush(_send_epoch_hello)
 
 
 def current_lifetime(lifecycle: SessionLifecycle) -> Lifetime:
@@ -211,11 +244,35 @@ def wire_session(session: Session, lifecycle: SessionLifecycle) -> None:
         @reactive.event(session.input.shinywidgets_comm_send)
         def _():
             msg_txt = session.input.shinywidgets_comm_send()
-            msg = _decode_comm_buffers(json.loads(msg_txt))
+            try:
+                packet = unpack_envelope(lifecycle.epoch, json.loads(msg_txt))
+            except ForeignPacketError as e:
+                # A stale packet from a retired connection must not mutate
+                # this session (or kill it); malformed/legacy packets still
+                # raise as protocol errors.
+                warnings.warn(str(e), RuntimeWarning, stacklevel=2)
+                return
+            msg = _decode_comm_buffers(packet)
             comm_id = msg["content"]["comm_id"]
             comm = lifecycle.comm_manager.comms.get(comm_id)
             if comm is not None:
                 comm.handle_msg(msg)
+
+        # Display-lease claims/releases from the browser's presentation
+        # mounts.
+        @reactive.effect
+        @reactive.event(session.input.shinywidgets_display)
+        async def _():
+            packet = json.loads(session.input.shinywidgets_display())
+            try:
+                response = lifecycle.handle_display_events(packet)
+            except ForeignPacketError as e:
+                warnings.warn(str(e), RuntimeWarning, stacklevel=2)
+                return
+            if response["results"]:
+                await session.send_custom_message(
+                    "shinywidgets_display_result", response
+                )
 
 
 # TODO: can we restore the widget constructor in a sensible way?
