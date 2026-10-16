@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import gc
+import weakref
 from typing import cast
 
 import pytest
 from ipywidgets import HTML
-from shiny import Session, reactive
+from shiny import App, Session, reactive, ui
+from shiny._connection import MockConnection
 from shiny.reactive._core import Context
 from shiny.session import session_context
 from shinywidgets import session_lifetime
@@ -222,3 +225,120 @@ def test_render_retirement_closes_open_widget(widget_session: Session) -> None:
     assert model_id not in lifecycle.comm_manager.comms
     assert widget.comm is not None  # inert orphaned comm preserves the model ID
     assert widget.model_id == model_id
+
+
+def test_retirement_cancels_pending_open(widget_session: Session) -> None:
+    with session_context(widget_session):
+        lifecycle = get_lifecycle(widget_session)
+        context = Context()
+        with context():
+            with WidgetRenderContext():
+                widget = HTML(value="temporary")
+                model_id = widget.model_id
+        # Retire the render before its deferred initialization ever ran.
+        context.invalidate()
+        asyncio.run(reactive.flush())
+    assert model_id not in lifecycle.records
+    assert model_id not in lifecycle.comm_manager.comms
+    assert lifecycle.snapshot().pending_initializers == 0
+
+
+def test_external_close_removes_record(widget_session: Session) -> None:
+    with session_context(widget_session):
+        widget = HTML(value="temporary")
+        model_id = widget.model_id
+        lifecycle = get_lifecycle(widget_session)
+        asyncio.run(reactive.flush())
+        assert model_id in lifecycle.comm_manager.comms
+        widget.close()
+        asyncio.run(reactive.flush())
+    assert model_id not in lifecycle.records
+    assert model_id not in lifecycle.comm_manager.comms
+    # Closing an already-closed record is a no-op.
+    lifecycle.close_record(model_id)
+    assert model_id not in lifecycle.records
+
+
+def test_retired_widget_redisplay_raises(widget_session: Session) -> None:
+    with session_context(widget_session):
+        context = Context()
+        with context():
+            with WidgetRenderContext():
+                widget = HTML(value="temporary")
+        context.invalidate()
+
+        renderer = render_widget_base()
+
+        @renderer
+        async def _() -> HTML:  # noqa: ANN202
+            return widget
+
+        redisplay_context = Context()
+        with redisplay_context():
+            with pytest.raises(RuntimeError, match="render lifetime has ended"):
+                asyncio.run(renderer.render())
+
+
+def test_explicitly_closed_widget_redisplay_raises(
+    widget_session: Session,
+) -> None:
+    with session_context(widget_session):
+        with session_lifetime():
+            widget = HTML(value="retained")
+        asyncio.run(reactive.flush())
+        widget.close()
+
+        renderer = render_widget_base()
+
+        @renderer
+        async def _() -> HTML:  # noqa: ANN202
+            return widget
+
+        redisplay_context = Context()
+        with redisplay_context():
+            with pytest.raises(RuntimeError, match="has been closed"):
+                asyncio.run(renderer.render())
+
+
+def test_cross_session_widget_rejected(widget_session: Session) -> None:
+    other_app = App(ui.page_fluid(), lambda input, output, session: None)
+    other_session = other_app._create_session(MockConnection())
+    try:
+        with session_context(widget_session):
+            with session_lifetime():
+                widget = HTML(value="retained")
+
+        renderer = render_widget_base()
+
+        @renderer
+        async def _() -> HTML:  # noqa: ANN202
+            return widget
+
+        other_context = Context()
+        with session_context(other_session):
+            with other_context():
+                with pytest.raises(RuntimeError, match="different Shiny session"):
+                    asyncio.run(renderer.render())
+    finally:
+        asyncio.run(other_session.close())
+
+
+def test_closed_metadata_does_not_retain_widget(widget_session: Session) -> None:
+    with session_context(widget_session):
+        widget = HTML(value="released")
+        asyncio.run(reactive.flush())
+        reference = weakref.ref(widget)
+        widget.close()
+        del widget
+        gc.collect()
+    assert reference() is None
+
+
+def test_session_end_removes_lifecycle(widget_session: Session) -> None:
+    import shinywidgets._lifecycle as lc
+
+    with session_context(widget_session):
+        HTML(value="x")
+        get_lifecycle(widget_session)
+    asyncio.run(widget_session.close())
+    assert widget_session not in lc._lifecycles

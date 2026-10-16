@@ -4,9 +4,9 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Literal, cast
+from typing import Generic, Literal, TypeVar, cast
 from uuid import uuid4
-from weakref import WeakKeyDictionary
+from weakref import WeakKeyDictionary, ref
 
 from ipywidgets import Widget
 from shiny import Session
@@ -58,6 +58,39 @@ def session_lifetime() -> Iterator[None]:
     lifecycle = get_lifecycle(session.root_scope())
     with use_lifetime(lifecycle.session_lifetime):
         yield
+
+
+V = TypeVar("V")
+
+
+class WidgetWeakMap(Generic[V]):
+    """
+    An identity-keyed map from widgets to values that never retains its keys.
+
+    Unlike WeakKeyDictionary, this works with widgets that are unhashable
+    (e.g., plotly's FigureWidget defines __eq__ without __hash__).
+    """
+
+    def __init__(self) -> None:
+        self._data: dict[int, tuple[ref[Widget], V]] = {}
+
+    def __setitem__(self, widget: Widget, value: V) -> None:
+        key = id(widget)
+        data = self._data
+
+        def remove(_: ref[Widget], key: int = key) -> None:
+            data.pop(key, None)
+
+        self._data[key] = (ref(widget, remove), value)
+
+    def get(self, widget: Widget) -> V | None:
+        entry = self._data.get(id(widget))
+        if entry is None:
+            return None
+        widget_ref, value = entry
+        if widget_ref() is not widget:
+            return None
+        return value
 
 
 @dataclass(eq=False)
@@ -131,9 +164,7 @@ class SessionLifecycle:
         self.comm_manager = ShinyCommManager()
         self.render_lifetimes: set[Lifetime] = set()
         self.wired: bool = False
-        self._closed_widgets: WeakKeyDictionary[Widget, ClosedWidget] = (
-            WeakKeyDictionary()
-        )
+        self._closed_widgets: WidgetWeakMap[ClosedWidget] = WidgetWeakMap()
 
     def register(self, widget: Widget, lifetime: Lifetime) -> WidgetRecord:
         if lifetime.session_id != self.session.id:
@@ -154,6 +185,7 @@ class SessionLifecycle:
         record = WidgetRecord(widget=widget, model_id=model_id, lifetime=lifetime)
         self.records[model_id] = record
         lifetime.roots.add(model_id)
+        _widget_owners[widget] = ref(self)
         return record
 
     def set_initializer(self, record: WidgetRecord, cancel: Callable[[], None]) -> None:
@@ -193,6 +225,37 @@ class SessionLifecycle:
         instances = cast(dict[str, Widget], Widget.widgets)
         if instances.get(model_id) is widget:
             del instances[model_id]
+
+    def check_displayable(self, widget: Widget) -> None:
+        """
+        Raise if a widget returned from a render function can't be displayed:
+        either it belongs to a different session, or it was already closed
+        (e.g., its render lifetime ended). An inert model ID on a closed
+        widget is not evidence that the widget is still live.
+        """
+        owner_ref = _widget_owners.get(widget)
+        owner = owner_ref() if owner_ref is not None else None
+        if owner is not None and owner is not self:
+            raise RuntimeError(
+                "This widget belongs to a different Shiny session. Widgets "
+                "can't be shared across sessions; construct one widget per "
+                "session instead."
+            )
+        if owner is None:
+            return
+        model_id = cast(str | None, getattr(widget, "_model_id", None))
+        if model_id is not None and model_id in self.records:
+            return
+        closed = self._closed_widgets.get(widget)
+        if closed is not None and closed.reason == "render-retired":
+            raise RuntimeError(
+                "This widget's render lifetime has ended. Create reusable "
+                "widgets inside session_lifetime()."
+            )
+        raise RuntimeError(
+            "This widget has been closed and can't be rendered again. Create "
+            "reusable widgets inside session_lifetime()."
+        )
 
     def new_render_lifetime(self) -> Lifetime:
         if not self.session_lifetime.accepting:
@@ -245,6 +308,10 @@ _lifecycles: WeakKeyDictionary[Session, SessionLifecycle] = WeakKeyDictionary()
 selected_lifetime: ContextVar[Lifetime | None] = ContextVar(
     "shinywidgets_lifetime", default=None
 )
+
+# Weak widget -> owning manager index. Values are weak references so neither
+# the widget nor its manager is retained by this index.
+_widget_owners: WidgetWeakMap[ref[SessionLifecycle]] = WidgetWeakMap()
 
 
 @contextmanager

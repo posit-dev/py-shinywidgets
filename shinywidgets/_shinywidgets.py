@@ -92,13 +92,18 @@ def init_shiny_widget(w: Widget):
     # Schedule the opening of the comm to happen sometime after this init function.
     # This is important for widgets like plotly that do additional initialization that
     # is required to get a valid widget state.
+    # N.B. this closure deliberately avoids capturing the widget or its record: the
+    # effect object is retained by the session until it ends, and capturing them
+    # would retain closed widgets for the whole session.
     @reactive.effect(priority=99999)
     def _open_shiny_comm():
-        if record.state == "closed":
+        record = lifecycle.records.get(id)
+        if record is None or record.state == "closed":
             _open_shiny_comm.destroy()
             return
 
         record.state = "opening"
+        w = record.widget
 
         # Call _repr_mimebundle_() before get_state() since it may modify the widget
         # in an important way (unfortunately, it does for plotly)

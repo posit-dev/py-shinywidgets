@@ -91,6 +91,13 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
         # Ensure we have a widget & smart layout defaults
         widget = as_widget(value)
+
+        # Reject widgets that can't be displayed (closed, retired, or owned by
+        # another session) before initialization/display.
+        session = get_current_session()
+        if session is not None and not session.is_stub_session():
+            get_lifecycle(session.root_scope()).check_displayable(widget)
+
         widget, fill = set_layout_defaults(widget)
 
         self._widget = cast(WidgetT, widget)
