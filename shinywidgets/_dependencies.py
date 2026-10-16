@@ -147,7 +147,7 @@ def bokeh_dependencies(w: Widget) -> List[HTMLDependency]:
 
 def bokeh_extension_dependencies(w: Widget) -> List[HTMLDependency]:
     """
-    Obtain HTMLDependencies for bokeh extension models
+    Obtain HTMLDependencies for bokeh extension models (e.g., panel's Tabulator)
     referenced by a jupyter_bokeh.BokehModel.
 
     Returns [] for non-BokehModel widgets and for BokehModels that only
@@ -166,8 +166,8 @@ def bokeh_extension_dependencies(w: Widget) -> List[HTMLDependency]:
     if not ext_pkgs:
         return []
 
-    js_urls, css_urls = bokeh_extension_urls(model, ext_pkgs)
-    return extension_urls_to_dependencies(js_urls, css_urls)
+    js_urls, css_urls, modules = bokeh_extension_urls(model, ext_pkgs)
+    return extension_urls_to_dependencies(js_urls, css_urls, modules=modules)
 
 
 def jupyter_extension_path(module_name: str) -> Optional[str]:
@@ -234,14 +234,38 @@ def parse_version_safely(v: str) -> str:
         return "0.0"
 
 
-def bokeh_extension_urls(model: Any, ext_pkgs: Set[str]) -> Tuple[List[str], List[str]]:
+def bokeh_extension_urls(
+    model: Any, ext_pkgs: Set[str]
+) -> Tuple[List[str], List[str], Dict[str, List[str]]]:
     """
-    Compute scripts and styles for the bokeh document, excluding
+    Compute scripts, styles, and module exports for the bokeh document, excluding
     base bokeh assets (already provided by bokeh_dependency()).
     """
     from bokeh.resources import Resources
 
     resources = Resources(mode="server", root_url="")
+
+    if "panel" in ext_pkgs:
+        try:
+            from panel.io.resources import bundle_resources
+        except ImportError:
+            pass
+        else:
+            try:
+                bundle = bundle_resources([model], resources)
+            except Exception:
+                # bundle_resources() scans *all* registered bokeh model classes
+                # (not just the document's), so an unrelated unimportable
+                # extension class can break it. Fall back to the scoped,
+                # generic bokeh path below.
+                pass
+            else:
+                js_urls = filter_bokeh_core([str(u) for u in bundle.js_files])
+                css_urls = filter_bokeh_core([str(u) for u in bundle.css_files])
+                modules = {str(url): [] for url in bundle.js_modules}
+                for name, url in bundle.js_module_exports.items():
+                    modules.setdefault(str(url), []).append(name)
+                return js_urls, css_urls, modules
 
     from bokeh.embed.bundle import bundle_for_objs_and_resources
 
@@ -256,7 +280,7 @@ def bokeh_extension_urls(model: Any, ext_pkgs: Set[str]) -> Tuple[List[str], Lis
         for pkg in sorted(ext_pkgs):
             if not importable(pkg):
                 warn_missing_extension(pkg)
-        return [], []
+        return [], [], {}
 
     js_urls = filter_bokeh_core([str(u) for u in bundle.js_files])
     css_urls = filter_bokeh_core([str(u) for u in bundle.css_files])
@@ -270,7 +294,7 @@ def bokeh_extension_urls(model: Any, ext_pkgs: Set[str]) -> Tuple[List[str], Lis
     for pkg in sorted(ext_pkgs - covered):
         warn_missing_extension(pkg)
 
-    return js_urls, css_urls
+    return js_urls, css_urls, {}
 
 
 def importable(pkg: str) -> bool:
@@ -317,6 +341,9 @@ class MessageDependency(HTMLDependency):
     URLs also work fine in server-rendered pages).
     """
 
+    # The comm-open handler imports these default exports into Panel's globals.
+    module_exports: Optional[List[str]] = None
+
     def as_dict(
         self, *, lib_prefix: Optional[str] = "lib", include_version: bool = True
     ) -> Dict[str, Any]:
@@ -349,12 +376,18 @@ class MessageDependency(HTMLDependency):
             "meta": self.meta,
             "head": head,
         }
+        if self.module_exports is not None:
+            result["shinywidgets_module_exports"] = {
+                name: scripts[0]["src"] for name in self.module_exports
+            }
         return result
 
 
 def extension_urls_to_dependencies(
     js_urls: List[str],
     css_urls: List[str],
+    *,
+    modules: Optional[Dict[str, List[str]]] = None,
 ) -> List[HTMLDependency]:
     """
     Convert bokeh-server-style URLs (static/extensions/<pkg>/<path>) into
@@ -366,11 +399,15 @@ def extension_urls_to_dependencies(
             dep = extension_url_to_dependency(url, is_script=is_script)
             if dep is not None:
                 deps.append(dep)
+    for url, exports in (modules or {}).items():
+        dep = extension_url_to_dependency(url, is_script=True, module_exports=exports)
+        if dep is not None:
+            deps.append(dep)
     return deps
 
 
 def extension_url_to_dependency(
-    url: str, *, is_script: bool
+    url: str, *, is_script: bool, module_exports: Optional[List[str]] = None
 ) -> Optional[HTMLDependency]:
     source: Optional[HTMLDependencySource] = None
     pkg = "remote"
@@ -413,6 +450,9 @@ def extension_url_to_dependency(
 
     kind = "js" if is_script else "css"
     script: ScriptItem = {"src": asset}
+    if module_exports is not None:
+        kind = "module"
+        script["type"] = "module"
     # Shiny deduplicates by name, so each asset needs an identity independent
     # of the other assets requested by earlier widget renders.
     identity = sha256(asset.encode()).hexdigest()[:16]
@@ -424,6 +464,7 @@ def extension_url_to_dependency(
         stylesheet=None if is_script else [{"href": asset}],
         all_files=source is not None,
     )
+    dependency.module_exports = module_exports
     return dependency
 
 

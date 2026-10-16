@@ -53,6 +53,33 @@ __all__ = (
 # session). Note that when the comm is initialized, it also sends the initial state of
 # the widget.
 # --------------------------------------------------------------------------------------------
+def guard_widget_close(w: Widget) -> None:
+    """
+    Make a widget's close() safe to call more than once.
+
+    jupyter_bokeh's BokehModel.close() removes its document change callback
+    unconditionally, so a second close() raises KeyError (and its __del__
+    calls close() as well). Wrap close() so only the first call runs, and so
+    a close notification arriving while close() is running can't re-enter it.
+    """
+    close = w.close
+    closing = False
+    closed = False
+
+    def close_once() -> None:
+        nonlocal closing, closed
+        if closing or closed:
+            return
+        closing = True
+        try:
+            close()
+            closed = True
+        finally:
+            closing = False
+
+    w.close = close_once  # type: ignore[method-assign]
+
+
 def init_shiny_widget(w: Widget):
     session = get_current_session()
     if session is None:
@@ -125,6 +152,9 @@ def init_shiny_widget(w: Widget):
     id = cast(str, w._model_id)
 
     bokeh_deps = bokeh_dependencies(w)
+    if bokeh_deps:
+        # BokehModel.close() is not idempotent; guard against double close.
+        guard_widget_close(w)
 
     # Since the actual ShinyComm() is initialized _after_ the Widget is initialized,
     # and Widget.__init__() includes a call to Widget.open() which opens an unnecessary

@@ -21,6 +21,8 @@ from ._output_widget import output_widget
 from ._render_widget import (
     render_altair,
     render_bokeh,
+    render_hvplot,
+    render_panel,
     render_plotly,
     render_pydeck,
     render_widget,
@@ -33,6 +35,8 @@ __all__ = (
     "render_widget",
     "render_altair",
     "render_bokeh",
+    "render_hvplot",
+    "render_panel",
     "render_plotly",
     "render_pydeck",
     # Reactive read second

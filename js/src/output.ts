@@ -418,9 +418,7 @@ if (taskQueue) {
 Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
   setBaseURL();
   const msg = jsonParse(msg_txt);
-  const deps = msg.content.html_deps as NonNullable<
-    Parameters<typeof Shiny.renderDependenciesAsync>[0]
-  >;
+  const deps = msg.content.html_deps as ModuleDependency[];
   // Dependencies (e.g. BokehJS) must finish loading before the model is
   // constructed below; otherwise require() of the widget's module fails.
   if (typeof Shiny.renderDependenciesAsync === "function") {
@@ -428,6 +426,7 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
   } else {
     Shiny.renderDependencies(deps);
   }
+  await loadModuleExports(deps);
   const comm = new ShinyComm(msg.content.comm_id);
   // An explicit model_id survives widget re-creation on the Python side, so
   // an id can reopen after being closed; it must not stay marked closed or
@@ -546,3 +545,22 @@ function errorMessage(err: unknown): string {
   return String(err);
 }
 
+type ModuleDependency = NonNullable<
+  Parameters<typeof Shiny.renderDependenciesAsync>[0]
+>[number] & {
+  shinywidgets_module_exports?: Readonly<Record<string, string>>;
+};
+
+async function loadModuleExports(deps: readonly ModuleDependency[]): Promise<void> {
+  const globals = window as unknown as Record<string, unknown>;
+  for (const dependency of deps) {
+    for (const [name, url] of Object.entries(
+      dependency.shinywidgets_module_exports ?? {}
+    )) {
+      const module: { default: unknown } = await import(
+        /* webpackIgnore: true */ new URL(url, document.baseURI).href
+      );
+      globals[name] = module.default;
+    }
+  }
+}
