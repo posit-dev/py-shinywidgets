@@ -1,4 +1,4 @@
-import type { DOMWidgetView, WidgetView } from '@jupyter-widgets/base';
+import type { DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import { MessageLoop, LuminoWidget } from 'shinywidgets-internals';
 import { ShinyComm } from './comm';
 import { WidgetLifecycle, newEventId } from './lifecycle/epoch';
@@ -69,13 +69,52 @@ function clearCurrentModelId(el: HTMLElement): void {
 
 // Package-specific view teardown (e.g., Plotly leaves DOM state and listeners
 // behind unless destroy() runs before removal). Runs once per view.
+const disposedViewAdapters = new WeakSet<WidgetView>();
+
 function destroyViewAdapter(view: WidgetView): () => void {
   return () => {
+    if (disposedViewAdapters.has(view)) {
+      return;
+    }
+    disposedViewAdapters.add(view);
+    const model: WidgetModel | undefined = view.model;
+    if (model === undefined) {
+      return;
+    }
+    if (
+      model.get("_view_module") === "jupyter-leaflet" &&
+      model.get("_view_name") === "LeafletMapView"
+    ) {
+      // LeafletMapView does not remove its native map. Its delayed moveend
+      // callbacks otherwise read model.views after model.close() deletes it.
+      const map = (view as LeafletMapView).obj;
+      if (map !== undefined) {
+        window.clearTimeout(map._sizeTimer);
+        map.off("moveend movestart zoomend");
+        view.once("remove", () => {
+          try {
+            map.remove();
+          } finally {
+            window.clearTimeout(map._sizeTimer);
+            map.off();
+          }
+        });
+      }
+    }
     const v = view as any;
     if (typeof v.destroy === "function" && v.model !== undefined) {
       v.destroy();
       delete v.model;
     }
+  };
+}
+
+interface LeafletMapView extends WidgetView {
+  obj?: {
+    remove(): unknown;
+    off(events?: string): unknown;
+    // Leaflet's debounced invalidateSize timer is not canceled by remove().
+    _sizeTimer?: number;
   };
 }
 
@@ -511,6 +550,11 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", (msg_txt) => {
     try {
       const m = await epoch.get_model(id);
 
+      // View removal updates _view_count. Mark the comm as inactive first so
+      // that save_changes() does not try to send those updates after the comm
+      // is gone.
+      m.comm_live = false;
+
       // Some widget views need explicit teardown before model.close() removes
       // them (e.g., Plotly leaves DOM state and listeners behind).
       if (m.views) {
@@ -519,18 +563,19 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", (msg_txt) => {
             try {
               const view = await viewPromise;
               destroyViewAdapter(view)();
-              view.remove();
+              const scope = (view.options as { lifecycle_scope?: MountScope })
+                .lifecycle_scope;
+              if (scope === undefined) {
+                view.remove();
+              } else {
+                scope.removeViewTree(view);
+              }
             } catch (err) {
               console.error("Error cleaning up view:", err);
             }
           })
         );
       }
-
-      // View removal updates _view_count. Mark the comm as inactive first so
-      // that save_changes() does not try to send those updates after the comm
-      // is gone.
-      m.comm_live = false;
 
       // Close model after all views are cleaned up.
       await m.close();

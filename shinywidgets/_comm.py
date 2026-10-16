@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import copy
 from base64 import b64encode
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, TypeGuard
 
+from ipywidgets import Widget
 from shiny import Session
+from traitlets.traitlets import Instance
 
 from ._serialization import json_packer
 
@@ -286,6 +291,7 @@ class OrphanedShinyComm:
     the `model_id` (i.e., `comm_id`) of a widget after closing it.
     """
 
+    kernel = "Shiny"
     comm_id: str
 
     def send(
@@ -330,3 +336,23 @@ class PendingShinyComm(OrphanedShinyComm):
             return
         self.closed = True
         self.notify_closed()
+
+
+@contextmanager
+def widget_comm_patch() -> Iterator[None]:
+    """Permit Shiny comms with the Instance trait used by ipywidgets < 8.0.5."""
+    if not is_traitlet_instance(Widget.comm):
+        yield
+        return
+
+    comm_klass = copy.copy(Widget.comm.klass)
+    Widget.comm.klass = object
+
+    try:
+        yield
+    finally:
+        Widget.comm.klass = comm_klass
+
+
+def is_traitlet_instance(x: object) -> "TypeGuard[Instance[Any]]":
+    return isinstance(x, Instance)

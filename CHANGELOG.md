@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking changes
 
 * shinywidgets now requires ipywidgets 8 or newer. (#237)
-* Construct reusable widgets inside `session_lifetime()`. The renderer now raises an error for a retired or explicitly closed widget. (#248)
+* Construct reusable widgets inside `session_lifetime()`. Widgets created during rendering now close after their render ends and no live widget or display needs them. The renderer raises an error for a retired or explicitly closed widget, with migration guidance. Widgets created in the server body or in effects outside rendering retain their session lifetime. (#248)
 
 ### New features
 
@@ -21,8 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed an issue where widgets nested inside other widgets didn't work reliably with ipywidgets 8. Depending on the widget, they either didn't render at all (e.g., an `HTML` child with a `style`, or a Plotly `FigureWidget`, inside an ipyleaflet popup) or rendered while logging errors like `Class HTMLStyleModel not found` (e.g., ipyleaflet popups, `WidgetControl` children, and leafmap legends). Widget outputs inserted dynamically, such as `output_widget()` inside `@render.ui`, had the same problem. The cause was that shinywidgets still bundled the ipywidgets 7-era JavaScript widget manager (`@jupyter-widgets/html-manager` 0.20); it now uses 1.0. (#75, #101, #137, #157, #194, #237)
 * Fixed an issue where an ipyleaflet map with many markers could turn gray and show no markers when re-rendered. (#215, #237)
 * Fixed an issue where fonts used by widget CSS, such as FontAwesome icons, failed to load (404). (#237)
-* Replacing, clearing, or showing an error in a widget output now removes its previous view through the widget lifecycle, so detached views do not remain tracked by the browser manager. Reusing the same widget across renders keeps its model alive. (#246)
-* Widgets closed before their deferred initialization no longer reopen. This also applies when an output re-render or session end closes a widget before initialization. (#248)
+* Replacing, clearing, or showing an error in a widget output now removes its previous view through the widget lifecycle, so detached views do not remain tracked by the browser manager. Widgets with a session lifetime retain their models across renders. (#246)
+* Widget cleanup now preserves shared dependencies, collects unreachable reference cycles, and cancels pending initialization after retirement. Browser views release their display leases after removal. Retired connections cannot mutate models in a fresh session.
+* Pending and closed widget comms now support ipywidgets 8.0.0, including its comm trait validation and instance registry.
+* Closing or replacing an ipyleaflet map now stops its native callbacks and removes child views while preserving session-retained popup and control widgets.
 * Widget messages now use the Shiny session that created the widget, even when another session is active. Each session also has its own widget comm registry. (#248)
 * Widget cleanup now preserves dependencies of live widgets and collects unreachable widget cycles. (#252)
 * Widget models now remain available until output replacement removes their views. Cleanup from an old connection no longer interferes with widgets in a new connection. (#254)

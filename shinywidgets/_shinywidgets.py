@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import copy
 import json
 import os
 import warnings
 from base64 import b64decode
-from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Optional, Sequence, Union, cast
+from typing import Any, Optional, Sequence, Union, cast
 
 import ipywidgets
 
@@ -33,6 +31,10 @@ from ._comm import (
     PendingShinyComm,
     ShinyComm,
     unpack_envelope,
+    widget_comm_patch,
+)
+from ._comm import (
+    is_traitlet_instance as is_traitlet_instance,
 )
 from ._dependencies import require_dependency
 from ._lifecycle import (
@@ -49,11 +51,6 @@ __all__ = (
     "register_widget",
     "reactive_read",
 )
-
-if TYPE_CHECKING:
-    from typing import TypeGuard
-
-    from traitlets.traitlets import Instance
 
 
 # --------------------------------------------------------------------------------------------
@@ -95,7 +92,8 @@ def init_shiny_widget(w: Widget):
     # Unlike OrphanedShinyComm, closing this comm is observable, so that closing the
     # widget before initialization cancels the scheduled open (instead of letting it
     # reopen the closed widget).
-    w.comm = PendingShinyComm(id, notify_closed=lambda: lifecycle.close_record(id))
+    with widget_comm_patch():
+        w.comm = PendingShinyComm(id, notify_closed=lambda: lifecycle.close_record(id))
 
     # Schedule the opening of the comm to happen sometime after this init function.
     # This is important for widgets like plotly that do additional initialization that
@@ -364,34 +362,6 @@ def register_widget(
         return w
 
     return w
-
-
-# Previous versions of ipywidgets (< 8.0.5) had
-#   `Widget.comm = Instance('ipykernel.comm.Comm')`
-# which meant we'd get a runtime error when setting `Widget.comm = ShinyComm()`.
-# In more recent versions, this is no longer necessary since they've (correctly)
-# changed comm from an Instance() to Any().
-# https://github.com/jupyter-widgets/ipywidgets/pull/3533/files#diff-522bb5e7695975cba0199c6a3d6df5be827035f4dc18ed6da22ac216b5615c77R482
-@contextmanager
-def widget_comm_patch():
-    if not is_traitlet_instance(Widget.comm):
-        yield
-        return
-
-    comm_klass = copy.copy(Widget.comm.klass)
-    Widget.comm.klass = object
-
-    yield
-
-    Widget.comm.klass = comm_klass
-
-
-def is_traitlet_instance(x: object) -> "TypeGuard[Instance[Any]]":
-    try:
-        from traitlets.traitlets import Instance
-    except ImportError:
-        return False
-    return isinstance(x, Instance)
 
 
 # It doesn't, at the moment, seem feasible to establish a comm with statically rendered widgets,

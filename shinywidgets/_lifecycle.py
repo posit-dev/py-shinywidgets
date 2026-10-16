@@ -10,10 +10,16 @@ from uuid import uuid4
 from weakref import WeakKeyDictionary, ref
 
 from ipywidgets import Widget
+from ipywidgets.widgets import widget as widget_module
 from shiny import Session
 from shiny.session import get_current_session
 
-from ._comm import ForeignPacketError, OrphanedShinyComm, ShinyCommManager
+from ._comm import (
+    ForeignPacketError,
+    OrphanedShinyComm,
+    ShinyCommManager,
+    widget_comm_patch,
+)
 from ._widget_dependencies import dependencies, unreachable
 
 __all__ = (
@@ -485,11 +491,18 @@ class SessionLifecycle:
         # Preserve the closed widget's stable ID (some packages, e.g. ipyleaflet,
         # use the IDs of children when removing them from parent collections).
         # The orphaned comm is inert metadata; it does not make the widget live.
-        widget.comm = OrphanedShinyComm(model_id)
+        with widget_comm_patch():
+            widget.comm = OrphanedShinyComm(model_id)
         # Assigning a comm re-registers the widget in the ipywidgets instance
         # map; remove that entry again (by identity) so the widget can be
         # garbage collected.
-        instances = cast(dict[str, Widget], Widget.widgets)
+        # ipywidgets moved this registry from Widget to its module in 8.1.
+        instances = cast(
+            dict[str, Widget],
+            getattr(widget_module, "_instances", None)
+            if hasattr(widget_module, "_instances")
+            else getattr(Widget, "_active_widgets"),
+        )
         if instances.get(model_id) is widget:
             del instances[model_id]
 
