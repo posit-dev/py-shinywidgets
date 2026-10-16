@@ -87,6 +87,9 @@ the renderer creates through coercion outside the block.
 Create the actual `FigureWidget` inside the block when it must survive later renders.
 
 Widgets created in effects outside rendering also receive the session lifetime.
+Tasks started by a renderer inherit its render lifetime, even after it returns.
+Use `session_lifetime()` when such a task needs to construct reusable widgets
+or continue constructing widgets after that render retires.
 Removing a retained layer from a map does not revoke that lifetime.
 The API does not provide automatic cache eviction or shorter application scopes.
 Widgets cannot be shared across Shiny sessions.
