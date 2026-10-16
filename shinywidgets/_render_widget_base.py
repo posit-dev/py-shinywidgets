@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import warnings
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from typing import Generic, Optional, Tuple, TypeVar, cast
+from typing import Generic, Iterator, Optional, Tuple, TypeVar, cast
 
 from htmltools import Tag
 from ipywidgets.widgets import DOMWidget, Layout, Widget
@@ -15,6 +16,7 @@ from shiny.reactive._core import (
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
 
 from ._as_widget import as_widget
+from ._comm import OrphanedShinyComm
 from ._dependencies import widget_pkg
 from ._output_widget import output_widget
 
@@ -89,6 +91,12 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
         # Ensure we have a widget & smart layout defaults
         widget = as_widget(value)
+        if is_closed_widget(widget):
+            raise RuntimeError(
+                "This widget has been closed (its render was invalidated, or it was "
+                "closed explicitly), so it can't be displayed again. To reuse a widget "
+                "across renders, construct it inside `with session_lifetime():`."
+            )
         widget, fill = set_layout_defaults(widget)
 
         self._widget = cast(WidgetT, widget)
@@ -285,6 +293,26 @@ class WidgetRenderContext:
         return WidgetRenderContext._current() is not None
 
     @staticmethod
+    @contextmanager
+    def suspended() -> Iterator[None]:
+        """Widgets constructed in the block get session (not render) lifetime."""
+        token = _rendering_widget.set(None)
+        try:
+            yield
+        finally:
+            _rendering_widget.reset(token)
+
+    @staticmethod
+    @contextmanager
+    def resumed(context: Context | None) -> Iterator[None]:
+        """Re-enter a render captured earlier, so widgets created now share its cleanup."""
+        token = _rendering_widget.set(_RenderingWidget(context) if context else None)
+        try:
+            yield
+        finally:
+            _rendering_widget.reset(token)
+
+    @staticmethod
     def get_render_context() -> Context:
         """
         Get the reactive Context that was active when the render function started.
@@ -296,3 +324,19 @@ class WidgetRenderContext:
         if rendering is None:
             raise RuntimeError("Not currently rendering a widget")
         return rendering.context
+
+
+WIDGET_INSTANCE_MAP = cast(dict[str, Widget], Widget.widgets)
+
+
+def is_closed_widget(widget: Widget) -> bool:
+    """
+    A widget we closed keeps an inert OrphanedShinyComm (so model_id still works)
+    but is no longer in ipywidgets' instance map; a user-closed widget has no comm.
+    """
+    if widget.comm is None:
+        return True
+    return (
+        isinstance(widget.comm, OrphanedShinyComm)
+        and WIDGET_INSTANCE_MAP.get(widget.model_id) is not widget
+    )

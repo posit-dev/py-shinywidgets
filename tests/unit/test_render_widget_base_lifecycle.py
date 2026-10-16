@@ -4,6 +4,12 @@ import pytest
 import shinywidgets._render_widget_base as rwb
 
 
+class FakeLiveWidget:
+    """Stands in for a widget whose comm is open."""
+
+    comm = object()
+
+
 class FakeContext:
     def __init__(self) -> None:
         self.invalidated = 0
@@ -81,7 +87,7 @@ def test_contexts_invalidated_on_rerender(monkeypatch) -> None:
         return state["val"]
 
     # Avoid real widget conversions; non-DOMWidget path returns None.
-    monkeypatch.setattr(rwb, "as_widget", lambda value: object())
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
 
     asyncio.run(r._render())
 
@@ -112,12 +118,12 @@ def test_render_returns_none_when_widget_is_not_domwidget(monkeypatch) -> None:
     async def _():  # noqa: ANN202
         return object()
 
-    monkeypatch.setattr(rwb, "as_widget", lambda value: object())
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
     assert asyncio.run(r._render()) is None
 
 
 def test_render_includes_widget_package_for_domwidgets(monkeypatch) -> None:
-    class FakeDOMWidget:
+    class FakeDOMWidget(FakeLiveWidget):
         def __init__(self) -> None:
             self.model_id = "widget-1"
 
