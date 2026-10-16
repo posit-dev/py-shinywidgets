@@ -2,6 +2,7 @@ import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { jsonParse } from './utils';
+import type { WidgetModel } from '@jupyter-widgets/base';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
 
@@ -10,7 +11,7 @@ import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shi
  ******************************************************************************/
 
 interface ModelWaiter {
-  resolve: (p: Promise<any>) => void;
+  resolve: (p: Promise<WidgetModel>) => void;
   reject: (e: Error) => void;
   timer: ReturnType<typeof setTimeout>;
 }
@@ -18,10 +19,11 @@ interface ModelWaiter {
 class OutputManager extends HTMLManager {
   // Shiny delivers comm_open messages one at a time with microtask breaks
   // between them. A parent model's deserialization may reference a child model
-  // whose comm_open hasn't been processed yet. The base get_model throws
-  // synchronously for missing models, so we override it to wait for late
+  // whose comm_open hasn't been processed yet. The base get_model rejects
+  // missing models, so we override it to wait for late
   // arrivals (with a timeout to avoid silent hangs).
   private _modelWaiters = new Map<string, ModelWaiter[]>();
+  private _activeClears = 0;
 
   // html-manager 1.0 posts a lumino `resize` message to every displayed view
   // on every window `resize` (0.20 had no such forwarding). ipywidgets-7-era
@@ -56,25 +58,31 @@ class OutputManager extends HTMLManager {
     }
   }
 
-  async get_model(model_id: string): Promise<any> {
+  async get_model(model_id: string): Promise<WidgetModel> {
     if (this.has_model(model_id)) {
       return super.get_model(model_id);
     }
-    return new Promise<any>((resolve, reject) => {
-      const waiter = { resolve, reject } as ModelWaiter;
+    if (this._activeClears > 0) {
+      throw new Error(`Widget state cleared while waiting for model ${model_id}`);
+    }
+    return new Promise<WidgetModel>((resolve, reject) => {
       // Use a generous timeout: heavy sessions (1000s of comm_opens) or slow
       // networks can legitimately delay a child's comm_open well past 10s.
-      waiter.timer = setTimeout(() => {
-        this._dropWaiter(model_id, waiter);
-        reject(new Error(`Timeout waiting for widget model ${model_id}`));
-      }, 30000);
+      const waiter: ModelWaiter = {
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          this._dropWaiter(model_id, waiter);
+          reject(new Error(`Timeout waiting for widget model ${model_id}`));
+        }, 30000),
+      };
       const waiters = this._modelWaiters.get(model_id) || [];
       waiters.push(waiter);
       this._modelWaiters.set(model_id, waiters);
     });
   }
 
-  register_model(model_id: string, modelPromise: Promise<any>): void {
+  register_model(model_id: string, modelPromise: Promise<WidgetModel>): void {
     super.register_model(model_id, modelPromise);
     const waiters = this._modelWaiters.get(model_id);
     if (waiters) {
@@ -87,17 +95,22 @@ class OutputManager extends HTMLManager {
   }
 
   async clear_state(): Promise<void> {
-    // Settle pending waiters so they don't linger until their timeouts fire
-    for (const [model_id, waiters] of this._modelWaiters) {
-      for (const waiter of waiters) {
-        clearTimeout(waiter.timer);
-        waiter.reject(
-          new Error(`Widget state cleared while waiting for model ${model_id}`)
-        );
+    // Model deserialization can reach get_model() after the waiter sweep.
+    this._activeClears++;
+    try {
+      for (const [model_id, waiters] of this._modelWaiters) {
+        for (const waiter of waiters) {
+          clearTimeout(waiter.timer);
+          waiter.reject(
+            new Error(`Widget state cleared while waiting for model ${model_id}`)
+          );
+        }
       }
+      this._modelWaiters.clear();
+      await super.clear_state();
+    } finally {
+      this._activeClears--;
     }
-    this._modelWaiters.clear();
-    await super.clear_state();
   }
 
   private _dropWaiter(model_id: string, waiter: ModelWaiter): void {
