@@ -144,12 +144,12 @@ def test_widget_recovers_after_output_is_cleared(
 def expose_manager(route: Route) -> None:
     response = route.fetch()
     text = response.text()
-    original = "const manager = new OutputManager({ loader: shinyRequireLoader });"
+    original = "const manager = new OutputManager({ loader: _lifecycle_loader__WEBPACK_IMPORTED_MODULE_2__.shinyRequireLoader });"
     assert original in text
     route.fulfill(
         response=response,
         body=text.replace(
             original,
-            "const manager = window.widgetManager = new OutputManager({ loader: shinyRequireLoader });",
+            "const manager = window.widgetManager = new OutputManager({ loader: _lifecycle_loader__WEBPACK_IMPORTED_MODULE_2__.shinyRequireLoader });",
         ),
     )

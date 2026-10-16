@@ -140,7 +140,7 @@ def test_model_waiting_resumes_after_clear_failure(manager_page: Page) -> None:
 def manager_page(page: Page, local_app: ShinyAppProc) -> Page:
     def expose_manager(route: Route) -> None:
         response = route.fetch()
-        original = "const manager = new OutputManager({ loader: shinyRequireLoader });"
+        original = "const manager = new OutputManager({ loader: _lifecycle_loader__WEBPACK_IMPORTED_MODULE_2__.shinyRequireLoader });"
         text = response.text()
         assert original in text
         # Keep the manager's test access out of the shipped bundle.
@@ -148,7 +148,7 @@ def manager_page(page: Page, local_app: ShinyAppProc) -> Page:
             response=response,
             body=text.replace(
                 original,
-                "const manager = window.widgetManager = new OutputManager({ loader: shinyRequireLoader });",
+                "const manager = window.widgetManager = new OutputManager({ loader: _lifecycle_loader__WEBPACK_IMPORTED_MODULE_2__.shinyRequireLoader });",
             ),
         )
 

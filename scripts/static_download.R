@@ -1,11 +1,23 @@
+# Regenerate the served runtime/output bundles from source.
+#
+# The widget runtime (shinywidgets/static/libembed-amd.js) is built from
+# js/src/runtime.ts -- one coherent compilation of the official
+# @jupyter-widgets packages plus the internals our lifecycle code imports.
+# It must NOT be refreshed by downloading the upstream
+# @jupyter-widgets/html-manager libembed-amd.js bundle: that bundle lacks the
+# "shinywidgets-runtime" module exports and would silently break the AMD
+# aliases defined by runtime-register.js.
 
 static_dir <- file.path(getwd(), "shinywidgets", "static")
 if (!dir.exists(static_dir)) dir.create(static_dir)
-# From https://github.com/jupyter-widgets/ipywidgets/blob/fbdbd005/python/ipywidgets/ipywidgets/embed.py#L62
-# Note that we also grab libembed-amd, not embed-amd, because the Shiny bindings handle the actual rendering aspect
-# https://github.com/jupyter-widgets/ipywidgets/blob/fbdbd00/packages/html-manager/scripts/concat-amd-build.js#L6
-# TODO: minify the bundle and import the version via `from ipywidgets._version import __html_manager_version__`
-download.file(
-  "https://unpkg.com/@jupyter-widgets/html-manager@1.0.14/dist/libembed-amd.js",
-  file.path(static_dir, "libembed-amd.js")
-)
+
+run <- function(args) {
+  status <- system2("yarn", args)
+  if (!identical(status, 0L)) {
+    stop("Command failed: yarn ", paste(args, collapse = " "))
+  }
+}
+
+# The webpack build copies js/dist/* into shinywidgets/static/.
+run(c("--cwd", "js", "install", "--frozen-lockfile"))
+run(c("--cwd", "js", "build"))

@@ -20,7 +20,12 @@ from shiny import Session, ui
 from . import __version__
 
 
-# TODO: scripts/static_download.R should produce/update these
+# The served runtime/output bundles are built from source (see js/ and
+# scripts/static_download.R): libembed-amd.js is the widget runtime (one
+# coherent compilation of the official @jupyter-widgets packages, exposed as
+# window.shinywidgetsRuntime), runtime-register.js aliases the official
+# @jupyter-widgets/* AMD module IDs onto it, and output.js is the Shiny
+# binding (built with those modules as AMD externals).
 def output_binding_dependency() -> HTMLDependency:
     # Jupyter Notebook/Lab both come "preloaded" with several @jupyter-widgets packages
     # (i.e., base, controls, output), all of which are bundled into this extension.js file
@@ -35,18 +40,20 @@ def output_binding_dependency() -> HTMLDependency:
     # have @jupyter-widget/base point to https://unpkg.com/@jupyter-widgets/base@__version__/lib/index.js
     # (or a local version of this) since it appears the lib entry points aren't usable in the browser.
     #
-    # All this is to say that I think we are stuck with this mega 3.5MB file that contains all of the
-    # stuff we need to render widgets outside of the notebook.
+    # Our equivalent is the source-built libembed-amd.js runtime (js/src/runtime.ts):
+    # one coherent compilation of the official packages, which third-party widgets
+    # reach through the AMD aliases in runtime-register.js.
     return HTMLDependency(
         name="ipywidget-output-binding",
         version=__version__,
         source={"package": "shinywidgets", "subdir": "static"},
         script=[
-            # require-config.js must load before libembed-amd.js so require.js
-            # resolves the @jupyter-widgets/* AMD module URLs to this directory
-            # (the widgets bundles derive their CSS font URLs from it).
+            # Load order matters: the runtime executes as a plain script,
+            # runtime-register.js defines the AMD aliases onto it, and
+            # output.js requires those aliases.
             {"src": "require-config.js"},
             {"src": "libembed-amd.js"},
+            {"src": "runtime-register.js"},
             # Bundle our output.js in the same dependency as libembded since Quarto
             # has a bug where it doesn't renders dependencies in the order they are defined
             # (i.e., this way we can ensure the output.js script always comes after the libembed-amd.js script tag)

@@ -113,10 +113,11 @@ def test_output_binding_dependency_structure() -> None:
     assert isinstance(dep, HTMLDependency)
     assert dep.name == "ipywidget-output-binding"
     assert dep.source == {"package": "shinywidgets", "subdir": "static"}
-    # require-config.js must load first (see comment in output_binding_dependency)
+    # Load order matters (see comment in output_binding_dependency)
     assert dep.script == [
         {"src": "require-config.js"},
         {"src": "libembed-amd.js"},
+        {"src": "runtime-register.js"},
         {"src": "output.js"},
     ]
     assert any(x.get("href") == "shinywidgets.css" for x in dep.stylesheet)

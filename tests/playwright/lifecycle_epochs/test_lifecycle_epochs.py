@@ -20,14 +20,14 @@ from shiny.run import ShinyAppProc
 def manager_page(page: Page, local_app: ShinyAppProc) -> Page:
     def expose_manager(route: Route) -> None:
         response = route.fetch()
-        original = "const manager = new OutputManager({ loader: shinyRequireLoader });"
+        original = "const manager = new OutputManager({ loader: _lifecycle_loader__WEBPACK_IMPORTED_MODULE_2__.shinyRequireLoader });"
         text = response.text()
         assert original in text
         route.fulfill(
             response=response,
             body=text.replace(
                 original,
-                "const manager = window.widgetManager = new OutputManager({ loader: shinyRequireLoader });",
+                "const manager = window.widgetManager = new OutputManager({ loader: _lifecycle_loader__WEBPACK_IMPORTED_MODULE_2__.shinyRequireLoader });",
             ),
         )
 
@@ -159,3 +159,65 @@ def test_frontend_controller_model_creation_probe(manager_page: Page) -> None:
         "At least one must exist."
     }
     assert result["axis"] == result["button"]
+
+
+def test_served_runtime_module_identity_and_assets(manager_page: Page) -> None:
+    """
+    The served runtime (libembed-amd.js + runtime-register.js) resolves the
+    official AMD modules and "shinywidgets-internals" through RequireJS with
+    shared constructor identity, and serves font/module assets without 404s.
+    """
+    failures: list[str] = []
+    manager_page.on(
+        "response",
+        lambda response: failures.append(response.url)
+        if response.status >= 400
+        else None,
+    )
+    manager_page.wait_for_selector("#button button")
+
+    result = manager_page.evaluate(
+        """async () => {
+            const [base, controls, html, internals] = await new Promise(
+                (resolve, reject) => require(
+                    [
+                        '@jupyter-widgets/base',
+                        '@jupyter-widgets/controls',
+                        '@jupyter-widgets/html-manager',
+                        'shinywidgets-internals',
+                    ],
+                    (...modules) => resolve(modules),
+                    reject,
+                )
+            );
+            const manager = window.widgetManager;
+            const models = await Promise.all(
+                Object.keys(manager._models).map((id) => manager.get_model(id))
+            );
+            const model = models.find(
+                (m) => m.get('_model_name') === 'ButtonModel'
+            );
+            if (!model) throw new Error('ButtonModel not registered');
+            return {
+                modelIsBaseWidget: model instanceof base.WidgetModel,
+                managerIsManagerBase: manager instanceof internals.ManagerBase,
+                htmlManagerShared: manager instanceof html.HTMLManager,
+                serializeState: typeof internals.serialize_state,
+                luminoWidget: typeof internals.LuminoWidget,
+                viewLuminoShared: await (async () => {
+                    const view = await manager.create_view(model);
+                    return view.luminoWidget instanceof internals.LuminoWidget;
+                })(),
+            };
+        }"""
+    )
+
+    assert result == {
+        "modelIsBaseWidget": True,
+        "managerIsManagerBase": True,
+        "htmlManagerShared": True,
+        "serializeState": "function",
+        "luminoWidget": "function",
+        "viewLuminoShared": True,
+    }
+    assert failures == []

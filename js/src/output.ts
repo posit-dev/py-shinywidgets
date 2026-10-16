@@ -1,5 +1,6 @@
-import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
+import { HTMLManager } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
+import { shinyRequireLoader } from './lifecycle/loader';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { jsonParse } from './utils';
 import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
@@ -92,44 +93,6 @@ class OutputManager extends HTMLManager {
       this._modelWaiters.delete(model_id);
     }
   }
-}
-
-// Define our own custom module loader for Shiny
-const shinyRequireLoader = async function(moduleName: string, moduleVersion: string): Promise<any> {
-
-  // shiny provides a shim of require.js which allows <script>s with anonymous
-  // define()s to be loaded without error. When an anonymous define() occurs,
-  // the shim uses the data-requiremodule attribute (set by require.js) on the script
-  // to determine the module name.
-  // https://github.com/posit-dev/py-shiny/blob/230940c/scripts/define-shims.js#L10-L16
-  // In the context of shinywidgets, when a widget gets rendered, it should
-  // come with another <script> tag that does `require.config({paths: {...}})`
-  // which maps the module name to a URL of the widget's JS file.
-  const oldAmd = (window as any).define.amd;
-
-  // This is probably not necessary, but just in case -- especially now in a
-  // anywidget/ES6 world, we probably don't want to load AMD modules
-  // (plotly is one example of a widget that will fail to load if AMD is enabled)
-  (window as any).define.amd = false;
-
-  // Store jQuery global since loading we load a module, it may overwrite it
-  // (qgrid is one good example)
-  const old$ = (window as any).$;
-  const oldJQ = (window as any).jQuery;
-
-  if (moduleName === 'qgrid') {
-    // qgrid wants to use base/js/dialog (if it's available) for full-screen tables
-    // https://github.com/quantopian/qgrid/blob/877b420/js/src/qgrid.widget.js#L11-L16
-    // Maybe that's worth supporting someday, but for now, we define it to be nothing
-    // to avoid require('qgrid') from producing an error
-    (window as any).define("base/js/dialog", [], function() { return null });
-  }
-
-  return requireLoader(moduleName, moduleVersion).finally(() => {
-    (window as any).define.amd = oldAmd;
-    (window as any).$ = old$;
-    (window as any).jQuery = oldJQ;
-  });
 }
 
 const manager = new OutputManager({ loader: shinyRequireLoader });
