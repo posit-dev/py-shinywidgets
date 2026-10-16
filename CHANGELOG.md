@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### New features
 
-* Added `session_lifetime()` to retain widgets created inside a renderer until the Shiny session ends. It applies to construction and does not adopt existing widgets.
+* Added `session_lifetime()` to keep widgets constructed inside its block alive until the Shiny session ends. Cached widgets can now survive output re-renders and appear again without recreation. The block does not change the lifetime of existing widgets. (#248)
 
 ### Bug fixes
 
@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Replacing, clearing, or showing an error in a widget output now removes its previous view through the widget lifecycle, so detached views do not remain tracked by the browser manager. Widgets with a session lifetime retain their models across renders. (#246)
 * Widget cleanup now preserves shared dependencies, collects unreachable reference cycles, and cancels pending initialization after retirement. Browser views release their display leases after removal. Retired connections cannot mutate models in a fresh session.
 * Pending and closed widget comms now support ipywidgets 8.0.0, including its comm trait validation and instance registry.
+* Widget messages now use the Shiny session that created the widget, even when another session is active. Each session also has its own widget comm registry. (#248)
 
 ## [0.8.2] - 2026-10-15
 
