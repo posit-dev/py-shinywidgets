@@ -354,10 +354,13 @@ def test_closed_widget_rejected_when_model_id_is_reused(
     widget_session: Session,
 ) -> None:
     with session_context(widget_session):
-        old = HTML(value="old", model_id="reused-id")
-        old.close()
+        context = Context()
+        with context():
+            with WidgetRenderContext():
+                old = HTML(value="old", model_id="reused-id")
+        context.invalidate()
         replacement = HTML(value="replacement", model_id="reused-id")
-        assert old._model_id == replacement.model_id
+        assert old.model_id == replacement.model_id
 
         renderer = render_widget_base()
 
@@ -366,7 +369,7 @@ def test_closed_widget_rejected_when_model_id_is_reused(
             return old
 
         with Context()():
-            with pytest.raises(RuntimeError, match="has been closed"):
+            with pytest.raises(RuntimeError, match="render lifetime has ended"):
                 asyncio.run(renderer.render())
 
 
