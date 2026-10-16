@@ -19,4 +19,12 @@ def test_marker_popup_with_html_child(page: Page, local_app) -> None:
     marker.click()
     popup = page.locator(".leaflet-popup-content")
     expect(popup).to_contain_text("hello popup #101", timeout=10000)
+    page.set_viewport_size({"width": 960, "height": 720})
+    # Let the manager's queued resize messages run before checking page errors.
+    page.evaluate(
+        """() => new Promise(resolve =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve))
+        )"""
+    )
+    expect(popup).to_contain_text("hello popup #101")
     assert not errors, f"Unexpected console errors: {errors}"

@@ -5,6 +5,10 @@ All notable changes to shinywidgets will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+* Widgets nested inside other widgets — such as ipyleaflet marker popups with `HTML` children (#101) and `WidgetControl` children (#137) — now render correctly with ipywidgets 8, as do widget outputs inserted dynamically (e.g., `output_widget()` inside `@render.ui`). shinywidgets now requires ipywidgets 8 or newer and upgrades its JavaScript widget manager (`@jupyter-widgets/html-manager`) from 0.20 to 1.0. Widget cleanup cancels pending child-model lookups, including those started after cleanup begins, instead of waiting for their timeout. Fonts referenced by the bundled widget CSS (e.g., FontAwesome) now resolve correctly instead of returning 404s. (#237)
+
 ## [0.8.2] - 2026-10-15
 
 * Fixed an issue where Shiny's busy indicator (spinner) did not appear over widget outputs while recalculating, because the output element's inline `visibility: hidden` also hid the spinner. Recalculating widget outputs now mirror Shiny's own handling of htmlwidgets, keeping the element (and spinner) visible while hiding the stale widget content. (#213)
@@ -16,7 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.0] - 2026-04-13
 
-* Upgraded the JavaScript widget manager (`@jupyter-widgets/html-manager`) from 0.20 to 1.0, aligning the bundled widget model registry with ipywidgets 8. Widgets nested inside other widgets — such as ipyleaflet marker popups with `HTML` children (#101) and `WidgetControl` children (#137) — now render correctly with ipywidgets 8, as do widget outputs inserted dynamically (e.g., `output_widget()` inside `@render.ui`). Note that html-manager 1.0 also begins forwarding window `resize` events to every widget view; shinywidgets guards each view's message handling so widgets with unguarded resize handlers (e.g., ipyleaflet 0.17 on ipywidgets 7) degrade to a console warning instead of an uncaught error. The upgrade also changes how the widget bundles resolve font assets referenced by their CSS (e.g., FontAwesome); shinywidgets now maps the `@jupyter-widgets/*` AMD module URLs to the real script location so those fonts are served correctly instead of 404ing. (#237)
 * Fixed an issue where Plotly `FigureWidget` outputs in filling layouts could briefly render at the wrong height and then visibly jump to their final size on initial render or rerender. Plotly outputs now wait for Plotly's own resize cycle before being revealed, and Playwright coverage was added for the first visible Plotly paint. (#208, #236)
 * Fixed an issue where browser-originated widget buffers were not decoded back into bytes on the server before being forwarded to ipywidgets, which broke binary `update` and `custom` comm traffic from widgets running in the browser. Added Playwright regression coverage for both paths. (#151, #230)
 * Hardened widget teardown for re-rendered views so replacing a widget no longer emits known cleanup noise like `Widget is not attached` or dead-comm sync errors. Added Playwright regression coverage for repeated rerenders across plotly, altair, bokeh, and ipyleaflet, and wired that suite into GitHub Actions on Python 3.12. (#223)

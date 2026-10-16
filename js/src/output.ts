@@ -25,39 +25,6 @@ class OutputManager extends HTMLManager {
   private _modelWaiters = new Map<string, ModelWaiter[]>();
   private _activeClears = 0;
 
-  // html-manager 1.0 posts a lumino `resize` message to every displayed view
-  // on every window `resize` (0.20 had no such forwarding). ipywidgets-7-era
-  // widgets (e.g. ipyleaflet 0.17) can throw when that message arrives before
-  // they finish initializing (e.g. `this.obj.invalidateSize()` on a
-  // not-yet-created leaflet map). Message delivery is asynchronous
-  // (MessageLoop.flush), so the throw can't be caught at the post site; wrap
-  // the view's message handler instead and downgrade errors to warnings.
-  async display_view(viewOrPromise: any, el: HTMLElement): Promise<void> {
-    const view = await viewOrPromise;
-    this._guardLuminoMessageHandlers(view);
-    await super.display_view(view, el);
-  }
-
-  private _guardLuminoMessageHandlers(view: any): void {
-    // base 1.x (ipywidgets 7) routes through `processPhosphorMessage`,
-    // base 2.x+ (ipywidgets 8) through `processLuminoMessage`; wrap both.
-    for (const method of ['processLuminoMessage', 'processPhosphorMessage']) {
-      const original = view?.[method];
-      if (typeof original !== 'function' || original.__shinywidgetsGuarded) {
-        continue;
-      }
-      const guarded = function (this: any, msg: any) {
-        try {
-          return original.call(this, msg);
-        } catch (e) {
-          console.warn('shinywidgets: widget message handler failed', e);
-        }
-      };
-      guarded.__shinywidgetsGuarded = true;
-      view[method] = guarded;
-    }
-  }
-
   async get_model(model_id: string): Promise<WidgetModel> {
     if (this.has_model(model_id)) {
       return super.get_model(model_id);
