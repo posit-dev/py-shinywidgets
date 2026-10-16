@@ -11,7 +11,7 @@ rejection, and waiter accounting in the lifecycle snapshot.
 from __future__ import annotations
 
 import pytest
-from playwright.sync_api import Page
+from playwright.sync_api import Page, Route
 from shiny.run import ShinyAppProc
 from tests.playwright.conftest import open_lifecycle_page
 
@@ -121,3 +121,76 @@ def test_waiter_timeout_removes_only_that_waiter(lifecycle_page: Page) -> None:
     assert result["expiredMessage"].startswith("Timeout waiting for widget model")
     assert result["resolvedIsModel"] is True
     assert result["waiters"] == 0
+
+
+def test_comm_open_waits_for_assets_without_waiting_for_child_models(
+    lifecycle_page: Page,
+) -> None:
+    requests: list[Route] = []
+    lifecycle_page.route(
+        "**/delayed-widget-assets.js", lambda route: requests.append(route)
+    )
+    with lifecycle_page.expect_request("**/delayed-widget-assets.js"):
+        lifecycle_page.evaluate(
+            """() => {
+                const identity = {session_id: 's', model_namespace: 'n', epoch_id: 'e1'};
+                window.widgetLifecycle.handleEpochHello(identity);
+                window.openFinished = false;
+                window.openDispatch = Shiny.shinyapp.dispatchMessage(JSON.stringify({
+                    custom: {shinywidgets_comm_open: JSON.stringify({
+                        sw: 1, ...window.widgetLifecycle.epoch.identity, msg: {
+                        content: {
+                            comm_id: 'sw-n-asset-parent',
+                            data: {state: {
+                                _model_name: 'HTMLModel',
+                                _model_module: '@jupyter-widgets/controls',
+                                _model_module_version: '2.0.0',
+                                layout: 'IPY_MODEL_sw-n-asset-child'
+                            }, buffer_paths: []},
+                            html_deps: [{
+                                name: 'delayed-widget-assets',
+                                version: '1.0',
+                                script: [{src: '/delayed-widget-assets.js'}]
+                            }]
+                        },
+                        metadata: {version: '2.1.0'},
+                        buffers: []
+                    }})}
+                })).then(() => { window.openFinished = true; });
+            }"""
+        )
+
+    finished_before_release = lifecycle_page.evaluate(
+        """async () => {
+            await new Promise(requestAnimationFrame);
+            return window.openFinished;
+        }"""
+    )
+    requests[0].fulfill(body="", content_type="application/javascript")
+    result = lifecycle_page.evaluate(
+        """async () => {
+            await window.openDispatch;
+            await Shiny.shinyapp.dispatchMessage(JSON.stringify({
+                custom: {shinywidgets_comm_open: JSON.stringify({
+                    sw: 1, ...window.widgetLifecycle.epoch.identity, msg: {
+                    content: {
+                        comm_id: 'sw-n-asset-child',
+                        data: {state: {
+                            _model_name: 'LayoutModel',
+                            _model_module: '@jupyter-widgets/base',
+                            _model_module_version: '2.0.0'
+                        }, buffer_paths: []},
+                        html_deps: []
+                    },
+                    metadata: {version: '2.1.0'},
+                    buffers: []
+                }})}
+            }));
+            const parent = await window.widgetLifecycle.epoch.get_model('sw-n-asset-parent');
+            const child = await window.widgetLifecycle.epoch.get_model('sw-n-asset-child');
+            return parent.get('layout') === child;
+        }"""
+    )
+
+    assert not finished_before_release
+    assert result, "Opening the parent must permit its child to arrive afterward"

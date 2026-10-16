@@ -34,7 +34,7 @@ from ._comm import (
     ShinyComm,
     unpack_envelope,
 )
-from ._dependencies import require_dependency
+from ._dependencies import bokeh_dependencies, require_dependency
 from ._lifecycle import (
     Lifetime,
     SessionLifecycle,
@@ -85,6 +85,8 @@ def init_shiny_widget(w: Widget):
         widget_dep = None
     else:
         widget_dep = require_dependency(w, session, SHINYWIDGETS_EXTENSION_WARNING)
+
+    bokeh_deps = bokeh_dependencies(w)
 
     record = lifecycle.register(w, current_lifetime(lifecycle))
     id = record.model_id
@@ -159,7 +161,7 @@ def init_shiny_widget(w: Widget):
                 buffers=cast(BufferType, buffers),
                 # TODO: should this be hard-coded?
                 metadata={"version": __protocol_version__},
-                html_deps=session._process_ui(TagList(widget_dep))["deps"],
+                html_deps=session._process_ui(TagList(*bokeh_deps, widget_dep))["deps"],
                 on_closed=lambda: lifecycle.close_record(id),
             )
 

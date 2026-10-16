@@ -459,12 +459,20 @@ Shiny.addCustomMessageHandler("shinywidgets_display_result", (message) => {
 
 // Initialize the comm and model when a new widget is created
 // This is basically our version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1144-L1176
-Shiny.addCustomMessageHandler("shinywidgets_comm_open", (msg_txt) => {
+Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
   setBaseURL();
   const epoch = lifecycle.currentEpoch();
   const msg = unpackComm(epoch.identity, JSON.parse(msg_txt));
   decodeBuffers(msg);
-  Shiny.renderDependencies((msg.content as any).html_deps);
+  const deps = (msg.content as {
+    html_deps: NonNullable<Parameters<typeof Shiny.renderDependenciesAsync>[0]>;
+  }).html_deps;
+  // Shiny must finish dependency loading before dispatching another comm_open.
+  if (typeof Shiny.renderDependenciesAsync === "function") {
+    await Shiny.renderDependenciesAsync(deps);
+  } else {
+    Shiny.renderDependencies(deps);
+  }
   // Parse, validate, and enqueue epoch-owned work synchronously; never return
   // the model initialization promise (a parent's deserialization may need a
   // later child's comm_open, and Shiny awaits handler promises).
