@@ -19,3 +19,24 @@ def test_render_bokeh_auto_output_ui_appends_bokeh_dependency(monkeypatch) -> No
     res = renderer.auto_output_ui()
 
     assert any(dep.name == "bokeh-inline" for dep in res.get_dependencies())
+
+
+def test_render_panel_and_hvplot_auto_output_ui_append_bokeh_dependency(
+    monkeypatch,
+) -> None:
+    sentinel = HTMLDependency(
+        name="bokeh-inline",
+        version="1.0",
+        source={"href": "https://example.invalid"},
+    )
+
+    monkeypatch.setattr(rwb, "output_widget", lambda *args, **kwargs: div())
+    monkeypatch.setattr(rw, "bokeh_dependency", lambda: sentinel)
+
+    for cls in (rw.render_panel, rw.render_hvplot):
+        renderer = cls()
+        renderer.output_id = "plot"
+
+        res = renderer.auto_output_ui()
+
+        assert any(dep.name == "bokeh-inline" for dep in res.get_dependencies()), cls
