@@ -12,6 +12,14 @@ if TYPE_CHECKING:
     from ._lifecycle import EpochIdentity
 
 
+class ForeignPacketError(RuntimeError):
+    """
+    A well-formed packet for a different session/epoch (e.g., a stale packet
+    racing a reconnect). Well-formed foreign packets are dropped (not fatal);
+    legacy or malformed packets remain hard protocol errors.
+    """
+
+
 def pack_envelope(epoch: EpochIdentity, msg: Dict[str, Any]) -> Dict[str, object]:
     """
     Wrap a comm packet in the versioned shinywidgets envelope carrying the
@@ -43,7 +51,7 @@ def unpack_envelope(epoch: EpochIdentity, packet: object) -> Dict[str, object]:
         or packet.get("model_namespace") != epoch.model_namespace
         or packet.get("epoch_id") != epoch.epoch_id
     ):
-        raise RuntimeError(
+        raise ForeignPacketError(
             "Received a shinywidgets packet for a different session/epoch; "
             "it can't mutate this session's widgets."
         )

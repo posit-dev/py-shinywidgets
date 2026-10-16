@@ -13,7 +13,7 @@ from ipywidgets import Widget
 from shiny import Session
 from shiny.session import get_current_session
 
-from ._comm import OrphanedShinyComm, ShinyCommManager
+from ._comm import ForeignPacketError, OrphanedShinyComm, ShinyCommManager
 from ._widget_dependencies import dependencies, unreachable
 
 __all__ = (
@@ -226,6 +226,7 @@ class SessionLifecycle:
         self.display_leases: dict[str, DisplayLease] = {}
         self._claim_states: dict[str, OutputClaimState] = {}
         self.wired: bool = False
+        self.hello_scheduled: bool = False
         self._closed_widgets: WidgetWeakMap[ClosedWidget] = WidgetWeakMap()
         self._revision: int = 0
         self._collecting: bool = False
@@ -707,7 +708,7 @@ def validate_display_events(
         or packet.get("model_namespace") != epoch.model_namespace
         or packet.get("epoch_id") != epoch.epoch_id
     ):
-        raise RuntimeError(
+        raise ForeignPacketError(
             "Received shinywidgets display events for a different session/epoch"
         )
     events = packet.get("events")

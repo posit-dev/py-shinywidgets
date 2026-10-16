@@ -46,7 +46,10 @@ export class WidgetLifecycle {
   private readonly _loader: ModuleLoader;
   private readonly _sendEvents: (packet: DisplayEvents) => void;
   private _epoch: EpochManager | null = null;
+  private _epochWaiter: Promise<EpochManager> | null = null;
+  private _resolveEpochWaiter: ((manager: EpochManager) => void) | null = null;
   private readonly _mounts = new Map<HTMLElement, RootMount>();
+  private readonly _claimSeqByOutput = new Map<string, number>();
   private readonly _pendingEvents = new Map<EventId, PendingEvent>();
 
   constructor(options: {
@@ -81,6 +84,11 @@ export class WidgetLifecycle {
       loader: this._loader,
     });
     this._epoch = manager;
+    if (this._resolveEpochWaiter !== null) {
+      this._resolveEpochWaiter(manager);
+      this._resolveEpochWaiter = null;
+      this._epochWaiter = null;
+    }
     if (old !== null) {
       this._rejectPendingEvents(
         new EpochRetiredError("widget transport epoch retired")
@@ -93,17 +101,24 @@ export class WidgetLifecycle {
   handleDisconnected(): void {
     const old = this._epoch;
     this._epoch = null;
+    this._claimSeqByOutput.clear();
     this._rejectPendingEvents(
       new EpochRetiredError("widget transport disconnected")
     );
+    // Mounts and their identity markers are invalidated synchronously, before
+    // any async disposal. No lifecycle inputs are sent after disconnect;
+    // server-side session cleanup releases leases independently.
+    for (const [el, mount] of this._mounts) {
+      delete el.dataset.shinywidgetsModelId;
+      void mount.dispose();
+    }
+    this._mounts.clear();
     if (old !== null) {
       // Synchronous admission retirement; the cleanup task is cached and
       // tracked separately (never awaited from a jQuery callback, and server
       // session cleanup never depends on a browser acknowledgement).
       old.disconnect();
     }
-    // Mount admission is invalidated per epoch; mount markup removal is
-    // handled by the output binding's unbind/disconnect paths.
   }
 
   currentEpoch(): EpochManager {
@@ -116,10 +131,38 @@ export class WidgetLifecycle {
   }
 
   /**
-   * The root mount for an output element. One mount per element/epoch;
-   * claim sequences increase strictly for the mount's lifetime.
+   * Wait for the session's epoch hello. A render value can legitimately
+   * arrive before the hello (the hello is published just before the first
+   * comm_open); the candidate task waits outside Shiny's dispatch queue.
    */
-  mountFor(el: HTMLElement): RootMount {
+  waitForEpoch(): Promise<EpochManager> {
+    if (this._epoch !== null) {
+      return Promise.resolve(this._epoch);
+    }
+    if (this._epochWaiter !== null) {
+      return this._epochWaiter;
+    }
+    this._epochWaiter = new Promise<EpochManager>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this._epochWaiter = null;
+        reject(
+          protocolError("timed out waiting for the session's epoch hello")
+        );
+      }, 30000);
+      this._resolveEpochWaiter = (manager) => {
+        clearTimeout(timer);
+        resolve(manager);
+      };
+    });
+    return this._epochWaiter;
+  }
+
+  /**
+   * The root mount for an output element. One mount per element/epoch;
+   * claim sequences increase strictly per output/epoch (surviving DOM
+   * rebind of the same output).
+   */
+  mountFor(el: HTMLElement, outputId?: string): RootMount {
     let mount = this._mounts.get(el);
     if (mount !== undefined && mount.accepting) {
       return mount;
@@ -134,7 +177,12 @@ export class WidgetLifecycle {
         "received widget traffic before the session's epoch hello"
       );
     }
-    mount = new RootMount(epoch);
+    mount = new RootMount(epoch, () => {
+      const key = outputId ?? mount!.outputId;
+      const next = (this._claimSeqByOutput.get(key) ?? 0) + 1;
+      this._claimSeqByOutput.set(key, next);
+      return next;
+    });
     this._mounts.set(el, mount);
     return mount;
   }

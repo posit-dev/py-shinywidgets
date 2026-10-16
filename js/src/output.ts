@@ -182,11 +182,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     }
 
     const value = parseWidgetValue(data);
-    const mount = lifecycle.mountFor(el);
-    mount.outputId = value.output_id;
-    const candidate = mount.startCandidate();
-    const task = this._prepareCandidate(el, mount, candidate, value);
-    mount.trackTask(task);
+    const task = this._prepareCandidate(el, value);
     task.catch(reportTerminalTask);
   }
 
@@ -196,6 +192,21 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
    * prepared view, the old presentation is removed and the new one attaches.
    */
   private async _prepareCandidate(
+    el: HTMLElement,
+    value: WidgetValue
+  ): Promise<void> {
+    // The hello can legitimately arrive after the first value; wait for it
+    // outside Shiny's dispatch queue.
+    const epoch = await lifecycle.waitForEpoch();
+    const mount = lifecycle.mountFor(el, value.output_id);
+    mount.outputId = value.output_id;
+    const candidate = mount.startCandidate();
+    const task = this._prepareCandidateWithEpoch(el, mount, candidate, value);
+    mount.trackTask(task);
+    await task;
+  }
+
+  private async _prepareCandidateWithEpoch(
     el: HTMLElement,
     mount: RootMount,
     candidate: MountScope,
@@ -249,9 +260,17 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
 
     // Accept: remove the old presentation (through its mount), attach the
     // prepared view, then release the old lease after observable cleanup.
+    // A genuine teardown failure is reported and marked on the release, but
+    // never blocks the replacement: the presentation is already absent.
     const oldLease = mount.acceptedLease;
     clearCurrentModelId(el);
-    await mount.retireAccepted();
+    let oldCleanup: "complete" | "failed" = "complete";
+    try {
+      await mount.retireAccepted();
+    } catch (error) {
+      oldCleanup = "failed";
+      console.error("shinywidgets: error disposing replaced presentation:", error);
+    }
     mount.acceptCandidate(candidate, value, leaseId, view);
     try {
       this._attach(el, view, value);
@@ -265,7 +284,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     }
     setCurrentModelId(el, mount, value.model_id);
     if (oldLease !== null) {
-      sendRelease(mount, oldLease, "replaced", "complete");
+      sendRelease(mount, oldLease, "replaced", oldCleanup);
     }
     this._postAttach(el, candidate, value);
   }

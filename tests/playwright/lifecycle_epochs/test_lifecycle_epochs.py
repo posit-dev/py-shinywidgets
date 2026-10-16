@@ -428,3 +428,88 @@ def test_served_runtime_module_identity_and_assets(lifecycle_page: Page) -> None
         "viewLuminoShared": True,
     }
     assert failures == []
+
+
+def test_fresh_epoch_independent_of_held_old_loader(
+    lifecycle_page: Page,
+) -> None:
+    """
+    A permanently held old loader can't block fresh admission: the old epoch
+    reports its pending task, fresh models/claims/attachment complete, and
+    once the loader is released the old work can't register or mount.
+    """
+    result = lifecycle_page.evaluate(
+        """async () => {
+            const lifecycle = window.widgetLifecycle;
+            let heldRelease;
+            const heldLoader = (name, version) => new Promise(resolve => {
+                heldRelease = () => resolve(null);
+            });
+            const oldManager = lifecycle.handleEpochHello({
+                session_id: 's', model_namespace: 'n', epoch_id: 'e1'
+            });
+            // Point the old manager at the held loader for this construction.
+            oldManager._loader = heldLoader;
+            const heldConstruction = oldManager.new_model({
+                model_id: 'held-model',
+                model_name: 'WidgetModel',
+                model_module: 'held-package',
+                model_module_version: '1.0.0'
+            }, {});
+            heldConstruction.catch(() => {});
+            const heldSnapshot = oldManager.snapshot();
+
+            // Fresh admission doesn't wait for the old epoch's held loader.
+            const fresh = lifecycle.handleEpochHello({
+                session_id: 's', model_namespace: 'n', epoch_id: 'e2'
+            });
+            const child = await fresh.new_model({
+                model_id: 'fresh-child',
+                model_name: 'HTMLModel',
+                model_module: '@jupyter-widgets/controls',
+                model_module_version: '2.0.0'
+            }, {value: 'fresh content'});
+            const el = document.createElement('div');
+            document.body.appendChild(el);
+            const mount = window.widgetLifecycle.mountFor(el);
+            const view = await fresh.create_view(child, {lifecycle_scope: mount});
+            const [internals] = await new Promise((resolve, reject) =>
+                require(['shinywidgets-internals'], (...m) => resolve(m), reject)
+            );
+            internals.LuminoWidget.attach(view.luminoWidget, el);
+
+            // The old loader stays pending without blocking the fresh epoch.
+            const pendingOutcome = await Promise.race([
+                heldConstruction.then(
+                    () => 'resolved',
+                    (error) => error.name
+                ),
+                new Promise(resolve => setTimeout(() => resolve('pending'), 1000))
+            ]);
+
+            // Once the loader is released, the retired construction rejects
+            // before it can register or mount.
+            heldRelease();
+            const oldOutcome = await heldConstruction.then(
+                () => 'resolved',
+                (error) => error.name
+            );
+            await oldManager.retire().catch(() => {});
+            return {
+                heldModels: heldSnapshot.models,
+                pendingOutcome,
+                oldOutcome,
+                oldRegistered: oldManager.has_model('held-model'),
+                freshAttached: el.textContent,
+            };
+        }"""
+    )
+
+    # The old epoch's pending construction was visible in its snapshot...
+    assert result["heldModels"] == 1
+    # ...stayed pending while the fresh epoch attached its real view...
+    assert result["pendingOutcome"] == "pending"
+    assert "fresh content" in result["freshAttached"]
+    # ...and once released, rejected with retirement (never an ErrorWidget).
+    assert result["oldOutcome"] == "EpochRetiredError"
+    assert result["oldRegistered"] is False

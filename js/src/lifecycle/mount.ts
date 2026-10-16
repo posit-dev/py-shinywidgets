@@ -192,9 +192,15 @@ export class MountScope {
  */
 export class RootMount extends MountScope {
   outputId: string = "";
+  private readonly _nextSeq: () => number;
   private _claimSeq = 0;
   private _candidate: MountScope | null = null;
   private _acceptedScope: MountScope | null = null;
+
+  constructor(epoch: EpochManager, nextSeq: () => number) {
+    super(epoch);
+    this._nextSeq = nextSeq;
+  }
   acceptedOffer: DisplayOfferId | null = null;
   acceptedLease: DisplayLeaseId | null = null;
   acceptedGeneration: GenerationId | null = null;
@@ -202,7 +208,9 @@ export class RootMount extends MountScope {
   acceptedView: WidgetView | null = null;
 
   nextClaimSeq(): number {
-    this._claimSeq += 1;
+    // Allocated by the document controller per output/epoch, so sequences
+    // increase strictly even across DOM rebind of the same output.
+    this._claimSeq = this._nextSeq();
     return this._claimSeq;
   }
 
