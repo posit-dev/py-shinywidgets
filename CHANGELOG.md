@@ -7,13 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Breaking changes
-
-* shinywidgets now requires ipywidgets 8 or newer. (#237)
-
 ### New features
 
 * Added `session_lifetime()` to keep widgets constructed inside its block alive until the Shiny session ends. Cached widgets can now survive output re-renders and appear again without recreation. The block does not change the lifetime of existing widgets. (#248)
+* Added a `render_matplotlib()` renderer, and `as_widget()` now coerces matplotlib `Figure` (and `Axes`) objects into an interactive [ipympl](https://matplotlib.org/ipympl/) widget. This covers anything that produces a matplotlib figure (e.g., seaborn, `pandas.DataFrame.plot()`, scikit-learn displays) and requires `pip install ipympl`. Figures fill their container (and resize with it) in filling layouts, and pyplot figures rendered this way are automatically deregistered from pyplot's global figure registry when the render retires, so repeated re-renders don't leak figures (or trigger "More than 20 figures have been opened" warnings).
+
+### Breaking changes
+
+* shinywidgets now requires ipywidgets 8 or newer. (#237)
 
 ### Bug fixes
 

@@ -6,11 +6,12 @@ from htmltools import Tag
 
 if TYPE_CHECKING:
     from altair import JupyterChart
+    from ipympl.backend_nbagg import Canvas as MplCanvas
     from jupyter_bokeh import BokehModel
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = BokehModel = FigureWidget = DeckGLWidget = object
+    JupyterChart = MplCanvas = BokehModel = FigureWidget = DeckGLWidget = object
 
 from ._dependencies import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
@@ -19,6 +20,7 @@ __all__ = (
     "render_widget",
     "render_altair",
     "render_bokeh",
+    "render_matplotlib",
     "render_plotly",
     "render_pydeck",
 )
@@ -32,6 +34,9 @@ class render_widget(render_widget_base[WidgetT, WidgetT]): ...
 # Package specific renderers that require coercion (via as_widget())
 # NOTE: the types on these classes should mirror what as_widget() does
 class render_altair(render_widget_base[ValueT, JupyterChart]): ...
+
+
+class render_matplotlib(render_widget_base[ValueT, MplCanvas]): ...
 
 
 class render_bokeh(render_widget_base[ValueT, BokehModel]):

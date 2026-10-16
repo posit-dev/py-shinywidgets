@@ -1,5 +1,6 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
+import { setupMplAutoResize } from './mpl';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { jsonParse } from './utils';
 import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
@@ -200,6 +201,17 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
 
     if (fill) {
       this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
+    }
+    // ipympl figures don't fit themselves to their container, so drive the
+    // figure size from the container's size (i.e., make fill actually work)
+    const isMplWidget = model.get("_model_module") === "jupyter-matplotlib";
+    if (fill && isMplWidget) {
+      this._onImplementation(lmWidget, () => {
+        // Don't set up resizing if this view has since been replaced
+        if (this._views.get(el) !== view) return;
+        const cleanup = setupMplAutoResize(el, lmWidget, model);
+        view.once("remove", cleanup);
+      });
     }
     if (!isPlotlyWidget) {
       this._onImplementation(lmWidget, () => this._doResize());
