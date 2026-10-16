@@ -33,6 +33,7 @@ from ._lifecycle import (
     SessionLifecycle,
     get_lifecycle,
     selected_lifetime,
+    use_lifetime,
 )
 from ._render_widget_base import WidgetRenderContext
 from ._utils import package_dir
@@ -105,14 +106,33 @@ def init_shiny_widget(w: Widget):
         record.state = "opening"
         w = record.widget
 
-        # Call _repr_mimebundle_() before get_state() since it may modify the widget
-        # in an important way (unfortunately, it does for plotly)
-        # # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
-        if hasattr(w, "_repr_mimebundle_") and callable(w._repr_mimebundle_):
-            w._repr_mimebundle_()
+        try:
+            # Prepare state under the record's own lifetime: defaults and
+            # children materialized here (e.g., Layout/Style) belong to the
+            # same lifetime, and collection keeps the ones still reachable
+            # from live roots.
+            with use_lifetime(record.lifetime):
+                lifecycle.begin_preparation()
+                try:
+                    # Call _repr_mimebundle_() before get_state() only when it's
+                    # actually overridden, since it may modify the widget in an
+                    # important way (unfortunately, it does for plotly)
+                    # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
+                    # The inherited base implementation only builds a discarded
+                    # MIME bundle (and repr()s the widget, which doesn't survive
+                    # widget-reference cycles).
+                    if type(w)._repr_mimebundle_ is not Widget._repr_mimebundle_:
+                        w._repr_mimebundle_()
 
-        # Now, get the state
-        state, buffer_paths, buffers = _remove_buffers(w.get_state())
+                    # Now, get the state
+                    state, buffer_paths, buffers = _remove_buffers(w.get_state())
+                finally:
+                    lifecycle.end_preparation()
+        except Exception:
+            # A failed preparation must not reopen the record, register a comm,
+            # or move late work into session roots.
+            lifecycle.close_record(id, reason="initialization-failed")
+            raise
 
         # Initialize the comm -- this sends widget state to the frontend
         with widget_comm_patch():

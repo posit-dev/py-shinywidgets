@@ -176,8 +176,6 @@ def ensure_default_adapters() -> None:
     except ImportError:
         pass
     else:
-        serializer = BokehModel.class_traits()["render_bundle"].metadata.get(
-            "to_json"
-        )
+        serializer = BokehModel.class_traits()["render_bundle"].metadata.get("to_json")
         if serializer is not None:
             register_serializer_adapter(serializer, scalar)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -13,6 +14,7 @@ from shiny import Session
 from shiny.session import get_current_session
 
 from ._comm import OrphanedShinyComm, ShinyCommManager
+from ._widget_dependencies import dependencies, unreachable
 
 __all__ = (
     "ClosedWidget",
@@ -165,6 +167,11 @@ class SessionLifecycle:
         self.render_lifetimes: set[Lifetime] = set()
         self.wired: bool = False
         self._closed_widgets: WidgetWeakMap[ClosedWidget] = WidgetWeakMap()
+        self._revision: int = 0
+        self._collecting: bool = False
+        self._collect_pending: bool = False
+        self._preparing: int = 0
+        self._incomplete_warned: bool = False
 
     def register(self, widget: Widget, lifetime: Lifetime) -> WidgetRecord:
         if lifetime.session_id != self.session.id:
@@ -184,6 +191,7 @@ class SessionLifecycle:
             )
         record = WidgetRecord(widget=widget, model_id=model_id, lifetime=lifetime)
         self.records[model_id] = record
+        self._revision += 1
         lifetime.roots.add(model_id)
         _widget_owners[widget] = ref(self)
         return record
@@ -198,6 +206,7 @@ class SessionLifecycle:
         record = self.records.pop(model_id, None)
         if record is None:
             return
+        self._revision += 1
         record.state = "closed"
         record.lifetime.roots.discard(model_id)
         cancel = record.cancel_initializer
@@ -271,11 +280,94 @@ class SessionLifecycle:
             raise ValueError("retire_render() expects a render lifetime")
         if lifetime not in self.render_lifetimes:
             return
-        # Stop admission of new temporary work before closing this phase's
-        # temporary records.
+        # Stop admission of new temporary work, then release this lifetime's
+        # roots: collection closes the records that can't be reached from the
+        # remaining live roots (a live shared widget may still reference them).
         lifetime.accepting = False
         self.render_lifetimes.discard(lifetime)
-        for model_id in list(lifetime.roots):
+        self.collect()
+
+    def collect(self) -> None:
+        """
+        Close records that can't be reached from live lifetime roots.
+
+        Edges are refreshed from materialized trait values at collection time,
+        so in-place container mutations (which need not notify) are accounted
+        for. Reentrant requests are coalesced rather than recursive.
+        """
+        if self._collecting or self._preparing > 0:
+            self._collect_pending = True
+            return
+        self._collecting = True
+        try:
+            while True:
+                self._collect_pending = False
+                self._collect_once()
+                if not self._collect_pending:
+                    break
+        finally:
+            self._collecting = False
+
+    def begin_preparation(self) -> None:
+        """Mark a batch of deferred state preparation (defaults/serializers)."""
+        self._preparing += 1
+
+    def end_preparation(self) -> None:
+        self._preparing -= 1
+        if self._preparing == 0 and self._collect_pending:
+            self.collect()
+
+    def _collect_once(self) -> None:
+        if not self.session_lifetime.accepting:
+            # Session close is unconditional and doesn't consult the graph.
+            return
+        revision = self._revision
+        roots = set(self.session_lifetime.roots)
+        for lifetime in self.render_lifetimes:
+            roots |= lifetime.roots
+        snapshots = {
+            model_id: dependencies(record.widget)
+            for model_id, record in self.records.items()
+        }
+        if revision != self._revision:
+            # Registration changed while preparing the snapshot; rebuild it
+            # before closing anything.
+            self._collect_pending = True
+            return
+        graph: dict[str, frozenset[str]] = {}
+        for model_id, snapshot in snapshots.items():
+            edges: set[str] = set()
+            for dep in snapshot.widgets:
+                # Only live records owned by this manager can keep a record
+                # alive; a closed or foreign-session dependency's comm ID is
+                # not evidence of ownership.
+                owner_ref = _widget_owners.get(dep)
+                owner = owner_ref() if owner_ref is not None else None
+                if owner is not self:
+                    continue
+                dep_id = cast(str | None, getattr(dep, "_model_id", None))
+                if dep_id is not None and dep_id in self.records:
+                    edges.add(dep_id)
+            graph[model_id] = frozenset(edges)
+        candidates = unreachable(roots & set(graph), graph)
+        reachable = set(graph) - candidates
+        if any(not snapshots[model_id].complete for model_id in reachable):
+            # A live record hides dependencies behind a custom serializer that
+            # has no adapter. Retain everything (rather than risk closing a
+            # hidden dependency of a live widget) and emit one diagnostic while
+            # the incompleteness persists.
+            if not self._incomplete_warned:
+                self._incomplete_warned = True
+                warnings.warn(
+                    "shinywidgets can't determine the full widget dependency "
+                    "graph because a live widget uses a custom trait serializer. "
+                    "Temporary widgets won't be collected while it is live.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            return
+        self._incomplete_warned = False
+        for model_id in candidates:
             self.close_record(model_id, reason="render-retired")
 
     def close_session(self) -> None:
