@@ -13,13 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### New features
 
-* Added `session_lifetime()`, a context manager for constructing widgets that should outlive the current render (for example, one cached widget per dataset that is displayed again when the user switches back). Widgets constructed while an output renders are still closed when that render is invalidated; returning such a closed widget from a later render now raises an error that points to `session_lifetime()` instead of timing out in the browser.
+* Added `session_lifetime()`, a context manager for constructing widgets that should outlive the current render (for example, one cached widget per dataset that is displayed again when the user switches back). Widgets constructed while an output renders are still closed when that render is invalidated; returning such a closed widget from a later render now raises an error that points to `session_lifetime()` instead of timing out in the browser. (#258)
 
 ### Bug fixes
 
-* Fixed a leak where the `Layout`/`Style` models that ipywidgets creates lazily while serializing a widget were never closed: every re-render of an output leaked a few models on the server and in the browser for the rest of the session. They now share the cleanup of the widget that created them, unless a live widget still references them.
-* Fixed an issue where closing a widget before its comm had opened (for example, re-rendering an output twice in one flush) reopened the widget anyway.
-* Widget comm messages are now always sent through the session that created the widget, and each session routes client messages only to its own widgets.
+* Fixed a leak where the `Layout`/`Style` models that ipywidgets creates lazily while serializing a widget were never closed: every re-render of an output leaked a few models on the server and in the browser for the rest of the session. They now share the cleanup of the widget that created them, unless a live widget still references them. (#258)
+* Fixed an issue where closing a widget before its comm had opened (for example, re-rendering an output twice in one flush) reopened the widget anyway. (#258)
+* Widget comm messages are now always sent through the session that created the widget, and each session routes client messages only to its own widgets. (#258)
 * Fixed an issue where widgets nested inside other widgets didn't work reliably with ipywidgets 8. Depending on the widget, they either didn't render at all (e.g., an `HTML` child with a `style`, or a Plotly `FigureWidget`, inside an ipyleaflet popup) or rendered while logging errors like `Class HTMLStyleModel not found` (e.g., ipyleaflet popups, `WidgetControl` children, and leafmap legends). Widget outputs inserted dynamically, such as `output_widget()` inside `@render.ui`, had the same problem. The cause was that shinywidgets still bundled the ipywidgets 7-era JavaScript widget manager (`@jupyter-widgets/html-manager` 0.20); it now uses 1.0. (#75, #101, #137, #157, #194, #237)
 * Fixed an issue where an ipyleaflet map with many markers could turn gray and show no markers when re-rendered. (#215, #237)
 * Fixed an issue where fonts used by widget CSS, such as FontAwesome icons, failed to load (404). (#237)
