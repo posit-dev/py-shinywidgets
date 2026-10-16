@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 class FakeContext:
     def __init__(self) -> None:
+        self.id = id(self)
         self.invalidated = False
         self._on_invalidate: List[Callable[[], None]] = []
 
@@ -198,6 +199,10 @@ class FakeWidget:
     def get_state(self) -> Dict[str, Any]:
         self.calls.append("get_state")
         return {"x": 1}
+
+    @property
+    def model_id(self) -> str:
+        return self.comm.comm_id
 
     def close(self) -> None:
         self.closed = True
