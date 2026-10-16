@@ -1,4 +1,5 @@
 from playwright.sync_api import Page, expect
+from shiny.run import ShinyAppProc
 
 
 # Issue #101: marker popup with a plain-ipywidgets (HTML) child failed to
@@ -28,3 +29,31 @@ def test_marker_popup_with_html_child(page: Page, local_app) -> None:
     )
     expect(popup).to_contain_text("hello popup #101")
     assert not errors, f"Unexpected console errors: {errors}"
+
+
+def test_session_popup_and_style_survive_map_replacement(
+    page: Page, local_app: ShinyAppProc
+) -> None:
+    page.goto(local_app.url)
+    page.locator(".leaflet-marker-icon").click()
+    expect(page.locator(".leaflet-popup-content")).to_have_text("hello popup #101")
+    page.locator(".leaflet-popup-close-button").click()
+
+    # Replace the map with one borrowing the session-retained popup. The old
+    # map's retirement must not close the popup or its Layout/Style (which
+    # were first materialized while the old map serialized).
+    for _ in range(2):
+        previous_id = page.locator("#map").get_attribute("data-shinywidgets-model-id")
+        page.click("#rerender")
+        # Wait for the replacement map (not just any marker) to attach.
+        page.wait_for_function(
+            """(previous) => {
+                const el = document.querySelector('#map');
+                return el.dataset.shinywidgetsModelId &&
+                    el.dataset.shinywidgetsModelId !== previous;
+            }""",
+            arg=previous_id,
+        )
+        page.locator(".leaflet-marker-icon").click()
+        expect(page.locator(".leaflet-popup-content")).to_have_text("shared popup")
+        page.locator(".leaflet-popup-close-button").click()

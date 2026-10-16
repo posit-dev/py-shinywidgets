@@ -5,4 +5,9 @@ from tests.playwright.conftest import assert_rerender_cleanup
 
 
 def test_altair_rerender_does_not_log_cleanup_errors(page: Page, local_app) -> None:
-    assert_rerender_cleanup(page, local_app, "#plot .vega-embed")
+    assert_rerender_cleanup(
+        page,
+        local_app,
+        snapshot_id="widget_snapshot",
+        ready_selector="#plot .vega-embed",
+    )

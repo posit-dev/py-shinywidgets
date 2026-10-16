@@ -35,6 +35,7 @@ def assert_rerender_cleanup(
     page: Page,
     local_app: ShinyAppProc,
     ready_selector: str,
+    snapshot_id: str | None = None,
 ) -> None:
     errors: list[str] = []
 
@@ -47,6 +48,12 @@ def assert_rerender_cleanup(
     page.goto(local_app.url)
     page.wait_for_selector(ready_selector, timeout=30000)
     expect(page.locator("#render_count")).to_have_text("0")
+    baseline: str | None = None
+    if snapshot_id is not None:
+        page.wait_for_function(
+            f"() => document.querySelector('#{snapshot_id}').textContent.length > 0"
+        )
+        baseline = page.locator(f"#{snapshot_id}").inner_text()
 
     for i in range(1, 4):
         page.click("#rerender")
@@ -56,3 +63,8 @@ def assert_rerender_cleanup(
     expect(page.locator(ready_selector)).to_have_count(1)
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel defined" in err.lower() for err in errors)
+
+    # Temporary models/comms return to the warmed-up baseline once the old
+    # presentations' display leases are released and collected.
+    if snapshot_id is not None and baseline is not None:
+        expect(page.locator(f"#{snapshot_id}")).to_have_text(baseline)

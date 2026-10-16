@@ -65,6 +65,7 @@ def _format_payload(payload: bytes | memoryview) -> str:
 
 
 app_ui = ui.page_fluid(
+    ui.input_action_button("toggle_null", "Toggle null"),
     output_widget("buffer_widget"),
     ui.output_text("update_status"),
     ui.output_text("update_payload"),
@@ -76,6 +77,12 @@ app_ui = ui.page_fluid(
 def server(input, output, session):
     buffer_transport_widget = BufferTransportWidget()
     custom_buffer_payload = reactive.Value(b"", name="custom_buffer_payload")
+    show_null = reactive.value(False)
+
+    @reactive.effect
+    @reactive.event(input.toggle_null)
+    def _():
+        show_null.set(not show_null.get())
 
     @buffer_transport_widget.on_msg
     def _handle_custom_buffer(_, content, buffers):
@@ -88,6 +95,8 @@ def server(input, output, session):
 
     @render_widget
     def buffer_widget():
+        if show_null.get():
+            return None
         return buffer_transport_widget
 
     @render.text

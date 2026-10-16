@@ -138,6 +138,4 @@ def test_cleanup_failure_removes_presentation_and_reports(
     # The replacement still attaches and the mount returns to baseline.
     expect(page.locator("#box")).to_have_text("child 1")
     expect(page.locator("#snapshot")).to_have_text(BASELINE)
-    assert any(
-        "error disposing replaced presentation" in err for err in errors
-    ), errors
+    assert any("error disposing replaced presentation" in err for err in errors), errors

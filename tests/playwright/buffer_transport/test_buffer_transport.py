@@ -27,3 +27,38 @@ def test_buffer_transport_round_trip(page: Page, local_app) -> None:
     expect(custom_payload).to_have_text("CUSTOM", timeout=30000)
     expect(update_status).to_have_text("14 bytes", timeout=30000)
     expect(update_payload).to_have_text("00000UPDATE000", timeout=30000)
+
+
+def test_same_model_round_trips_after_null_result(page: Page, local_app) -> None:
+    page.goto(local_app.url)
+    update_status = page.locator("#update_status")
+    update_payload = page.locator("#update_payload")
+    custom_payload = page.locator("#custom_payload")
+
+    page.get_by_test_id("update-buffer-button").click()
+    expect(update_status).to_have_text("14 bytes", timeout=30000)
+    first_id = page.locator("#buffer_widget").get_attribute(
+        "data-shinywidgets-model-id"
+    )
+    assert first_id is not None
+
+    # Null the output, then redisplay: the persistent server-body widget must
+    # come back as the exact same model with buffers still round-tripping.
+    page.click("#toggle_null")
+    page.wait_for_function(
+        "() => document.querySelector('#buffer_widget').style.visibility === 'hidden'"
+    )
+    page.click("#toggle_null")
+    expect(update_status).to_have_text("14 bytes", timeout=30000)
+    page.wait_for_function(
+        """() => document.querySelector('#buffer_widget')
+            .dataset.shinywidgetsModelId"""
+    )
+    assert (
+        page.locator("#buffer_widget").get_attribute("data-shinywidgets-model-id")
+        == first_id
+    )
+
+    page.get_by_test_id("custom-buffer-button").click()
+    expect(custom_payload).to_have_text("CUSTOM", timeout=30000)
+    expect(update_payload).to_have_text("00000UPDATE000", timeout=30000)

@@ -5,7 +5,12 @@ from tests.playwright.conftest import assert_rerender_cleanup
 
 
 def test_plotly_rerender_does_not_log_cleanup_errors(page: Page, local_app) -> None:
-    assert_rerender_cleanup(page, local_app, "#plot .js-plotly-plot")
+    assert_rerender_cleanup(
+        page,
+        local_app,
+        snapshot_id="widget_snapshot",
+        ready_selector="#plot .js-plotly-plot",
+    )
 
 
 def test_plotly_resize_failure_does_not_leave_output_hidden(
