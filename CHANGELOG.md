@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking changes
 
 * shinywidgets now requires ipywidgets 8 or newer. (#237)
-* Widgets created during rendering now close after their render ends and no live widget or display needs them. To reuse a cached widget across renders, create it inside `session_lifetime()`. Reusing a retired or explicitly closed widget raises an error with migration guidance. Widgets created in the server body or in effects outside rendering retain their session lifetime.
+* Construct reusable widgets inside `session_lifetime()`. Widgets created during rendering now close after their render ends and no live widget or display needs them. The renderer raises an error for a retired or explicitly closed widget, with migration guidance. Widgets created in the server body or in effects outside rendering retain their session lifetime. (#248)
 
 ### New features
 
@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Pending and closed widget comms now support ipywidgets 8.0.0, including its comm trait validation and instance registry.
 * Closing or replacing an ipyleaflet map now stops its native callbacks and removes child views while preserving session-retained popup and control widgets.
 * Widget messages now use the Shiny session that created the widget, even when another session is active. Each session also has its own widget comm registry. (#248)
+* Widget cleanup now preserves dependencies of live widgets and collects unreachable widget cycles. (#252)
+* Widget models now remain available until output replacement removes their views. Cleanup from an old connection no longer interferes with widgets in a new connection. (#254)
+
 
 ## [0.8.2] - 2026-10-15
 
