@@ -71,6 +71,13 @@ jobs:
           name: coverage-xml
           path: coverage.xml
 
+      - name: Test ipywidgets minimum (8.0.0)
+        if: matrix.python-version == '3.12'
+        run: |
+          uv venv --python 3.12 "$RUNNER_TEMP/shinywidgets-ipywidgets-minimum"
+          uv pip install --python "$RUNNER_TEMP/shinywidgets-ipywidgets-minimum/bin/python" -e . 'ipywidgets==8.0.0' pytest
+          "$RUNNER_TEMP/shinywidgets-ipywidgets-minimum/bin/python" -m pytest -c pytest.ini --confcutdir . tests/unit/test_widget_lifecycle.py tests/unit/test_widget_dependencies.py -q
+
       - name: Run Playwright tests
         if: matrix.python-version == '3.12'
         run: make test-playwright

@@ -348,9 +348,10 @@ def widget_comm_patch() -> Iterator[None]:
     comm_klass = copy.copy(Widget.comm.klass)
     Widget.comm.klass = object
 
-    yield
-
-    Widget.comm.klass = comm_klass
+    try:
+        yield
+    finally:
+        Widget.comm.klass = comm_klass
 
 
 def is_traitlet_instance(x: object) -> "TypeGuard[Instance[Any]]":

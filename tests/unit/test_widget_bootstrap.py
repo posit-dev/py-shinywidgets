@@ -7,6 +7,7 @@ from weakref import WeakKeyDictionary
 
 import pytest
 import shinywidgets._comm as comm
+from traitlets import HasTraits, Instance, TraitError
 
 from tests.unit._fakes import (
     FakeContext,
@@ -347,6 +348,21 @@ def test_widget_comm_patch_noop_when_comm_not_traitlet_instance(monkeypatch):
         assert comm.Widget.comm.klass == "orig"
 
     assert comm.Widget.comm.klass == "orig"
+
+
+def test_widget_comm_patch_restores_validation_after_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trait = Instance(str)
+    monkeypatch.setattr(comm.Widget, "comm", trait)
+
+    with pytest.raises(RuntimeError, match="initialization failed"):
+        with comm.widget_comm_patch():
+            raise RuntimeError("initialization failed")
+
+    assert trait.validate(HasTraits(), "valid") == "valid"
+    with pytest.raises(TraitError):
+        trait.validate(HasTraits(), 42)
 
 
 def test_register_widget_uses_session_output_decorator(monkeypatch):
