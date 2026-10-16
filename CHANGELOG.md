@@ -9,15 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### New features
 
+* Added `session_lifetime()` to keep widgets constructed inside its block alive until the Shiny session ends. Cached widgets can now survive output re-renders and appear again without recreation. The block does not change the lifetime of existing widgets. (#248)
 * Bokeh documents that reference [bokeh extension](https://docs.bokeh.org/en/latest/docs/user_guide/advanced/extensions.html) models (any package shipping a `bokeh.ext.json`/prebuilt `dist` bundle) now have their extension assets served automatically. (#88)
 
 ### Breaking changes
 
 * shinywidgets now requires ipywidgets 8 or newer. (#237)
-
-### New features
-
-* Added `session_lifetime()` to keep widgets constructed inside its block alive until the Shiny session ends. Cached widgets can now survive output re-renders and appear again without recreation. The block does not change the lifetime of existing widgets. (#248)
 
 ### Bug fixes
 
