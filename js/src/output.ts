@@ -464,15 +464,14 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
   const epoch = lifecycle.currentEpoch();
   const msg = unpackComm(epoch.identity, JSON.parse(msg_txt));
   decodeBuffers(msg);
-  const deps = (msg.content as {
-    html_deps: NonNullable<Parameters<typeof Shiny.renderDependenciesAsync>[0]>;
-  }).html_deps;
+  const deps = (msg.content as { html_deps: ModuleDependency[] }).html_deps;
   // Shiny must finish dependency loading before dispatching another comm_open.
   if (typeof Shiny.renderDependenciesAsync === "function") {
     await Shiny.renderDependenciesAsync(deps);
   } else {
     Shiny.renderDependencies(deps);
   }
+  await loadModuleExports(deps);
   // Parse, validate, and enqueue epoch-owned work synchronously; never return
   // the model initialization promise (a parent's deserialization may need a
   // later child's comm_open, and Shiny awaits handler promises).
@@ -575,5 +574,25 @@ function setBaseURL(x: string = '') {
   const base_url = document.querySelector('body').getAttribute('data-base-url');
   if (!base_url) {
     document.querySelector('body').setAttribute('data-base-url', x);
+  }
+}
+
+type ModuleDependency = NonNullable<
+  Parameters<typeof Shiny.renderDependenciesAsync>[0]
+>[number] & {
+  shinywidgets_module_exports?: Readonly<Record<string, string>>;
+};
+
+async function loadModuleExports(deps: readonly ModuleDependency[]): Promise<void> {
+  const globals = window as unknown as Record<string, unknown>;
+  for (const dependency of deps) {
+    for (const [name, url] of Object.entries(
+      dependency.shinywidgets_module_exports ?? {}
+    )) {
+      const module: { default: unknown } = await import(
+        /* webpackIgnore: true */ new URL(url, document.baseURI).href
+      );
+      globals[name] = module.default;
+    }
   }
 }

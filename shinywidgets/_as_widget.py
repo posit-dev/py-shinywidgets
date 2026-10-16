@@ -1,8 +1,15 @@
-from typing import Optional
+from typing import TYPE_CHECKING, Optional, cast
 
+from htmltools import HTMLDependency
 from ipywidgets.widgets.widget import Widget
+from shiny.session import get_current_session
 
 from ._dependencies import widget_pkg
+
+if TYPE_CHECKING:
+    from bokeh.models import LayoutDOM
+    from jupyter_bokeh import BokehModel
+    from panel.viewable import Viewable
 
 __all__ = ("as_widget",)
 
@@ -45,13 +52,6 @@ def as_widget_altair(x: object) -> Optional[Widget]:
 
 
 def as_widget_bokeh(x: object) -> Optional[Widget]:
-    try:
-        from jupyter_bokeh import BokehModel
-    except ImportError:
-        raise ImportError(
-            "Install the jupyter_bokeh package to use bokeh with shinywidgets."
-        )
-
     # TODO: ideally we'd do this in set_layout_defaults() but doing
     # `BokehModel(x)._model.sizing_mode = "stretch_both"`
     # there, but that doesn't seem to work??
@@ -60,7 +60,29 @@ def as_widget_bokeh(x: object) -> Optional[Widget]:
     if isinstance(x, figure):
         x.sizing_mode = "stretch_both"  # type: ignore
 
-    return BokehModel(x)  # type: ignore
+    return bokeh_model_class(context="bokeh")(cast("LayoutDOM", x))
+
+
+def as_widget_panel(x: object) -> Optional[Widget]:
+    return panel_to_widget(
+        x,
+        context="panel",
+        missing_panel_message=(
+            "Install the panel package to use panel objects with shinywidgets: "
+            "pip install panel"
+        ),
+    )
+
+
+def as_widget_holoviews(x: object) -> Optional[Widget]:
+    return panel_to_widget(
+        x,
+        context="holoviews/hvplot",
+        missing_panel_message=(
+            "Rendering holoviews/hvplot objects requires the panel package "
+            "(hvplot renders through panel). Install it with: pip install panel"
+        ),
+    )
 
 
 def as_widget_plotly(x: object) -> Optional[Widget]:
@@ -99,6 +121,70 @@ def as_widget_pydeck(x: object) -> Optional[Widget]:
 AS_WIDGET_MAP = {
     "altair": as_widget_altair,
     "bokeh": as_widget_bokeh,
+    "holoviews": as_widget_holoviews,
+    "hvplot": as_widget_holoviews,
+    "panel": as_widget_panel,
     "plotly": as_widget_plotly,
     "pydeck": as_widget_pydeck,
 }
+
+
+def bokeh_model_class(*, context: str) -> type["BokehModel"]:
+    try:
+        from jupyter_bokeh import BokehModel
+    except ImportError:
+        raise ImportError(
+            f"Install the jupyter_bokeh package to use {context} with shinywidgets."
+        )
+
+    return BokehModel
+
+
+def panel_to_widget(x: object, *, context: str, missing_panel_message: str) -> Widget:
+    try:
+        import panel as pn
+    except ImportError:
+        raise ImportError(missing_panel_message)
+
+    from bokeh.document import Document
+
+    model_class = bokeh_model_class(context=context)
+    pane = cast("Viewable", pn.panel(x))
+    document = Document()
+    session = get_current_session()
+    if session is not None and not session.is_stub_session():
+        dependency = HTMLDependency(
+            name="panel-assets",
+            version=pn.__version__,
+            source={"package": "panel", "subdir": "dist"},
+            all_files=True,
+        )
+        href = dependency.source_path_map(lib_prefix=session.app.lib_prefix)["href"]
+        # Panel uses this document setting for initial and updated model stylesheets.
+        document.template_variables["dist_url"] = href + "/"
+        session._process_ui(dependency)
+    root = pane.get_root(doc=document)
+
+    def cleanup_root() -> None:
+        # Panel may register a wrapper around the pane (e.g., HoloViews).
+        view = pn.state._views.get(root.id)
+        if view is not None:
+            try:
+                view[0]._cleanup(root)
+            finally:
+                pn.state._views.pop(root.id, None)
+
+    try:
+        widget = model_class(cast("LayoutDOM", root))
+    except Exception:
+        cleanup_root()
+        raise
+
+    def on_comm_change(change: dict[str, object]) -> None:
+        if change["new"] is not None:
+            return
+        widget.unobserve(on_comm_change, names="comm")
+        cleanup_root()
+
+    widget.observe(on_comm_change, names="comm")
+    return widget
