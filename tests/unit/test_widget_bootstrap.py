@@ -6,6 +6,7 @@ from typing import Any, Dict
 from weakref import WeakKeyDictionary
 
 import pytest
+import shinywidgets._comm as comm
 
 from tests.unit._fakes import (
     FakeContext,
@@ -317,39 +318,35 @@ def test_is_traitlet_instance_false_for_plain_object():
 
 
 def test_widget_comm_patch_simulated_traitlet_instance(monkeypatch):
-    import shinywidgets._shinywidgets as sw
-
     class FakeInstance:
         def __init__(self) -> None:
             self.klass = "orig"
 
     fake_inst = FakeInstance()
 
-    monkeypatch.setattr(sw, "is_traitlet_instance", lambda x: True)
-    monkeypatch.setattr(sw.Widget, "comm", fake_inst, raising=False)
+    monkeypatch.setattr(comm, "is_traitlet_instance", lambda x: True)
+    monkeypatch.setattr(comm.Widget, "comm", fake_inst, raising=False)
 
-    with sw.widget_comm_patch():
-        assert sw.Widget.comm.klass is object
+    with comm.widget_comm_patch():
+        assert comm.Widget.comm.klass is object
 
-    assert sw.Widget.comm.klass == "orig"
+    assert comm.Widget.comm.klass == "orig"
 
 
 def test_widget_comm_patch_noop_when_comm_not_traitlet_instance(monkeypatch):
-    import shinywidgets._shinywidgets as sw
-
     class FakeAny:
         def __init__(self) -> None:
             self.klass = "orig"
 
     fake_any = FakeAny()
 
-    monkeypatch.setattr(sw, "is_traitlet_instance", lambda x: False)
-    monkeypatch.setattr(sw.Widget, "comm", fake_any, raising=False)
+    monkeypatch.setattr(comm, "is_traitlet_instance", lambda x: False)
+    monkeypatch.setattr(comm.Widget, "comm", fake_any, raising=False)
 
-    with sw.widget_comm_patch():
-        assert sw.Widget.comm.klass == "orig"
+    with comm.widget_comm_patch():
+        assert comm.Widget.comm.klass == "orig"
 
-    assert sw.Widget.comm.klass == "orig"
+    assert comm.Widget.comm.klass == "orig"
 
 
 def test_register_widget_uses_session_output_decorator(monkeypatch):
