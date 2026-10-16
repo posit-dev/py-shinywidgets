@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### New features
+
+* Bokeh documents that reference [bokeh extension](https://docs.bokeh.org/en/latest/docs/user_guide/advanced/extensions.html) models (any package shipping a `bokeh.ext.json`/prebuilt `dist` bundle) now have their extension assets served automatically. (#88)
+
 ### Breaking changes
 
 * shinywidgets now requires ipywidgets 8.1 or newer. (#237, #259)
