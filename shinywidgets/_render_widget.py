@@ -6,12 +6,15 @@ from htmltools import Tag
 
 if TYPE_CHECKING:
     from altair import JupyterChart
+    from ipympl.backend_nbagg import Canvas as MplCanvas
     from jupyter_bokeh import BokehModel
     from maplibre.ipywidget import MapWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = BokehModel = MapWidget = FigureWidget = DeckGLWidget = object
+    JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
+        object
+    )
 
 from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
@@ -22,6 +25,7 @@ __all__ = (
     "render_bokeh",
     "render_holoviews",
     "render_maplibre",
+    "render_matplotlib",
     "render_panel",
     "render_plotly",
     "render_pydeck",
@@ -39,6 +43,9 @@ class render_altair(render_widget_base[ValueT, JupyterChart]): ...
 
 
 class render_maplibre(render_widget_base[ValueT, MapWidget]): ...
+
+
+class render_matplotlib(render_widget_base[ValueT, MplCanvas]): ...
 
 
 class render_bokeh(render_widget_base[ValueT, BokehModel]):
