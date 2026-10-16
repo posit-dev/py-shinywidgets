@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import gc
+import warnings
 import weakref
 from typing import cast
 
@@ -455,6 +456,30 @@ def test_closed_metadata_does_not_retain_widget(widget_session: Session) -> None
         del widget
         gc.collect()
     assert reference() is None
+
+
+def test_close_does_not_use_deprecated_widget_registry(
+    widget_session: Session,
+) -> None:
+    # Regression: closing a widget must not access `Widget.widgets`, which
+    # ipywidgets deprecated in 8.0.3 (it warns on every access), and the
+    # closed widget must not linger in the ipywidgets instance registry
+    # (which would keep it alive forever).
+    from shinywidgets._lifecycle import _widget_instances
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "error",
+            message="Widget.widgets is deprecated",
+            category=DeprecationWarning,
+        )
+        with session_context(widget_session):
+            widget = HTML(value="gone")
+            model_id = widget.model_id
+            asyncio.run(reactive.flush())
+            widget.close()
+            asyncio.run(reactive.flush())
+    assert model_id not in _widget_instances
 
 
 def test_session_end_removes_lifecycle(widget_session: Session) -> None:

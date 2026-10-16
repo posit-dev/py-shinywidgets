@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, MutableMapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -8,11 +8,27 @@ from typing import Generic, Literal, TypeVar, cast
 from uuid import uuid4
 from weakref import WeakKeyDictionary, ref
 
+import ipywidgets.widgets.widget as _ipywidget_module
 from ipywidgets import Widget
 from shiny import Session
 from shiny.session import get_current_session
 
 from ._comm import OrphanedShinyComm, ShinyCommManager
+
+
+def _find_widget_instances() -> MutableMapping[str, Widget]:
+    # The process-wide ipywidgets registry of model ID -> widget. ipywidgets
+    # has no public API for it, and `Widget.widgets` is deprecated since 8.0.3
+    # (it warns on every access). Read the underlying dict directly:
+    # module-level `_instances` on 8.0.3+, or the `Widget._active_widgets`
+    # class attribute on 8.0.0-8.0.2 (still a plain dict there, no warning).
+    instances = getattr(_ipywidget_module, "_instances", None)
+    if instances is not None:
+        return cast(MutableMapping[str, Widget], instances)
+    return cast(MutableMapping[str, Widget], getattr(Widget, "_active_widgets"))
+
+
+_widget_instances: MutableMapping[str, Widget] = _find_widget_instances()
 
 __all__ = (
     "ClosedWidget",
@@ -223,9 +239,8 @@ class SessionLifecycle:
         # Assigning a comm re-registers the widget in the ipywidgets instance
         # map; remove that entry again (by identity) so the widget can be
         # garbage collected.
-        instances = cast(dict[str, Widget], Widget.widgets)
-        if instances.get(model_id) is widget:
-            del instances[model_id]
+        if _widget_instances.get(model_id) is widget:
+            del _widget_instances[model_id]
 
     def check_displayable(self, widget: Widget) -> None:
         """
