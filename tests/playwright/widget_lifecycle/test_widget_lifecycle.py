@@ -9,7 +9,11 @@ from __future__ import annotations
 
 from playwright.sync_api import Page, expect
 from shiny.run import ShinyAppProc
-from tests.playwright.conftest import open_lifecycle_page
+from tests.playwright.conftest import (
+    browser_widget_counts,
+    open_lifecycle_page,
+    wait_for_browser_widget_counts,
+)
 
 
 def test_cached_widget_returns_with_same_model(
@@ -46,6 +50,10 @@ def test_temporary_widgets_return_to_baseline_after_repeated_renders(
     # temporary HTML (+layout+style), two claimed display leases.
     baseline = "records=6 comms=6 leases=2 pending=0"
     expect(page.locator("#snapshot")).to_have_text(baseline)
+    browser_baseline = browser_widget_counts(page, ["#cached", "#fresh_widget"])
+    assert browser_baseline["models"] == 6
+    assert browser_baseline["waiters"] == 0
+    assert browser_baseline["tasks"] == 0
 
     for n in range(1, 11):
         page.click("#fresh")
@@ -55,19 +63,7 @@ def test_temporary_widgets_return_to_baseline_after_repeated_renders(
     # once the old presentations' leases are released and collected.
     expect(page.locator("#snapshot")).to_have_text(baseline)
 
-    browser = page.evaluate(
-        """() => {
-            const snapshot = window.widgetLifecycle.snapshot();
-            const mounts = window.widgetLifecycle.mountSnapshot(
-                document.querySelector('#fresh_widget')
-            );
-            return {...snapshot, mounts: mounts.mounts, mountViews: mounts.views};
-        }"""
-    )
-    assert browser["waiters"] == 0
-    assert browser["tasks"] == 0
-    # One accepted presentation (plus its layout/style child views).
-    assert browser["mountViews"] <= 4
+    wait_for_browser_widget_counts(page, ["#cached", "#fresh_widget"], browser_baseline)
 
 
 def test_cached_counts_grow_only_with_distinct_cached_widgets(
@@ -77,8 +73,14 @@ def test_cached_counts_grow_only_with_distinct_cached_widgets(
     expect(page.locator("#cached")).to_have_text("A:0")
     page.locator("#dataset").select_option("B")
     expect(page.locator("#cached")).to_have_text("B:0")
-    # Two cached widgets (+layouts/styles) and no temporary records while the
-    # fresh output is displayed: cache growth equals distinct cached widgets.
-    expect(page.locator("#snapshot")).to_have_text(
-        "records=9 comms=9 leases=2 pending=0"
-    )
+    baseline = "records=9 comms=9 leases=2 pending=0"
+    expect(page.locator("#snapshot")).to_have_text(baseline)
+    browser_baseline = browser_widget_counts(page, ["#cached", "#fresh_widget"])
+    assert browser_baseline["models"] == 9
+
+    for key in ["A", "B"] * 5:
+        page.locator("#dataset").select_option(key)
+        expect(page.locator("#cached")).to_have_text(f"{key}:0")
+
+    expect(page.locator("#snapshot")).to_have_text(baseline)
+    wait_for_browser_widget_counts(page, ["#cached", "#fresh_widget"], browser_baseline)

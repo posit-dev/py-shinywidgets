@@ -59,6 +59,11 @@ def test_same_model_round_trips_after_null_result(page: Page, local_app) -> None
         == first_id
     )
 
+    page.locator("#server_buffer").click(timeout=5000)
+    expect(page.get_by_test_id("client-payload")).to_have_text("SERVER-REPLY")
+    expect(update_payload).to_have_text("SERVER-REPLY")
+
+    page.get_by_test_id("update-buffer-button").click()
+    expect(update_payload).to_have_text("00000UPDATE000", timeout=30000)
     page.get_by_test_id("custom-buffer-button").click()
     expect(custom_payload).to_have_text("CUSTOM", timeout=30000)
-    expect(update_payload).to_have_text("00000UPDATE000", timeout=30000)

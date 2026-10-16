@@ -34,15 +34,19 @@ def test_marker_popup_with_html_child(page: Page, local_app) -> None:
 def test_session_popup_and_style_survive_map_replacement(
     page: Page, local_app: ShinyAppProc
 ) -> None:
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.on(
+        "console", lambda msg: errors.append(msg.text) if msg.type == "error" else None
+    )
     page.goto(local_app.url)
     page.locator(".leaflet-marker-icon").click()
     expect(page.locator(".leaflet-popup-content")).to_have_text("hello popup #101")
     page.locator(".leaflet-popup-close-button").click()
 
-    # Replace the map with one borrowing the session-retained popup. The old
-    # map's retirement must not close the popup or its Layout/Style (which
-    # were first materialized while the old map serialized).
-    for _ in range(2):
+    # The style originates in the temporary borrower's default factory;
+    # its retained popup must protect it when that render ends.
+    for n, color in enumerate(["rgb(255, 0, 0)", "rgb(0, 0, 255)"], start=1):
         previous_id = page.locator("#map").get_attribute("data-shinywidgets-model-id")
         page.click("#rerender")
         # Wait for the replacement map (not just any marker) to attach.
@@ -55,5 +59,10 @@ def test_session_popup_and_style_survive_map_replacement(
             arg=previous_id,
         )
         page.locator(".leaflet-marker-icon").click()
-        expect(page.locator(".leaflet-popup-content")).to_have_text("shared popup")
+        expect(page.locator("#style_lifetime")).to_have_text("render")
+        expect(page.locator(".leaflet-popup-content")).to_have_text(f"shared popup {n}")
+        expect(page.locator(".leaflet-popup-content .widget-html-content")).to_have_css(
+            "color", color
+        )
         page.locator(".leaflet-popup-close-button").click()
+    assert not errors, errors
