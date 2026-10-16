@@ -130,6 +130,43 @@ class LifecycleSnapshot:
     display_leases: int = 0
 
 
+@dataclass(frozen=True)
+class EpochIdentity:
+    """
+    The session model namespace (stable for the session's life) and transport
+    epoch (fresh per connection) that qualify this session's widget protocol.
+    """
+
+    session_id: str
+    model_namespace: str
+    epoch_id: str
+
+
+@dataclass
+class DisplayLease:
+    lease_id: str
+    output_id: str
+    generation_id: str
+    root_id: str
+    offer_id: str
+    mount_id: str | None = None
+    claim_seq: int | None = None
+
+
+@dataclass
+class Publication:
+    """
+    The current published widget value for an output: its offer, root, render
+    generation, and initial provisional display lease.
+    """
+
+    output_id: str
+    offer_id: str
+    generation_id: str
+    root_id: str
+    provisional_lease_id: str
+
+
 def get_lifecycle(session: Session) -> SessionLifecycle:
     """
     Get (or create) the widget lifecycle manager for a Shiny session.
@@ -163,9 +200,16 @@ class SessionLifecycle:
         self.session_lifetime = Lifetime(
             session_id=session.id, kind="session", generation_id=session.id
         )
+        self.epoch = EpochIdentity(
+            session_id=session.id,
+            model_namespace=uuid4().hex[:12],
+            epoch_id=uuid4().hex[:12],
+        )
         self.records: dict[str, WidgetRecord] = {}
         self.comm_manager = ShinyCommManager()
         self.render_lifetimes: set[Lifetime] = set()
+        self.publications: dict[str, Publication] = {}
+        self.display_leases: dict[str, DisplayLease] = {}
         self.wired: bool = False
         self._closed_widgets: WidgetWeakMap[ClosedWidget] = WidgetWeakMap()
         self._revision: int = 0
@@ -182,9 +226,11 @@ class SessionLifecycle:
             )
         if not lifetime.accepting:
             raise RuntimeError("Cannot construct widgets in a retired lifetime")
-        if getattr(widget, "_model_id", None) is None:
-            widget._model_id = uuid4().hex
-        model_id = cast(str, widget._model_id)
+        local_id = getattr(widget, "_model_id", None)
+        if local_id is None:
+            local_id = uuid4().hex
+        model_id = self.qualify_model_id(local_id)
+        widget._model_id = model_id
         if model_id in self.records:
             raise RuntimeError(
                 f"A widget with model_id '{model_id}' is already registered in "
@@ -196,6 +242,80 @@ class SessionLifecycle:
         lifetime.roots.add(model_id)
         _widget_owners[widget] = ref(self)
         return record
+
+    def qualify_model_id(self, local_id: str) -> str:
+        """
+        Qualify a model ID with this session's namespace at construction,
+        before comm assignment. Full IDs in this session's namespace are
+        accepted opaquely; another namespace is rejected (never relabel a
+        live model).
+        """
+        prefix = f"sw-{self.epoch.model_namespace}-"
+        if local_id.startswith("sw-"):
+            if local_id.startswith(prefix):
+                return local_id
+            raise RuntimeError(
+                f"Model ID '{local_id}' belongs to a different session "
+                "namespace. Widgets can't share model IDs across sessions."
+            )
+        return prefix + local_id
+
+    def publish(self, output_id: str, generation_id: str, root_id: str) -> Publication:
+        """
+        Publish the current widget value for an output. Publishing a newer
+        value invalidates the previous offer and releases its unclaimed
+        provisional lease (an already-claimed lease is kept until its
+        presentation release).
+        """
+        self.retract(output_id)
+        offer_id = uuid4().hex
+        lease_id = uuid4().hex
+        self.display_leases[lease_id] = DisplayLease(
+            lease_id=lease_id,
+            output_id=output_id,
+            generation_id=generation_id,
+            root_id=root_id,
+            offer_id=offer_id,
+        )
+        publication = Publication(
+            output_id=output_id,
+            offer_id=offer_id,
+            generation_id=generation_id,
+            root_id=root_id,
+            provisional_lease_id=lease_id,
+        )
+        self.publications[output_id] = publication
+        return publication
+
+    def retract(self, output_id: str) -> None:
+        """
+        Invalidate the output's current offer (null/error replacement).
+        Releases the unclaimed provisional lease; claimed leases stay alive
+        until their presentation release.
+        """
+        previous = self.publications.pop(output_id, None)
+        if previous is None:
+            return
+        lease = self.display_leases.get(previous.provisional_lease_id)
+        if lease is not None and lease.mount_id is None:
+            del self.display_leases[previous.provisional_lease_id]
+
+    def acquire_display(
+        self, output_id: str, generation_id: str, root_id: str, offer_id: str
+    ) -> DisplayLease:
+        lease_id = uuid4().hex
+        lease = DisplayLease(
+            lease_id=lease_id,
+            output_id=output_id,
+            generation_id=generation_id,
+            root_id=root_id,
+            offer_id=offer_id,
+        )
+        self.display_leases[lease_id] = lease
+        return lease
+
+    def release_display(self, lease_id: str) -> None:
+        self.display_leases.pop(lease_id, None)
 
     def set_initializer(self, record: WidgetRecord, cancel: Callable[[], None]) -> None:
         if record.state == "closed":
@@ -422,6 +542,7 @@ class SessionLifecycle:
                 1 for record in self.records.values() if record.state == "pending"
             ),
             render_lifetimes=len(self.render_lifetimes),
+            display_leases=len(self.display_leases),
         )
 
 

@@ -26,7 +26,7 @@ from shiny.session import get_current_session, require_active_session, session_c
 
 from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
-from ._comm import BufferType, PendingShinyComm, ShinyComm
+from ._comm import BufferType, PendingShinyComm, ShinyComm, unpack_envelope
 from ._dependencies import require_dependency
 from ._lifecycle import (
     Lifetime,
@@ -141,6 +141,7 @@ def init_shiny_widget(w: Widget):
                 comm_manager=lifecycle.comm_manager,
                 target_name="jupyter.widget",
                 session=session,
+                epoch=lifecycle.epoch,
                 data={"state": state, "buffer_paths": buffer_paths},
                 buffers=cast(BufferType, buffers),
                 # TODO: should this be hard-coded?
@@ -204,6 +205,23 @@ def wire_session(session: Session, lifecycle: SessionLifecycle) -> None:
         name="shinywidgets-static-resources",
     )
 
+    # Publish the session's epoch hello before any comm/value envelope, so
+    # the browser controller knows which transport epoch it belongs to. The
+    # hello is scheduled before any comm_open can be (those are deferred
+    # until the first flush).
+    async def _send_epoch_hello():
+        await session.send_custom_message(
+            "shinywidgets_epoch",
+            {
+                "sw": 1,
+                "session_id": lifecycle.epoch.session_id,
+                "model_namespace": lifecycle.epoch.model_namespace,
+                "epoch_id": lifecycle.epoch.epoch_id,
+            },
+        )
+
+    session.on_flush(_send_epoch_hello)
+
     with session_context(session):
         # Handle messages from the client. Note that widgets like qgrid send client->server messages
         # to figure out things like what filter to be shown in the table.
@@ -211,7 +229,8 @@ def wire_session(session: Session, lifecycle: SessionLifecycle) -> None:
         @reactive.event(session.input.shinywidgets_comm_send)
         def _():
             msg_txt = session.input.shinywidgets_comm_send()
-            msg = _decode_comm_buffers(json.loads(msg_txt))
+            packet = unpack_envelope(lifecycle.epoch, json.loads(msg_txt))
+            msg = _decode_comm_buffers(packet)
             comm_id = msg["content"]["comm_id"]
             comm = lifecycle.comm_manager.comms.get(comm_id)
             if comm is not None:

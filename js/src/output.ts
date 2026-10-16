@@ -1,8 +1,15 @@
 import { HTMLManager } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
 import { shinyRequireLoader } from './lifecycle/loader';
+import {
+  parseEpochHello,
+  parseWidgetValue,
+  requireCurrentEpoch,
+  unpackComm,
+} from './lifecycle/protocol';
+import type { EpochIdentity } from './lifecycle/types';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
-import { jsonParse } from './utils';
+import { decodeBuffers } from './utils';
 import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
@@ -102,12 +109,6 @@ const manager = new OutputManager({ loader: shinyRequireLoader });
 * Define the Shiny binding
 ******************************************************************************/
 
-interface WidgetOutputValue {
-  model_id: string;
-  fill: boolean;
-  widget_pkg: string;
-}
-
 // Ideally we'd extend Shiny's HTMLOutputBinding, but the implementation isn't exported
 class IPyWidgetOutput extends Shiny.OutputBinding {
   private _views = new WeakMap<HTMLElement, DOMWidgetView>();
@@ -121,7 +122,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     el.style.visibility = "inherit";
     this.renderError(el, err);
   }
-  async renderValue(el: HTMLElement, data: WidgetOutputValue | null): Promise<void> {
+  async renderValue(el: HTMLElement, data: unknown): Promise<void> {
     const hiddenVisibility = "hidden";
     const revealVisibility = "inherit";
     const renderToken = this._nextRenderToken(el);
@@ -133,17 +134,20 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       return;
     }
 
-    const isPlotlyWidget = data.widget_pkg === "plotly";
+    const value = parseWidgetValue(data);
+    requireCurrentEpoch(currentEpochIdentity(), value);
+
+    const isPlotlyWidget = value.widget_pkg === "plotly";
     el.style.visibility = isPlotlyWidget ? hiddenVisibility : revealVisibility;
 
     // Only forward the potential to fill if `output_widget(fillable=True)`
     // _and_ the widget instance wants to fill
-    const fill = data.fill && el.classList.contains("html-fill-container");
+    const fill = value.fill && el.classList.contains("html-fill-container");
     if (fill) el.classList.add("forward-fill-potential");
 
     // At this time point, we should've already handled an 'open' message, and so
     // the model should be ready to use
-    const model = await manager.get_model(data.model_id);
+    const model = await manager.get_model(value.model_id);
 
     // N.B. no `{ el }` option: base-manager just passes options through to
     // `view.options`, which nothing reads; attachment happens in display_view
@@ -267,21 +271,44 @@ if (taskQueue) {
 * Handle messages from the server-side Widget
 ******************************************************************************/
 
+// The session's epoch hello arrives before any comm/value envelope; it
+// identifies the transport epoch this connection belongs to.
+let currentEpoch: EpochIdentity | null = null;
+
+function currentEpochIdentity(): EpochIdentity {
+  if (currentEpoch === null) {
+    throw new Error(
+      "shinywidgets protocol error: received widget traffic before the " +
+        "session's epoch hello"
+    );
+  }
+  return currentEpoch;
+}
+
+Shiny.addCustomMessageHandler("shinywidgets_epoch", (message) => {
+  currentEpoch = parseEpochHello(
+    typeof message === "string" ? JSON.parse(message) : message
+  );
+});
+
 // Initialize the comm and model when a new widget is created
 // This is basically our version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1144-L1176
 Shiny.addCustomMessageHandler("shinywidgets_comm_open", (msg_txt) => {
   setBaseURL();
-  const msg = jsonParse(msg_txt);
-  Shiny.renderDependencies(msg.content.html_deps);
-  const comm = new ShinyComm(msg.content.comm_id);
-  manager.handle_comm_open(comm, msg);
+  const identity = currentEpochIdentity();
+  const msg = unpackComm(identity, JSON.parse(msg_txt));
+  decodeBuffers(msg);
+  Shiny.renderDependencies((msg.content as any).html_deps);
+  const comm = new ShinyComm((msg.content as any).comm_id, identity);
+  manager.handle_comm_open(comm, msg as any);
 });
 
 // Handle any mutation of the model (e.g., add a marker to a map, without a full redraw)
 // Basically out version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1200-L1215
 Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
-  const msg = jsonParse(msg_txt);
-  const id = msg.content.comm_id;
+  const msg = unpackComm(currentEpochIdentity(), JSON.parse(msg_txt));
+  decodeBuffers(msg);
+  const id = (msg.content as any).comm_id;
   if (!manager.has_model(id)) {
     console.error(`Couldn't handle message for model ${id} because it doesn't exist.`);
     return;
@@ -298,8 +325,8 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
 
 // Handle the closing of a widget/comm/model
 Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
-  const msg = jsonParse(msg_txt);
-  const id = msg.content.comm_id;
+  const msg = unpackComm(currentEpochIdentity(), JSON.parse(msg_txt));
+  const id = (msg.content as any).comm_id;
   if (!manager.has_model(id)) {
     console.error(`Couldn't close model ${id} because it doesn't exist.`);
     return;

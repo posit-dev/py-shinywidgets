@@ -1,3 +1,5 @@
+import { packComm } from "./lifecycle/protocol";
+import type { EpochIdentity } from "./lifecycle/types";
 import { base64EncodeBuffers, Throttler } from "./utils";
 
 // This class is a striped down version of Comm from @jupyter-widgets/base
@@ -8,9 +10,11 @@ export class ShinyComm {
 
   // It seems like we'll want one comm per model
   comm_id: string;
+  identity: EpochIdentity;
   throttler: Throttler;
-  constructor(model_id: string) {
+  constructor(model_id: string, identity: EpochIdentity) {
     this.comm_id = model_id;
+    this.identity = identity;
     // TODO: make this configurable (see comments in send() below)?
     this.throttler = new Throttler(100);
   }
@@ -37,7 +41,7 @@ export class ShinyComm {
       header: {}
     };
 
-    const msg_txt = JSON.stringify(msg);
+    const msg_txt = packComm(this.identity, msg);
 
     // Since ipyleaflet can send mousemove events very quickly when hovering over the map,
     // we throttle them to ensure that the server doesn't get overwhelmed. Said events

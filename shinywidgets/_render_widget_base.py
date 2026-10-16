@@ -14,6 +14,7 @@ from shiny.reactive._core import (
 )
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
 from shiny.session import get_current_session
+from shiny.types import SilentCancelOutputException
 
 from ._as_widget import as_widget
 from ._dependencies import widget_pkg
@@ -77,7 +78,23 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             return await self._render()
 
     async def _render(self) -> Jsonifiable | None:
-        value = await self.fn()
+        session = get_current_session()
+        lifecycle = None
+        output_id = None
+        if session is not None and not session.is_stub_session():
+            lifecycle = get_lifecycle(session.root_scope())
+            output_id = session.ns(self.output_id)
+
+        try:
+            value = await self.fn()
+        except SilentCancelOutputException:
+            # Keeping the previous output also keeps its publication/lease.
+            raise
+        except Exception:
+            # An error replaces the output: the previous offer is invalidated.
+            if lifecycle is not None and output_id is not None:
+                lifecycle.retract(output_id)
+            raise
 
         # Attach value/widget attributes to user func so they can be accessed (in other reactive contexts)
         self._value = value
@@ -87,6 +104,8 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._invalidate_contexts()
 
         if value is None:
+            if lifecycle is not None and output_id is not None:
+                lifecycle.retract(output_id)
             return None
 
         # Ensure we have a widget & smart layout defaults
@@ -94,9 +113,8 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
         # Reject widgets that can't be displayed (closed, retired, or owned by
         # another session) before initialization/display.
-        session = get_current_session()
-        if session is not None and not session.is_stub_session():
-            get_lifecycle(session.root_scope()).check_displayable(widget)
+        if lifecycle is not None:
+            lifecycle.check_displayable(widget)
 
         widget, fill = set_layout_defaults(widget)
 
@@ -104,10 +122,33 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
         # Don't actually display anything unless this is a DOMWidget
         if not isinstance(widget, DOMWidget):
+            if lifecycle is not None and output_id is not None:
+                lifecycle.retract(output_id)
             return None
 
+        if lifecycle is None or output_id is None:
+            return {
+                "model_id": str(widget.model_id),
+                "fill": fill,
+                "widget_pkg": widget_pkg(widget),
+            }
+
+        lifetime = WidgetRenderContext.get_render_lifetime()
+        generation_id = lifetime.generation_id if lifetime is not None else ""
+        model_id = str(widget.model_id)
+        publication = lifecycle.publish(output_id, generation_id, model_id)
+
         return {
-            "model_id": str(widget.model_id),
+            "version": 1,
+            "kind": "widget",
+            "session_id": lifecycle.epoch.session_id,
+            "model_namespace": lifecycle.epoch.model_namespace,
+            "epoch_id": lifecycle.epoch.epoch_id,
+            "output_id": output_id,
+            "generation_id": generation_id,
+            "offer_id": publication.offer_id,
+            "candidate_lease_id": publication.provisional_lease_id,
+            "model_id": model_id,
             "fill": fill,
             "widget_pkg": widget_pkg(widget),
         }
