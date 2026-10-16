@@ -64,13 +64,19 @@ def assert_rerender_cleanup(
     page.wait_for_function(
         "() => document.querySelector('#plot').dataset.shinywidgetsModelId"
     )
-    browser_baseline = browser_widget_counts(page, ["#plot"])
     baseline: str | None = None
     if snapshot_id is not None:
         page.wait_for_function(
-            f"() => document.querySelector('#{snapshot_id}').textContent.length > 0"
+            """id => {
+                const text = document.getElementById(id).textContent;
+                const counts = /^records=(\\d+) comms=(\\d+) leases=(\\d+)$/.exec(text);
+                return counts && Number(counts[1]) > 0 && Number(counts[2]) > 0
+                    && Number(counts[3]) === 1;
+            }""",
+            arg=snapshot_id,
         )
         baseline = page.locator(f"#{snapshot_id}").inner_text()
+    browser_baseline = browser_widget_counts(page, ["#plot"])
 
     assert not any("widget is not attached" in err.lower() for err in startup_errors)
     assert not any("no comm channel defined" in err.lower() for err in startup_errors)
