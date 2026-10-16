@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking changes
 
 * shinywidgets now requires ipywidgets 8 or newer. (#237)
+* Construct reusable widgets inside `session_lifetime()`. The renderer now raises an error for a retired or explicitly closed widget. (#248)
 
 ### New features
 
