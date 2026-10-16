@@ -63,6 +63,38 @@ def as_widget_bokeh(x: object) -> Optional[Widget]:
     return BokehModel(x)  # type: ignore
 
 
+def as_widget_mpl(x: object) -> Optional[Widget]:
+    # matplotlib is guaranteed to be installed here since this function is only
+    # called when x comes from the matplotlib package
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
+
+    # Several higher-level APIs (e.g., pandas.DataFrame.plot()) return an Axes
+    # rather than a Figure
+    if isinstance(x, Axes):
+        x = x.figure  # type: ignore
+
+    if not isinstance(x, Figure):
+        raise TypeError(
+            f"Don't know how to coerce {x} into a matplotlib.figure.Figure object."
+        )
+
+    try:
+        from ipympl.backend_nbagg import _Backend_ipympl
+    except ImportError:
+        raise ImportError(
+            "Install the ipympl package to use matplotlib with shinywidgets (pip install ipympl)."
+        )
+
+    # Canvas(figure=x) alone isn't enough -- ipympl's message handling requires
+    # a FigureManager, which the backend normally creates. Use the backend's own
+    # helper (the same one %matplotlib widget uses) so the canvas is functional.
+    manager = _Backend_ipympl.new_figure_manager_given_figure(
+        getattr(x, "number", id(x)), x
+    )
+    return manager.canvas  # type: ignore
+
+
 def as_widget_plotly(x: object) -> Optional[Widget]:
     # Don't need a try import here since this won't be called unless x is a plotly object
     import plotly.graph_objects as go
@@ -99,6 +131,7 @@ def as_widget_pydeck(x: object) -> Optional[Widget]:
 AS_WIDGET_MAP = {
     "altair": as_widget_altair,
     "bokeh": as_widget_bokeh,
+    "matplotlib": as_widget_mpl,
     "plotly": as_widget_plotly,
     "pydeck": as_widget_pydeck,
 }

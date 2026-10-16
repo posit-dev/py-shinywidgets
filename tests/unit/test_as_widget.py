@@ -8,6 +8,7 @@ from shinywidgets._as_widget import (
     as_widget,
     as_widget_altair,
     as_widget_bokeh,
+    as_widget_mpl,
     as_widget_plotly,
     as_widget_pydeck,
 )
@@ -18,6 +19,54 @@ def _inject_package(monkeypatch: pytest.MonkeyPatch, name: str) -> ModuleType:
     pkg.__path__ = []  # mark as a package for submodule imports
     monkeypatch.setitem(sys.modules, name, pkg)
     return pkg
+
+
+class StubSession:
+    def is_stub_session(self) -> bool:
+        return True
+
+
+def _fake_matplotlib(monkeypatch: pytest.MonkeyPatch):
+    _inject_package(monkeypatch, "matplotlib")
+
+    figure_mod = ModuleType("matplotlib.figure")
+
+    class Figure:
+        pass
+
+    figure_mod.Figure = Figure  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "matplotlib.figure", figure_mod)
+
+    axes_mod = ModuleType("matplotlib.axes")
+
+    class Axes:
+        def __init__(self, figure=None):
+            self.figure = figure if figure is not None else Figure()
+
+    axes_mod.Axes = Axes  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "matplotlib.axes", axes_mod)
+
+    return Figure, Axes
+
+
+def _fake_ipympl_canvas(monkeypatch: pytest.MonkeyPatch):
+    captured = {}
+
+    _inject_package(monkeypatch, "ipympl")
+    nbagg = ModuleType("ipympl.backend_nbagg")
+
+    class _Backend_ipympl:
+        @staticmethod
+        def new_figure_manager_given_figure(num, figure):
+            captured["num"] = num
+            captured["figure"] = figure
+            manager = type("FigureManager", (), {})()
+            manager.canvas = Widget.__new__(Widget)
+            return manager
+
+    nbagg._Backend_ipympl = _Backend_ipympl  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "ipympl.backend_nbagg", nbagg)
+    return captured
 
 
 def test_as_widget_passthrough_widget() -> None:
@@ -141,6 +190,75 @@ def test_as_widget_plotly_success_and_type_check_with_fakes(
 
     with pytest.raises(TypeError, match="plotly.graph_objects.FigureWidget"):
         as_widget_plotly(object())
+
+
+def test_as_widget_mpl_rejects_non_figure(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_matplotlib(monkeypatch)
+    with pytest.raises(TypeError, match="matplotlib"):
+        as_widget_mpl(object())
+
+
+def test_as_widget_mpl_import_error_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    Figure, _ = _fake_matplotlib(monkeypatch)
+    # A module that exists but doesn't provide backend_nbagg still triggers ImportError.
+    monkeypatch.setitem(sys.modules, "ipympl", ModuleType("ipympl"))
+    with pytest.raises(ImportError, match="pip install ipympl"):
+        as_widget_mpl(Figure())
+
+
+def test_as_widget_mpl_success_with_fake_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Figure, _ = _fake_matplotlib(monkeypatch)
+    captured = _fake_ipympl_canvas(monkeypatch)
+
+    fig = Figure()
+    res = as_widget_mpl(fig)
+    assert isinstance(res, Widget)
+    assert captured["figure"] is fig
+
+
+def test_as_widget_mpl_axes_coerced_to_parent_figure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Figure, Axes = _fake_matplotlib(monkeypatch)
+    captured = _fake_ipympl_canvas(monkeypatch)
+
+    fig = Figure()
+    res = as_widget_mpl(Axes(fig))
+    assert isinstance(res, Widget)
+    assert captured["figure"] is fig
+
+
+def test_as_widget_mpl_dispatch_via_as_widget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Figure, _ = _fake_matplotlib(monkeypatch)
+    _fake_ipympl_canvas(monkeypatch)
+
+    MplFigure = type("Figure", (Figure,), {"__module__": "matplotlib.figure"})
+
+    res = as_widget(MplFigure())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_mpl_real_ipympl_canvas(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("ipympl")
+
+    import shinywidgets._shinywidgets as sw
+
+    monkeypatch.setattr(sw, "get_current_session", lambda: StubSession())
+
+    import matplotlib.pyplot as plt
+    from ipympl.backend_nbagg import Canvas
+
+    fig, ax = plt.subplots()
+    ax.plot([1, 2, 3])
+
+    res = as_widget(fig)
+    assert isinstance(res, Canvas)
+    plt.close(fig)
 
 
 def test_as_widget_pydeck_missing_show_errors() -> None:

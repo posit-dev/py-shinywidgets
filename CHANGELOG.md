@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### New features
+
+* Added a `render_matplotlib()` renderer, and `as_widget()` now coerces matplotlib `Figure` (and `Axes`) objects into an interactive [ipympl](https://matplotlib.org/ipympl/) widget. This covers anything that produces a matplotlib figure (e.g., seaborn, `pandas.DataFrame.plot()`, scikit-learn displays) and requires `pip install ipympl`.
+
 ### Breaking changes
 
 * shinywidgets now requires ipywidgets 8 or newer. (#237)
