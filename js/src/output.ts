@@ -2,6 +2,7 @@ import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { jsonParse } from './utils';
+import type { WidgetModel } from '@jupyter-widgets/base';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
 
@@ -9,18 +10,86 @@ import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shi
  * Define a custom HTMLManager for use with Shiny
  ******************************************************************************/
 
+interface ModelWaiter {
+  resolve: (p: Promise<WidgetModel>) => void;
+  reject: (e: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 class OutputManager extends HTMLManager {
-  // In a soon-to-be-released version of @jupyter-widgets/html-manager,
-  // display_view()'s first "dummy" argument will be removed... this shim simply
-  // makes it so that our manager can work with either version
-  // https://github.com/jupyter-widgets/ipywidgets/commit/159bbe4#diff-45c126b24c3c43d2cee5313364805c025e911c4721d45ff8a68356a215bfb6c8R42-R43
-  async display_view(view: any, options: { el: HTMLElement; }): Promise<any> {
-    const n_args = super.display_view.length
-    if (n_args === 3) {
-      return super.display_view({}, view, options)
+  // Shiny delivers comm_open messages one at a time with microtask breaks
+  // between them. A parent model's deserialization may reference a child model
+  // whose comm_open hasn't been processed yet. The base get_model rejects
+  // missing models, so we override it to wait for late
+  // arrivals (with a timeout to avoid silent hangs).
+  private _modelWaiters = new Map<string, ModelWaiter[]>();
+  private _activeClears = 0;
+
+  async get_model(model_id: string): Promise<WidgetModel> {
+    if (this.has_model(model_id)) {
+      return super.get_model(model_id);
+    }
+    if (this._activeClears > 0) {
+      throw new Error(`Widget state cleared while waiting for model ${model_id}`);
+    }
+    return new Promise<WidgetModel>((resolve, reject) => {
+      // Use a generous timeout: heavy sessions (1000s of comm_opens) or slow
+      // networks can legitimately delay a child's comm_open well past 10s.
+      const waiter: ModelWaiter = {
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          this._dropWaiter(model_id, waiter);
+          reject(new Error(`Timeout waiting for widget model ${model_id}`));
+        }, 30000),
+      };
+      const waiters = this._modelWaiters.get(model_id) || [];
+      waiters.push(waiter);
+      this._modelWaiters.set(model_id, waiters);
+    });
+  }
+
+  register_model(model_id: string, modelPromise: Promise<WidgetModel>): void {
+    super.register_model(model_id, modelPromise);
+    const waiters = this._modelWaiters.get(model_id);
+    if (waiters) {
+      this._modelWaiters.delete(model_id);
+      for (const waiter of waiters) {
+        clearTimeout(waiter.timer);
+        waiter.resolve(modelPromise);
+      }
+    }
+  }
+
+  async clear_state(): Promise<void> {
+    // Model deserialization can reach get_model() after the waiter sweep.
+    this._activeClears++;
+    try {
+      for (const [model_id, waiters] of this._modelWaiters) {
+        for (const waiter of waiters) {
+          clearTimeout(waiter.timer);
+          waiter.reject(
+            new Error(`Widget state cleared while waiting for model ${model_id}`)
+          );
+        }
+      }
+      this._modelWaiters.clear();
+      await super.clear_state();
+    } finally {
+      this._activeClears--;
+    }
+  }
+
+  private _dropWaiter(model_id: string, waiter: ModelWaiter): void {
+    const waiters = this._modelWaiters.get(model_id);
+    if (!waiters) {
+      return;
+    }
+    const remaining = waiters.filter((w) => w !== waiter);
+    if (remaining.length > 0) {
+      this._modelWaiters.set(model_id, remaining);
     } else {
-      // @ts-ignore
-      return super.display_view(view, options)
+      this._modelWaiters.delete(model_id);
     }
   }
 }
@@ -102,12 +171,11 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // At this time point, we should've already handled an 'open' message, and so
     // the model should be ready to use
     const model = await manager.get_model(data.model_id);
-    if (!model) {
-      throw new Error(`No model found for id ${data.model_id}`);
-    }
 
-    const view = await manager.create_view(model, {});
-    await manager.display_view(view, {el: el});
+    // N.B. no `{ el }` option: base-manager just passes options through to
+    // `view.options`, which nothing reads; attachment happens in display_view
+    const view = await manager.create_view(model);
+    await manager.display_view(view, el);
 
     // Don't allow more than one .lmWidget container, which can happen
     // when the view is displayed more than once
@@ -188,6 +256,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       const quakWidget = impl.shadowRoot.querySelector(".quak") as HTMLElement;
       quakWidget.style.maxHeight = "unset";
     }
+
   }
   _doResize(): void {
     // Trigger resize event to force layout (setTimeout() is needed for altair)
@@ -235,13 +304,12 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_open", (msg_txt) => {
 Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
   const msg = jsonParse(msg_txt);
   const id = msg.content.comm_id;
-  const model = manager.get_model(id);
-  if (!model) {
+  if (!manager.has_model(id)) {
     console.error(`Couldn't handle message for model ${id} because it doesn't exist.`);
     return;
   }
   try {
-    const m = await model;
+    const m = await manager.get_model(id);
     // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
     m.comm.handle_msg(msg);
   } catch (err) {
@@ -254,14 +322,13 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
 Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
   const msg = jsonParse(msg_txt);
   const id = msg.content.comm_id;
-  const model = manager.get_model(id);
-  if (!model) {
+  if (!manager.has_model(id)) {
     console.error(`Couldn't close model ${id} because it doesn't exist.`);
     return;
   }
 
   try {
-    const m = await model;
+    const m = await manager.get_model(id);
 
     // Some widget views need explicit teardown before model.close() removes them.
     if (m.views) {
@@ -276,8 +343,8 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
             v.destroy();
             // Clearing the back-reference prevents later teardown from touching a
             // model that is already being closed.
-            delete v.model;
-            v.remove();
+            delete (v as any).model;
+            (v as any).remove();
           }
 
 

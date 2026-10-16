@@ -42,6 +42,10 @@ def output_binding_dependency() -> HTMLDependency:
         version=__version__,
         source={"package": "shinywidgets", "subdir": "static"},
         script=[
+            # require-config.js must load before libembed-amd.js so require.js
+            # resolves the @jupyter-widgets/* AMD module URLs to this directory
+            # (the widgets bundles derive their CSS font URLs from it).
+            {"src": "require-config.js"},
             {"src": "libembed-amd.js"},
             # Bundle our output.js in the same dependency as libembded since Quarto
             # has a bug where it doesn't renders dependencies in the order they are defined

@@ -2105,7 +2105,7 @@ requires-dist = [
     { name = "coverage", marker = "extra == 'test'", specifier = ">=7" },
     { name = "ipyleaflet", marker = "extra == 'dev'", specifier = ">=0.20.0" },
     { name = "ipyleaflet", marker = "extra == 'test'", specifier = ">=0.20.0" },
-    { name = "ipywidgets", specifier = ">=7.6.5" },
+    { name = "ipywidgets", specifier = ">=8.0.0" },
     { name = "jupyter-bokeh", marker = "extra == 'dev'" },
     { name = "jupyter-bokeh", marker = "extra == 'test'" },
     { name = "jupyter-core" },
