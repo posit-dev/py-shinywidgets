@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking changes
 
 * shinywidgets now requires ipywidgets 8 or newer. (#237)
+* Construct reusable widgets inside `session_lifetime()`. The renderer now raises an error for a retired or explicitly closed widget. (#248)
 
 ### New features
 
@@ -23,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Replacing, clearing, or showing an error in a widget output now removes its previous view through the widget lifecycle, so detached views do not remain tracked by the browser manager. Reusing the same widget across renders keeps its model alive. (#246)
 * Widgets closed before their deferred initialization no longer reopen. This also applies when an output re-render or session end closes a widget before initialization. (#248)
 * Widget messages now use the Shiny session that created the widget, even when another session is active. Each session also has its own widget comm registry. (#248)
+* Widget cleanup now preserves dependencies of live widgets and collects unreachable widget cycles. (#252)
+
 
 ## [0.8.2] - 2026-10-15
 
