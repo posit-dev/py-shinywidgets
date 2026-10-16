@@ -1,22 +1,34 @@
+from __future__ import annotations
+
 from base64 import b64encode
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
-from shiny.session import get_current_session
+from shiny import Session
 
 from ._serialization import json_packer
 
 
 class ShinyCommManager:
-    comms: Dict[str, "ShinyComm"] = {}
+    def __init__(self) -> None:
+        self.comms: Dict[str, ShinyComm] = {}
+        # A session's manager is deactivated when the session ends, which
+        # disables new sends before its records are closed.
+        self.active: bool = True
 
     def register_comm(self, comm: "ShinyComm") -> str:
         id = comm.comm_id
         self.comms[id] = comm
         return id
 
-    def unregister_comm(self, comm: "ShinyComm") -> "ShinyComm":
-        return self.comms.pop(comm.comm_id)
+    def unregister_comm(self, comm: "ShinyComm") -> Optional["ShinyComm"]:
+        # Unregister by both ID and comm identity, so an old channel can't
+        # remove a different live channel that happens to share its ID.
+        existing = self.comms.get(comm.comm_id)
+        if existing is comm:
+            del self.comms[comm.comm_id]
+            return existing
+        return None
 
 
 MsgCallback = Callable[[Dict[str, object]], None]
@@ -34,22 +46,30 @@ class ShinyComm:
 
     _msg_callback: Optional[MsgCallback]
     _close_callback: Optional[MsgCallback]
-    _closed: bool = False
-    _closed_data: Dict[str, object] = {}
 
     def __init__(
         self,
         comm_id: str,
         comm_manager: ShinyCommManager,
         target_name: str,
+        session: Session,
         data: DataType = None,
         metadata: MetadataType = None,
         buffers: BufferType = None,
+        on_closed: Optional[Callable[[], None]] = None,
         **keys: object,
     ) -> None:
         self.comm_id = comm_id
         self.comm_manager = comm_manager
         self.target_name = target_name
+        # Messages are always published through the session that opened this
+        # comm, even if another session is currently active at send time.
+        self.session = session
+        self._on_closed = on_closed
+        self._msg_callback = None
+        self._close_callback = None
+        self._closed = False
+        self._closed_data: Dict[str, object] = {}
         self.open(data=data, metadata=metadata, buffers=buffers, **keys)
 
     def open(
@@ -97,13 +117,15 @@ class ShinyComm:
             return
         self._closed = True
         data = self._closed_data if data is None else data
-        if get_current_session():
+        if self.comm_manager.active:
             self._publish_msg(
                 "shinywidgets_comm_close", data=data, metadata=metadata, buffers=buffers
             )
         if not deleting:
             # If deleting, the comm can't be unregistered
             self.comm_manager.unregister_comm(self)
+            if self._on_closed is not None:
+                self._on_closed()
 
     # trigger close on gc
     def __del__(self):
@@ -121,6 +143,12 @@ class ShinyComm:
         buffers: BufferType = None,
         **keys: object,
     ) -> None:
+        if not self.comm_manager.active:
+            raise RuntimeError(
+                "Cannot send ipywidget messages to the client: the Shiny session "
+                "that owns this comm has ended."
+            )
+
         data = {} if data is None else data
         metadata = {} if metadata is None else metadata
 
@@ -157,11 +185,7 @@ class ShinyComm:
             parent={},  # self.kernel.get_parent("shell")
         )
 
-        session = get_current_session()
-        if session is None:
-            raise RuntimeError(
-                "Cannot send an ipywidget messages to the client outside of a Shiny session context."
-            )
+        session = self.session
 
         msg_txt = json_packer(msg)
 
@@ -226,3 +250,29 @@ class OrphanedShinyComm:
 
     def on_msg(self, callback: MsgCallback) -> None:
         pass
+
+
+class PendingShinyComm(OrphanedShinyComm):
+    """
+    The comm assigned to a widget after construction but before its deferred
+    initialization opens a real `ShinyComm`.
+
+    Unlike `OrphanedShinyComm`, closing this comm is observable: `Widget.close()`
+    closes the widget's current comm, and this notification is what cancels the
+    pending initialization (instead of letting scheduled work reopen the widget).
+    """
+
+    def __init__(self, comm_id: str, notify_closed: Callable[[], None]) -> None:
+        super().__init__(comm_id)
+        self.closed = False
+        self.notify_closed = notify_closed
+
+    def close(
+        self,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        self.notify_closed()

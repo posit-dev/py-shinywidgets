@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import ipywidgets
-from shiny import App, module, reactive, render, ui
+from shiny import App, Session, module, reactive, render, ui
 from shinywidgets import output_widget, render_widget
-from shinywidgets._shinywidgets import WIDGET_INSTANCE_MAP
+from shinywidgets._lifecycle import get_lifecycle
 
 
-def live_sliders() -> int:
+def live_sliders(session: Session) -> int:
+    lifecycle = get_lifecycle(session.root_scope())
     return sum(
-        isinstance(w, ipywidgets.IntSlider) for w in WIDGET_INSTANCE_MAP.values()
+        isinstance(record.widget, ipywidgets.IntSlider)
+        for record in lifecycle.records.values()
     )
 
 
@@ -44,7 +46,7 @@ def slider_server(input, output, session):
     @render.text
     def count():
         rendered.get()
-        return f"renders={counter.get()} widgets={live_sliders()}"
+        return f"renders={counter.get()} widgets={live_sliders(session)}"
 
 
 app_ui = ui.page_fluid(slider_ui("mod"))

@@ -3,11 +3,11 @@ from __future__ import annotations
 import base64
 import json
 from typing import Any, Dict
+from weakref import WeakKeyDictionary
 
 import pytest
 
 from tests.unit._fakes import (
-    FakeCommManager,
     FakeContext,
     FakeReactive,
     FakeSession,
@@ -27,12 +27,27 @@ class _nullcontext:
 
 @pytest.fixture
 def reset_shinywidgets_globals(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
+    import shinywidgets._lifecycle as lc
     import shinywidgets._shinywidgets as sw
 
-    monkeypatch.setattr(sw, "SESSIONS", sw.WeakSet())
-    monkeypatch.setattr(sw, "SESSION_WIDGET_ID_MAP", {})
-    monkeypatch.setattr(sw, "WIDGET_INSTANCE_MAP", {})
-    return {"sw": sw}
+    lifecycles: WeakKeyDictionary[Any, Any] = WeakKeyDictionary()
+    monkeypatch.setattr(lc, "_lifecycles", lifecycles)
+    return {"sw": sw, "lc": lc, "lifecycles": lifecycles}
+
+
+def _patch_common(monkeypatch, sw, lc, root, reactive):
+    monkeypatch.setattr(sw, "get_current_session", lambda: root)
+    monkeypatch.setattr(sw, "reactive", reactive)
+    monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
+    monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
+    monkeypatch.setattr(sw, "session_context", lambda _s: _nullcontext())
+    monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
+    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
+    monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
+
+
+def _patch_model_id(monkeypatch, lc, model_id: str):
+    monkeypatch.setattr(lc, "uuid4", lambda: type("U", (), {"hex": model_id})())
 
 
 def test_init_requires_active_session(monkeypatch):
@@ -51,11 +66,15 @@ def test_init_returns_early_for_stub_session(monkeypatch, reset_shinywidgets_glo
     monkeypatch.setattr(sw, "get_current_session", lambda: session)
     monkeypatch.setattr(sw, "reactive", reactive)
 
+    def no_lifecycle(_session):  # noqa: ANN202
+        raise AssertionError("stub sessions must not allocate a lifecycle")
+
+    monkeypatch.setattr(sw, "get_lifecycle", no_lifecycle)
+
     w = FakeWidget()
     sw.init_shiny_widget(w)  # type: ignore[arg-type]
 
-    assert session not in sw.SESSIONS
-    assert sw.SESSION_WIDGET_ID_MAP == {}
+    assert len(reset_shinywidgets_globals["lifecycles"]) == 0
     assert reactive.effects == []
     assert session.app._dependency_handler.mounts == []
 
@@ -64,44 +83,44 @@ def test_session_is_wired_once_and_open_effect_assigns_comm(
     monkeypatch, reset_shinywidgets_globals
 ):
     sw = reset_shinywidgets_globals["sw"]
+    lc = reset_shinywidgets_globals["lc"]
     reactive = FakeReactive()
-    comm_mgr = FakeCommManager()
     root = FakeSession(session_id="root")
 
-    monkeypatch.setattr(sw, "get_current_session", lambda: root)
-    monkeypatch.setattr(sw, "reactive", reactive)
-    monkeypatch.setattr(sw, "COMM_MANAGER", comm_mgr)
-    monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
-    monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
-    monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
-    monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
-    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
-    monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
+    _patch_common(monkeypatch, sw, lc, root, reactive)
+    _patch_model_id(monkeypatch, lc, "w1")
 
     w1 = FakeWidget()
     sw.init_shiny_widget(w1)  # type: ignore[arg-type]
 
     # Session wiring ran.
-    assert root in sw.SESSIONS
+    lifecycle = sw.get_lifecycle(root)
+    assert lifecycle.wired is True
     assert any(m["path"] == "/dist/" for m in root.app._dependency_handler.mounts)
     assert len(root._ended_handlers) == 1
 
-    # Widget got an id and an orphaned comm immediately.
+    # Widget got an id, a record, and a pending comm immediately.
     assert w1._model_id == "w1"
+    record = lifecycle.records["w1"]
+    assert record.widget is w1
+    assert record.state == "pending"
     assert getattr(w1.comm, "comm_id", None) == "w1"
+    assert "w1" in lifecycle.session_lifetime.roots
 
     open_eff = next(e for e in reactive.effects if e.fn.__name__ == "_open_shiny_comm")
     assert open_eff.priority == 99999
     open_eff()
     assert open_eff.destroyed is True
     assert isinstance(w1.comm, FakeShinyComm)
-    assert comm_mgr.comms["w1"] is w1.comm
+    assert lifecycle.comm_manager.comms["w1"] is w1.comm
     assert w1.comm.target_name == "jupyter.widget"
+    assert w1.comm.keys["session"] is root
     assert "_repr_mimebundle_" in w1.calls
     assert "get_state" in w1.calls
+    assert record.state == "open"
 
     # Second widget in same session should not re-wire session-level hooks/mounts.
-    monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w2"})())
+    _patch_model_id(monkeypatch, lc, "w2")
     w2 = FakeWidget()
     sw.init_shiny_widget(w2)  # type: ignore[arg-type]
     assert len(root.app._dependency_handler.mounts) == 1
@@ -112,83 +131,62 @@ def test_comm_send_handler_routes_to_existing_comm(
     monkeypatch, reset_shinywidgets_globals
 ):
     sw = reset_shinywidgets_globals["sw"]
+    lc = reset_shinywidgets_globals["lc"]
     reactive = FakeReactive()
-    comm_mgr = FakeCommManager()
     root = FakeSession(session_id="root")
 
-    monkeypatch.setattr(sw, "get_current_session", lambda: root)
-    monkeypatch.setattr(sw, "reactive", reactive)
-    monkeypatch.setattr(sw, "COMM_MANAGER", comm_mgr)
-    monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
-    monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
-    monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
-    monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
-    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
-    monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
+    _patch_common(monkeypatch, sw, lc, root, reactive)
+    _patch_model_id(monkeypatch, lc, "w1")
 
     w = FakeWidget()
     sw.init_shiny_widget(w)  # type: ignore[arg-type]
     open_eff = next(e for e in reactive.effects if e.fn.__name__ == "_open_shiny_comm")
     open_eff()
 
+    lifecycle = sw.get_lifecycle(root)
     send_eff = next(e for e in reactive.effects if e.fn.__name__ == "_")
     root.input._shinywidgets_comm_send_value = json.dumps(
         {"content": {"comm_id": "w1"}}
     )
     send_eff()
 
-    assert comm_mgr.comms["w1"].last_msg == {"content": {"comm_id": "w1"}}
+    assert lifecycle.comm_manager.comms["w1"].last_msg == {"content": {"comm_id": "w1"}}
 
 
 def test_session_end_cleanup_closes_widgets_and_clears_maps(
     monkeypatch, reset_shinywidgets_globals
 ):
     sw = reset_shinywidgets_globals["sw"]
+    lc = reset_shinywidgets_globals["lc"]
     reactive = FakeReactive()
-    comm_mgr = FakeCommManager()
     root = FakeSession(session_id="root")
 
-    monkeypatch.setattr(sw, "get_current_session", lambda: root)
-    monkeypatch.setattr(sw, "reactive", reactive)
-    monkeypatch.setattr(sw, "COMM_MANAGER", comm_mgr)
-    monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
-    monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
-    monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
-    monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
-    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
-    monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
+    _patch_common(monkeypatch, sw, lc, root, reactive)
+    _patch_model_id(monkeypatch, lc, "w1")
 
     w = FakeWidget()
-    sw.WIDGET_INSTANCE_MAP["w1"] = w
-
     sw.init_shiny_widget(w)  # type: ignore[arg-type]
-    assert root.id in sw.SESSION_WIDGET_ID_MAP
-    assert root in sw.SESSIONS
+    lifecycle = sw.get_lifecycle(root)
+    assert "w1" in lifecycle.records
 
     root.end()
-    assert root not in sw.SESSIONS
     assert w.closed is True
-    assert root.id not in sw.SESSION_WIDGET_ID_MAP
+    assert lifecycle.records == {}
+    assert lifecycle.comm_manager.active is False
+    assert root not in reset_shinywidgets_globals["lifecycles"]
 
 
 def test_render_context_invalidation_closes_widget_and_preserves_model_id(
     monkeypatch, reset_shinywidgets_globals
 ):
     sw = reset_shinywidgets_globals["sw"]
+    lc = reset_shinywidgets_globals["lc"]
     reactive = FakeReactive()
-    comm_mgr = FakeCommManager()
     root = FakeSession(session_id="root")
     ctx = FakeContext()
 
-    monkeypatch.setattr(sw, "get_current_session", lambda: root)
-    monkeypatch.setattr(sw, "reactive", reactive)
-    monkeypatch.setattr(sw, "COMM_MANAGER", comm_mgr)
-    monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
-    monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
-    monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
-    monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
-    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
-    monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
+    _patch_common(monkeypatch, sw, lc, root, reactive)
+    _patch_model_id(monkeypatch, lc, "w1")
 
     monkeypatch.setattr(
         sw.WidgetRenderContext, "is_rendering_widget", staticmethod(lambda: True)
@@ -196,38 +194,32 @@ def test_render_context_invalidation_closes_widget_and_preserves_model_id(
     monkeypatch.setattr(
         sw.WidgetRenderContext, "get_render_context", staticmethod(lambda: ctx)
     )
-    monkeypatch.setattr(sw, "session_context", lambda _s: _nullcontext())
 
     w = FakeWidget()
-    sw.WIDGET_INSTANCE_MAP["w1"] = w
     sw.init_shiny_widget(w)  # type: ignore[arg-type]
 
+    lifecycle = sw.get_lifecycle(root)
     ctx.run_on_invalidate()
     assert w.closed is True
+    assert "w1" not in lifecycle.records
+    # The stable model ID is preserved as inert metadata on the closed widget.
     assert getattr(w.comm, "comm_id", None) == "w1"
-    assert "w1" not in sw.WIDGET_INSTANCE_MAP
 
 
 def test_nbextensions_mount_when_widget_dep_has_subdir(
     monkeypatch, reset_shinywidgets_globals
 ):
     sw = reset_shinywidgets_globals["sw"]
+    lc = reset_shinywidgets_globals["lc"]
     reactive = FakeReactive()
-    comm_mgr = FakeCommManager()
     root = FakeSession(session_id="root")
 
     class Dep:
         name = "somewidget"
         source = {"subdir": "/tmp/somewidget"}
 
-    monkeypatch.setattr(sw, "get_current_session", lambda: root)
-    monkeypatch.setattr(sw, "reactive", reactive)
-    monkeypatch.setattr(sw, "COMM_MANAGER", comm_mgr)
-    monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
-    monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
-    monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
-    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
-    monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
+    _patch_common(monkeypatch, sw, lc, root, reactive)
+    _patch_model_id(monkeypatch, lc, "w1")
 
     monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", False)
     monkeypatch.setattr(sw, "require_dependency", lambda w, session, warn: Dep())
