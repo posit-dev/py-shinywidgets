@@ -195,6 +195,7 @@ class SessionLifecycle:
         self._revision += 1
         lifetime.roots.add(model_id)
         _widget_owners[widget] = ref(self)
+        guard_widget_close(widget)
         return record
 
     def set_initializer(self, record: WidgetRecord, cancel: Callable[[], None]) -> None:
@@ -448,3 +449,23 @@ def use_lifetime(lifetime: Lifetime) -> Iterator[None]:
         yield
     finally:
         selected_lifetime.reset(token)
+
+
+def guard_widget_close(widget: Widget) -> None:
+    """Prevent comm notifications from reentering non-idempotent close overrides."""
+    close = widget.close
+    closing = False
+    closed = False
+
+    def close_once() -> None:
+        nonlocal closing, closed
+        if closing or closed:
+            return
+        closing = True
+        try:
+            close()
+            closed = True
+        finally:
+            closing = False
+
+    widget.close = close_once
