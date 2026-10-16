@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### New features
 
+* Added `session_lifetime()` to keep widgets constructed inside its block alive until the Shiny session ends. Cached widgets can now survive output re-renders and appear again without recreation. The block does not change the lifetime of existing widgets. (#248)
 * Added support for [panel](https://panel.holoviz.org) widgets and layouts (e.g., `pn.widgets.Tabulator`) via the new `@render_panel` decorator or `@render_widget`. Required JS/CSS assets (panel's model bundle, third-party assets like Tabulator, and model stylesheets) are served automatically. (#82, #88)
 * Added support for [hvPlot](https://hvplot.holoviz.org) (and holoviews) objects via the new `@render_hvplot` decorator. (#87)
 * Bokeh documents that reference [bokeh extension](https://docs.bokeh.org/en/latest/docs/user_guide/advanced/extensions.html) models (any package shipping a `bokeh.ext.json`/prebuilt `dist` bundle) now have their extension assets served automatically. (#88)
@@ -16,10 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking changes
 
 * shinywidgets now requires ipywidgets 8 or newer. (#237)
-
-### New features
-
-* Added `session_lifetime()` to keep widgets constructed inside its block alive until the Shiny session ends. Cached widgets can now survive output re-renders and appear again without recreation. The block does not change the lifetime of existing widgets. (#248)
 
 ### Bug fixes
 
