@@ -190,6 +190,15 @@ def test_render_lifetime_retirement_closes_widget_and_preserves_model_id(
     lifecycle = sw.get_lifecycle(root)
     lifetime = lifecycle.new_render_lifetime()
     monkeypatch.setattr(sw, "current_lifetime", lambda _lc: lifetime)
+    # Collection queries real trait dependencies; this test only cares about
+    # retirement wiring.
+    from shinywidgets._widget_dependencies import DependencySnapshot
+
+    monkeypatch.setattr(
+        lc,
+        "dependencies",
+        lambda _w: DependencySnapshot(frozenset(), frozenset()),
+    )
 
     w = FakeWidget()
     sw.init_shiny_widget(w)  # type: ignore[arg-type]
