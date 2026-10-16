@@ -55,16 +55,18 @@ def _fake_ipympl_canvas(monkeypatch: pytest.MonkeyPatch):
     _inject_package(monkeypatch, "ipympl")
     nbagg = ModuleType("ipympl.backend_nbagg")
 
-    class _Backend_ipympl:
-        @staticmethod
-        def new_figure_manager_given_figure(num, figure):
-            captured["num"] = num
+    class Canvas(Widget):
+        def __init__(self, figure):
+            # Deliberately skip Widget.__init__() (it requires an active session)
             captured["figure"] = figure
-            manager = type("FigureManager", (), {})()
-            manager.canvas = Widget.__new__(Widget)
-            return manager
 
-    nbagg._Backend_ipympl = _Backend_ipympl  # type: ignore[attr-defined]
+    class FigureManager:
+        def __init__(self, canvas, num):
+            captured["num"] = num
+            captured["canvas"] = canvas
+
+    nbagg.Canvas = Canvas  # type: ignore[attr-defined]
+    nbagg.FigureManager = FigureManager  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "ipympl.backend_nbagg", nbagg)
     return captured
 
@@ -259,6 +261,62 @@ def test_as_widget_mpl_real_ipympl_canvas(monkeypatch: pytest.MonkeyPatch) -> No
     res = as_widget(fig)
     assert isinstance(res, Canvas)
     plt.close(fig)
+
+
+def test_as_widget_mpl_pyplot_figure_closed_at_render_retirement(
+    widget_session,
+) -> None:
+    plt = pytest.importorskip("matplotlib.pyplot")
+    pytest.importorskip("ipympl")
+
+    from shiny.reactive._core import Context
+    from shiny.session import session_context
+    from shinywidgets._lifecycle import get_lifecycle
+    from shinywidgets._render_widget_base import WidgetRenderContext
+
+    with session_context(widget_session):
+        lifecycle = get_lifecycle(widget_session)
+        context = Context()
+        with context():
+            with WidgetRenderContext():
+                fig, ax = plt.subplots()
+                ax.plot([1, 2, 3])
+                canvas = as_widget_mpl(fig)
+                lifetime = lifecycle.records[canvas.model_id].lifetime
+                assert len(lifetime.disposers) == 1
+
+        assert fig.number in plt.get_fignums()
+        context.invalidate()
+        # Retiring the render deregisters the figure from pyplot (otherwise
+        # repeated renders leak figures in pyplot's global registry)
+        assert fig.number not in plt.get_fignums()
+
+
+def test_as_widget_mpl_non_pyplot_figure_registers_no_disposer(
+    widget_session,
+) -> None:
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("ipympl")
+
+    from matplotlib.figure import Figure
+    from shiny.reactive._core import Context
+    from shiny.session import session_context
+    from shinywidgets._lifecycle import get_lifecycle
+    from shinywidgets._render_widget_base import WidgetRenderContext
+
+    with session_context(widget_session):
+        lifecycle = get_lifecycle(widget_session)
+        context = Context()
+        with context():
+            with WidgetRenderContext():
+                # A bare Figure() isn't registered with pyplot, so there's
+                # nothing to clean up at retirement
+                canvas = as_widget_mpl(Figure())
+                lifetime = lifecycle.records[canvas.model_id].lifetime
+                assert lifetime.disposers == []
+
+        # Retirement should be a clean no-op for this figure
+        context.invalidate()
 
 
 def test_as_widget_pydeck_missing_show_errors() -> None:
