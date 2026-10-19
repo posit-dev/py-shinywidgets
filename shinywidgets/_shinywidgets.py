@@ -306,9 +306,17 @@ def close_widget(w: Widget) -> None:
         del WIDGET_INSTANCE_MAP[model_id]
 
 
-def referenced_widgets(roots: Iterable[Widget]) -> set[int]:
-    """ids of every widget reachable from `roots` through materialized synced traits."""
-    widgets: set[int] = set()
+def walk_widget_tree(roots: Iterable[object]) -> Iterator[Widget]:
+    """
+    Yield every widget reachable from `roots` through materialized synced traits.
+
+    Recurses into traits that have a `to_json` serializer (this is how
+    `children`/`layout`/`style` etc. are tagged) plus dicts/lists/tuples wrapping
+    those -- the same shape ipywidgets uses to serialize a widget tree to the
+    client. Other traits can't carry a widget reference across the wire, so
+    skipping them also avoids walking large opaque payloads like GeoJSON `data`
+    or Altair specs that can't hold widgets anyway.
+    """
     visited: set[int] = set()
     pending: list[object] = list(roots)
     while pending:
@@ -317,23 +325,39 @@ def referenced_widgets(roots: Iterable[Widget]) -> set[int]:
             continue
         visited.add(id(item))
         if isinstance(item, Widget):
-            widgets.add(id(item))
+            yield item
             pending.extend(
                 getattr(item, name)
                 for name in item.keys
                 if item.trait_has_value(name)
-                # Only a trait with a `to_json` serializer can carry a widget
-                # reference across the wire (this is how `children`/`layout`/
-                # `style` etc. are tagged); skip others, which also avoids
-                # walking large opaque payloads like GeoJSON `data` or Altair
-                # specs that can't hold widgets anyway.
                 and item.trait_metadata(name, "to_json") is not None
             )
         elif isinstance(item, dict):
             pending.extend(cast(dict[object, object], item).values())
         else:
             pending.extend(cast("list[object] | tuple[object, ...]", item))
-    return widgets
+
+
+def referenced_widgets(roots: Iterable[Widget]) -> set[int]:
+    """ids of every widget reachable from `roots` through materialized synced traits."""
+    return {id(w) for w in walk_widget_tree(roots)}
+
+
+def foreign_or_closed_widget(widget: Widget, session: Session) -> Widget | None:
+    """
+    Find the first widget in `widget`'s tree (itself, or any descendant reachable
+    the same way `referenced_widgets` walks for the cleanup sweep) that doesn't
+    belong to `session` or has already been closed.
+
+    `session` must already be normalized to its root scope, matching how
+    SESSION_WIDGET_ID_MAP is keyed. Returns None if the whole tree is
+    displayable in this session.
+    """
+    own_ids = set(SESSION_WIDGET_ID_MAP.get(session.id, ()))
+    for w in walk_widget_tree([widget]):
+        if is_closed_widget(w) or w._model_id not in own_ids:
+            return w
+    return None
 
 
 # One comm manager per session (keyed by session id), so a client can only reach
