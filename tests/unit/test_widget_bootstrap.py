@@ -75,7 +75,6 @@ def test_session_is_wired_once_and_open_effect_assigns_comm(
     monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
     monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
     monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
-    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
 
     w1 = FakeWidget()
@@ -123,7 +122,6 @@ def test_comm_send_handler_routes_to_existing_comm(
     monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
     monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
     monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
-    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
 
     w = FakeWidget()
@@ -155,7 +153,6 @@ def test_session_end_cleanup_closes_widgets_and_clears_maps(
     monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
     monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
     monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
-    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
 
     w = FakeWidget()
@@ -187,7 +184,6 @@ def test_render_context_invalidation_closes_widget_and_preserves_model_id(
     monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
     monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
     monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
-    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
 
     monkeypatch.setattr(
@@ -226,7 +222,6 @@ def test_nbextensions_mount_when_widget_dep_has_subdir(
     monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
     monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
     monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
-    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
 
     monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", False)
@@ -303,48 +298,6 @@ def test_decode_comm_buffers_decodes_base64_and_preserves_existing_buffers():
     assert res is msg
     assert res["buffers"][0].tobytes() == b"\x00\x01"
     assert res["buffers"][1] is existing
-
-
-def test_is_traitlet_instance_false_for_plain_object():
-    import shinywidgets._shinywidgets as sw
-
-    assert sw.is_traitlet_instance(object()) is False
-
-
-def test_widget_comm_patch_simulated_traitlet_instance(monkeypatch):
-    import shinywidgets._shinywidgets as sw
-
-    class FakeInstance:
-        def __init__(self) -> None:
-            self.klass = "orig"
-
-    fake_inst = FakeInstance()
-
-    monkeypatch.setattr(sw, "is_traitlet_instance", lambda x: True)
-    monkeypatch.setattr(sw.Widget, "comm", fake_inst, raising=False)
-
-    with sw.widget_comm_patch():
-        assert sw.Widget.comm.klass is object
-
-    assert sw.Widget.comm.klass == "orig"
-
-
-def test_widget_comm_patch_noop_when_comm_not_traitlet_instance(monkeypatch):
-    import shinywidgets._shinywidgets as sw
-
-    class FakeAny:
-        def __init__(self) -> None:
-            self.klass = "orig"
-
-    fake_any = FakeAny()
-
-    monkeypatch.setattr(sw, "is_traitlet_instance", lambda x: False)
-    monkeypatch.setattr(sw.Widget, "comm", fake_any, raising=False)
-
-    with sw.widget_comm_patch():
-        assert sw.Widget.comm.klass == "orig"
-
-    assert sw.Widget.comm.klass == "orig"
 
 
 def test_register_widget_uses_session_output_decorator(monkeypatch):
