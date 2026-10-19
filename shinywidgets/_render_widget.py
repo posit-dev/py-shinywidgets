@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 else:
     JupyterChart = BokehModel = FigureWidget = DeckGLWidget = object
 
-from ._dependencies import bokeh_dependency
+from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
 __all__ = (

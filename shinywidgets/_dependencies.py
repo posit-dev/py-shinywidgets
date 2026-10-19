@@ -1,20 +1,16 @@
 import importlib
 import json
 import os
-import posixpath
 import re
 import tempfile
 import warnings
-from copy import deepcopy
-from hashlib import sha256
 from types import ModuleType
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import List, Optional
 
 import packaging.version
 from htmltools import HTMLDependency, tags
 from htmltools._core import (
     HTMLDependencySource,  # pyright: ignore[reportPrivateImportUsage]
-    ScriptItem,
 )
 from ipywidgets.widgets.domwidget import DOMWidget
 from ipywidgets.widgets.widget import Widget
@@ -119,51 +115,6 @@ def require_dependency(
     )
 
 
-def bokeh_dependency() -> HTMLDependency:
-    from bokeh import __version__ as bokeh_version
-    from bokeh.resources import Resources
-
-    resources = Resources(mode="absolute")
-    suffix = ".min" if resources.minified else ""
-    scripts: List[ScriptItem] = [
-        {"src": f"js/{component}{suffix}.js"}
-        for component in resources.components_for("js")
-    ]
-    return HTMLDependency(
-        name="bokeh",
-        version=bokeh_version,
-        source={"subdir": str(resources.base_dir)},
-        script=scripts,
-        head=tags.script("\n".join(resources.js_raw)),
-        all_files=True,
-    )
-
-
-def bokeh_extension_dependencies(w: Widget) -> List[HTMLDependency]:
-    """
-    Obtain HTMLDependencies for bokeh extension models
-    referenced by a jupyter_bokeh.BokehModel.
-
-    Returns [] for non-BokehModel widgets and for BokehModels that only
-    reference core bokeh models.
-    """
-    if getattr(w, "_model_module", None) != "@bokeh/jupyter_bokeh":
-        return []
-
-    model = getattr(w, "_model", None)
-    if model is None:
-        return []
-
-    ext_pkgs = {type(m).__view_module__.split(".")[0] for m in model.references()} - {
-        "bokeh"
-    }
-    if not ext_pkgs:
-        return []
-
-    js_urls, css_urls = bokeh_extension_urls(model, ext_pkgs)
-    return extension_urls_to_dependencies(js_urls, css_urls)
-
-
 def jupyter_extension_path(module_name: str) -> Optional[str]:
     paths: List[str] = jupyter_path()
     module_dir = None
@@ -224,206 +175,5 @@ def parse_version(v: str) -> str:
 def parse_version_safely(v: str) -> str:
     try:
         return parse_version(v)
-    except Exception:
-        return "0.0"
-
-
-def bokeh_extension_urls(model: Any, ext_pkgs: Set[str]) -> Tuple[List[str], List[str]]:
-    """
-    Compute scripts and styles for the bokeh document, excluding
-    base bokeh assets (already provided by bokeh_dependency()).
-    """
-    from bokeh.resources import Resources
-
-    resources = Resources(mode="server", root_url="")
-
-    from bokeh.embed.bundle import bundle_for_objs_and_resources
-
-    try:
-        # N.B. this only scans models referenced by the document, so it's
-        # robust against unrelated broken extension classes
-        bundle = bundle_for_objs_and_resources([model], resources)
-    except Exception:
-        # bundle_for_objs_and_resources() imports each extension package
-        # (bokeh.embed.bundle._bundle_extensions does __import__(name)); an
-        # unresolvable package shouldn't take down the whole render.
-        for pkg in sorted(ext_pkgs):
-            if not importable(pkg):
-                warn_missing_extension(pkg)
-        return [], []
-
-    js_urls = filter_bokeh_core([str(u) for u in bundle.js_files])
-    css_urls = filter_bokeh_core([str(u) for u in bundle.css_files])
-
-    # Warn about extension packages that produced no assets
-    covered = {
-        pkg
-        for pkg in ext_pkgs
-        if any(f"extensions/{pkg}/" in u for u in js_urls + css_urls)
-    }
-    for pkg in sorted(ext_pkgs - covered):
-        warn_missing_extension(pkg)
-
-    return js_urls, css_urls
-
-
-def importable(pkg: str) -> bool:
-    try:
-        importlib.import_module(pkg)
-        return True
-    except Exception:
-        return False
-
-
-def warn_missing_extension(pkg: str) -> None:
-    warnings.warn(
-        f"The bokeh document contains models from the extension package "
-        f"'{pkg}', but shinywidgets couldn't locate its JS/CSS assets (does "
-        f"it ship a bokeh.ext.json/dist bundle?). The widget may fail to "
-        f"render in the browser.",
-        stacklevel=3,
-    )
-
-
-def filter_bokeh_core(urls: List[str]) -> List[str]:
-    """Drop base bokeh assets (provided by bokeh_dependency()) from a url list."""
-    res = []
-    for u in urls:
-        if "cdn.bokeh.org" in u:
-            continue
-        # e.g., static/js/bokeh.min.js, bokeh-gl.min.js, bokeh-widgets.min.js, ...
-        if "static/js/bokeh" in u:
-            continue
-        res.append(u)
-    return res
-
-
-class MessageDependency(HTMLDependency):
-    """
-    An HTMLDependency whose script/stylesheet URLs are NOT pre-encoded in
-    as_dict().
-
-    Dependencies delivered via session._process_ui() (i.e., over the websocket)
-    get encodeURI()'d by Shiny's client before loading; the pre-encoding that
-    HTMLDependency.as_dict() performs (urllib.parse.quote) then results in
-    double-encoded URLs (e.g., '@' -> '%40' -> '%2540') that 404. Skipping the
-    pre-encoding lets the client's encodeURI() be the only encoder (and raw
-    URLs also work fine in server-rendered pages).
-    """
-
-    def as_dict(
-        self, *, lib_prefix: Optional[str] = "lib", include_version: bool = True
-    ) -> Dict[str, Any]:
-        source_href = self.source_path_map(
-            lib_prefix=lib_prefix, include_version=include_version
-        )["href"]
-
-        stylesheets = deepcopy(self.stylesheet)
-        for s in stylesheets:
-            s.update(
-                {
-                    "href": posixpath.join(source_href, s["href"]),
-                    "rel": "stylesheet",
-                }
-            )
-
-        scripts = deepcopy(self.script)
-        for s in scripts:
-            s.update({"src": posixpath.join(source_href, s["src"])})
-
-        head: Optional[str] = None
-        if self.head is not None:
-            head = self.head.get_html_string()
-
-        result: Dict[str, Any] = {
-            "name": self.name,
-            "version": str(self.version),
-            "script": scripts,
-            "stylesheet": stylesheets,
-            "meta": self.meta,
-            "head": head,
-        }
-        return result
-
-
-def extension_urls_to_dependencies(
-    js_urls: List[str],
-    css_urls: List[str],
-) -> List[HTMLDependency]:
-    """
-    Convert bokeh-server-style URLs (static/extensions/<pkg>/<path>) into
-    locally-served HTMLDependencies; pass through remote (http/https) URLs.
-    """
-    deps: List[HTMLDependency] = []
-    for urls, is_script in ((js_urls, True), (css_urls, False)):
-        for url in urls:
-            dep = extension_url_to_dependency(url, is_script=is_script)
-            if dep is not None:
-                deps.append(dep)
-    return deps
-
-
-def extension_url_to_dependency(
-    url: str, *, is_script: bool
-) -> Optional[HTMLDependency]:
-    source: Optional[HTMLDependencySource] = None
-    pkg = "remote"
-    version = "0.0"
-    asset = url
-    if not url.startswith(("http://", "https://")):
-        from bokeh.embed.bundle import extension_dirs
-
-        path = url.split("?", 1)[0]
-        match = re.match(r"^/?static/extensions/([^/]+)/(.+)$", path)
-        if match is None:
-            warnings.warn(
-                f"Don't know how to serve bokeh extension asset '{url}'. "
-                "The widget may fail to render in the browser.",
-                stacklevel=3,
-            )
-            return None
-        pkg, asset = match.group(1), match.group(2)
-        try:
-            module = importlib.import_module(pkg)
-            if module.__file__ is None:
-                warn_missing_extension(pkg)
-                return None
-            # Bokeh records the directory behind its static/extensions URLs,
-            # including bundles located by package.json outside the default dist.
-            artifact_dir = extension_dirs.get(pkg)
-            dist = (
-                str(artifact_dir)
-                if artifact_dir is not None
-                else os.path.join(os.path.dirname(module.__file__), "dist")
-            )
-        except ImportError:
-            warn_missing_extension(pkg)
-            return None
-        if not os.path.isfile(os.path.join(dist, asset)):
-            warn_missing_extension(pkg)
-            return None
-        source = HTMLDependencySource(subdir=dist)
-        version = pkg_version(pkg)
-
-    kind = "js" if is_script else "css"
-    script: ScriptItem = {"src": asset}
-    # Shiny deduplicates by name, so each asset needs an identity independent
-    # of the other assets requested by earlier widget renders.
-    identity = sha256(asset.encode()).hexdigest()[:16]
-    dependency = MessageDependency(
-        f"bokeh-ext-{pkg}-{kind}-{identity}",
-        version,
-        source=source,
-        script=[script] if is_script else None,
-        stylesheet=None if is_script else [{"href": asset}],
-        all_files=source is not None,
-    )
-    return dependency
-
-
-def pkg_version(pkg: str) -> str:
-    try:
-        version = getattr(importlib.import_module(pkg), "__version__", "0.0")
-        return str(version)
     except Exception:
         return "0.0"
