@@ -1,7 +1,44 @@
 from __future__ import annotations
 
-from playwright.sync_api import Page, expect
+from typing import Any
+
+from playwright.sync_api import Page, Route, expect
 from shiny.run import ShinyAppProc
+
+
+# Shared by the widget-lifecycle Playwright tests: patches the served output.js
+# so the page's OutputManager instance is reachable as window.widgetManager,
+# same pattern as tests/playwright/widget_view_retention. No bundle change is
+# needed: `_models` (keyed by model id) and each model's `.views` dict are
+# already there on the manager/model objects used in production.
+def expose_manager(route: Route) -> None:
+    response = route.fetch()
+    text = response.text()
+    original = "const manager = new OutputManager({ loader: shinyRequireLoader });"
+    assert original in text
+    route.fulfill(
+        response=response,
+        body=text.replace(
+            original,
+            "const manager = window.widgetManager = new OutputManager({ loader: shinyRequireLoader });",
+        ),
+    )
+
+
+_MODELS_JS = """async () => {
+    const models = await Promise.all(
+        Object.values(window.widgetManager._models).map((p) => p.catch(() => null))
+    );
+    return models.filter((m) => m).map((m) => ({
+        name: m.get('_model_name'),
+        views: Object.keys(m.views || {}).length,
+    }));
+}"""
+
+
+def client_models(page: Page) -> list[dict[str, Any]]:
+    """Per-model summary (class name + live view count) of the browser's widget registry."""
+    return page.evaluate(_MODELS_JS)
 
 
 def assert_rerender_cleanup(

@@ -2,7 +2,7 @@ import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { jsonParse } from './utils';
-import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
+import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
 
@@ -24,6 +24,56 @@ class OutputManager extends HTMLManager {
   // arrivals (with a timeout to avoid silent hangs).
   private _modelWaiters = new Map<string, ModelWaiter[]>();
   private _activeClears = 0;
+
+  // Every view the manager has ever created, including the child views a
+  // container or ipyleaflet's map create via `create_child_view` (those
+  // aren't tracked anywhere else: they're views of a *different* model than
+  // the one being torn down). Needed so `removeViewTree` can find and remove
+  // a view's descendants, not just the view itself.
+  private _liveViews = new Set<WidgetView>();
+
+  create_view<VT extends DOMWidgetView = DOMWidgetView>(model: DOMWidgetModel, options?: any): Promise<VT>;
+  create_view<VT extends WidgetView = WidgetView>(model: WidgetModel, options?: any): Promise<VT>;
+  create_view(model: WidgetModel, options?: any): Promise<WidgetView> {
+    const viewPromise = super.create_view(model, options);
+    viewPromise.then(
+      (view) => {
+        this._liveViews.add(view);
+        view.once('remove', () => this._liveViews.delete(view));
+      },
+      () => {
+        // View creation failed; create_view's own promise chain already logs it.
+      }
+    );
+    return viewPromise;
+  }
+
+  // Remove `root` and every live view whose `options.parent` chain leads back
+  // to it (e.g. ipyleaflet's layer/control views, or a container's children).
+  // Plain `view.remove()` only removes the view passed to it, which orphans
+  // descendants with a live model reference (for ipyleaflet, ~100 leaked
+  // listeners per re-render).
+  removeViewTree(root: WidgetView): void {
+    const errors: unknown[] = [];
+    const teardown = (view: WidgetView) => {
+      try {
+        disposeNative(view);
+        finishDetach(view);
+        view.remove();
+      } catch (err) {
+        errors.push(err);
+      }
+    };
+    for (const view of [...this._liveViews].reverse()) {
+      if (view !== root && hasAncestor(view, root)) {
+        teardown(view);
+      }
+    }
+    teardown(root);
+    if (errors.length) {
+      console.error('Errors while removing widget view tree:', errors);
+    }
+  }
 
   async get_model(model_id: string): Promise<WidgetModel> {
     if (this.has_model(model_id)) {
@@ -134,6 +184,13 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
 
 const manager = new OutputManager({ loader: shinyRequireLoader });
 
+// Models this session has closed. Shiny replays an output's last rendered
+// value when the output is bound again (render.ui show/hide, remove_ui then
+// insert_ui of the same id); if that value names a model we already closed,
+// no comm_open is coming for it, so renderValue() would otherwise wait the
+// full 30s model-waiter timeout before giving up.
+const closedModels = new Set<string>();
+
 
 /******************************************************************************
 * Define the Shiny binding
@@ -167,6 +224,16 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     if (!data) {
       this._removeView(el);
       el.style.visibility = hiddenVisibility;
+      return;
+    }
+
+    if (closedModels.has(data.model_id)) {
+      // Render nothing instead of waiting on a model that will never arrive;
+      // the server re-renders this output (with a fresh model) now that bind
+      // can complete and report the output visible again.
+      this._removeView(el);
+      el.replaceChildren();
+      el.style.visibility = revealVisibility;
       return;
     }
 
@@ -279,14 +346,29 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     const impl = lmWidget.children[0];
     return impl && (impl.children.length > 0 || impl.shadowRoot?.children.length > 0);
   }
-  private _removeView(el: HTMLElement): void {
+  _removeView(el: HTMLElement): void {
     const view = this._views.get(el);
     this._views.delete(el);
-    view?.remove();
+    if (view) {
+      manager.removeViewTree(view);
+    }
   }
 }
 
-Shiny.outputBindings.register(new IPyWidgetOutput(), "shiny.IPyWidgetOutput");
+const widgetOutputBinding = new IPyWidgetOutput();
+Shiny.outputBindings.register(widgetOutputBinding, "shiny.IPyWidgetOutput");
+
+// Dynamic UI (render.ui swapping its content, remove_ui/insert_ui) can unbind
+// an output element without ever going through onValueError or
+// renderValue(null); without this, the view stays alive, keeps receiving
+// model updates, and is never released.
+$(document).on("shiny:unbound", (event) => {
+  const el = event.target as unknown as HTMLElement;
+  const bindingType = (event as unknown as { bindingType?: string }).bindingType;
+  if (bindingType === "output" && el.classList.contains("shiny-ipywidget-output")) {
+    widgetOutputBinding._removeView(el);
+  }
+});
 
 
 // Due to the way HTMLManager (and widget implementations) get loaded (via
@@ -337,6 +419,7 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
 Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
   const msg = jsonParse(msg_txt);
   const id = msg.content.comm_id;
+  closedModels.add(id);
   if (!manager.has_model(id)) {
     console.error(`Couldn't close model ${id} because it doesn't exist.`);
     return;
@@ -359,10 +442,9 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
             // Clearing the back-reference prevents later teardown from touching a
             // model that is already being closed.
             delete (v as any).model;
-            (v as any).remove();
           }
 
-
+          manager.removeViewTree(v);
         } catch (err) {
           console.error("Error cleaning up view:", err);
         }
@@ -442,4 +524,86 @@ function errorMessage(err: unknown): string {
 
 interface DestroyMethod {
     destroy(): void;
+}
+
+// `create_child_view` (base `WidgetView`) stamps `options.parent` on every
+// child view it creates; `options` is typed `any` upstream (ManagerBase), so
+// this is the narrowest shape we read from it.
+function viewParent(view: WidgetView): WidgetView | undefined {
+  return (view.options as { parent?: WidgetView } | undefined)?.parent;
+}
+
+function hasAncestor(view: WidgetView, root: WidgetView): boolean {
+  for (let parent = viewParent(view); parent; parent = viewParent(parent)) {
+    if (parent === root) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Built structurally (Lumino's `Message` has no private state) so the bundle
+// doesn't carry a second copy of @lumino/messaging alongside libembed's.
+type LuminoMessage = Parameters<DOMWidgetView['luminoWidget']['processMessage']>[0];
+
+function detachMessage(type: 'before-detach' | 'after-detach'): LuminoMessage {
+  return { type, isConflatable: false, conflate: () => false };
+}
+
+const BEFORE_DETACH_MSG = detachMessage('before-detach');
+const AFTER_DETACH_MSG = detachMessage('after-detach');
+
+// Lumino's `dispose()` calls `detach()` when its internal "attached" flag is
+// set, and `detach()` throws "Widget is not attached" if the node was already
+// pulled out of the DOM by something else first (e.g. ipyleaflet replacing
+// its container on teardown). Replaying the detach messages directly clears
+// that flag, so `view.remove()` -> `luminoWidget.dispose()` can finish
+// cleanly instead of throwing.
+function finishDetach(view: WidgetView): void {
+  if (!('luminoWidget' in view)) {
+    return;
+  }
+  const w = (view as DOMWidgetView).luminoWidget;
+  if (w && w.parent === null && w.isAttached && !w.node.isConnected) {
+    w.processMessage(BEFORE_DETACH_MSG);
+    w.processMessage(AFTER_DETACH_MSG);
+  }
+}
+
+// ipyleaflet's LeafletMapView stores the native Leaflet map as `view.obj`
+// (ipyleaflet's own convention; Leaflet isn't a dependency of this bundle, so
+// this is deliberately loosely typed) and never disposes it on remove: the
+// map's internal resize timer and moveend/movestart/zoomend handlers keep
+// firing -- and touching `model.views` -- after the model has closed.
+interface NativeLeafletMap {
+  _sizeTimer?: ReturnType<typeof setTimeout>;
+  off(events?: string): void;
+  remove(): void;
+}
+
+function disposeNative(view: WidgetView): void {
+  const tracked = view as WidgetView & {
+    obj?: NativeLeafletMap;
+    __shinywidgetsNativeDisposed?: boolean;
+  };
+  const map = tracked.obj;
+  if (
+    tracked.__shinywidgetsNativeDisposed ||
+    !view.model ||
+    view.model.get('_view_name') !== 'LeafletMapView' ||
+    !map
+  ) {
+    return;
+  }
+  tracked.__shinywidgetsNativeDisposed = true;
+  clearTimeout(map._sizeTimer);
+  map.off('moveend movestart zoomend');
+  view.once('remove', () => {
+    try {
+      map.remove();
+    } finally {
+      clearTimeout(map._sizeTimer);
+      map.off();
+    }
+  });
 }
