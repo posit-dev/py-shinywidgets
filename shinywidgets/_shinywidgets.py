@@ -233,6 +233,11 @@ def session_lifetime() -> Iterator[None]:
     invalidated. Construct a widget inside `session_lifetime()` when you intend to
     display it again in a later render (for example, one cached widget per dataset).
     Exiting the block closes nothing; session widgets are closed when the session ends.
+
+    A background task started during a render keeps that render's lifetime: if
+    the task is meant to outlive its render (for example, one streaming updates
+    into a map), construct its widgets inside `session_lifetime()`, or they are
+    closed when the render that started the task is invalidated.
     """
     if get_current_session() is None:
         raise RuntimeError("session_lifetime() requires an active Shiny session")
