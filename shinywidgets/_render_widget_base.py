@@ -19,6 +19,7 @@ from ._as_widget import as_widget
 from ._comm import OrphanedShinyComm
 from ._dependencies import widget_pkg
 from ._output_widget import output_widget
+from ._widget_registry import WIDGET_INSTANCE_MAP
 
 __all__ = (
     "render_widget_base",
@@ -324,9 +325,6 @@ class WidgetRenderContext:
         if rendering is None:
             raise RuntimeError("Not currently rendering a widget")
         return rendering.context
-
-
-WIDGET_INSTANCE_MAP = cast(dict[str, Widget], Widget.widgets)
 
 
 def is_closed_widget(widget: Widget) -> bool:

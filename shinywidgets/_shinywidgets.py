@@ -37,8 +37,9 @@ from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
 from ._dependencies import require_dependency
-from ._render_widget_base import WIDGET_INSTANCE_MAP, WidgetRenderContext
+from ._render_widget_base import WidgetRenderContext
 from ._utils import package_dir
+from ._widget_registry import WIDGET_INSTANCE_MAP
 
 __all__ = (
     "register_widget",

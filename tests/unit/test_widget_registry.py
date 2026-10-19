@@ -6,6 +6,7 @@ import warnings
 from collections.abc import Iterator
 
 import pytest
+import shinywidgets._render_widget_base as rwb
 import shinywidgets._shinywidgets as sw
 from ipywidgets import HTML
 from shiny import App, Inputs, Outputs, Session, reactive, ui
@@ -50,6 +51,18 @@ def test_shinywidgets_module_does_not_use_deprecated_widget_registry() -> None:
             category=DeprecationWarning,
         )
         importlib.reload(sw)
+
+
+def test_render_widget_base_module_does_not_use_deprecated_widget_registry() -> None:
+    # Regression: _render_widget_base must not access `Widget.widgets` either (see
+    # above) -- it keeps its own module-level binding of the instance registry.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "error",
+            message="Widget.widgets is deprecated",
+            category=DeprecationWarning,
+        )
+        importlib.reload(rwb)
 
 
 def test_missing_widget_instance_registry_fails_loudly() -> None:
