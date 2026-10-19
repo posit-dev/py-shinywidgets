@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking changes
 
-* shinywidgets now requires ipywidgets 8 or newer. (#237)
+* shinywidgets now requires ipywidgets 8.1 or newer. (#237, #259)
 
 ### Bug fixes
 
