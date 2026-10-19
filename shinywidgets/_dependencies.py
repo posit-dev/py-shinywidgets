@@ -136,12 +136,6 @@ def bokeh_dependency() -> HTMLDependency:
     )
 
 
-def bokeh_dependencies(w: Widget) -> List[HTMLDependency]:
-    if getattr(w, "_model_module", None) != "@bokeh/jupyter_bokeh":
-        return []
-    return [bokeh_dependency()]
-
-
 def jupyter_extension_path(module_name: str) -> Optional[str]:
     paths: List[str] = jupyter_path()
     module_dir = None
