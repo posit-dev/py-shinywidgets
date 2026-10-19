@@ -3,7 +3,16 @@ from __future__ import annotations
 import json
 import os
 from base64 import b64decode
-from typing import Any, Optional, Sequence, Union, cast
+from contextlib import contextmanager
+from typing import (
+    Any,
+    Iterable,
+    Iterator,
+    Optional,
+    Sequence,
+    Union,
+    cast,
+)
 from uuid import uuid4
 from weakref import WeakSet
 
@@ -35,6 +44,7 @@ from ._widget_registry import WIDGET_INSTANCE_MAP
 __all__ = (
     "register_widget",
     "reactive_read",
+    "session_lifetime",
 )
 
 
@@ -60,6 +70,7 @@ def init_shiny_widget(w: Widget):
     # If this is the first time we've seen this session, initialize some things
     if session not in SESSIONS:
         SESSIONS.add(session)
+        COMM_MANAGERS[session.id] = ShinyCommManager()
 
         # Somewhere inside ipywidgets, it makes requests for static files
         # under the publicPath set by the webpack.config.js file.
@@ -77,12 +88,13 @@ def init_shiny_widget(w: Widget):
             msg_txt = session.input.shinywidgets_comm_send()
             msg = _decode_comm_buffers(json.loads(msg_txt))
             comm_id = msg["content"]["comm_id"]
-            if comm_id in COMM_MANAGER.comms:
-                comm: ShinyComm = COMM_MANAGER.comms[comm_id]
+            comm = COMM_MANAGERS[session.id].comms.get(comm_id)
+            if comm is not None:
                 comm.handle_msg(msg)
 
         def _cleanup_session_state():
             SESSIONS.remove(session)
+            COMM_MANAGERS.pop(session.id).active = False
             # Cleanup any widgets that were created in this session
             for id in SESSION_WIDGET_ID_MAP[session.id]:
                 widget = WIDGET_INSTANCE_MAP.get(id)
@@ -112,25 +124,44 @@ def init_shiny_widget(w: Widget):
     # comm, we just set the comm to a dummy comm for now (to avoid unnecessary work)
     w.comm = OrphanedShinyComm(id)
 
+    # Capture the render (if any) now, so the deferred open below can re-enter it:
+    # widgets created lazily while serializing (e.g. default Layout/Style models)
+    # then get the same cleanup as this widget instead of living until session end.
+    render_ctx = (
+        WidgetRenderContext.get_render_context()
+        if WidgetRenderContext.is_rendering_widget()
+        else None
+    )
+
     # Schedule the opening of the comm to happen sometime after this init function.
     # This is important for widgets like plotly that do additional initialization that
     # is required to get a valid widget state.
     @reactive.effect(priority=99999)
     def _open_shiny_comm():
+        _open_shiny_comm.destroy()
 
-        # Call _repr_mimebundle_() before get_state() since it may modify the widget
-        # in an important way (unfortunately, it does for plotly)
-        # # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
-        if hasattr(w, "_repr_mimebundle_") and callable(w._repr_mimebundle_):
-            w._repr_mimebundle_()
+        # Closed before it was opened (explicitly, or because its render was
+        # invalidated): leave it closed rather than reopening it.
+        if WIDGET_INSTANCE_MAP.get(id) is not w:
+            return
 
-        # Now, get the state
-        state, buffer_paths, buffers = _remove_buffers(w.get_state())
+        with WidgetRenderContext.resumed(render_ctx):
+            # Call _repr_mimebundle_() before get_state() since it may modify the widget
+            # in an important way (unfortunately, it does for plotly). Only call real
+            # overrides: the base implementation just repr()s the widget, which
+            # recurses forever on widget-reference cycles.
+            # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
+            if type(w)._repr_mimebundle_ is not Widget._repr_mimebundle_:
+                w._repr_mimebundle_()
+
+            # Now, get the state
+            state, buffer_paths, buffers = _remove_buffers(w.get_state())
 
         # Initialize the comm -- this sends widget state to the frontend
         w.comm = ShinyComm(
             comm_id=id,
-            comm_manager=COMM_MANAGER,
+            comm_manager=COMM_MANAGERS[session.id],
+            session=session,
             target_name="jupyter.widget",
             data={"state": state, "buffer_paths": buffer_paths},
             buffers=cast(BufferType, buffers),
@@ -139,30 +170,22 @@ def init_shiny_widget(w: Widget):
             html_deps=session._process_ui(TagList(widget_dep))["deps"],
         )
 
-        _open_shiny_comm.destroy()
-
     # If the widget initialized in a reactive _output_ context, then cleanup the widget
     # when the context gets invalidated. Use the render output's Context (captured by
     # WidgetRenderContext) rather than the current Context, because the widget may be
     # constructed inside a reactive.isolate() block whose temporary Context gets
     # invalidated prematurely (e.g., when upstream reactive sources change).
-    if WidgetRenderContext.is_rendering_widget():
-        ctx = WidgetRenderContext.get_render_context()
+    if render_ctx is not None:
+        owned = RENDER_OWNED_WIDGETS.setdefault(render_ctx.id, [])
+        if not owned:
+            ctx = render_ctx
 
-        def on_close():
-            with session_context(session):
-                w.close()
-                # By closing the widget, we also close the comm, which sets w.comm to
-                # None. Unfortunately, the w.model_id property looks up w.comm.comm_id
-                # at runtime, and some packages like ipyleaflet want to use this id
-                # to manage references between widgets.
-                w.comm = OrphanedShinyComm(id)
-                # Assigning a comm has the side-effect of adding back a reference to
-                # the widget instance, so remove it again
-                if id in WIDGET_INSTANCE_MAP:
-                    del WIDGET_INSTANCE_MAP[id]
+            def on_close():
+                with session_context(session):
+                    close_render_widgets(RENDER_OWNED_WIDGETS.pop(ctx.id, []))
 
-        ctx.on_invalidate(on_close)
+            ctx.on_invalidate(on_close)
+        owned.append(w)
 
     # Keep track of what session this widget belongs to (so we can close it when the
     # session ends)
@@ -186,9 +209,83 @@ def init_shiny_widget(w: Widget):
 # TODO: can we restore the widget constructor in a sensible way?
 Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
 
+
+@contextmanager
+def session_lifetime() -> Iterator[None]:
+    """
+    Give widgets constructed inside this block the lifetime of the Shiny session
+    rather than of the current render.
+
+    Widgets constructed while an output renders are closed when that render is
+    invalidated. Construct a widget inside `session_lifetime()` when you intend to
+    display it again in a later render (for example, one cached widget per dataset).
+    Exiting the block closes nothing; session widgets are closed when the session ends.
+    """
+    if get_current_session() is None:
+        raise RuntimeError("session_lifetime() requires an active Shiny session")
+    with WidgetRenderContext.suspended():
+        yield
+
+
 # Use WeakSet() over Set() so that the session can be garbage collected
 SESSIONS: WeakSet[Session] = WeakSet()
-COMM_MANAGER = ShinyCommManager()
+
+# Widgets constructed during a render, keyed by that render's Context id. Closed
+# when the Context is invalidated (see close_render_widgets).
+RENDER_OWNED_WIDGETS: dict[int, list[Widget]] = {}
+
+
+def close_render_widgets(widgets: list[Widget]) -> None:
+    """
+    Close the widgets a retired render constructed, except any that a live widget
+    still references (e.g. a Layout first materialized while serializing a
+    session-owned widget). Those live on until the session ends.
+    """
+    closing = {id(w) for w in widgets}
+    keep = referenced_widgets(
+        w for w in WIDGET_INSTANCE_MAP.values() if id(w) not in closing
+    )
+    for w in widgets:
+        if id(w) in keep or w.comm is None:  # already closed (e.g. at session end)
+            continue
+        model_id = w.model_id
+        w.close()
+        # By closing the widget, we also close the comm, which sets w.comm to
+        # None. Unfortunately, the w.model_id property looks up w.comm.comm_id
+        # at runtime, and some packages like ipyleaflet want to use this id
+        # to manage references between widgets.
+        w.comm = OrphanedShinyComm(model_id)
+        # Assigning a comm has the side-effect of adding back a reference to
+        # the widget instance, so remove it again
+        if WIDGET_INSTANCE_MAP.get(model_id) is w:
+            del WIDGET_INSTANCE_MAP[model_id]
+
+
+def referenced_widgets(roots: Iterable[Widget]) -> set[int]:
+    """ids of every widget reachable from `roots` through materialized synced traits."""
+    widgets: set[int] = set()
+    visited: set[int] = set()
+    pending: list[object] = list(roots)
+    while pending:
+        item = pending.pop()
+        if not isinstance(item, (Widget, dict, list, tuple)) or id(item) in visited:
+            continue
+        visited.add(id(item))
+        if isinstance(item, Widget):
+            widgets.add(id(item))
+            pending.extend(
+                getattr(item, name) for name in item.keys if item.trait_has_value(name)
+            )
+        elif isinstance(item, dict):
+            pending.extend(cast(dict[object, object], item).values())
+        else:
+            pending.extend(cast("list[object] | tuple[object, ...]", item))
+    return widgets
+
+
+# One comm manager per session (keyed by session id), so a client can only reach
+# its own session's widgets.
+COMM_MANAGERS: dict[str, ShinyCommManager] = {}
 
 
 def _decode_comm_buffers(msg: dict[str, Any]) -> dict[str, Any]:

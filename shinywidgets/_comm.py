@@ -2,13 +2,19 @@ from base64 import b64encode
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
-from shiny.session import get_current_session
+from shiny import Session
 
 from ._serialization import json_packer
 
 
 class ShinyCommManager:
-    comms: Dict[str, "ShinyComm"] = {}
+    """One per Shiny session: routes client messages to that session's comms."""
+
+    def __init__(self) -> None:
+        self.comms: Dict[str, "ShinyComm"] = {}
+        # Set to False when the session ends, so closing leftover widgets
+        # doesn't try to publish on a dead connection.
+        self.active = True
 
     def register_comm(self, comm: "ShinyComm") -> str:
         id = comm.comm_id
@@ -42,6 +48,7 @@ class ShinyComm:
         comm_id: str,
         comm_manager: ShinyCommManager,
         target_name: str,
+        session: Session,
         data: DataType = None,
         metadata: MetadataType = None,
         buffers: BufferType = None,
@@ -50,6 +57,7 @@ class ShinyComm:
         self.comm_id = comm_id
         self.comm_manager = comm_manager
         self.target_name = target_name
+        self.session = session
         self.open(data=data, metadata=metadata, buffers=buffers, **keys)
 
     def open(
@@ -97,7 +105,7 @@ class ShinyComm:
             return
         self._closed = True
         data = self._closed_data if data is None else data
-        if get_current_session():
+        if self.comm_manager.active:
             self._publish_msg(
                 "shinywidgets_comm_close", data=data, metadata=metadata, buffers=buffers
             )
@@ -157,12 +165,7 @@ class ShinyComm:
             parent={},  # self.kernel.get_parent("shell")
         )
 
-        session = get_current_session()
-        if session is None:
-            raise RuntimeError(
-                "Cannot send an ipywidget messages to the client outside of a Shiny session context."
-            )
-
+        session = self.session
         msg_txt = json_packer(msg)
 
         async def _send():
