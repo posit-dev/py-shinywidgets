@@ -26,13 +26,23 @@ class _nullcontext:
 
 @pytest.fixture
 def reset_shinywidgets_globals(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
+    import shinywidgets._render_widget_base as rwb
     import shinywidgets._shinywidgets as sw
 
+    # _shinywidgets and _render_widget_base each import WIDGET_INSTANCE_MAP from
+    # _widget_registry, so in production they're the same dict. Patch both
+    # module-level bindings to the *same* fresh dict, or code that reads one
+    # module's binding (e.g. is_closed_widget(), imported into _shinywidgets
+    # from _render_widget_base) would see real-registry state instead of this
+    # test's fake one.
+    instance_map: Dict[str, Any] = {}
     monkeypatch.setattr(sw, "SESSIONS", sw.WeakSet())
     monkeypatch.setattr(sw, "SESSION_WIDGET_ID_MAP", {})
-    monkeypatch.setattr(sw, "WIDGET_INSTANCE_MAP", {})
+    monkeypatch.setattr(sw, "WIDGET_INSTANCE_MAP", instance_map)
+    monkeypatch.setattr(rwb, "WIDGET_INSTANCE_MAP", instance_map)
     monkeypatch.setattr(sw, "COMM_MANAGERS", {})
     monkeypatch.setattr(sw, "RENDER_OWNED_WIDGETS", {})
+    monkeypatch.setattr(sw, "KEPT_WIDGETS", {})
     return {"sw": sw}
 
 
