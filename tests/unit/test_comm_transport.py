@@ -94,6 +94,49 @@ def test_close_is_idempotent_and_unregisters(monkeypatch):
     assert len(session._flushed_handlers) == n
 
 
+def test_close_is_suppressed_when_id_reregistered(monkeypatch):
+    import asyncio
+
+    import shinywidgets._comm as comm
+
+    session = FakeSession()
+
+    sent: list[str] = []
+
+    async def _spy(msg_type: str, msg_txt: str) -> None:
+        sent.append(msg_type)
+
+    monkeypatch.setattr(session, "send_custom_message", _spy)
+
+    mgr = comm.ShinyCommManager()
+    old = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
+    # A replacement widget re-created with the same (explicit) id registers a
+    # new comm for it.
+    new = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
+    session._flush_handlers.clear()
+    session._flushed_handlers.clear()
+
+    # Closing the old comm still schedules a close, but at send time the id
+    # belongs to the new comm, so nothing is sent and the new comm stays
+    # registered.
+    old.close()
+    assert len(session._flushed_handlers) == 1
+    asyncio.run(session._flushed_handlers[0]())
+    assert sent == []
+    assert mgr.comms.get("c1") is new
+
+    # Closing the current owner of the id sends the close.
+    new.close()
+    assert len(session._flushed_handlers) == 2
+    asyncio.run(session._flushed_handlers[1]())
+    assert sent == ["shinywidgets_comm_close"]
+    assert "c1" not in mgr.comms
+
+
 def test_close_does_not_publish_after_session_ended():
     import shinywidgets._comm as comm
 

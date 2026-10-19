@@ -21,7 +21,12 @@ class ShinyCommManager:
         self.comms[id] = comm
         return id
 
-    def unregister_comm(self, comm: "ShinyComm") -> "ShinyComm":
+    def unregister_comm(self, comm: "ShinyComm") -> Optional["ShinyComm"]:
+        # A newer comm may have since re-registered this id (e.g., a widget
+        # re-created with an explicit model_id); only remove the registry
+        # entry if it still belongs to this comm.
+        if self.comms.get(comm.comm_id) is not comm:
+            return None
         return self.comms.pop(comm.comm_id)
 
 
@@ -107,7 +112,21 @@ class ShinyComm:
         data = self._closed_data if data is None else data
         if self.comm_manager.active:
             self._publish_msg(
-                "shinywidgets_comm_close", data=data, metadata=metadata, buffers=buffers
+                "shinywidgets_comm_close",
+                data=data,
+                metadata=metadata,
+                buffers=buffers,
+                # The close is sent on_flushed; by then, a replacement widget
+                # may have re-registered this id (e.g., a widget re-created
+                # with an explicit model_id). The id would then belong to the
+                # newer comm, and a close would tell the browser to tear down
+                # the *new* model, so suppress the send when (and only when)
+                # a different comm owns the id at send time. (N.B. this comm
+                # unregisters itself below, before the send happens, so an
+                # unregistered id must not suppress the send.)
+                send_if=lambda: (
+                    self.comm_manager.comms.get(self.comm_id) in (None, self)
+                ),
             )
         if not deleting:
             # If deleting, the comm can't be unregistered
@@ -127,6 +146,7 @@ class ShinyComm:
         data: DataType = None,
         metadata: MetadataType = None,
         buffers: BufferType = None,
+        send_if: Optional[Callable[[], bool]] = None,
         **keys: object,
     ) -> None:
         data = {} if data is None else data
@@ -169,6 +189,8 @@ class ShinyComm:
         msg_txt = json_packer(msg)
 
         async def _send():
+            if send_if is not None and not send_if():
+                return
             await session.send_custom_message(msg_type, msg_txt)  # type: ignore
 
         # N.B., if messages are sent immediately, run_coro_sync() could fail with
