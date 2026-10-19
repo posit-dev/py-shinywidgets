@@ -413,12 +413,18 @@ if (taskQueue) {
 * Handle messages from the server-side Widget
 ******************************************************************************/
 
+type HtmlDependency = NonNullable<
+  Parameters<typeof Shiny.renderDependenciesAsync>[0]
+>[number] & {
+  shinywidgets_module_exports?: Readonly<Record<string, string>>;
+};
+
 // Initialize the comm and model when a new widget is created
 // This is basically our version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1144-L1176
 Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
   setBaseURL();
   const msg = jsonParse(msg_txt);
-  const deps = msg.content.html_deps as ModuleDependency[];
+  const deps = msg.content.html_deps as HtmlDependency[];
   // Dependencies (e.g. BokehJS) must finish loading before the model is
   // constructed below; otherwise require() of the widget's module fails.
   await Shiny.renderDependenciesAsync(deps);
@@ -541,13 +547,7 @@ function errorMessage(err: unknown): string {
   return String(err);
 }
 
-type ModuleDependency = NonNullable<
-  Parameters<typeof Shiny.renderDependenciesAsync>[0]
->[number] & {
-  shinywidgets_module_exports?: Readonly<Record<string, string>>;
-};
-
-async function loadModuleExports(deps: readonly ModuleDependency[]): Promise<void> {
+async function loadModuleExports(deps: readonly HtmlDependency[]): Promise<void> {
   const globals = window as unknown as Record<string, unknown>;
   for (const dependency of deps) {
     for (const [name, url] of Object.entries(
