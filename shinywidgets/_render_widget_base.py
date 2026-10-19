@@ -111,11 +111,17 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             from ._shinywidgets import foreign_or_closed_widget
 
             bad = foreign_or_closed_widget(widget, session.root_scope())
+            if bad is not None and is_closed_widget(bad):
+                raise RuntimeError(
+                    f"{type(bad).__name__} was closed (its render was invalidated, or "
+                    "it was closed explicitly), so it can't be displayed again. To "
+                    "reuse a widget across renders, construct it inside "
+                    "`with session_lifetime():`."
+                )
             if bad is not None:
                 raise RuntimeError(
-                    f"{type(bad).__name__} belongs to another Shiny session (or was "
-                    "closed), so it can't be displayed here. Construct widgets per "
-                    "session."
+                    f"{type(bad).__name__} belongs to another Shiny session, so it "
+                    "can't be displayed here. Construct widgets per session."
                 )
 
         widget, fill = set_layout_defaults(widget)
