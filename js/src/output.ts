@@ -463,24 +463,13 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
     if (m.views) {
       await Promise.all(
         Object.values(m.views).map(async (viewPromise) => {
-        try {
-          const v = await viewPromise;
-
-          // Plotly-backed views can leave DOM state and listeners behind unless
-          // destroy() runs before the view is removed.
-          if (hasMethod<DestroyMethod>(v, 'destroy')) {
-            v.destroy();
-            // Clearing the back-reference prevents later teardown from touching a
-            // model that is already being closed.
-            delete (v as any).model;
+          try {
+            manager.removeViewTree(await viewPromise);
+          } catch (err) {
+            console.error("Error cleaning up view:", err);
           }
-
-          manager.removeViewTree(v);
-        } catch (err) {
-          console.error("Error cleaning up view:", err);
-        }
-      })
-    );
+        })
+      );
     }
 
     // View removal updates _view_count. Mark the comm as inactive first so that
@@ -533,11 +522,6 @@ function setBaseURL(x: string = '') {
   }
 }
 
-// TypeGuard to safely check if an object has a method
-function hasMethod<T>(obj: any, methodName: keyof T): obj is T {
-    return typeof obj[methodName] === 'function';
-}
-
 function isIgnorableTeardownError(err: unknown): boolean {
   const msg = errorMessage(err).toLowerCase();
   return (
@@ -553,6 +537,3 @@ function errorMessage(err: unknown): string {
   return String(err);
 }
 
-interface DestroyMethod {
-    destroy(): void;
-}

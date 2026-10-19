@@ -1,7 +1,8 @@
 // Helpers for tearing down widget views. These reach into third-party
-// internals (Lumino's message protocol, ipyleaflet's native Leaflet map)
-// that aren't dependencies of this bundle, so they're deliberately loosely
-// typed -- keep the loose types and their justifications together here.
+// internals (Lumino's message protocol, ipyleaflet's native Leaflet map,
+// plotly <6's FigureView) that aren't dependencies of this bundle, so they're
+// deliberately loosely typed -- keep the loose types and their justifications
+// together here.
 import type { DOMWidgetView, WidgetView } from '@jupyter-widgets/base';
 
 // `create_child_view` stamps `options.parent` on every child view; `options`
@@ -46,6 +47,34 @@ export function finishDetach(view: WidgetView): void {
   }
 }
 
+// Dispose of native third-party resources that `view.remove()` doesn't
+// reach, before the view is removed.
+export function disposeNative(view: WidgetView): void {
+  if (!view.model) {
+    return;
+  }
+
+  // plotly <6's FigureView leaves DOM state and listeners behind unless
+  // destroy() runs before the view is removed; clearing the model
+  // back-reference drops its resize listener (#166, #169). plotly >=6 is
+  // anywidget-based and cleans up in remove(), so hasDestroy() is false there.
+  if (hasDestroy(view)) {
+    view.destroy();
+    delete (view as any).model;
+    return;
+  }
+
+  disposeLeafletMap(view);
+}
+
+interface DestroyableView {
+  destroy(): void;
+}
+
+function hasDestroy(view: WidgetView): view is WidgetView & DestroyableView {
+  return typeof (view as Partial<DestroyableView>).destroy === 'function';
+}
+
 // ipyleaflet's LeafletMapView stores the native Leaflet map as `view.obj`
 // (loosely typed: Leaflet isn't a dependency of this bundle) and never
 // disposes it on remove, so its resize timer and event handlers keep firing
@@ -56,7 +85,7 @@ interface NativeLeafletMap {
   remove(): void;
 }
 
-export function disposeNative(view: WidgetView): void {
+function disposeLeafletMap(view: WidgetView): void {
   const tracked = view as WidgetView & {
     obj?: NativeLeafletMap;
     __shinywidgetsNativeDisposed?: boolean;
