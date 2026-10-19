@@ -3,7 +3,6 @@ from __future__ import annotations
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from dataclasses import dataclass
 from typing import Generic, Iterator, Optional, Tuple, TypeVar, cast
 
 from htmltools import Tag
@@ -237,26 +236,29 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
     return (widget, fill)
 
 
-@dataclass
-class _RenderingWidget:
-    context: Context
-    active: bool = True
-
-
-# The render that is running in the current asyncio task. A ContextVar, because Shiny
-# can run a session's outputs as concurrent tasks that interleave at each `await`, and
-# each task needs to see only its own render.
-_rendering_widget: ContextVar[_RenderingWidget | None] = ContextVar(
+# The render Context that is running in the current asyncio task, or None outside
+# a render (or inside session_lifetime()). A ContextVar, because Shiny can run a
+# session's outputs as concurrent tasks that interleave at each `await`, and each
+# task needs to see only its own render.
+#
+# asyncio.create_task() snapshots the current contextvars, so a task started
+# during a render keeps seeing that render's Context even after the render body
+# has returned. A widget the task builds later still registers for cleanup on
+# that Context (see RENDER_OWNED_WIDGETS in _shinywidgets.py), same as one built
+# directly in the render body -- it closes with the render instead of leaking
+# until the session ends.
+_rendering_widget: ContextVar[Context | None] = ContextVar(
     "shinywidgets_rendering_widget", default=None
 )
 
 
 class WidgetRenderContext:
     """
-    Record the widget render that is running in the current asyncio task.
+    Record the reactive Context of the widget render running in the current
+    asyncio task.
 
-    This is used to ensure that widget's that are initialized in a render_widget()
-    context are cleaned up properly when that context is re-entered.
+    This is used to ensure that widgets initialized in a render_widget() context
+    are cleaned up properly when that context is invalidated.
 
     The render Context is captured at __enter__ time so that init_shiny_widget can
     register cleanup callbacks on the correct Context, even if the widget is
@@ -265,33 +267,22 @@ class WidgetRenderContext:
     """
 
     def __init__(self):
-        self._rendering: _RenderingWidget | None = None
-        self._token: Token[_RenderingWidget | None] | None = None
+        self._context: Context | None = None
+        self._token: Token[Context | None] | None = None
 
     def __enter__(self):
-        self._rendering = _RenderingWidget(get_current_context())
-        self._token = _rendering_widget.set(self._rendering)
+        self._context = get_current_context()
+        self._token = _rendering_widget.set(self._context)
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        assert self._rendering is not None and self._token is not None
-        # A task started during the render has a copy of this render's value. Mark
-        # it inactive, so a widget that such a task builds later is not tied to
-        # this output.
-        self._rendering.active = False
+        assert self._context is not None and self._token is not None
         _rendering_widget.reset(self._token)
         return False
 
     @staticmethod
-    def _current() -> _RenderingWidget | None:
-        rendering = _rendering_widget.get()
-        if rendering is None or not rendering.active:
-            return None
-        return rendering
-
-    @staticmethod
     def is_rendering_widget() -> bool:
-        return WidgetRenderContext._current() is not None
+        return _rendering_widget.get() is not None
 
     @staticmethod
     @contextmanager
@@ -307,7 +298,7 @@ class WidgetRenderContext:
     @contextmanager
     def resumed(context: Context | None) -> Iterator[None]:
         """Re-enter a render captured earlier, so widgets created now share its cleanup."""
-        token = _rendering_widget.set(_RenderingWidget(context) if context else None)
+        token = _rendering_widget.set(context)
         try:
             yield
         finally:
@@ -321,10 +312,10 @@ class WidgetRenderContext:
         This returns the render output's Context rather than the current Context,
         which may be a temporary isolate Context.
         """
-        rendering = WidgetRenderContext._current()
-        if rendering is None:
+        context = _rendering_widget.get()
+        if context is None:
             raise RuntimeError("Not currently rendering a widget")
-        return rendering.context
+        return context
 
 
 def is_closed_widget(widget: Widget) -> bool:

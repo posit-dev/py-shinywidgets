@@ -37,7 +37,7 @@ from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
 from ._dependencies import require_dependency
-from ._render_widget_base import WidgetRenderContext
+from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
 
@@ -95,12 +95,17 @@ def init_shiny_widget(w: Widget):
         def _cleanup_session_state():
             SESSIONS.remove(session)
             COMM_MANAGERS.pop(session.id).active = False
-            # Cleanup any widgets that were created in this session
+            # Cleanup any widgets that were created in this session. Use the same
+            # close_widget() helper as render cleanup (not a plain widget.close())
+            # so these widgets also keep a working model_id afterwards -- other
+            # live widgets (e.g. a sibling session's container that still lists
+            # this widget as a child) may still read it.
             for id in SESSION_WIDGET_ID_MAP[session.id]:
                 widget = WIDGET_INSTANCE_MAP.get(id)
                 if widget:
-                    widget.close()
+                    close_widget(widget)
             del SESSION_WIDGET_ID_MAP[session.id]
+            KEPT_WIDGETS.pop(session.id, None)
 
         session.on_ended(_cleanup_session_state)
 
@@ -176,16 +181,24 @@ def init_shiny_widget(w: Widget):
     # constructed inside a reactive.isolate() block whose temporary Context gets
     # invalidated prematurely (e.g., when upstream reactive sources change).
     if render_ctx is not None:
-        owned = RENDER_OWNED_WIDGETS.setdefault(render_ctx.id, [])
-        if not owned:
+        owned = RENDER_OWNED_WIDGETS.get(render_ctx.id)
+        if owned is not None:
+            owned.append(w)
+        else:
+            # The widget must already be in the list before registering the
+            # on_invalidate callback below: Context.on_invalidate() runs its
+            # callback immediately if the context is already invalidated (e.g. a
+            # render that invalidates itself), and that callback pops this exact
+            # list to close it. Registering first would pop an empty list and
+            # leave `w` appended to an orphaned one afterwards, never closed.
+            RENDER_OWNED_WIDGETS[render_ctx.id] = [w]
             ctx = render_ctx
 
             def on_close():
                 with session_context(session):
-                    close_render_widgets(RENDER_OWNED_WIDGETS.pop(ctx.id, []))
+                    close_render_widgets(session, RENDER_OWNED_WIDGETS.pop(ctx.id, []))
 
             ctx.on_invalidate(on_close)
-        owned.append(w)
 
     # Keep track of what session this widget belongs to (so we can close it when the
     # session ends)
@@ -220,6 +233,11 @@ def session_lifetime() -> Iterator[None]:
     invalidated. Construct a widget inside `session_lifetime()` when you intend to
     display it again in a later render (for example, one cached widget per dataset).
     Exiting the block closes nothing; session widgets are closed when the session ends.
+
+    A background task started during a render keeps that render's lifetime: if
+    the task is meant to outlive its render (for example, one streaming updates
+    into a map), construct its widgets inside `session_lifetime()`, or they are
+    closed when the render that started the task is invalidated.
     """
     if get_current_session() is None:
         raise RuntimeError("session_lifetime() requires an active Shiny session")
@@ -234,31 +252,58 @@ SESSIONS: WeakSet[Session] = WeakSet()
 # when the Context is invalidated (see close_render_widgets).
 RENDER_OWNED_WIDGETS: dict[int, list[Widget]] = {}
 
+# Render-owned widgets a live widget in this session still referenced the last
+# time their render ended, keyed by session id. Re-checked at the session's next
+# render invalidation (see close_render_widgets) and closed once nothing in the
+# session references them anymore.
+KEPT_WIDGETS: dict[str, list[Widget]] = {}
 
-def close_render_widgets(widgets: list[Widget]) -> None:
+
+def close_render_widgets(session: Session, widgets: list[Widget]) -> None:
     """
     Close the widgets a retired render constructed, except any that a live widget
-    still references (e.g. a Layout first materialized while serializing a
-    session-owned widget). Those live on until the session ends.
+    in this session still references (e.g. a Layout first materialized while
+    serializing a session-owned widget). Those are kept and re-checked the next
+    time a render in this session is invalidated, rather than skipped forever.
     """
+    widgets = KEPT_WIDGETS.pop(session.id, []) + widgets
     closing = {id(w) for w in widgets}
-    keep = referenced_widgets(
-        w for w in WIDGET_INSTANCE_MAP.values() if id(w) not in closing
+    # Root the walk at this session's own live widgets, not every widget in the
+    # process: a cross-session reference shouldn't keep a widget alive, and on a
+    # server with many sessions, walking only this session's widgets keeps the
+    # sweep's cost independent of how many other sessions are open.
+    roots = (
+        WIDGET_INSTANCE_MAP.get(wid)
+        for wid in SESSION_WIDGET_ID_MAP.get(session.id, ())
     )
+    keep = referenced_widgets(
+        w for w in roots if w is not None and id(w) not in closing
+    )
+    kept: list[Widget] = []
     for w in widgets:
-        if id(w) in keep or w.comm is None:  # already closed (e.g. at session end)
+        if is_closed_widget(w):  # already closed (e.g. by this session ending)
             continue
-        model_id = w.model_id
-        w.close()
-        # By closing the widget, we also close the comm, which sets w.comm to
-        # None. Unfortunately, the w.model_id property looks up w.comm.comm_id
-        # at runtime, and some packages like ipyleaflet want to use this id
-        # to manage references between widgets.
-        w.comm = OrphanedShinyComm(model_id)
-        # Assigning a comm has the side-effect of adding back a reference to
-        # the widget instance, so remove it again
-        if WIDGET_INSTANCE_MAP.get(model_id) is w:
-            del WIDGET_INSTANCE_MAP[model_id]
+        if id(w) in keep:
+            kept.append(w)
+            continue
+        close_widget(w)
+    if kept:
+        KEPT_WIDGETS[session.id] = kept
+
+
+def close_widget(w: Widget) -> None:
+    """Close a widget, the same way whether its render was invalidated or its session ended."""
+    model_id = w.model_id
+    w.close()
+    # By closing the widget, we also close the comm, which sets w.comm to
+    # None. Unfortunately, the w.model_id property looks up w.comm.comm_id
+    # at runtime, and some packages like ipyleaflet want to use this id
+    # to manage references between widgets.
+    w.comm = OrphanedShinyComm(model_id)
+    # Assigning a comm has the side-effect of adding back a reference to
+    # the widget instance, so remove it again
+    if WIDGET_INSTANCE_MAP.get(model_id) is w:
+        del WIDGET_INSTANCE_MAP[model_id]
 
 
 def referenced_widgets(roots: Iterable[Widget]) -> set[int]:
@@ -274,7 +319,15 @@ def referenced_widgets(roots: Iterable[Widget]) -> set[int]:
         if isinstance(item, Widget):
             widgets.add(id(item))
             pending.extend(
-                getattr(item, name) for name in item.keys if item.trait_has_value(name)
+                getattr(item, name)
+                for name in item.keys
+                if item.trait_has_value(name)
+                # Only a trait with a `to_json` serializer can carry a widget
+                # reference across the wire (this is how `children`/`layout`/
+                # `style` etc. are tagged); skip others, which also avoids
+                # walking large opaque payloads like GeoJSON `data` or Altair
+                # specs that can't hold widgets anyway.
+                and item.trait_metadata(name, "to_json") is not None
             )
         elif isinstance(item, dict):
             pending.extend(cast(dict[object, object], item).values())
