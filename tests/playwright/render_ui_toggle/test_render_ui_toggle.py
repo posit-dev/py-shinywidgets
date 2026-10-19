@@ -3,13 +3,10 @@ from __future__ import annotations
 from playwright.sync_api import Page, expect
 
 
-# Hide the panel, change an input the hidden widget's
-# render depends on, then show it again. While hidden, the widget's render is
-# invalidated and its old widget closed, but the output doesn't re-render
-# (it's suspended). On re-bind, Shiny replays the output's last client value,
-# which names the now-closed model. The client used to wait the full 30s
-# model-waiter timeout for a model that would never arrive, so the widget
-# never came back and the page looked stuck.
+# Regression test: hiding the panel while an input changes closes the widget
+# without re-rendering; on re-show, Shiny replays the output's last value,
+# which names the closed model. The client used to wait 30s for that model,
+# so the widget never came back.
 def test_widget_reappears_after_hidden_input_change(page: Page, local_app) -> None:
     errors: list[str] = []
     page.on(

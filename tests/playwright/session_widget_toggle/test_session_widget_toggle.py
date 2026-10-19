@@ -4,11 +4,9 @@ from playwright.sync_api import Page, expect
 from tests.playwright.conftest import client_models, expose_manager
 
 
-# A session-owned widget (constructed once, outside
-# any render) whose output is toggled off/on by render.ui. Main never tells
-# the view to go away when Shiny unbinds the output -- the detached view keeps
-# receiving model updates, and after 5 hide/show cycles the model has 6 live
-# views instead of 1. A `shiny:unbound` listener now removes the view.
+# Regression test: a session-owned widget whose output is toggled off/on by
+# render.ui used to keep its detached views alive (6 live views after 5
+# cycles); a `shiny:unbound` listener now removes the view on unbind.
 def test_session_widget_view_count_stays_bounded_across_toggles(
     page: Page, local_app
 ) -> None:

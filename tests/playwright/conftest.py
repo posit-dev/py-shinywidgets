@@ -6,11 +6,10 @@ from playwright.sync_api import Page, Route, expect
 from shiny.run import ShinyAppProc
 
 
-# Shared by the widget-lifecycle Playwright tests: patches the served output.js
-# so the page's OutputManager instance is reachable as window.widgetManager,
-# same pattern as tests/playwright/widget_view_retention. No bundle change is
-# needed: `_models` (keyed by model id) and each model's `.views` dict are
-# already there on the manager/model objects used in production.
+# Patches the served output.js so the page's OutputManager is reachable as
+# window.widgetManager (same pattern as tests/playwright/widget_view_retention).
+# `_models` and each model's `.views` exist in production, so no bundle change
+# is needed.
 def expose_manager(route: Route) -> None:
     response = route.fetch()
     text = response.text()

@@ -6,13 +6,10 @@ from tests.playwright.conftest import client_models, expose_manager
 N = 8
 
 
-# Re-rendering an ipyleaflet map throws an uncaught
-# page error per re-render ("Widget is not attached", from Lumino's detach()
-# throwing when ipyleaflet's own teardown already pulled the node out of the
-# DOM) and leaks the map's view tree (the native Leaflet map, its listeners,
-# and its marker/control child views are never released). Also covers the (already-working-on-main) case that a session-
-# owned child widget shared across container re-renders keeps exactly one
-# live view instead of accumulating one per re-render.
+# Regression test: re-rendering an ipyleaflet map used to throw an uncaught
+# page error per re-render ("Widget is not attached") and leak the old map's
+# view tree. Also asserts a session-owned child widget shared across container
+# re-renders keeps exactly one live view.
 def test_container_rerender_has_no_errors_and_bounded_views(
     page: Page, local_app
 ) -> None:

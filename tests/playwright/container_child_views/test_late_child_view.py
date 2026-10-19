@@ -5,11 +5,7 @@ from tests.playwright.conftest import expose_manager
 
 
 # A child view whose create_view() promise is still pending when its parent
-# view is removed (e.g., dynamic UI removes the output while a container is
-# still instantiating a child view) must be torn down once it resolves, not
-# tracked (and retained) forever. removeViewTree() only sweeps views that are
-# live at sweep time, so the manager marks removed views and lets
-# late-resolving descendants tear themselves down.
+# view is removed must be torn down once it resolves, not tracked forever.
 def test_late_resolving_child_view_is_torn_down(page: Page, local_app) -> None:
     page.route("**/output.js", expose_manager)
     page.goto(local_app.url)
@@ -25,9 +21,8 @@ def test_late_resolving_child_view_is_torn_down(page: Page, local_app) -> None:
             const labelModel = models.find((m) => m && m.get('_model_name') === 'LabelModel');
             const rootView = await Object.values(boxModel.views)[0];
 
-            // Start creating a second view of the label (parented to the
-            // box's view), then remove the box's whole view tree before the
-            // child view's creation promise resolves.
+            // Start a second label view parented to the box's view, then
+            // remove the box's view tree before the creation promise resolves.
             const viewPromise = mgr.create_view(labelModel, { parent: rootView });
             mgr.removeViewTree(rootView);
             const lateView = await viewPromise;
@@ -39,5 +34,9 @@ def test_late_resolving_child_view_is_torn_down(page: Page, local_app) -> None:
         }"""
     )
 
-    assert result["tracked"] is False, "late-resolving child view should not be tracked as live"
-    assert result["disposed"] is True, "late-resolving child view should have been removed"
+    assert result["tracked"] is False, (
+        "late-resolving child view should not be tracked as live"
+    )
+    assert result["disposed"] is True, (
+        "late-resolving child view should have been removed"
+    )

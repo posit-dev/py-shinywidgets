@@ -7,11 +7,9 @@ from shinywidgets import output_widget, render_widget
 app_ui = ui.page_fluid(
     ui.input_checkbox("show", "Show", True),
     ui.output_ui("panel"),
-    # A static (always-present) output_widget so output.js's dependencies load
-    # with the initial page rather than with render.ui's HTML -- otherwise a
-    # comm_open for a render.ui-only widget can arrive before output.js has
-    # registered its message handler and gets silently dropped (a pre-existing,
-    # unrelated bug, out of scope here).
+    # Keeps output.js loaded with the initial page; otherwise a comm_open for
+    # a render.ui-only widget can arrive before output.js registers its
+    # message handler and get silently dropped (a pre-existing bug).
     ui.div(output_widget("unused"), style="display: none;"),
 )
 
