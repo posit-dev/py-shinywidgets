@@ -52,6 +52,20 @@ def test_shinywidgets_module_does_not_use_deprecated_widget_registry() -> None:
         importlib.reload(sw)
 
 
+def test_missing_widget_instance_registry_fails_loudly() -> None:
+    # shinywidgets relies on WIDGET_INSTANCE_MAP being ipywidgets' actual widget
+    # registry (a substitute would silently leak widgets), so importing must fail
+    # loudly, with an informative message, if ipywidgets stops providing it.
+    import ipywidgets.widgets.widget as widget_module
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.delattr(widget_module, "_instances")
+        with pytest.raises(ImportError, match="widget instance registry"):
+            importlib.reload(sw)
+    # Restore a fully-executed module for subsequent tests.
+    importlib.reload(sw)
+
+
 def test_close_does_not_use_deprecated_widget_registry(
     widget_session: Session,
 ) -> None:

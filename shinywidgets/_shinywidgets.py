@@ -8,7 +8,23 @@ from uuid import uuid4
 from weakref import WeakSet
 
 import ipywidgets
-from ipywidgets.widgets.widget import _instances as WIDGET_INSTANCE_MAP
+
+# Registry of all "active" widgets: ipywidgets adds each widget to this dictionary
+# when it's created and removes it when the widget is explicitly closed. We rely on
+# this being the *actual* registry: session cleanup closes the widgets it finds here,
+# and the render-context invalidation handler removes the reference that assigning an
+# OrphanedShinyComm re-adds. A substitute map would silently leak widgets, so fail
+# loudly at import time if ipywidgets ever stops providing it. Import it directly
+# (available since ipywidgets 8.0.3; we require >=8.1) since the deprecated public
+# alias, `Widget.widgets`, warns on every access.
+try:
+    from ipywidgets.widgets.widget import _instances as WIDGET_INSTANCE_MAP
+except ImportError as e:
+    raise ImportError(
+        "shinywidgets requires the ipywidgets widget instance registry "
+        "(ipywidgets.widgets.widget._instances), which should be available in "
+        "ipywidgets>=8.1. Please upgrade ipywidgets."
+    ) from e
 
 from ._render_widget import render_widget
 
@@ -210,11 +226,6 @@ def _decode_comm_buffers(msg: dict[str, Any]) -> dict[str, Any]:
 # Dictionary mapping session id to widget ids
 # The key is the session id, and the value is a list of widget ids
 SESSION_WIDGET_ID_MAP: dict[str, list[str]] = {}
-
-# Dictionary of all "active" widgets (ipywidgets automatically adds to this dictionary as
-# new widgets are created, but they won't get removed until the widget is explictly closed).
-# WIDGET_INSTANCE_MAP is imported directly from ipywidgets (see the imports above) because
-# its deprecated public alias, `Widget.widgets`, warns on every access.
 
 # --------------------------------------
 # Reactivity
