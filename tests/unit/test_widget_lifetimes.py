@@ -16,6 +16,7 @@ from ipywidgets import HTML, Button, VBox
 from ipywidgets.widgets.widget import _instances
 from shiny import App, Session, reactive, ui
 from shiny._connection import MockConnection
+from shiny.express._stub_session import ExpressStubSession
 from shiny.reactive._core import Context
 from shiny.session import session_context
 from shinywidgets import session_lifetime
@@ -378,3 +379,117 @@ def test_session_end_then_late_render_invalidation_does_not_reclose(
         flush()
 
     assert close_calls == 1
+
+
+def test_foreign_session_root_widget_rejected(widget_session: Session) -> None:
+    """
+    A module-level cache shared across sessions is a natural mistake (e.g. trying
+    to avoid rebuilding an expensive chart per visitor). Returning that cached
+    widget directly from another session's render must raise instead of leaving
+    that session's browser waiting forever for a model it will never receive.
+    """
+    other = App(ui.page_fluid(), widget_test_server)._create_session(MockConnection())
+    try:
+        with session_context(other):
+            with session_lifetime():
+                shared = HTML(value="built in another session")
+
+        renderer = render_widget_base()
+
+        @renderer
+        def _() -> HTML:
+            return shared
+
+        with session_context(widget_session):
+            with Context()():
+                with pytest.raises(RuntimeError, match="another Shiny session"):
+                    run(renderer.render())
+    finally:
+        run(other.close())
+
+
+def test_foreign_session_child_widget_rejected(widget_session: Session) -> None:
+    """The same rejection applies when the foreign widget is nested inside a
+    container built fresh in this session's render, not just when it's the
+    returned value itself."""
+    other = App(ui.page_fluid(), widget_test_server)._create_session(MockConnection())
+    try:
+        with session_context(other):
+            with session_lifetime():
+                child = HTML(value="built in another session")
+
+        renderer = render_widget_base()
+
+        @renderer
+        def _() -> VBox:
+            return VBox(children=(child,))
+
+        with session_context(widget_session):
+            with Context()():
+                with pytest.raises(RuntimeError, match="another Shiny session"):
+                    run(renderer.render())
+    finally:
+        run(other.close())
+
+
+def test_closed_child_widget_rejected(widget_session: Session) -> None:
+    """A closed widget nested inside a freshly built container must also be
+    rejected, not just a closed widget returned directly."""
+    with session_context(widget_session):
+        with session_lifetime():
+            child = HTML(value="will be closed")
+        child.close()
+
+        renderer = render_widget_base()
+
+        @renderer
+        def _() -> VBox:
+            return VBox(children=(child,))
+
+        with Context()():
+            with pytest.raises(RuntimeError, match="was closed"):
+                run(renderer.render())
+
+
+def test_same_session_session_lifetime_widget_still_displayable(
+    widget_session: Session,
+) -> None:
+    """A widget cached correctly (constructed inside `session_lifetime()`) and
+    redisplayed by the same session must not be rejected."""
+    with session_context(widget_session):
+        with session_lifetime():
+            cached = HTML(value="cached")
+
+        renderer = render_widget_base()
+
+        @renderer
+        def _() -> HTML:
+            return cached
+
+        with Context()():
+            result = run(renderer.render())
+
+    assert result is not None
+    assert result["model_id"] == cached.model_id
+
+
+def test_stub_session_skips_cross_session_check() -> None:
+    """
+    During Shiny Express's UI-discovery pass, render functions run under a stub
+    session that never registers its widgets anywhere -- the cross-session check
+    must not mistake that for every widget being foreign.
+    """
+    stub = ExpressStubSession()
+    with session_context(stub):
+        widget = HTML(value="declared during express discovery")
+
+        renderer = render_widget_base()
+
+        @renderer
+        def _() -> HTML:
+            return widget
+
+        with Context()():
+            result = asyncio.run(renderer.render())
+
+    assert result is not None

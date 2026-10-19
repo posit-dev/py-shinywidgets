@@ -13,6 +13,7 @@ from shiny.reactive._core import (
     get_current_context,  # pyright: ignore[reportPrivateImportUsage]
 )
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
+from shiny.session import get_current_session
 
 from ._as_widget import as_widget
 from ._comm import OrphanedShinyComm
@@ -97,6 +98,26 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
                 "closed explicitly), so it can't be displayed again. To reuse a widget "
                 "across renders, construct it inside `with session_lifetime():`."
             )
+
+        session = get_current_session()
+        # Outside a real session (the Express UI-discovery pass, or a unit test
+        # that calls _render() directly without a session) there's nothing to
+        # compare the returned widgets' ownership against, so there's nothing to
+        # reject.
+        if session is not None and not session.is_stub_session():
+            # _shinywidgets imports WidgetRenderContext and is_closed_widget from
+            # this module at module scope, so importing it back the same way would
+            # be circular; keep this one function-local instead.
+            from ._shinywidgets import foreign_or_closed_widget
+
+            bad = foreign_or_closed_widget(widget, session.root_scope())
+            if bad is not None:
+                raise RuntimeError(
+                    f"{type(bad).__name__} belongs to another Shiny session (or was "
+                    "closed), so it can't be displayed here. Construct widgets per "
+                    "session."
+                )
+
         widget, fill = set_layout_defaults(widget)
 
         self._widget = cast(WidgetT, widget)
