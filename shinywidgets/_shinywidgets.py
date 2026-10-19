@@ -8,6 +8,7 @@ from typing import (
     Any,
     Iterable,
     Iterator,
+    List,
     Optional,
     Sequence,
     Union,
@@ -25,7 +26,7 @@ DOMWidget = ipywidgets.widgets.DOMWidget
 Layout = ipywidgets.widgets.Layout
 Widget = ipywidgets.widgets.Widget
 _remove_buffers = ipywidgets.widgets.widget._remove_buffers
-from htmltools import TagList
+from htmltools import HTMLDependency, TagList
 from shiny import Session, reactive
 from shiny.http_staticfiles import StaticFiles
 from shiny.reactive._core import (
@@ -36,7 +37,11 @@ from shiny.session import get_current_session, require_active_session, session_c
 from ._as_widget import as_widget
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
-from ._dependencies import bokeh_dependencies, require_dependency
+from ._dependencies import (
+    bokeh_dependency,
+    bokeh_extension_dependencies,
+    require_dependency,
+)
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -124,7 +129,10 @@ def init_shiny_widget(w: Widget):
 
     id = cast(str, w._model_id)
 
-    bokeh_deps = bokeh_dependencies(w)
+    widget_deps: List[Optional[HTMLDependency]] = [widget_dep]
+    if getattr(w, "_model_module", None) == "@bokeh/jupyter_bokeh":
+        widget_deps.append(bokeh_dependency())
+        widget_deps.extend(bokeh_extension_dependencies(w))
 
     # Since the actual ShinyComm() is initialized _after_ the Widget is initialized,
     # and Widget.__init__() includes a call to Widget.open() which opens an unnecessary
@@ -175,7 +183,7 @@ def init_shiny_widget(w: Widget):
             buffers=cast(BufferType, buffers),
             # TODO: should this be hard-coded?
             metadata={"version": __protocol_version__},
-            html_deps=session._process_ui(TagList(*bokeh_deps, widget_dep))["deps"],
+            html_deps=session._process_ui(TagList(*widget_deps))["deps"],
         )
 
     # If the widget initialized in a reactive _output_ context, then cleanup the widget
