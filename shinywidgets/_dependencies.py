@@ -139,12 +139,6 @@ def bokeh_dependency() -> HTMLDependency:
     )
 
 
-def bokeh_dependencies(w: Widget) -> List[HTMLDependency]:
-    if getattr(w, "_model_module", None) != "@bokeh/jupyter_bokeh":
-        return []
-    return [bokeh_dependency(), *bokeh_extension_dependencies(w)]
-
-
 def bokeh_extension_dependencies(w: Widget) -> List[HTMLDependency]:
     """
     Obtain HTMLDependencies for bokeh extension models (e.g., panel's Tabulator)

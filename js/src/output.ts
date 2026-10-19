@@ -421,11 +421,9 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
   const deps = msg.content.html_deps as ModuleDependency[];
   // Dependencies (e.g. BokehJS) must finish loading before the model is
   // constructed below; otherwise require() of the widget's module fails.
-  if (typeof Shiny.renderDependenciesAsync === "function") {
-    await Shiny.renderDependenciesAsync(deps);
-  } else {
-    Shiny.renderDependencies(deps);
-  }
+  // (Shiny.renderDependenciesAsync is available in every supported shiny
+  // version, i.e. py-shiny >= 0.6.1, and Shiny awaits handler promises.)
+  await Shiny.renderDependenciesAsync(deps);
   await loadModuleExports(deps);
   const comm = new ShinyComm(msg.content.comm_id);
   // An explicit model_id survives widget re-creation on the Python side, so
