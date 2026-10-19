@@ -2,6 +2,7 @@ import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { jsonParse } from './utils';
+import { disposeNative, finishDetach, hasAncestor, viewParent } from './views';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
@@ -554,83 +555,4 @@ function errorMessage(err: unknown): string {
 
 interface DestroyMethod {
     destroy(): void;
-}
-
-// `create_child_view` stamps `options.parent` on every child view; `options`
-// is `any` upstream, so read the narrowest shape from it.
-function viewParent(view: WidgetView): WidgetView | undefined {
-  return (view.options as { parent?: WidgetView } | undefined)?.parent;
-}
-
-function hasAncestor(view: WidgetView, root: WidgetView): boolean {
-  for (let parent = viewParent(view); parent; parent = viewParent(parent)) {
-    if (parent === root) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// Built structurally (Lumino's `Message` has no private state) so the bundle
-// doesn't carry a second copy of @lumino/messaging alongside libembed's.
-type LuminoMessage = Parameters<DOMWidgetView['luminoWidget']['processMessage']>[0];
-
-function detachMessage(type: 'before-detach' | 'after-detach'): LuminoMessage {
-  return { type, isConflatable: false, conflate: () => false };
-}
-
-const BEFORE_DETACH_MSG = detachMessage('before-detach');
-const AFTER_DETACH_MSG = detachMessage('after-detach');
-
-// Lumino's `dispose()` calls `detach()` when its "attached" flag is set, and
-// `detach()` throws "Widget is not attached" if the node already left the DOM
-// (e.g. ipyleaflet replaces its container on teardown). Replaying the detach
-// messages clears the flag so `view.remove()` -> `luminoWidget.dispose()` can
-// finish cleanly.
-function finishDetach(view: WidgetView): void {
-  if (!('luminoWidget' in view)) {
-    return;
-  }
-  const w = (view as DOMWidgetView).luminoWidget;
-  if (w && w.parent === null && w.isAttached && !w.node.isConnected) {
-    w.processMessage(BEFORE_DETACH_MSG);
-    w.processMessage(AFTER_DETACH_MSG);
-  }
-}
-
-// ipyleaflet's LeafletMapView stores the native Leaflet map as `view.obj`
-// (loosely typed: Leaflet isn't a dependency of this bundle) and never
-// disposes it on remove, so its resize timer and event handlers keep firing
-// -- and touching `model.views` -- after the model has closed.
-interface NativeLeafletMap {
-  _sizeTimer?: ReturnType<typeof setTimeout>;
-  off(events?: string): void;
-  remove(): void;
-}
-
-function disposeNative(view: WidgetView): void {
-  const tracked = view as WidgetView & {
-    obj?: NativeLeafletMap;
-    __shinywidgetsNativeDisposed?: boolean;
-  };
-  const map = tracked.obj;
-  if (
-    tracked.__shinywidgetsNativeDisposed ||
-    !view.model ||
-    view.model.get('_view_name') !== 'LeafletMapView' ||
-    !map
-  ) {
-    return;
-  }
-  tracked.__shinywidgetsNativeDisposed = true;
-  clearTimeout(map._sizeTimer);
-  map.off('moveend movestart zoomend');
-  view.once('remove', () => {
-    try {
-      map.remove();
-    } finally {
-      clearTimeout(map._sizeTimer);
-      map.off();
-    }
-  });
 }
