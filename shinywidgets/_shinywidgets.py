@@ -9,23 +9,6 @@ from weakref import WeakSet
 
 import ipywidgets
 
-# Registry of all "active" widgets: ipywidgets adds each widget to this dictionary
-# when it's created and removes it when the widget is explicitly closed. We rely on
-# this being the *actual* registry: session cleanup closes the widgets it finds here,
-# and the render-context invalidation handler removes the reference that assigning an
-# OrphanedShinyComm re-adds. A substitute map would silently leak widgets, so fail
-# loudly at import time if ipywidgets ever stops providing it. Import it directly
-# (available since ipywidgets 8.0.3; we require >=8.1) since the deprecated public
-# alias, `Widget.widgets`, warns on every access.
-try:
-    from ipywidgets.widgets.widget import _instances as WIDGET_INSTANCE_MAP
-except ImportError as e:
-    raise ImportError(
-        "shinywidgets requires the ipywidgets widget instance registry "
-        "(ipywidgets.widgets.widget._instances), which should be available in "
-        "ipywidgets>=8.1. Please upgrade ipywidgets."
-    ) from e
-
 from ._render_widget import render_widget
 
 __protocol_version__ = ipywidgets._version.__protocol_version__
@@ -47,6 +30,7 @@ from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
 from ._dependencies import require_dependency
 from ._render_widget_base import WidgetRenderContext
 from ._utils import package_dir
+from ._widget_registry import WIDGET_INSTANCE_MAP
 
 __all__ = (
     "register_widget",
