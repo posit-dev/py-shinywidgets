@@ -111,22 +111,10 @@ class ShinyComm:
         self._closed = True
         data = self._closed_data if data is None else data
         if self.comm_manager.active:
+            # N.B. the send may be suppressed at send time if a newer comm has
+            # re-registered this id by then (see _publish_msg).
             self._publish_msg(
-                "shinywidgets_comm_close",
-                data=data,
-                metadata=metadata,
-                buffers=buffers,
-                # The close is sent on_flushed; by then, a replacement widget
-                # may have re-registered this id (e.g., a widget re-created
-                # with an explicit model_id). The id would then belong to the
-                # newer comm, and a close would tell the browser to tear down
-                # the *new* model, so suppress the send when (and only when)
-                # a different comm owns the id at send time. (N.B. this comm
-                # unregisters itself below, before the send happens, so an
-                # unregistered id must not suppress the send.)
-                send_if=lambda: (
-                    self.comm_manager.comms.get(self.comm_id) in (None, self)
-                ),
+                "shinywidgets_comm_close", data=data, metadata=metadata, buffers=buffers
             )
         if not deleting:
             # If deleting, the comm can't be unregistered
@@ -146,7 +134,6 @@ class ShinyComm:
         data: DataType = None,
         metadata: MetadataType = None,
         buffers: BufferType = None,
-        send_if: Optional[Callable[[], bool]] = None,
         **keys: object,
     ) -> None:
         data = {} if data is None else data
@@ -189,8 +176,18 @@ class ShinyComm:
         msg_txt = json_packer(msg)
 
         async def _send():
-            if send_if is not None and not send_if():
-                return
+            if msg_type == "shinywidgets_comm_close":
+                # The close is sent on_flushed; by then, a replacement widget
+                # may have re-registered this id (e.g., a widget re-created
+                # with an explicit model_id). The id would then belong to the
+                # newer comm, and a close would tell the browser to tear down
+                # the *new* model, so suppress the send when (and only when) a
+                # different comm owns the id at send time. (N.B. close()
+                # unregisters this comm before the send happens, so an
+                # unregistered id must not suppress the send.)
+                owner = self.comm_manager.comms.get(self.comm_id)
+                if owner is not None and owner is not self:
+                    return
             await session.send_custom_message(msg_type, msg_txt)  # type: ignore
 
         # N.B., if messages are sent immediately, run_coro_sync() could fail with
