@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import copy
 import json
 import os
 from base64 import b64decode
-from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Optional, Sequence, Union, cast
+from typing import Any, Optional, Sequence, Union, cast
 from uuid import uuid4
 from weakref import WeakSet
 
 import ipywidgets
+from ipywidgets.widgets.widget import _instances as WIDGET_INSTANCE_MAP
 
 from ._render_widget import render_widget
 
@@ -37,11 +36,6 @@ __all__ = (
     "register_widget",
     "reactive_read",
 )
-
-if TYPE_CHECKING:
-    from typing import TypeGuard
-
-    from traitlets.traitlets import Instance
 
 
 # --------------------------------------------------------------------------------------------
@@ -134,17 +128,16 @@ def init_shiny_widget(w: Widget):
         state, buffer_paths, buffers = _remove_buffers(w.get_state())
 
         # Initialize the comm -- this sends widget state to the frontend
-        with widget_comm_patch():
-            w.comm = ShinyComm(
-                comm_id=id,
-                comm_manager=COMM_MANAGER,
-                target_name="jupyter.widget",
-                data={"state": state, "buffer_paths": buffer_paths},
-                buffers=cast(BufferType, buffers),
-                # TODO: should this be hard-coded?
-                metadata={"version": __protocol_version__},
-                html_deps=session._process_ui(TagList(widget_dep))["deps"],
-            )
+        w.comm = ShinyComm(
+            comm_id=id,
+            comm_manager=COMM_MANAGER,
+            target_name="jupyter.widget",
+            data={"state": state, "buffer_paths": buffer_paths},
+            buffers=cast(BufferType, buffers),
+            # TODO: should this be hard-coded?
+            metadata={"version": __protocol_version__},
+            html_deps=session._process_ui(TagList(widget_dep))["deps"],
+        )
 
         _open_shiny_comm.destroy()
 
@@ -219,8 +212,9 @@ def _decode_comm_buffers(msg: dict[str, Any]) -> dict[str, Any]:
 SESSION_WIDGET_ID_MAP: dict[str, list[str]] = {}
 
 # Dictionary of all "active" widgets (ipywidgets automatically adds to this dictionary as
-# new widgets are created, but they won't get removed until the widget is explictly closed)
-WIDGET_INSTANCE_MAP = cast(dict[str, Widget], Widget.widgets)
+# new widgets are created, but they won't get removed until the widget is explictly closed).
+# WIDGET_INSTANCE_MAP is imported directly from ipywidgets (see the imports above) because
+# its deprecated public alias, `Widget.widgets`, warns on every access.
 
 # --------------------------------------
 # Reactivity
@@ -291,34 +285,6 @@ def register_widget(
         return w
 
     return w
-
-
-# Previous versions of ipywidgets (< 8.0.5) had
-#   `Widget.comm = Instance('ipykernel.comm.Comm')`
-# which meant we'd get a runtime error when setting `Widget.comm = ShinyComm()`.
-# In more recent versions, this is no longer necessary since they've (correctly)
-# changed comm from an Instance() to Any().
-# https://github.com/jupyter-widgets/ipywidgets/pull/3533/files#diff-522bb5e7695975cba0199c6a3d6df5be827035f4dc18ed6da22ac216b5615c77R482
-@contextmanager
-def widget_comm_patch():
-    if not is_traitlet_instance(Widget.comm):
-        yield
-        return
-
-    comm_klass = copy.copy(Widget.comm.klass)
-    Widget.comm.klass = object
-
-    yield
-
-    Widget.comm.klass = comm_klass
-
-
-def is_traitlet_instance(x: object) -> "TypeGuard[Instance[Any]]":
-    try:
-        from traitlets.traitlets import Instance
-    except ImportError:
-        return False
-    return isinstance(x, Instance)
 
 
 # It doesn't, at the moment, seem feasible to establish a comm with statically rendered widgets,
