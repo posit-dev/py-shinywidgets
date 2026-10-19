@@ -57,8 +57,6 @@ class ShinyComm:
         self.comm_id = comm_id
         self.comm_manager = comm_manager
         self.target_name = target_name
-        # Messages always go through the session that opened the comm, even if
-        # another session happens to be active when a trait changes.
         self.session = session
         self.open(data=data, metadata=metadata, buffers=buffers, **keys)
 

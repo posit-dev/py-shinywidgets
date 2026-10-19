@@ -205,8 +205,6 @@ def test_messages_go_to_the_session_that_opened_the_comm():
     )
     owner._flush_handlers.clear()
 
-    # No ambient session lookup: the comm publishes through its owner regardless
-    # of which session (if any) is current.
     c.send(data={"x": 1})
 
     assert len(owner._flushed_handlers) == 1
