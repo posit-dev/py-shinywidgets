@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Re-showing a widget output hidden by `@render.ui` (or removed with `remove_ui()` and re-inserted) no longer hangs for 30 seconds when the widget changed while hidden. (#260)
 * Outputs removed by dynamic UI now release their widget views instead of leaking one per hide/show cycle. (#260)
 * Re-rendering an ipyleaflet map no longer throws uncaught page errors or leaks the old map's listeners and child views. (#260)
+* A child view that finishes creating after its parent was removed (e.g., dynamic UI removed the output mid-render) is now torn down instead of leaking. (#260)
 
 ## [0.8.2] - 2026-10-15
 

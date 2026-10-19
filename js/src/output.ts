@@ -32,12 +32,31 @@ class OutputManager extends HTMLManager {
   // a view's descendants, not just the view itself.
   private _liveViews = new Set<WidgetView>();
 
+  // Views removed by removeViewTree(). A late-resolving view (one whose
+  // create_view() promise settled after its ancestor was removed) checks this
+  // to tear itself down instead of being tracked forever. Weak so removed
+  // views can still be garbage collected.
+  private _removedViews = new WeakSet<WidgetView>();
+
   create_view<VT extends DOMWidgetView = DOMWidgetView>(model: DOMWidgetModel, options?: any): Promise<VT>;
   create_view<VT extends WidgetView = WidgetView>(model: WidgetModel, options?: any): Promise<VT>;
   create_view(model: WidgetModel, options?: any): Promise<WidgetView> {
     const viewPromise = super.create_view(model, options);
     viewPromise.then(
       (view) => {
+        // View creation is async, so an ancestor may have been removed while
+        // this view was still being created (e.g. dynamic UI removed the
+        // output while a container was awaiting a child view). removeViewTree()
+        // only sweeps views that were live at the time, so tear the late view
+        // down here instead of tracking (and retaining) it forever.
+        if (this._hasRemovedAncestor(view)) {
+          try {
+            this._teardownView(view);
+          } catch (err) {
+            console.error('Error removing orphaned widget view:', err);
+          }
+          return;
+        }
         this._liveViews.add(view);
         view.once('remove', () => this._liveViews.delete(view));
       },
@@ -57,9 +76,7 @@ class OutputManager extends HTMLManager {
     const errors: unknown[] = [];
     const teardown = (view: WidgetView) => {
       try {
-        disposeNative(view);
-        finishDetach(view);
-        view.remove();
+        this._teardownView(view);
       } catch (err) {
         errors.push(err);
       }
@@ -73,6 +90,24 @@ class OutputManager extends HTMLManager {
     if (errors.length) {
       console.error('Errors while removing widget view tree:', errors);
     }
+  }
+
+  private _teardownView(view: WidgetView): void {
+    // Mark before remove() so any descendants that resolve later (from this
+    // view's own pending create_child_view calls) also tear themselves down.
+    this._removedViews.add(view);
+    disposeNative(view);
+    finishDetach(view);
+    view.remove();
+  }
+
+  private _hasRemovedAncestor(view: WidgetView): boolean {
+    for (let parent = viewParent(view); parent; parent = viewParent(parent)) {
+      if (this._removedViews.has(parent)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   async get_model(model_id: string): Promise<WidgetModel> {
@@ -393,6 +428,11 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_open", (msg_txt) => {
   const msg = jsonParse(msg_txt);
   Shiny.renderDependencies(msg.content.html_deps);
   const comm = new ShinyComm(msg.content.comm_id);
+  // An explicit model_id survives widget re-creation on the Python side, so
+  // an id can be opened again after being closed. The reopened model is
+  // live, so it must not stay marked closed or renderValue() would render
+  // nothing for it.
+  closedModels.delete(msg.content.comm_id);
   manager.handle_comm_open(comm, msg);
 });
 
