@@ -6,6 +6,7 @@ from base64 import b64decode
 from contextlib import contextmanager
 from typing import (
     Any,
+    Dict,
     Iterable,
     Iterator,
     List,
@@ -35,13 +36,10 @@ from shiny.reactive._core import (
 from shiny.session import get_current_session, require_active_session, session_context
 
 from ._as_widget import as_widget
+from ._bokeh import bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
-from ._dependencies import (
-    bokeh_dependency,
-    bokeh_extension_dependencies,
-    require_dependency,
-)
+from ._dependencies import require_dependency
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -58,33 +56,6 @@ __all__ = (
 # session). Note that when the comm is initialized, it also sends the initial state of
 # the widget.
 # --------------------------------------------------------------------------------------------
-def guard_widget_close(w: Widget) -> None:
-    """
-    Make a widget's close() safe to call more than once.
-
-    jupyter_bokeh's BokehModel.close() removes its document change callback
-    unconditionally, so a second close() raises KeyError (and its __del__
-    calls close() as well). Wrap close() so only the first call runs, and so
-    a close notification arriving while close() is running can't re-enter it.
-    """
-    close = w.close
-    closing = False
-    closed = False
-
-    def close_once() -> None:
-        nonlocal closing, closed
-        if closing or closed:
-            return
-        closing = True
-        try:
-            close()
-            closed = True
-        finally:
-            closing = False
-
-    w.close = close_once  # type: ignore[method-assign]
-
-
 def init_shiny_widget(w: Widget):
     session = get_current_session()
     if session is None:
@@ -157,9 +128,19 @@ def init_shiny_widget(w: Widget):
     id = cast(str, w._model_id)
 
     widget_deps: List[Optional[HTMLDependency]] = [widget_dep]
+    open_keys: Dict[str, object] = {}
     if getattr(w, "_model_module", None) == "@bokeh/jupyter_bokeh":
         widget_deps.append(bokeh_dependency())
-        widget_deps.extend(bokeh_extension_dependencies(w))
+        ext = bokeh_extension_assets(w, session)
+        widget_deps.extend(ext.deps)
+        if ext.module_urls or ext.module_exports:
+            # ES modules load via dynamic import() client-side (default
+            # exports get assigned to globals); they can't ride the
+            # dependency channel since import() must be awaited.
+            open_keys["modules"] = {
+                "urls": ext.module_urls,
+                "exports": ext.module_exports,
+            }
         # BokehModel.close() is not idempotent; guard against double close.
         guard_widget_close(w)
 
@@ -213,6 +194,7 @@ def init_shiny_widget(w: Widget):
             # TODO: should this be hard-coded?
             metadata={"version": __protocol_version__},
             html_deps=session._process_ui(TagList(*widget_deps))["deps"],
+            **open_keys,
         )
 
     # If the widget initialized in a reactive _output_ context, then cleanup the widget

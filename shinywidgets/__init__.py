@@ -16,7 +16,7 @@ except ImportError:
         __version__ = "0+unknown"
 
 from ._as_widget import as_widget
-from ._dependencies import bokeh_dependency
+from ._bokeh import bokeh_dependency
 from ._output_widget import output_widget
 from ._render_widget import (
     render_altair,

@@ -415,8 +415,18 @@ if (taskQueue) {
 
 type HtmlDependency = NonNullable<
   Parameters<typeof Shiny.renderDependenciesAsync>[0]
->[number] & {
-  shinywidgets_module_exports?: Readonly<Record<string, string>>;
+>[number];
+
+// ES modules referenced by widget models (e.g., Panel's Perspective).
+// They can't ride the dependency channel: their import() must be awaited
+// (models consult the globals at render time), and only import() exposes
+// a module's exports.
+type ModuleAssets = {
+  // Side-effect-only modules to import.
+  urls?: string[];
+  // Global name -> module URL; the module's default export is assigned to
+  // the global.
+  exports?: Record<string, string>;
 };
 
 // Initialize the comm and model when a new widget is created
@@ -428,7 +438,7 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
   // Dependencies (e.g. BokehJS) must finish loading before the model is
   // constructed below; otherwise require() of the widget's module fails.
   await Shiny.renderDependenciesAsync(deps);
-  await loadModuleExports(deps);
+  await loadModules(msg.content.modules as ModuleAssets | undefined);
   const comm = new ShinyComm(msg.content.comm_id);
   // An explicit model_id survives widget re-creation on the Python side, so
   // an id can reopen after being closed; it must not stay marked closed or
@@ -547,16 +557,14 @@ function errorMessage(err: unknown): string {
   return String(err);
 }
 
-async function loadModuleExports(deps: readonly HtmlDependency[]): Promise<void> {
+async function loadModules(modules?: ModuleAssets): Promise<void> {
+  if (!modules) return;
+  const importUrl = (url: string) =>
+    import(/* webpackIgnore: true */ new URL(url, document.baseURI).href);
+  await Promise.all((modules.urls ?? []).map(importUrl));
   const globals = window as unknown as Record<string, unknown>;
-  for (const dependency of deps) {
-    for (const [name, url] of Object.entries(
-      dependency.shinywidgets_module_exports ?? {}
-    )) {
-      const module: { default: unknown } = await import(
-        /* webpackIgnore: true */ new URL(url, document.baseURI).href
-      );
-      globals[name] = module.default;
-    }
+  for (const [name, url] of Object.entries(modules.exports ?? {})) {
+    const module = (await importUrl(url)) as { default: unknown };
+    globals[name] = module.default;
   }
 }
