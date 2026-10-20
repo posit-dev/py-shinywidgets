@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added support for [HoloViews](https://holoviews.org) and [hvPlot](https://hvplot.holoviz.org) objects via the new `@render_holoviews` decorator. (#87, #253, #250)
 * Added `session_lifetime()`, a context manager for constructing widgets that should outlive the current render (for example, one cached widget per dataset that is displayed again when the user switches back). Widgets constructed while an output renders are still closed when that render is invalidated; returning such a closed widget from a later render now raises an error that points to `session_lifetime()` instead of timing out in the browser. (#258)
 
+### Improvements
+
+* `@render_plotly()` (and `@render_widget()`) now warn when given a plotly figure with frames (i.e., an animation), since `FigureWidget` doesn't support frames and silently drops them. The warning points to the `@render.ui` + `fig.to_html()` workaround. (#156)
+
 ### Bug fixes
 
 * Fixed a leak where the `Layout`/`Style` models that ipywidgets creates lazily while serializing a widget were never closed: every re-render of an output leaked a few models on the server and in the browser for the rest of the session. They now share the cleanup of the widget that created them, unless a live widget still references them. (#258)
