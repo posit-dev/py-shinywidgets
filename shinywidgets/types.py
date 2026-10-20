@@ -9,6 +9,11 @@ render functions, for annotating render functions::
     @render_plotly
     def plot() -> PlotlyValue: ...
 
+Every ``*Value`` alias also includes ``ipywidgets.Widget``, since
+:func:`~shinywidgets.as_widget` passes any widget through unchanged -- so a
+render function may always return a pre-built widget (e.g., the widget class
+the renderer would have coerced to) instead of the package-specific object.
+
 The corresponding packages (plotly, altair, bokeh, ...) are all optional
 dependencies, so aliases that reference their types are defined for type
 checkers under ``TYPE_CHECKING`` and resolved lazily at runtime via module
@@ -18,6 +23,8 @@ the package installed -- pay for the import.
 
 import importlib
 from typing import TYPE_CHECKING, Any, Dict, Tuple, Union
+
+from ipywidgets import Widget
 
 if TYPE_CHECKING:
     import altair as alt
@@ -56,36 +63,53 @@ if TYPE_CHECKING:
     `PlotlyConfig`).
     """
 
-    PlotlyValue = PlotlyFigure
-    """Alias for `PlotlyFigure`, named consistently with the other ``*Value`` aliases."""
+    PlotlyValue = Union[PlotlyFigure, Widget]
+    """
+    The supported return type of a ``@render_plotly`` render function: a
+    `PlotlyFigure`, or any ``ipywidgets.Widget`` (e.g., a pre-built
+    ``plotly.graph_objects.FigureWidget``).
+    """
 
-    AltairValue = Union[alt.TopLevelMixin, alt.JupyterChart]
+    AltairValue = Union[alt.TopLevelMixin, Widget]
     """
     The supported return type of a ``@render_altair`` render function: any
-    altair top-level chart (``alt.Chart``, ``alt.LayerChart``, ...), or an
-    already-coerced ``alt.JupyterChart``.
+    altair top-level chart (``alt.Chart``, ``alt.LayerChart``, ...), or any
+    ``ipywidgets.Widget`` (e.g., an already-coerced ``alt.JupyterChart``).
     """
 
-    BokehValue = LayoutDOM
+    BokehValue = Union[LayoutDOM, Widget]
     """
     The supported return type of a ``@render_bokeh`` render function: any bokeh
-    layout/model (e.g., a ``bokeh.plotting.figure``).
+    layout/model (e.g., a ``bokeh.plotting.figure``), or any
+    ``ipywidgets.Widget`` (e.g., an already-coerced ``jupyter_bokeh.BokehModel``).
     """
 
-    HoloviewsValue = Dimensioned
+    HoloviewsValue = Union[Dimensioned, Widget]
     """
     The supported return type of a ``@render_holoviews`` render function: a
-    holoviews element or layout (hvplot outputs included).
+    holoviews element or layout (hvplot outputs included), or any
+    ``ipywidgets.Widget``.
     """
 
-    MaplibreValue = Map
-    """The supported return type of a ``@render_maplibre`` render function."""
+    MaplibreValue = Union[Map, Widget]
+    """
+    The supported return type of a ``@render_maplibre`` render function: a
+    ``maplibre.Map``, or any ``ipywidgets.Widget`` (e.g., an already-coerced
+    ``maplibre.ipywidget.MapWidget``).
+    """
 
-    PanelValue = Viewable
-    """The supported return type of a ``@render_panel`` render function."""
+    PanelValue = Union[Viewable, Widget]
+    """
+    The supported return type of a ``@render_panel`` render function: a panel
+    pane or viewable, or any ``ipywidgets.Widget``.
+    """
 
-    PydeckValue = Deck
-    """The supported return type of a ``@render_pydeck`` render function."""
+    PydeckValue = Union[Deck, Widget]
+    """
+    The supported return type of a ``@render_pydeck`` render function: a
+    ``pydeck.Deck``, or any ``ipywidgets.Widget`` (e.g., an already-coerced
+    ``pydeck.widget.DeckGLWidget``).
+    """
 
 
 def _require(alias: str, module: str) -> Any:
@@ -97,20 +121,22 @@ def _require(alias: str, module: str) -> Any:
 
 
 def __getattr__(name: str) -> object:
-    if name in ("PlotlyFigure", "PlotlyValue"):
+    if name == "PlotlyFigure":
         go = _require(name, "plotly.graph_objects")
         return Union[go.Figure, Tuple[go.Figure, PlotlyConfig]]
+    if name == "PlotlyValue":
+        go = _require(name, "plotly.graph_objects")
+        return Union[go.Figure, Tuple[go.Figure, PlotlyConfig], Widget]
     if name == "AltairValue":
-        alt = _require(name, "altair")
-        return Union[alt.TopLevelMixin, alt.JupyterChart]
+        return Union[_require(name, "altair").TopLevelMixin, Widget]
     if name == "BokehValue":
-        return _require(name, "bokeh.models").LayoutDOM
+        return Union[_require(name, "bokeh.models").LayoutDOM, Widget]
     if name == "HoloviewsValue":
-        return _require(name, "holoviews.core.dimension").Dimensioned
+        return Union[_require(name, "holoviews.core.dimension").Dimensioned, Widget]
     if name == "MaplibreValue":
-        return _require(name, "maplibre.map").Map
+        return Union[_require(name, "maplibre.map").Map, Widget]
     if name == "PanelValue":
-        return _require(name, "panel.viewable").Viewable
+        return Union[_require(name, "panel.viewable").Viewable, Widget]
     if name == "PydeckValue":
-        return _require(name, "pydeck").Deck
+        return Union[_require(name, "pydeck").Deck, Widget]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -26,12 +26,18 @@ def test_plotly_config_alias() -> None:
 def test_plotly_figure_alias() -> None:
     pytest.importorskip("plotly")
     import plotly.graph_objects as go
+    from ipywidgets import Widget
     from shinywidgets.types import PlotlyFigure, PlotlyValue
 
-    for alias in (PlotlyFigure, PlotlyValue):
-        figure, tuple_of = typing.get_args(alias)
-        assert figure is go.Figure
-        assert typing.get_args(tuple_of)[0] is go.Figure
+    figure, tuple_of = typing.get_args(PlotlyFigure)
+    assert figure is go.Figure
+    assert typing.get_args(tuple_of)[0] is go.Figure
+
+    # PlotlyValue additionally accepts any ipywidgets.Widget
+    *plotly_figure_args, widget = typing.get_args(PlotlyValue)
+    assert tuple(plotly_figure_args) == typing.get_args(PlotlyFigure)
+    assert widget is Widget
+    assert issubclass(go.FigureWidget, Widget)
 
 
 def test_altair_value_alias() -> None:
@@ -39,19 +45,20 @@ def test_altair_value_alias() -> None:
     import altair as alt
     from shinywidgets.types import AltairValue
 
-    top_level, jupyter_chart = typing.get_args(AltairValue)
+    top_level, widget = typing.get_args(AltairValue)
     assert issubclass(alt.Chart, top_level)
     assert issubclass(alt.ConcatChart, top_level)
-    assert jupyter_chart is alt.JupyterChart
+    assert issubclass(alt.JupyterChart, widget)
 
 
 def test_bokeh_value_alias() -> None:
     pytest.importorskip("bokeh")
     from bokeh.models import LayoutDOM
     from bokeh.plotting import figure
+    from ipywidgets import Widget
     from shinywidgets.types import BokehValue
 
-    assert BokehValue is LayoutDOM
+    assert typing.get_args(BokehValue) == (LayoutDOM, Widget)
     assert isinstance(figure(), BokehValue)
 
 
@@ -59,34 +66,38 @@ def test_holoviews_value_alias() -> None:
     pytest.importorskip("holoviews")
     import holoviews as hv
     from holoviews.core.dimension import Dimensioned
+    from ipywidgets import Widget
     from shinywidgets.types import HoloviewsValue
 
-    assert HoloviewsValue is Dimensioned
+    assert typing.get_args(HoloviewsValue) == (Dimensioned, Widget)
     assert isinstance(hv.Curve([1, 2, 3]), HoloviewsValue)
 
 
 def test_maplibre_value_alias() -> None:
     pytest.importorskip("maplibre")
+    from ipywidgets import Widget
     from maplibre.map import Map
     from shinywidgets.types import MaplibreValue
 
-    assert MaplibreValue is Map
+    assert typing.get_args(MaplibreValue) == (Map, Widget)
 
 
 def test_panel_value_alias() -> None:
     pytest.importorskip("panel")
+    from ipywidgets import Widget
     from panel.viewable import Viewable
     from shinywidgets.types import PanelValue
 
-    assert PanelValue is Viewable
+    assert typing.get_args(PanelValue) == (Viewable, Widget)
 
 
 def test_pydeck_value_alias() -> None:
     pytest.importorskip("pydeck")
     import pydeck
+    from ipywidgets import Widget
     from shinywidgets.types import PydeckValue
 
-    assert PydeckValue is pydeck.Deck
+    assert typing.get_args(PydeckValue) == (pydeck.Deck, Widget)
 
 
 @pytest.mark.parametrize("name", LAZY_ALIASES)
