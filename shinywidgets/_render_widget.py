@@ -20,7 +20,7 @@ __all__ = (
     "render_widget",
     "render_altair",
     "render_bokeh",
-    "render_hvplot",
+    "render_holoviews",
     "render_maplibre",
     "render_panel",
     "render_plotly",
@@ -55,7 +55,7 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
         return res
 
 
-class render_hvplot(render_widget_base[ValueT, BokehModel]):
+class render_holoviews(render_widget_base[ValueT, BokehModel]):
     def auto_output_ui(self) -> Tag:
         res = super().auto_output_ui()
         res.children.append(bokeh_dependency())

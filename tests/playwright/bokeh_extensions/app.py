@@ -4,7 +4,7 @@ import hvplot.pandas  # noqa: F401
 import pandas as pd
 import panel as pn
 from shiny import App, Inputs, Outputs, Session, ui
-from shinywidgets import output_widget, render_hvplot, render_panel
+from shinywidgets import output_widget, render_holoviews, render_panel
 
 df = pd.DataFrame(
     {
@@ -34,7 +34,7 @@ def server(input: Inputs, output: Outputs, session: Session) -> None:
         )
 
     @output(id="hvplot")
-    @render_hvplot
+    @render_holoviews
     def _():
         return plot_df.hvplot.scatter(x="x", y="y")
 

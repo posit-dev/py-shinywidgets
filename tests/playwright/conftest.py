@@ -88,7 +88,9 @@ CANVAS_HAS_PIXELS_JS = """(sel) => {
     if (!ctx || !c.width || !c.height) continue;
     const d = ctx.getImageData(0, 0, c.width, c.height).data;
     let nonblank = 0;
-    for (let i = 0; i < d.length; i += 4 * 397) {
+    // Fine stride: sparse line plots may only have a few hundred non-white
+    // pixels total, so coarse sampling can miss them entirely
+    for (let i = 0; i < d.length; i += 4 * 53) {
       if (d[i + 3] > 0 && (d[i] < 250 || d[i + 1] < 250 || d[i + 2] < 250)) nonblank++;
     }
     if (nonblank > 10) return true;

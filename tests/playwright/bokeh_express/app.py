@@ -4,7 +4,7 @@ import panel as pn
 from bokeh.plotting import figure
 from holoviews import Scatter
 from shiny.express import ui
-from shinywidgets import render_bokeh, render_hvplot, render_panel
+from shinywidgets import render_bokeh, render_holoviews, render_panel
 
 ui.h2("Bokeh outputs")
 
@@ -21,6 +21,6 @@ def table() -> pn.widgets.Tabulator:
     return pn.widgets.Tabulator(pd.DataFrame({"x": [1, 2, 3]}))
 
 
-@render_hvplot
+@render_holoviews
 def scatter() -> Scatter:
     return pd.DataFrame({"x": [1, 2, 3], "y": [1, 4, 9]}).hvplot.scatter(x="x", y="y")

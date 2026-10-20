@@ -1724,7 +1724,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess" },
+    { name = "ptyprocess", marker = "(python_full_version < '3.11' and sys_platform == 'emscripten') or (python_full_version < '3.11' and sys_platform == 'win32') or (sys_platform != 'emscripten' and sys_platform != 'win32')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [
@@ -2317,7 +2317,7 @@ name = "questionary"
 version = "2.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "prompt-toolkit" },
+    { name = "prompt-toolkit", marker = "python_full_version < '3.11' or sys_platform != 'emscripten'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f6/45/eafb0bba0f9988f6a2520f9ca2df2c82ddfa8d67c95d6625452e97b204a5/questionary-2.1.1.tar.gz", hash = "sha256:3d7e980292bb0107abaa79c68dd3eee3c561b83a0f89ae482860b181c8bd412d", size = 25845, upload-time = "2025-08-28T19:00:20.851Z" }
 wheels = [
@@ -2570,6 +2570,7 @@ dev = [
     { name = "altair" },
     { name = "bokeh" },
     { name = "coverage" },
+    { name = "holoviews" },
     { name = "hvplot" },
     { name = "ipyleaflet" },
     { name = "jupyter-bokeh" },
@@ -2588,6 +2589,7 @@ test = [
     { name = "altair" },
     { name = "bokeh" },
     { name = "coverage" },
+    { name = "holoviews" },
     { name = "hvplot" },
     { name = "ipyleaflet" },
     { name = "jupyter-bokeh" },
@@ -2607,6 +2609,7 @@ dev = [
     { name = "altair" },
     { name = "bokeh" },
     { name = "coverage" },
+    { name = "holoviews" },
     { name = "hvplot" },
     { name = "ipyleaflet" },
     { name = "jupyter-bokeh" },
@@ -2625,6 +2628,7 @@ test = [
     { name = "altair" },
     { name = "bokeh" },
     { name = "coverage" },
+    { name = "holoviews" },
     { name = "hvplot" },
     { name = "ipyleaflet" },
     { name = "jupyter-bokeh" },
@@ -2648,6 +2652,8 @@ requires-dist = [
     { name = "bokeh", marker = "extra == 'test'" },
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7" },
     { name = "coverage", marker = "extra == 'test'", specifier = ">=7" },
+    { name = "holoviews", marker = "extra == 'dev'" },
+    { name = "holoviews", marker = "extra == 'test'" },
     { name = "hvplot", marker = "extra == 'dev'" },
     { name = "hvplot", marker = "extra == 'test'" },
     { name = "ipyleaflet", marker = "extra == 'dev'", specifier = ">=0.20.0" },
@@ -2685,6 +2691,7 @@ dev = [
     { name = "altair" },
     { name = "bokeh" },
     { name = "coverage", specifier = ">=7" },
+    { name = "holoviews" },
     { name = "hvplot" },
     { name = "ipyleaflet", specifier = ">=0.20.0" },
     { name = "jupyter-bokeh" },
@@ -2703,6 +2710,7 @@ test = [
     { name = "altair" },
     { name = "bokeh" },
     { name = "coverage", specifier = ">=7" },
+    { name = "holoviews" },
     { name = "hvplot" },
     { name = "ipyleaflet", specifier = ">=0.20.0" },
     { name = "jupyter-bokeh" },
@@ -3003,8 +3011,8 @@ name = "uvicorn"
 version = "0.44.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "click" },
-    { name = "h11" },
+    { name = "click", marker = "python_full_version < '3.11' or sys_platform != 'emscripten'" },
+    { name = "h11", marker = "python_full_version < '3.11' or sys_platform != 'emscripten'" },
     { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/5e/da/6eee1ff8b6cbeed47eeb5229749168e81eb4b7b999a1a15a7176e51410c9/uvicorn-0.44.0.tar.gz", hash = "sha256:6c942071b68f07e178264b9152f1f16dfac5da85880c4ce06366a96d70d4f31e", size = 86947, upload-time = "2026-04-06T09:23:22.826Z" }
@@ -3033,7 +3041,7 @@ name = "watchfiles"
 version = "1.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "anyio" },
+    { name = "anyio", marker = "python_full_version < '3.11' or sys_platform != 'emscripten'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c2/c9/8869df9b2a2d6c59d79220a4db37679e74f807c559ffe5265e08b227a210/watchfiles-1.1.1.tar.gz", hash = "sha256:a173cb5c16c4f40ab19cecf48a534c409f7ea983ab8fed0741304a1c0a31b3f2", size = 94440, upload-time = "2025-10-14T15:06:21.08Z" }
 wheels = [

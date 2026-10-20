@@ -21,7 +21,7 @@ from ._output_widget import output_widget
 from ._render_widget import (
     render_altair,
     render_bokeh,
-    render_hvplot,
+    render_holoviews,
     render_maplibre,
     render_panel,
     render_plotly,
@@ -36,7 +36,7 @@ __all__ = (
     "render_widget",
     "render_altair",
     "render_bokeh",
-    "render_hvplot",
+    "render_holoviews",
     "render_maplibre",
     "render_panel",
     "render_plotly",

@@ -38,7 +38,7 @@ def test_render_panel_and_hvplot_auto_output_ui_append_bokeh_dependency(
     monkeypatch.setattr(rwb, "output_widget", lambda *args, **kwargs: div())
     monkeypatch.setattr(rw, "bokeh_dependency", lambda: sentinel)
 
-    for cls in (rw.render_panel, rw.render_hvplot):
+    for cls in (rw.render_panel, rw.render_holoviews):
         renderer = cls()
         renderer.output_id = "plot"
 
