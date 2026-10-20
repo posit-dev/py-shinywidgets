@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug fixes
 
+* `@render_plotly()` (and `@render_widget()`) now raise an informative error when given a plotly figure with frames (i.e., an animation), instead of silently dropping the frames. The error points to the `@render.ui` + `fig.to_html()` workaround. (#156)
 * Fixed a leak where the `Layout`/`Style` models that ipywidgets creates lazily while serializing a widget were never closed: every re-render of an output leaked a few models on the server and in the browser for the rest of the session. They now share the cleanup of the widget that created them, unless a live widget still references them. (#258)
 * Fixed an issue where closing a widget before its comm had opened (for example, re-rendering an output twice in one flush) reopened the widget anyway. (#258)
 * Widget comm messages are now always sent through the session that created the widget, and each session routes client messages only to its own widgets. (#258)

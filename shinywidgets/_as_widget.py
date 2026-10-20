@@ -122,6 +122,16 @@ def as_widget_plotly(x: object) -> Optional[Widget]:
             f"Don't know how to coerce {x} into a plotly.graph_objects.FigureWidget object."
         )
 
+    # FigureWidget doesn't support frames (i.e., animations), and constructing
+    # one from (data, layout) would silently drop them (#156)
+    if x.frames:
+        raise ValueError(
+            "Frames are not supported by the plotly.graph_objs.FigureWidget class. "
+            "To render this figure as-is (with frames), use shiny's @render.ui "
+            "decorator instead of shinywidgets, and return "
+            "ui.HTML(fig.to_html()) from the render function."
+        )
+
     return go.FigureWidget(x.data, x.layout)  # type: ignore
 
 
