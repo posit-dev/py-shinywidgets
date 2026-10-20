@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import warnings
 from base64 import b64decode
 from contextlib import contextmanager
 from typing import (
@@ -43,6 +44,12 @@ from ._dependencies import require_dependency
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
+
+try:
+    from shiny._deprecated import ShinyDeprecationWarning
+except ImportError:
+    # Older shiny versions don't provide ShinyDeprecationWarning
+    ShinyDeprecationWarning = DeprecationWarning  # type: ignore[assignment, misc]
 
 __all__ = (
     "register_widget",
@@ -465,6 +472,15 @@ def register_widget(
     """
     Deprecated. Use @render_widget instead.
     """
+    warnings.warn(
+        "register_widget() is deprecated and will be removed in a future "
+        "release. Use the @render_widget decorator instead: decorate a "
+        "function that returns the widget (and register it with "
+        "@session.output(id=...) if it isn't part of the app's UI outputs).",
+        ShinyDeprecationWarning,
+        stacklevel=2,
+    )
+
     if session is None:
         session = require_active_session(session)
 

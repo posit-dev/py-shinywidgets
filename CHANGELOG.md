@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * shinywidgets now requires ipywidgets 8.1 or newer. (#237, #259)
 
+### Deprecations
+
+* `register_widget()` is now formally deprecated (it emits a deprecation warning) in favor of the standard Shiny rendering pattern: an `@render_widget`-decorated function paired with `output_widget()` in the UI. (#127)
+
 ### New features
 
 * Bokeh documents that reference [bokeh extension](https://docs.bokeh.org/en/latest/docs/user_guide/advanced/extensions.html) models (any package shipping a `bokeh.ext.json`/prebuilt `dist` bundle) now have their extension assets served automatically. (#88, #256)

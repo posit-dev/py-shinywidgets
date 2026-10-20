@@ -326,7 +326,8 @@ def test_register_widget_uses_session_output_decorator(monkeypatch):
             return deco
 
     w = object()
-    res = sw.register_widget("out1", w, session=Sess())  # type: ignore[arg-type]
+    with pytest.warns(sw.ShinyDeprecationWarning, match="register_widget"):
+        res = sw.register_widget("out1", w, session=Sess())  # type: ignore[arg-type]
     assert res is w
     assert seen["output_id"] == "out1"
     assert seen["called"] is True
@@ -353,9 +354,25 @@ def test_register_widget_without_session_uses_active_session(monkeypatch):
     monkeypatch.setattr(sw, "require_active_session", lambda s: sess)
 
     w = object()
-    res = sw.register_widget("out2", w)  # type: ignore[arg-type]
+    with pytest.warns(sw.ShinyDeprecationWarning, match="register_widget"):
+        res = sw.register_widget("out2", w)  # type: ignore[arg-type]
 
     assert res is w
     assert seen["output_id"] == "out2"
     assert seen["registered_fn"] is not None
     assert seen["registered_fn"]() is w
+
+
+def test_register_widget_is_deprecated(monkeypatch):
+    import shinywidgets._shinywidgets as sw
+
+    monkeypatch.setattr(sw, "render_widget", lambda fn: fn)
+    monkeypatch.setattr(sw, "as_widget", lambda x: x)
+    monkeypatch.setattr(sw, "require_active_session", lambda s: s)
+
+    class Sess:
+        def output(self, *, id):
+            return lambda fn: fn
+
+    with pytest.warns(sw.ShinyDeprecationWarning, match="deprecated"):
+        sw.register_widget("out3", object(), session=Sess())  # type: ignore[arg-type]
