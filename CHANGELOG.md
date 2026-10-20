@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### New features
 
 * `shinywidgets.types` gains `*Value` aliases for the remaining renderers (`AltairValue`, `BokehValue`, `HoloviewsValue`, `MaplibreValue`, `PanelValue`, `PydeckValue`), plus `PlotlyValue` for `@render_plotly`. Every `*Value` alias also accepts any `ipywidgets.Widget` (reflecting `as_widget()`'s pass-through of pre-built widgets, such as the widget class the renderer would have coerced to). Like `PlotlyFigure`, they resolve lazily, so the corresponding packages remain optional dependencies.
-* `@render_plotly()` now accepts a Dash-style `(figure, config)` tuple return value, where `config` is a dict of [Plotly.js config options](https://plotly.com/javascript/configuration-options/) (e.g., `{"displayModeBar": False}`). The config is merged over plotly's defaults and takes precedence over shinywidgets' own defaults. New `shinywidgets.types` module provides `PlotlyConfig`/`PlotlyFigure` type aliases describing the accepted config/return shapes (the latter resolves lazily, so plotly remains an optional dependency). (#173)
+* `@render_plotly()` now accepts a Dash-style `(figure, config)` tuple return value, where `config` is a dict of [Plotly.js config options](https://plotly.com/javascript/configuration-options/) (e.g., `{"displayModeBar": False}`). The config is merged over plotly's defaults and takes precedence over shinywidgets' own defaults. New `shinywidgets.types` module provides `PlotlyConfig`/`PlotlyFigure` type aliases describing the accepted config and figure shapes (the latter resolves lazily, so plotly remains an optional dependency). (#173)
 * Added a `render_maplibre()` renderer, and `as_widget()` now coerces a [maplibre](https://eoda-dev.github.io/py-maplibregl/) `Map` into its `MapWidget` (requires `pip install 'maplibre[anywidget]'`). Note that maplibre also ships its own native Shiny bindings, but the widget route gives you `reactive_read()` access to map state (e.g., `view_state`, `clicked`).
 
 ### Breaking changes
@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug fixes
 
+* Fixed an issue where pythreejs widgets caused Shiny sessions to hang indefinitely with ipywidgets 8. (#244)
 * Fixed a leak where the `Layout`/`Style` models that ipywidgets creates lazily while serializing a widget were never closed: every re-render of an output leaked a few models on the server and in the browser for the rest of the session. They now share the cleanup of the widget that created them, unless a live widget still references them. (#258)
 * Fixed an issue where closing a widget before its comm had opened (for example, re-rendering an output twice in one flush) reopened the widget anyway. (#258)
 * Widget comm messages are now always sent through the session that created the widget, and each session routes client messages only to its own widgets. (#258)
