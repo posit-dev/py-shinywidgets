@@ -82,6 +82,57 @@ def test_holoviews_opts_are_applied(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests, allowed_404s=(BOKEH_404,))
 
 
+def test_holoviews_dynamicmap_widget_roundtrip(page: Page, local_app) -> None:
+    # Panel's HoloViews pane wires the DynamicMap's kdim to a bokeh slider/
+    # spinner, and shinywidgets' comm layer services the Python callback.
+    # Changing the widget should round-trip to the server and re-render.
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+
+    spinner = page.locator("#dynamic .bk-input").first
+    expect(spinner).to_be_visible(timeout=30000)
+    expect(spinner).to_have_value("1")
+
+    # Curve at n=1 is [0, 1, 2]; at n=5 it's [0, 5, 10], which overflows the
+    # original y-range (0..2) — i.e., the topmost curve pixel moves up.
+    CURVE_TOP_JS = """(sel) => {
+      const canvases = [];
+      const walk = (root) => {
+        if (root.tagName === 'CANVAS') canvases.push(root);
+        for (const el of root.querySelectorAll('*')) {
+          if (el.tagName === 'CANVAS') canvases.push(el);
+          if (el.shadowRoot) walk(el.shadowRoot);
+        }
+      };
+      for (const root of document.querySelectorAll(sel)) walk(root);
+      const c = canvases[0];
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      for (let y = 0; y < c.height; y++)
+        for (let x = 0; x < c.width; x++) {
+          const i = (y * c.width + x) * 4;
+          // the curve is drawn in blue
+          if (d[i + 3] > 200 && d[i + 2] > 120 && d[i] < 100) return y;
+        }
+      return -1;
+    }"""
+
+    top_before = page.evaluate(CURVE_TOP_JS, "#dynamic")
+    assert top_before > 0
+
+    spinner.click()
+    spinner.fill("5")
+    spinner.press("Enter")
+    expect(spinner).to_have_value("5")
+
+    page.wait_for_function(
+        f"(top) => ({CURVE_TOP_JS})('#dynamic') < top",
+        arg=top_before,
+        timeout=10000,
+    )
+
+    assert_no_unexpected_errors(errors, failed_requests, allowed_404s=(BOKEH_404,))
+
+
 def test_holoviews_rerender_lifecycle(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)

@@ -65,8 +65,9 @@ def server(input, output, session):
             title="styled curve", color="red", width=300, height=200
         )
 
-    # DynamicMap renders its current state (streams require a live Python
-    # server, which neither the panel nor bokeh coercion path provides)
+    # DynamicMap: panel's HoloViews pane wires the kdim to a slider/spinner,
+    # and shinywidgets' comm layer services the Python callback (verified by
+    # test_holoviews_dynamicmap_widget_roundtrip)
     @render_holoviews
     def dynamic():
         return hvl.DynamicMap(
