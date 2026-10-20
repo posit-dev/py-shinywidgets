@@ -97,7 +97,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             return None
 
         # Ensure we have a widget & smart layout defaults
-        widget = as_widget(value)
+        widget = self._as_widget(value)
         if is_closed_widget(widget):
             raise RuntimeError(
                 "This widget has been closed (its render was invalidated, or it was "
@@ -143,6 +143,13 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             "fill": fill,
             "widget_pkg": widget_pkg(widget),
         }
+
+    def _as_widget(self, value: ValueT) -> WidgetT:
+        """
+        Coerce the user's return value into a Widget. Subclasses may override
+        to support additional return shapes (e.g., a (value, options) tuple).
+        """
+        return cast(WidgetT, as_widget(value))
 
     @property
     def value(self) -> ValueT | None:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, cast
 
 from htmltools import Tag
 
@@ -234,7 +234,70 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
 
 
 class render_plotly(render_widget_base[ValueT, FigureWidget]):  # pyright: ignore[reportInvalidTypeArguments]
-    ...
+    """
+    Reactively render a [plotly](https://plotly.com/python/) figure as a Shiny output.
+
+    The decorated function should return a `plotly.graph_objects.Figure`, which is
+    coerced to a `FigureWidget`. Alternatively, it may return a Dash-style
+    `(figure, config)` tuple, where `config` is a dict of Plotly.js [config
+    options](https://plotly.com/javascript/configuration-options/) (e.g.,
+    `{"displayModeBar": False}`), mirroring Dash's `dcc.Graph(figure=..., config=...)`
+    API. The config is merged over plotly's defaults, so it also takes precedence over
+    shinywidgets' own defaults (e.g., `responsive`).
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    from shiny import App, ui
+    from shinywidgets import output_widget, render_plotly
+    import plotly.graph_objects as go
+
+    app_ui = ui.page_fluid(output_widget("plot"))
+
+
+    def server(input, output, session):
+        @render_plotly
+        def plot():
+            fig = go.Figure(go.Scatter(x=[1, 2, 3], y=[1, 4, 9]))
+            return fig, {"displayModeBar": False}
+
+
+    app = App(app_ui, server)
+    ```
+    """
+
+    def _as_widget(self, value: ValueT) -> FigureWidget:
+        fig, config = _split_config(value)
+        widget = super()._as_widget(cast(ValueT, fig))
+        if config:
+            widget._config = {**widget._config, **config}  # type: ignore
+        return widget
+
+
+def _split_config(value: object) -> tuple[object, Optional[dict]]:
+    # Dash-style (figure, config) tuple. Any other value is passed through to
+    # as_widget(), which raises a helpful error if it can't be coerced.
+    if isinstance(value, tuple) and len(value) == 2 and isinstance(value[1], dict):
+        return value[0], value[1]
+    return value, None
 
 
 class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
