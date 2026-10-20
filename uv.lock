@@ -1720,6 +1720,19 @@ wheels = [
 ]
 
 [[package]]
+name = "perspective-python"
+version = "5.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/ac/2efc8ae61f35dcc0fc0f224bbf879a2cb4101b397b2df61afda565cf4151/perspective_python-5.6.0.tar.gz", hash = "sha256:efaa63fa38bd1c672556402e278eaffd347663981f7cd8fdd22007d0008f78f7", size = 9159890, upload-time = "2026-10-14T01:22:04.58Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/34/2a/ea8c790d92c99f8a4da072612b7fc55d74a593edde6344ebcad5a4318e62/perspective_python-5.6.0-cp311-abi3-macosx_14_0_arm64.whl", hash = "sha256:63bdebe56623a2e9f8b1503a4ccdee9dece745364dea375736545c3aefc307da", size = 14253541, upload-time = "2026-10-14T01:20:27.124Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/3c/6f4418ab874555ac046fa6186326149a67b24e35d489cf2f95be176f95a2/perspective_python-5.6.0-cp311-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:46d721952bd9761d3a1fb0d48238d441c10990ab87417f8c2f6be79210e66199", size = 15395105, upload-time = "2026-10-14T01:20:54.365Z" },
+    { url = "https://files.pythonhosted.org/packages/26/ca/0ccf2ad8d0e63cbb232d36ea8be888cfd883445e0a24e1aa87e5cd2db064/perspective_python-5.6.0-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:1ce0ee83d914dfe81827f42a5ff5130fe6c9209e796eb5d574178d4fa085342f", size = 15841726, upload-time = "2026-10-14T01:21:25.334Z" },
+    { url = "https://files.pythonhosted.org/packages/61/b5/d6ffcfdaf25d8893304c59ba8558aa8122c560e66ead4a314c4d63756142/perspective_python-5.6.0-cp311-abi3-pyemscripten_2026_0_wasm32.whl", hash = "sha256:64a3f5498a92ca3e47e24f08e18d3d8a93a47d718cba6bb1f80ff2df659d8305", size = 8166981, upload-time = "2026-10-14T01:21:31.518Z" },
+    { url = "https://files.pythonhosted.org/packages/00/f5/65ea25653ecef7322d0dc2d1148c671e75c29612a95b7f2ba29db2bcea9a/perspective_python-5.6.0-cp311-abi3-win_amd64.whl", hash = "sha256:6e883f6abbac0f172cbfe550d42f9823e809a466c0ff57804f0dcfe3819eca57", size = 14459708, upload-time = "2026-10-14T01:21:59.251Z" },
+]
+
+[[package]]
 name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2576,6 +2589,7 @@ dev = [
     { name = "jupyter-bokeh" },
     { name = "maplibre", extra = ["anywidget"] },
     { name = "panel" },
+    { name = "perspective-python" },
     { name = "playwright" },
     { name = "plotly" },
     { name = "pydeck" },
@@ -2595,6 +2609,7 @@ test = [
     { name = "jupyter-bokeh" },
     { name = "maplibre", extra = ["anywidget"] },
     { name = "panel" },
+    { name = "perspective-python" },
     { name = "playwright" },
     { name = "plotly" },
     { name = "pydeck" },
@@ -2615,6 +2630,7 @@ dev = [
     { name = "jupyter-bokeh" },
     { name = "maplibre", extra = ["anywidget"] },
     { name = "panel" },
+    { name = "perspective-python" },
     { name = "playwright" },
     { name = "plotly" },
     { name = "pydeck" },
@@ -2634,6 +2650,7 @@ test = [
     { name = "jupyter-bokeh" },
     { name = "maplibre", extra = ["anywidget"] },
     { name = "panel" },
+    { name = "perspective-python" },
     { name = "playwright" },
     { name = "plotly" },
     { name = "pydeck" },
@@ -2666,6 +2683,8 @@ requires-dist = [
     { name = "maplibre", extras = ["anywidget"], marker = "extra == 'test'" },
     { name = "panel", marker = "extra == 'dev'" },
     { name = "panel", marker = "extra == 'test'" },
+    { name = "perspective-python", marker = "extra == 'dev'", specifier = ">=3.0" },
+    { name = "perspective-python", marker = "extra == 'test'", specifier = ">=3.0" },
     { name = "playwright", marker = "extra == 'dev'", specifier = ">=1.40.0" },
     { name = "playwright", marker = "extra == 'test'", specifier = ">=1.40.0" },
     { name = "plotly", marker = "extra == 'dev'", specifier = ">=5.0.0" },
@@ -2697,6 +2716,7 @@ dev = [
     { name = "jupyter-bokeh" },
     { name = "maplibre", extras = ["anywidget"] },
     { name = "panel" },
+    { name = "perspective-python", specifier = ">=3.0" },
     { name = "playwright", specifier = ">=1.40.0" },
     { name = "plotly", specifier = ">=5.0.0" },
     { name = "pydeck" },
@@ -2716,6 +2736,7 @@ test = [
     { name = "jupyter-bokeh" },
     { name = "maplibre", extras = ["anywidget"] },
     { name = "panel" },
+    { name = "perspective-python", specifier = ">=3.0" },
     { name = "playwright", specifier = ">=1.40.0" },
     { name = "plotly", specifier = ">=5.0.0" },
     { name = "pydeck" },
