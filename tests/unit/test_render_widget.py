@@ -3,6 +3,11 @@ import shinywidgets._render_widget_base as rwb
 from htmltools import HTMLDependency, div
 
 
+def test_render_maplibre_is_render_widget_base() -> None:
+    renderer = rw.render_maplibre()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_bokeh_auto_output_ui_appends_bokeh_dependency(monkeypatch) -> None:
     sentinel = HTMLDependency(
         name="bokeh-inline",

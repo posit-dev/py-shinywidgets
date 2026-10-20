@@ -7,10 +7,11 @@ from htmltools import Tag
 if TYPE_CHECKING:
     from altair import JupyterChart
     from jupyter_bokeh import BokehModel
+    from maplibre.ipywidget import MapWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = BokehModel = FigureWidget = DeckGLWidget = object
+    JupyterChart = BokehModel = MapWidget = FigureWidget = DeckGLWidget = object
 
 from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
@@ -20,6 +21,7 @@ __all__ = (
     "render_altair",
     "render_bokeh",
     "render_hvplot",
+    "render_maplibre",
     "render_panel",
     "render_plotly",
     "render_pydeck",
@@ -34,6 +36,9 @@ class render_widget(render_widget_base[WidgetT, WidgetT]): ...
 # Package specific renderers that require coercion (via as_widget())
 # NOTE: the types on these classes should mirror what as_widget() does
 class render_altair(render_widget_base[ValueT, JupyterChart]): ...
+
+
+class render_maplibre(render_widget_base[ValueT, MapWidget]): ...
 
 
 class render_bokeh(render_widget_base[ValueT, BokehModel]):
