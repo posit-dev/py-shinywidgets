@@ -1,3 +1,4 @@
+import warnings
 from typing import TYPE_CHECKING, Optional, cast
 
 from htmltools import HTMLDependency
@@ -122,14 +123,15 @@ def as_widget_plotly(x: object) -> Optional[Widget]:
             f"Don't know how to coerce {x} into a plotly.graph_objects.FigureWidget object."
         )
 
-    # FigureWidget doesn't support frames (i.e., animations), and constructing
-    # one from (data, layout) would silently drop them (#156)
+    # FigureWidget doesn't support frames (i.e., animations), so constructing
+    # one from (data, layout) drops them (#156)
     if x.frames:
-        raise ValueError(
-            "Frames are not supported by the plotly.graph_objs.FigureWidget class. "
-            "To render this figure as-is (with frames), use shiny's @render.ui "
-            "decorator instead of shinywidgets, and return "
-            "ui.HTML(fig.to_html()) from the render function."
+        warnings.warn(
+            "plotly's FigureWidget does not support frames (i.e., animations), "
+            "so the frames in this figure will be dropped. To render the figure "
+            "with frames, use shiny's @render.ui decorator instead of shinywidgets, "
+            "and return ui.HTML(fig.to_html()) from the render function.",
+            stacklevel=2,
         )
 
     return go.FigureWidget(x.data, x.layout)  # type: ignore

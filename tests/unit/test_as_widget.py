@@ -150,11 +150,13 @@ def test_as_widget_plotly_success_and_type_check_with_fakes(
     with pytest.raises(TypeError, match="plotly.graph_objects.FigureWidget"):
         as_widget_plotly(object())
 
-    # Frames (i.e., animations) aren't supported by FigureWidget (#156)
+    # Frames (i.e., animations) aren't supported by FigureWidget, so they're
+    # dropped with a warning (#156)
     fig = Figure()
     fig.frames = ({"data": []},)  # type: ignore[assignment]
-    with pytest.raises(ValueError, match="Frames are not supported"):
-        as_widget_plotly(fig)
+    with pytest.warns(UserWarning, match="does not support frames"):
+        res = as_widget_plotly(fig)
+    assert isinstance(res, Widget)
 
 
 def _fake_maplibre(monkeypatch: pytest.MonkeyPatch):
