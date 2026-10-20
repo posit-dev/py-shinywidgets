@@ -4,6 +4,7 @@ import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { jsonParse } from './utils';
 import { disposeNative, finishDetach, hasAncestor, viewParent } from './views';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
+import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
 
@@ -415,10 +416,13 @@ if (taskQueue) {
 
 // Initialize the comm and model when a new widget is created
 // This is basically our version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1144-L1176
-Shiny.addCustomMessageHandler("shinywidgets_comm_open", (msg_txt) => {
+Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
   setBaseURL();
   const msg = jsonParse(msg_txt);
-  Shiny.renderDependencies(msg.content.html_deps);
+  const deps = msg.content.html_deps as HtmlDep[];
+  // Dependencies (e.g. BokehJS) must finish loading before the model is
+  // constructed below; otherwise require() of the widget's module fails.
+  await Shiny.renderDependenciesAsync(deps);
   const comm = new ShinyComm(msg.content.comm_id);
   // An explicit model_id survives widget re-creation on the Python side, so
   // an id can reopen after being closed; it must not stay marked closed or
