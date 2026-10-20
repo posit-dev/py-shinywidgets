@@ -27,16 +27,20 @@ def test_plotly_figure_alias() -> None:
     pytest.importorskip("plotly")
     import plotly.graph_objects as go
     from ipywidgets import Widget
-    from shinywidgets.types import PlotlyFigure, PlotlyValue
+    from shinywidgets.types import PlotlyConfig, PlotlyFigure, PlotlyValue
 
     figure, tuple_of = typing.get_args(PlotlyFigure)
     assert figure is go.Figure
     assert typing.get_args(tuple_of)[0] is go.Figure
 
-    # PlotlyValue additionally accepts any ipywidgets.Widget
-    *plotly_figure_args, widget = typing.get_args(PlotlyValue)
+    # PlotlyValue additionally accepts a (FigureWidget, config) tuple and any
+    # ipywidgets.Widget. Note FigureWidget is not a subclass of go.Figure, so
+    # the tuple form needs its own union member.
+    *plotly_figure_args, fw_tuple, widget = typing.get_args(PlotlyValue)
     assert tuple(plotly_figure_args) == typing.get_args(PlotlyFigure)
+    assert typing.get_args(fw_tuple) == (go.FigureWidget, PlotlyConfig)
     assert widget is Widget
+    assert not issubclass(go.FigureWidget, go.Figure)
     assert issubclass(go.FigureWidget, Widget)
 
 

@@ -63,11 +63,13 @@ if TYPE_CHECKING:
     `PlotlyConfig`).
     """
 
-    PlotlyValue = Union[PlotlyFigure, Widget]
+    PlotlyValue = Union[PlotlyFigure, Tuple[go.FigureWidget, PlotlyConfig], Widget]
     """
     The supported return type of a ``@render_plotly`` render function: a
-    `PlotlyFigure`, or any ``ipywidgets.Widget`` (e.g., a pre-built
-    ``plotly.graph_objects.FigureWidget``).
+    `PlotlyFigure`, a ``(FigureWidget, config)`` tuple, or any
+    ``ipywidgets.Widget``. (``FigureWidget`` is not a subclass of
+    ``go.Figure``, so the ``(FigureWidget, config)`` tuple is listed
+    separately from `PlotlyFigure`.)
     """
 
     AltairValue = Union[alt.TopLevelMixin, Widget]
@@ -126,7 +128,12 @@ def __getattr__(name: str) -> object:
         return Union[go.Figure, Tuple[go.Figure, PlotlyConfig]]
     if name == "PlotlyValue":
         go = _require(name, "plotly.graph_objects")
-        return Union[go.Figure, Tuple[go.Figure, PlotlyConfig], Widget]
+        return Union[
+            go.Figure,
+            Tuple[go.Figure, PlotlyConfig],
+            Tuple[go.FigureWidget, PlotlyConfig],
+            Widget,
+        ]
     if name == "AltairValue":
         return Union[_require(name, "altair").TopLevelMixin, Widget]
     if name == "BokehValue":

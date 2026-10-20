@@ -32,6 +32,28 @@ def test_render_plotly_accepts_figure_config_tuple(widget_session) -> None:
     assert "plotlyServerURL" in r.widget._config  # type: ignore
 
 
+def test_render_plotly_accepts_figurewidget_config_tuple(widget_session) -> None:
+    pytest.importorskip("plotly")
+    import plotly.graph_objects as go
+
+    r = rw.render_plotly()
+    created = []
+
+    @r
+    def _():  # noqa: ANN202
+        fw = go.FigureWidget()
+        created.append(fw)
+        return (fw, {"displayModeBar": False})
+
+    with session_context(widget_session):
+        res = asyncio.run(r._render())
+
+    assert res is not None
+    # a pre-built FigureWidget is passed through as-is (not re-coerced)
+    assert r.widget is created[0]
+    assert r.widget._config["displayModeBar"] is False  # type: ignore
+
+
 def test_render_plotly_config_tuple_overrides_shinywidgets_defaults(
     widget_session,
 ) -> None:
