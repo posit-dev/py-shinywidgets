@@ -115,6 +115,7 @@ def as_widget_maplibre(x: object) -> Optional[Widget]:
     res._message_queue = state["calls"]
     return res  # type: ignore
 
+
 def as_widget_mpl(x: object) -> Optional[Widget]:
     # matplotlib is guaranteed to be installed here since this function is only
     # called when x comes from the matplotlib package
@@ -145,46 +146,40 @@ def as_widget_mpl(x: object) -> Optional[Widget]:
     canvas = Canvas(x)
     FigureManager(canvas, getattr(x, "number", id(x)))
 
-    _close_mpl_figure_with_lifetime(x)
+    _close_mpl_figure_with_widget(canvas, x)
 
     return canvas
 
 
-def _close_mpl_figure_with_lifetime(fig: Figure) -> None:
+def _close_mpl_figure_with_widget(canvas: Widget, fig: Figure) -> None:
     """
-    Deregister a pyplot figure (via plt.close()) when the current widget
-    lifetime ends.
+    Deregister a pyplot figure (via plt.close()) when the canvas widget closes.
 
     Figures created through pyplot (e.g., plt.subplots()) stay registered in
     pyplot's global figure manager, which leaks memory (and triggers "More
     than 20 figures have been opened" warnings) as renders repeat. The widget
-    lifecycle already closes the ipympl canvas; this takes care of the pyplot
-    registration.
+    machinery already closes the ipympl canvas at the end of its lifetime, so
+    tying the pyplot deregistration to the widget's close means it happens
+    exactly when the canvas goes away -- at render retirement, or at session
+    end for widgets kept alive via session_lifetime().
     """
     num = getattr(fig, "number", None)
     if num is None:
         # Not a pyplot-managed figure, so there's nothing to deregister
         return
 
-    import matplotlib.pyplot as plt
+    def on_comm_change(change: dict[str, object]) -> None:
+        # The comm becomes None exactly once: when the widget closes
+        if change["new"] is not None:
+            return
+        canvas.unobserve(on_comm_change, names="comm")
+        import matplotlib.pyplot as plt
 
-    if num not in plt.get_fignums():
-        return
+        # plt.close(fig) deregisters by figure identity (Gcf.destroy_fig()), so
+        # it's safe even if the user already closed it or the number was reused
+        plt.close(fig)
 
-    from shiny.session import get_current_session
-
-    session = get_current_session()
-    if session is None or session.is_stub_session():
-        return
-
-    # Imported here to avoid a circular import at module load time
-    from ._lifecycle import get_lifecycle
-    from ._shinywidgets import current_lifetime
-
-    lifecycle = get_lifecycle(session)
-    # plt.close(fig) deregisters by figure identity (Gcf.destroy_fig()), so
-    # it's safe even if the user already closed it or the number was reused
-    lifecycle.add_disposer(current_lifetime(lifecycle), lambda: plt.close(fig))
+    canvas.observe(on_comm_change, names="comm")
 
 
 def as_widget_plotly(x: object) -> Optional[Widget]:

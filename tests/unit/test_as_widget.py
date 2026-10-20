@@ -28,7 +28,6 @@ class StubSession:
         return True
 
 
-=======
 def _fake_matplotlib(monkeypatch: pytest.MonkeyPatch):
     _inject_package(monkeypatch, "matplotlib")
 
@@ -367,19 +366,15 @@ def test_as_widget_mpl_pyplot_figure_closed_at_render_retirement(
 
     from shiny.reactive._core import Context
     from shiny.session import session_context
-    from shinywidgets._lifecycle import get_lifecycle
     from shinywidgets._render_widget_base import WidgetRenderContext
 
     with session_context(widget_session):
-        lifecycle = get_lifecycle(widget_session)
         context = Context()
         with context():
             with WidgetRenderContext():
                 fig, ax = plt.subplots()
                 ax.plot([1, 2, 3])
-                canvas = as_widget_mpl(fig)
-                lifetime = lifecycle.records[canvas.model_id].lifetime
-                assert len(lifetime.disposers) == 1
+                as_widget_mpl(fig)
 
         assert fig.number in plt.get_fignums()
         context.invalidate()
@@ -388,7 +383,7 @@ def test_as_widget_mpl_pyplot_figure_closed_at_render_retirement(
         assert fig.number not in plt.get_fignums()
 
 
-def test_as_widget_mpl_non_pyplot_figure_registers_no_disposer(
+def test_as_widget_mpl_non_pyplot_figure_retirement_is_noop(
     widget_session,
 ) -> None:
     pytest.importorskip("matplotlib")
@@ -397,19 +392,15 @@ def test_as_widget_mpl_non_pyplot_figure_registers_no_disposer(
     from matplotlib.figure import Figure
     from shiny.reactive._core import Context
     from shiny.session import session_context
-    from shinywidgets._lifecycle import get_lifecycle
     from shinywidgets._render_widget_base import WidgetRenderContext
 
     with session_context(widget_session):
-        lifecycle = get_lifecycle(widget_session)
         context = Context()
         with context():
             with WidgetRenderContext():
                 # A bare Figure() isn't registered with pyplot, so there's
                 # nothing to clean up at retirement
-                canvas = as_widget_mpl(Figure())
-                lifetime = lifecycle.records[canvas.model_id].lifetime
-                assert lifetime.disposers == []
+                as_widget_mpl(Figure())
 
         # Retirement should be a clean no-op for this figure
         context.invalidate()
