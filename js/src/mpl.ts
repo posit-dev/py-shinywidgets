@@ -16,7 +16,13 @@ export function setupMplAutoResize(
   lmWidget: HTMLElement,
   model: WidgetModel
 ): () => void {
-  // The user opted out of resizing on the Python side (fig.canvas.resizable = False)
+  // N.B. the standard opt-out for fill/resize is the same as every other
+  // widget (@render_matplotlib(fill=False), output_widget(fillable=False),
+  // or an explicit height) -- this function only runs when the output is in
+  // a fill container. This check is just a courtesy for the rare case where
+  // the user constructs the ipympl Canvas themselves with resizable=False
+  // and returns it directly (a plain Figure's canvas is a FigureCanvasAgg,
+  // so setting `resizable` there wouldn't reach the widget model anyway).
   if (model.get('resizable') === false) {
     return () => {};
   }
@@ -35,7 +41,10 @@ export function setupMplAutoResize(
     if (w === lastWidth && h === lastHeight) return;
     lastWidth = w;
     lastHeight = h;
-    // MPLCanvasModel.resize() (not part of the base WidgetModel interface)
+    // MPLCanvasModel.resize() (not part of the base WidgetModel interface).
+    // ipympl's frontend resize() silently drops sizes <= 5px, which also
+    // keeps a 0/negative h (e.g. a hidden output) from reaching the kernel,
+    // where set_size_inches() would raise.
     (model as unknown as { resize: (w: number, h: number) => void }).resize(w, h);
   };
 
