@@ -16,17 +16,19 @@ except ImportError:
         __version__ = "0+unknown"
 
 from ._as_widget import as_widget
-from ._dependencies import bokeh_dependency
+from ._bokeh import bokeh_dependency
 from ._output_widget import output_widget
 from ._render_widget import (
     render_altair,
     render_bokeh,
     render_holoviews,
+    render_maplibre,
+    render_panel,
     render_plotly,
     render_pydeck,
     render_widget,
 )
-from ._shinywidgets import reactive_read, register_widget
+from ._shinywidgets import reactive_read, register_widget, session_lifetime
 
 __all__ = (
     "__version__",
@@ -35,6 +37,8 @@ __all__ = (
     "render_altair",
     "render_bokeh",
     "render_holoviews",
+    "render_maplibre",
+    "render_panel",
     "render_plotly",
     "render_pydeck",
     # Reactive read second
@@ -46,4 +50,5 @@ __all__ = (
     "bokeh_dependency",
     # Soft deprecated
     "register_widget",
+    "session_lifetime",
 )

@@ -156,3 +156,72 @@ def manager_page(page: Page, local_app: ShinyAppProc) -> Page:
     page.goto(local_app.url)
     page.wait_for_function("!!window.widgetManager")
     return page
+
+
+def test_comm_open_waits_for_assets_without_waiting_for_child_models(
+    manager_page: Page,
+) -> None:
+    requests: list[Route] = []
+    manager_page.route(
+        "**/delayed-widget-assets.js", lambda route: requests.append(route)
+    )
+    with manager_page.expect_request("**/delayed-widget-assets.js"):
+        manager_page.evaluate(
+            """() => {
+                window.openFinished = false;
+                window.openDispatch = Shiny.shinyapp.dispatchMessage(JSON.stringify({
+                    custom: {shinywidgets_comm_open: JSON.stringify({
+                        content: {
+                            comm_id: 'asset-parent',
+                            data: {state: {
+                                _model_name: 'HTMLModel',
+                                _model_module: '@jupyter-widgets/controls',
+                                _model_module_version: '2.0.0',
+                                layout: 'IPY_MODEL_asset-child'
+                            }, buffer_paths: []},
+                            html_deps: [{
+                                name: 'delayed-widget-assets',
+                                version: '1.0',
+                                script: [{src: '/delayed-widget-assets.js'}]
+                            }]
+                        },
+                        metadata: {version: '2.1.0'},
+                        buffers: []
+                    })}
+                })).then(() => { window.openFinished = true; });
+            }"""
+        )
+
+    finished_before_release = manager_page.evaluate(
+        """async () => {
+            await new Promise(requestAnimationFrame);
+            return window.openFinished;
+        }"""
+    )
+    requests[0].fulfill(body="", content_type="application/javascript")
+    result = manager_page.evaluate(
+        """async () => {
+            await window.openDispatch;
+            await Shiny.shinyapp.dispatchMessage(JSON.stringify({
+                custom: {shinywidgets_comm_open: JSON.stringify({
+                    content: {
+                        comm_id: 'asset-child',
+                        data: {state: {
+                            _model_name: 'LayoutModel',
+                            _model_module: '@jupyter-widgets/base',
+                            _model_module_version: '2.0.0'
+                        }, buffer_paths: []},
+                        html_deps: []
+                    },
+                    metadata: {version: '2.1.0'},
+                    buffers: []
+                })}
+            }));
+            const parent = await window.widgetManager.get_model('asset-parent');
+            const child = await window.widgetManager.get_model('asset-child');
+            return parent.get('layout') === child;
+        }"""
+    )
+
+    assert not finished_before_release
+    assert result, "Opening the parent must permit its child to arrive afterward"

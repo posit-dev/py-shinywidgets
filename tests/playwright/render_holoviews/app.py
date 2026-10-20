@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import holoviews as hvl
 from shiny import App, reactive, render, ui
-from shinywidgets import bokeh_dependency, output_widget, render_holoviews
+from shinywidgets import output_widget, render_holoviews
 
 app_ui = ui.page_fluid(
-    bokeh_dependency(),
     ui.input_action_button("rerender", "Rerender"),
     ui.output_text("render_count"),
     output_widget("hv"),

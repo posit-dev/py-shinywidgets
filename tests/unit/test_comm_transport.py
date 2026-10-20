@@ -15,13 +15,6 @@ def closure_map(fn: Any) -> Dict[str, Any]:
     return {name: cell.cell_contents for name, cell in zip(freevars, closure)}
 
 
-@pytest.fixture(autouse=True)
-def _reset_comm_manager_class_state() -> None:
-    from shinywidgets._comm import ShinyCommManager
-
-    ShinyCommManager.comms.clear()
-
-
 def _scheduled_payloads(session: FakeSession):
     return {
         "flush": list(session._flush_handlers),
@@ -33,13 +26,13 @@ def test_open_registers_and_schedules_on_flush(monkeypatch):
     import shinywidgets._comm as comm
 
     session = FakeSession()
-    monkeypatch.setattr(comm, "get_current_session", lambda: session)
 
     mgr = comm.ShinyCommManager()
     _ = comm.ShinyComm(
         comm_id="c1",
         comm_manager=mgr,
         target_name="jupyter.widget",
+        session=session,
         data={"a": 1},
     )
 
@@ -63,10 +56,11 @@ def test_send_schedules_on_flushed(monkeypatch):
     import shinywidgets._comm as comm
 
     session = FakeSession()
-    monkeypatch.setattr(comm, "get_current_session", lambda: session)
 
     mgr = comm.ShinyCommManager()
-    c = comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widget")
+    c = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
     session._flush_handlers.clear()
 
     c.send(data={"k": "v"})
@@ -83,10 +77,11 @@ def test_close_is_idempotent_and_unregisters(monkeypatch):
     import shinywidgets._comm as comm
 
     session = FakeSession()
-    monkeypatch.setattr(comm, "get_current_session", lambda: session)
 
     mgr = comm.ShinyCommManager()
-    c = comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widget")
+    c = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
     session._flush_handlers.clear()
     session._flushed_handlers.clear()
 
@@ -99,31 +94,81 @@ def test_close_is_idempotent_and_unregisters(monkeypatch):
     assert len(session._flushed_handlers) == n
 
 
-def test_close_does_not_publish_without_session(monkeypatch):
+def test_close_is_suppressed_when_id_reregistered(monkeypatch):
+    import asyncio
+
     import shinywidgets._comm as comm
 
     session = FakeSession()
-    monkeypatch.setattr(comm, "get_current_session", lambda: session)
+
+    sent: list[str] = []
+
+    async def _spy(msg_type: str, msg_txt: str) -> None:
+        sent.append(msg_type)
+
+    monkeypatch.setattr(session, "send_custom_message", _spy)
 
     mgr = comm.ShinyCommManager()
-    c = comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widget")
+    old = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
+    # A replacement widget re-created with the same (explicit) id registers a
+    # new comm for it.
+    new = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
+    session._flush_handlers.clear()
     session._flushed_handlers.clear()
 
-    # Simulate leaving session context before closing.
-    monkeypatch.setattr(comm, "get_current_session", lambda: None)
-    c.close()
-    assert len(session._flushed_handlers) == 0
+    # Closing the old comm still schedules a close, but at send time the id
+    # belongs to the new comm, so nothing is sent and the new comm stays
+    # registered.
+    old.close()
+    assert len(session._flushed_handlers) == 1
+    asyncio.run(session._flushed_handlers[0]())
+    assert sent == []
+    assert mgr.comms.get("c1") is new
+
+    # Closing the current owner of the id sends the close.
+    new.close()
+    assert len(session._flushed_handlers) == 2
+    asyncio.run(session._flushed_handlers[1]())
+    assert sent == ["shinywidgets_comm_close"]
+    assert "c1" not in mgr.comms
 
 
-def test_open_unregisters_if_publish_fails(monkeypatch):
+def test_close_does_not_publish_after_session_ended():
     import shinywidgets._comm as comm
 
-    # Force publish to fail by returning no session.
-    monkeypatch.setattr(comm, "get_current_session", lambda: None)
+    session = FakeSession()
 
     mgr = comm.ShinyCommManager()
-    with pytest.raises(RuntimeError):
-        comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widget")
+    c = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
+    session._flushed_handlers.clear()
+
+    mgr.active = False
+    c.close()
+    assert len(session._flushed_handlers) == 0
+    assert "c1" not in mgr.comms
+
+
+def test_open_unregisters_if_publish_fails():
+    import shinywidgets._comm as comm
+
+    class BrokenSession(FakeSession):
+        def on_flush(self, fn):  # type: ignore[override]
+            raise RuntimeError("connection gone")
+
+    mgr = comm.ShinyCommManager()
+    with pytest.raises(RuntimeError, match="connection gone"):
+        comm.ShinyComm(
+            comm_id="c1",
+            comm_manager=mgr,
+            target_name="jupyter.widget",
+            session=BrokenSession(),
+        )
     assert "c1" not in mgr.comms
 
 
@@ -131,10 +176,11 @@ def test_buffers_are_base64_encoded_and_validated(monkeypatch):
     import shinywidgets._comm as comm
 
     session = FakeSession()
-    monkeypatch.setattr(comm, "get_current_session", lambda: session)
 
     mgr = comm.ShinyCommManager()
-    c = comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widget")
+    c = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
     session._flush_handlers.clear()
     session._flushed_handlers.clear()
 
@@ -166,10 +212,11 @@ def test_msg_and_close_callbacks(monkeypatch):
     import shinywidgets._comm as comm
 
     session = FakeSession()
-    monkeypatch.setattr(comm, "get_current_session", lambda: session)
 
     mgr = comm.ShinyCommManager()
-    c = comm.ShinyComm(comm_id="c1", comm_manager=mgr, target_name="jupyter.widget")
+    c = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
 
     seen: Dict[str, Any] = {"msg": None, "close": None}
     c.on_msg(lambda m: seen.__setitem__("msg", m))
@@ -189,3 +236,19 @@ def test_orphaned_shiny_comm_methods_are_noops() -> None:
     assert orphan.send() is None
     assert orphan.close() is None
     assert orphan.on_msg(lambda msg: msg) is None
+
+
+def test_messages_go_to_the_session_that_opened_the_comm():
+    import shinywidgets._comm as comm
+
+    owner = FakeSession(session_id="owner")
+    mgr = comm.ShinyCommManager()
+    c = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=owner
+    )
+    owner._flush_handlers.clear()
+
+    c.send(data={"x": 1})
+
+    assert len(owner._flushed_handlers) == 1
+    assert owner._flush_handlers == []

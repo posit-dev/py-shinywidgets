@@ -3,12 +3,13 @@ from types import ModuleType
 
 import pytest
 import shinywidgets._as_widget as asw
+from bokeh.document import Document
 from ipywidgets import Widget
 from shinywidgets._as_widget import (
     as_widget,
     as_widget_altair,
     as_widget_bokeh,
-    as_widget_holoviews,
+    as_widget_maplibre,
     as_widget_plotly,
     as_widget_pydeck,
 )
@@ -149,88 +150,97 @@ def test_as_widget_plotly_success_and_type_check_with_fakes(
         as_widget_plotly(object())
 
 
-def _fake_holoviews(monkeypatch: pytest.MonkeyPatch):
-    hv_mod = _inject_package(monkeypatch, "holoviews")
-    _inject_package(monkeypatch, "holoviews.core")
-    dim_mod = ModuleType("holoviews.core.dimension")
+def _fake_maplibre(monkeypatch: pytest.MonkeyPatch):
+    _inject_package(monkeypatch, "maplibre")
 
-    class Dimensioned:
-        pass
+    class Map:
+        def __init__(self):
+            self._state = {
+                "mapOptions": {"style": "dark-matter"},
+                "calls": [["addSource", ("src", {"type": "geojson"})]],
+            }
 
-    dim_mod.Dimensioned = Dimensioned  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "holoviews.core.dimension", dim_mod)
+        def to_dict(self):
+            return self._state
 
-    render_calls = {}
+    map_mod = ModuleType("maplibre.map")
+    map_mod.Map = Map  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "maplibre.map", map_mod)
 
-    def render(x, backend=None):
-        render_calls["x"] = x
-        render_calls["backend"] = backend
-        return "bokeh-fig"
+    ipywidget_mod = ModuleType("maplibre.ipywidget")
 
-    hv_mod.render = render  # type: ignore[attr-defined]
-    return Dimensioned, render_calls
+    def MapWidget():
+        return Widget.__new__(Widget)
+
+    ipywidget_mod.MapWidget = MapWidget  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "maplibre.ipywidget", ipywidget_mod)
+
+    return Map
 
 
-def test_as_widget_holoviews_rejects_non_dimensioned(
+def test_as_widget_maplibre_rejects_non_map(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_maplibre(monkeypatch)
+    with pytest.raises(TypeError, match="maplibre"):
+        as_widget_maplibre(object())
+
+
+def test_as_widget_maplibre_anywidget_import_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _fake_holoviews(monkeypatch)
-    with pytest.raises(TypeError, match="holoviews"):
-        as_widget_holoviews(object())
+    Map = _fake_maplibre(monkeypatch)
+    # maplibre.ipywidget exists, but MapWidget isn't defined (e.g., because
+    # anywidget isn't installed)
+    monkeypatch.setitem(
+        sys.modules, "maplibre.ipywidget", ModuleType("maplibre.ipywidget")
+    )
+    with pytest.raises(ImportError, match=r"maplibre\[anywidget\]"):
+        as_widget_maplibre(Map())
 
 
-def test_as_widget_holoviews_renders_with_bokeh_backend(
+def test_as_widget_maplibre_transfers_map_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    Dimensioned, render_calls = _fake_holoviews(monkeypatch)
+    Map = _fake_maplibre(monkeypatch)
 
-    jb = ModuleType("jupyter_bokeh")
-    jb.BokehModel = lambda x: Widget.__new__(Widget)  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "jupyter_bokeh", jb)
-
-    obj = Dimensioned()
-    res = as_widget_holoviews(obj)
+    m = Map()
+    res = as_widget_maplibre(m)
     assert isinstance(res, Widget)
-    assert render_calls["x"] is obj
-    assert render_calls["backend"] == "bokeh"
+    assert res.map_options == m.to_dict()["mapOptions"]  # type: ignore[attr-defined]
+    assert res._message_queue == m.to_dict()["calls"]  # type: ignore[attr-defined]
 
 
-def test_as_widget_holoviews_jupyter_bokeh_import_error(
+def test_as_widget_maplibre_dispatch_via_as_widget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    Dimensioned, _ = _fake_holoviews(monkeypatch)
-    monkeypatch.setitem(sys.modules, "jupyter_bokeh", ModuleType("jupyter_bokeh"))
-    with pytest.raises(ImportError, match="Install the jupyter_bokeh package"):
-        as_widget_holoviews(Dimensioned())
+    Map = _fake_maplibre(monkeypatch)
 
+    MlMap = type("Map", (Map,), {"__module__": "maplibre.map"})
 
-def test_as_widget_holoviews_dispatch_via_as_widget(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    Dimensioned, _ = _fake_holoviews(monkeypatch)
-
-    jb = ModuleType("jupyter_bokeh")
-    jb.BokehModel = lambda x: Widget.__new__(Widget)  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "jupyter_bokeh", jb)
-
-    HvObj = type("Curve", (Dimensioned,), {"__module__": "holoviews.element.chart"})
-
-    res = as_widget(HvObj())
+    res = as_widget(MlMap())
     assert isinstance(res, Widget)
 
 
-def test_as_widget_holoviews_real_bokeh_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    hv = pytest.importorskip("holoviews")
-    pytest.importorskip("jupyter_bokeh")
+def test_as_widget_maplibre_real_map_widget(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("maplibre")
+    pytest.importorskip("anywidget")
 
     import shinywidgets._shinywidgets as sw
 
     monkeypatch.setattr(sw, "get_current_session", lambda: StubSession())
 
-    from jupyter_bokeh import BokehModel
+    from maplibre import Map
+    from maplibre.ipywidget import MapWidget
 
-    res = as_widget(hv.Curve([1, 2, 3]))
-    assert isinstance(res, BokehModel)
+    m = Map()
+    m.add_source(
+        "src",
+        {"type": "geojson", "data": {"type": "FeatureCollection", "features": []}},
+    )
+
+    res = as_widget(m)
+    assert isinstance(res, MapWidget)
+    assert res.map_options == m.to_dict()["mapOptions"]
+    assert res._message_queue == m.to_dict()["calls"]
 
 
 def test_as_widget_pydeck_missing_show_errors() -> None:
@@ -264,3 +274,88 @@ def test_as_widget_pydeck_show_returning_widget_succeeds() -> None:
 
     res = as_widget_pydeck(Deck())
     assert isinstance(res, Widget)
+
+
+def _fake_panel(monkeypatch: pytest.MonkeyPatch, root: object) -> None:
+    panel = ModuleType("panel")
+
+    class FakePane:
+        def get_root(self, doc: Document | None = None) -> object:
+            return root
+
+    panel.panel = lambda x: FakePane()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "panel", panel)
+
+
+def _fake_jupyter_bokeh(monkeypatch: pytest.MonkeyPatch) -> None:
+    jb = ModuleType("jupyter_bokeh")
+    jb.BokehModel = lambda x: Widget.__new__(Widget)  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "jupyter_bokeh", jb)
+
+
+def test_as_widget_panel_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_panel(monkeypatch, root=object())
+    _fake_jupyter_bokeh(monkeypatch)
+
+    class PanelObj:
+        __module__ = "panel.widgets.tables"
+
+    res = as_widget(PanelObj())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_holoviews_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_panel(monkeypatch, root=object())
+    _fake_jupyter_bokeh(monkeypatch)
+
+    class HVObj:
+        __module__ = "holoviews.element.chart"
+
+    res = as_widget(HVObj())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_hvplot_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_panel(monkeypatch, root=object())
+    _fake_jupyter_bokeh(monkeypatch)
+
+    class HvPlotObj:
+        __module__ = "hvplot.plotting"
+
+    res = as_widget(HvPlotObj())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_panel_without_panel_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "panel", None)
+
+    class PanelObj:
+        __module__ = "panel.widgets.tables"
+
+    with pytest.raises(ImportError, match="pip install panel"):
+        as_widget(PanelObj())
+
+
+def test_as_widget_holoviews_without_panel_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "panel", None)
+
+    class HVObj:
+        __module__ = "holoviews.element.chart"
+
+    with pytest.raises(ImportError, match="pip install panel"):
+        as_widget(HVObj())
+
+
+def test_as_widget_panel_without_jupyter_bokeh_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_panel(monkeypatch, root=object())
+    monkeypatch.setitem(sys.modules, "jupyter_bokeh", ModuleType("jupyter_bokeh"))
+
+    class PanelObj:
+        __module__ = "panel.widgets.tables"
+
+    with pytest.raises(ImportError, match="Install the jupyter_bokeh package"):
+        as_widget(PanelObj())

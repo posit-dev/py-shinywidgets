@@ -7,12 +7,13 @@ from htmltools import Tag
 if TYPE_CHECKING:
     from altair import JupyterChart
     from jupyter_bokeh import BokehModel
+    from maplibre.ipywidget import MapWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = BokehModel = FigureWidget = DeckGLWidget = object
+    JupyterChart = BokehModel = MapWidget = FigureWidget = DeckGLWidget = object
 
-from ._dependencies import bokeh_dependency
+from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
 __all__ = (
@@ -20,6 +21,8 @@ __all__ = (
     "render_altair",
     "render_bokeh",
     "render_holoviews",
+    "render_maplibre",
+    "render_panel",
     "render_plotly",
     "render_pydeck",
 )
@@ -35,6 +38,9 @@ class render_widget(render_widget_base[WidgetT, WidgetT]): ...
 class render_altair(render_widget_base[ValueT, JupyterChart]): ...
 
 
+class render_maplibre(render_widget_base[ValueT, MapWidget]): ...
+
+
 class render_bokeh(render_widget_base[ValueT, BokehModel]):
     def auto_output_ui(self) -> Tag:
         res = super().auto_output_ui()
@@ -42,9 +48,18 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         return res
 
 
-# holoviews objects are coerced to bokeh figures (via hv.render()), so this
-# renderer shares render_bokeh's need for the bokeh JS dependency
-class render_holoviews(render_bokeh): ...
+class render_panel(render_widget_base[ValueT, BokehModel]):
+    def auto_output_ui(self) -> Tag:
+        res = super().auto_output_ui()
+        res.children.append(bokeh_dependency())
+        return res
+
+
+class render_holoviews(render_widget_base[ValueT, BokehModel]):
+    def auto_output_ui(self) -> Tag:
+        res = super().auto_output_ui()
+        res.children.append(bokeh_dependency())
+        return res
 
 
 class render_plotly(render_widget_base[ValueT, FigureWidget]):  # pyright: ignore[reportInvalidTypeArguments]

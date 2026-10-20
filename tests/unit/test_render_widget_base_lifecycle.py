@@ -4,6 +4,12 @@ import pytest
 import shinywidgets._render_widget_base as rwb
 
 
+class FakeLiveWidget:
+    """Stands in for a widget whose comm is open."""
+
+    comm = object()
+
+
 class FakeContext:
     def __init__(self) -> None:
         self.invalidated = 0
@@ -81,7 +87,7 @@ def test_contexts_invalidated_on_rerender(monkeypatch) -> None:
         return state["val"]
 
     # Avoid real widget conversions; non-DOMWidget path returns None.
-    monkeypatch.setattr(rwb, "as_widget", lambda value: object())
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
 
     asyncio.run(r._render())
 
@@ -112,12 +118,12 @@ def test_render_returns_none_when_widget_is_not_domwidget(monkeypatch) -> None:
     async def _():  # noqa: ANN202
         return object()
 
-    monkeypatch.setattr(rwb, "as_widget", lambda value: object())
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
     assert asyncio.run(r._render()) is None
 
 
 def test_render_includes_widget_package_for_domwidgets(monkeypatch) -> None:
-    class FakeDOMWidget:
+    class FakeDOMWidget(FakeLiveWidget):
         def __init__(self) -> None:
             self.model_id = "widget-1"
 
@@ -189,7 +195,14 @@ def test_interleaved_renders_each_see_their_own_context(monkeypatch) -> None:
     assert seen == {"a": contexts["a"], "b": contexts["b"]}
 
 
-def test_task_started_during_a_render_is_not_rendering_after_it(monkeypatch) -> None:
+def test_task_started_during_a_render_still_shares_its_context_after_it_exits(
+    monkeypatch,
+) -> None:
+    # A task started during a render keeps a copy of the render's Context
+    # (asyncio.create_task() snapshots the current contextvars). A
+    # widget that task builds *after* the render body returns must still be
+    # tied to that Context, or it leaks until the session ends instead of
+    # closing when the render is eventually invalidated.
     monkeypatch.setattr(rwb, "get_current_context", lambda: FakeContext())
     seen: list[bool] = []
 
@@ -208,7 +221,7 @@ def test_task_started_during_a_render_is_not_rendering_after_it(monkeypatch) -> 
         await task
 
     asyncio.run(main())
-    assert seen == [True, False]
+    assert seen == [True, True]
 
 
 def test_render_wraps_in_widget_render_context_and_restores_on_error(

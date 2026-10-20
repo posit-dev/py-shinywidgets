@@ -15,7 +15,7 @@ from htmltools._core import (
 from ipywidgets.widgets.domwidget import DOMWidget
 from ipywidgets.widgets.widget import Widget
 from jupyter_core.paths import jupyter_path
-from shiny import Session, ui
+from shiny import Session
 
 from . import __version__
 
@@ -113,13 +113,6 @@ def require_dependency(
         all_files=True,
         head=tags.script(f"window.require.config({json.dumps(config)})"),
     )
-
-
-def bokeh_dependency() -> HTMLDependency:
-    from bokeh.resources import Resources
-
-    resources = Resources(mode="inline").render()
-    return ui.head_content(ui.HTML(resources))
 
 
 def jupyter_extension_path(module_name: str) -> Optional[str]:

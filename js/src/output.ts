@@ -2,7 +2,9 @@ import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { jsonParse } from './utils';
-import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
+import { disposeNative, finishDetach, hasAncestor, viewParent } from './views';
+import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
+import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
 
@@ -24,6 +26,85 @@ class OutputManager extends HTMLManager {
   // arrivals (with a timeout to avoid silent hangs).
   private _modelWaiters = new Map<string, ModelWaiter[]>();
   private _activeClears = 0;
+
+  // Every view the manager has created, including child views created via
+  // `create_child_view` (views of a *different* model, not tracked anywhere
+  // else). Lets `removeViewTree` remove a view's descendants, not just itself.
+  private _liveViews = new Set<WidgetView>();
+
+  // Views removed by removeViewTree(), so a view whose create_view() promise
+  // resolves after its ancestor was removed can tear itself down. Weak so
+  // removed views can still be garbage collected.
+  private _removedViews = new WeakSet<WidgetView>();
+
+  create_view<VT extends DOMWidgetView = DOMWidgetView>(model: DOMWidgetModel, options?: any): Promise<VT>;
+  create_view<VT extends WidgetView = WidgetView>(model: WidgetModel, options?: any): Promise<VT>;
+  create_view(model: WidgetModel, options?: any): Promise<WidgetView> {
+    const viewPromise = super.create_view(model, options);
+    viewPromise.then(
+      (view) => {
+        // An ancestor may have been removed while this view was still being
+        // created (e.g. dynamic UI removed the output mid-render).
+        // removeViewTree() only sweeps views live at the time, so tear the
+        // late view down here.
+        if (this._hasRemovedAncestor(view)) {
+          try {
+            this._teardownView(view);
+          } catch (err) {
+            console.error('Error removing orphaned widget view:', err);
+          }
+          return;
+        }
+        this._liveViews.add(view);
+        view.once('remove', () => this._liveViews.delete(view));
+      },
+      () => {
+        // View creation failed; create_view's own promise chain already logs it.
+      }
+    );
+    return viewPromise;
+  }
+
+  // Remove `root` and every live view whose `options.parent` chain leads back
+  // to it (e.g. ipyleaflet's layer/control views, or a container's children);
+  // plain `view.remove()` would leave those descendants alive and listening.
+  removeViewTree(root: WidgetView): void {
+    const errors: unknown[] = [];
+    const teardown = (view: WidgetView) => {
+      try {
+        this._teardownView(view);
+      } catch (err) {
+        errors.push(err);
+      }
+    };
+    for (const view of [...this._liveViews].reverse()) {
+      if (view !== root && hasAncestor(view, root)) {
+        teardown(view);
+      }
+    }
+    teardown(root);
+    if (errors.length) {
+      console.error('Errors while removing widget view tree:', errors);
+    }
+  }
+
+  private _teardownView(view: WidgetView): void {
+    // Mark before remove() so any descendants that resolve later (from this
+    // view's own pending create_child_view calls) also tear themselves down.
+    this._removedViews.add(view);
+    disposeNative(view);
+    finishDetach(view);
+    view.remove();
+  }
+
+  private _hasRemovedAncestor(view: WidgetView): boolean {
+    for (let parent = viewParent(view); parent; parent = viewParent(parent)) {
+      if (this._removedViews.has(parent)) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   async get_model(model_id: string): Promise<WidgetModel> {
     if (this.has_model(model_id)) {
@@ -134,6 +215,12 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
 
 const manager = new OutputManager({ loader: shinyRequireLoader });
 
+// Models this session has closed. Shiny replays an output's last rendered
+// value when the output is re-bound (render.ui show/hide, remove_ui then
+// insert_ui of the same id); if that value names a closed model, no
+// comm_open is coming for it, so renderValue() must not wait on it.
+const closedModels = new Set<string>();
+
 
 /******************************************************************************
 * Define the Shiny binding
@@ -167,6 +254,15 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     if (!data) {
       this._removeView(el);
       el.style.visibility = hiddenVisibility;
+      return;
+    }
+
+    if (closedModels.has(data.model_id)) {
+      // Render nothing; the server re-renders this output (with a fresh
+      // model) once bind completes and reports the output visible again.
+      this._removeView(el);
+      el.replaceChildren();
+      el.style.visibility = revealVisibility;
       return;
     }
 
@@ -279,14 +375,28 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     const impl = lmWidget.children[0];
     return impl && (impl.children.length > 0 || impl.shadowRoot?.children.length > 0);
   }
-  private _removeView(el: HTMLElement): void {
+  _removeView(el: HTMLElement): void {
     const view = this._views.get(el);
     this._views.delete(el);
-    view?.remove();
+    if (view) {
+      manager.removeViewTree(view);
+    }
   }
 }
 
-Shiny.outputBindings.register(new IPyWidgetOutput(), "shiny.IPyWidgetOutput");
+const widgetOutputBinding = new IPyWidgetOutput();
+Shiny.outputBindings.register(widgetOutputBinding, "shiny.IPyWidgetOutput");
+
+// Dynamic UI (render.ui swapping content, remove_ui/insert_ui) can unbind an
+// output without going through onValueError or renderValue(null); without
+// this the view stays alive, keeps receiving model updates, and is never released.
+$(document).on("shiny:unbound", (event) => {
+  const el = event.target as unknown as HTMLElement;
+  const bindingType = (event as unknown as { bindingType?: string }).bindingType;
+  if (bindingType === "output" && el.classList.contains("shiny-ipywidget-output")) {
+    widgetOutputBinding._removeView(el);
+  }
+});
 
 
 // Due to the way HTMLManager (and widget implementations) get loaded (via
@@ -304,13 +414,33 @@ if (taskQueue) {
 * Handle messages from the server-side Widget
 ******************************************************************************/
 
+// ES modules referenced by widget models (e.g., Panel's Perspective).
+// They can't ride the dependency channel: their import() must be awaited
+// (models consult the globals at render time), and only import() exposes
+// a module's exports.
+type ModuleAssets = {
+  // Side-effect-only modules to import.
+  urls?: string[];
+  // Global name -> module URL; the module's default export is assigned to
+  // the global.
+  exports?: Record<string, string>;
+};
+
 // Initialize the comm and model when a new widget is created
 // This is basically our version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1144-L1176
-Shiny.addCustomMessageHandler("shinywidgets_comm_open", (msg_txt) => {
+Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
   setBaseURL();
   const msg = jsonParse(msg_txt);
-  Shiny.renderDependencies(msg.content.html_deps);
+  const deps = msg.content.html_deps as HtmlDep[];
+  // Dependencies (e.g. BokehJS) must finish loading before the model is
+  // constructed below; otherwise require() of the widget's module fails.
+  await Shiny.renderDependenciesAsync(deps);
+  await loadModules(msg.content.modules as ModuleAssets | undefined);
   const comm = new ShinyComm(msg.content.comm_id);
+  // An explicit model_id survives widget re-creation on the Python side, so
+  // an id can reopen after being closed; it must not stay marked closed or
+  // renderValue() would render nothing for it.
+  closedModels.delete(msg.content.comm_id);
   manager.handle_comm_open(comm, msg);
 });
 
@@ -337,6 +467,7 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
 Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
   const msg = jsonParse(msg_txt);
   const id = msg.content.comm_id;
+  closedModels.add(id);
   if (!manager.has_model(id)) {
     console.error(`Couldn't close model ${id} because it doesn't exist.`);
     return;
@@ -349,25 +480,13 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
     if (m.views) {
       await Promise.all(
         Object.values(m.views).map(async (viewPromise) => {
-        try {
-          const v = await viewPromise;
-
-          // Plotly-backed views can leave DOM state and listeners behind unless
-          // destroy() runs before the view is removed.
-          if (hasMethod<DestroyMethod>(v, 'destroy')) {
-            v.destroy();
-            // Clearing the back-reference prevents later teardown from touching a
-            // model that is already being closed.
-            delete (v as any).model;
-            (v as any).remove();
+          try {
+            manager.removeViewTree(await viewPromise);
+          } catch (err) {
+            console.error("Error cleaning up view:", err);
           }
-
-
-        } catch (err) {
-          console.error("Error cleaning up view:", err);
-        }
-      })
-    );
+        })
+      );
     }
 
     // View removal updates _view_count. Mark the comm as inactive first so that
@@ -420,11 +539,6 @@ function setBaseURL(x: string = '') {
   }
 }
 
-// TypeGuard to safely check if an object has a method
-function hasMethod<T>(obj: any, methodName: keyof T): obj is T {
-    return typeof obj[methodName] === 'function';
-}
-
 function isIgnorableTeardownError(err: unknown): boolean {
   const msg = errorMessage(err).toLowerCase();
   return (
@@ -440,6 +554,14 @@ function errorMessage(err: unknown): string {
   return String(err);
 }
 
-interface DestroyMethod {
-    destroy(): void;
+async function loadModules(modules?: ModuleAssets): Promise<void> {
+  if (!modules) return;
+  const importUrl = (url: string) =>
+    import(/* webpackIgnore: true */ new URL(url, document.baseURI).href);
+  await Promise.all((modules.urls ?? []).map(importUrl));
+  const globals = window as unknown as Record<string, unknown>;
+  for (const [name, url] of Object.entries(modules.exports ?? {})) {
+    const module = (await importUrl(url)) as { default: unknown };
+    globals[name] = module.default;
+  }
 }

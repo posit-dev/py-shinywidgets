@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import warnings
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from dataclasses import dataclass
-from typing import Generic, Optional, Tuple, TypeVar, cast
+from typing import Generic, Iterator, Optional, Tuple, TypeVar, cast
 
 from htmltools import Tag
 from ipywidgets.widgets import DOMWidget, Layout, Widget
@@ -13,10 +13,13 @@ from shiny.reactive._core import (
     get_current_context,  # pyright: ignore[reportPrivateImportUsage]
 )
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
+from shiny.session import get_current_session
 
 from ._as_widget import as_widget
+from ._comm import OrphanedShinyComm
 from ._dependencies import widget_pkg
 from ._output_widget import output_widget
+from ._widget_registry import WIDGET_INSTANCE_MAP
 
 __all__ = (
     "render_widget_base",
@@ -89,6 +92,38 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
         # Ensure we have a widget & smart layout defaults
         widget = as_widget(value)
+        if is_closed_widget(widget):
+            raise RuntimeError(
+                "This widget has been closed (its render was invalidated, or it was "
+                "closed explicitly), so it can't be displayed again. To reuse a widget "
+                "across renders, construct it inside `with session_lifetime():`."
+            )
+
+        session = get_current_session()
+        # Outside a real session (the Express UI-discovery pass, or a unit test
+        # that calls _render() directly without a session) there's nothing to
+        # compare the returned widgets' ownership against, so there's nothing to
+        # reject.
+        if session is not None and not session.is_stub_session():
+            # _shinywidgets imports WidgetRenderContext and is_closed_widget from
+            # this module at module scope, so importing it back the same way would
+            # be circular; keep this one function-local instead.
+            from ._shinywidgets import foreign_or_closed_widget
+
+            bad = foreign_or_closed_widget(widget, session.root_scope())
+            if bad is not None and is_closed_widget(bad):
+                raise RuntimeError(
+                    f"{type(bad).__name__} was closed (its render was invalidated, or "
+                    "it was closed explicitly), so it can't be displayed again. To "
+                    "reuse a widget across renders, construct it inside "
+                    "`with session_lifetime():`."
+                )
+            if bad is not None:
+                raise RuntimeError(
+                    f"{type(bad).__name__} belongs to another Shiny session, so it "
+                    "can't be displayed here. Construct widgets per session."
+                )
+
         widget, fill = set_layout_defaults(widget)
 
         self._widget = cast(WidgetT, widget)
@@ -228,26 +263,29 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
     return (widget, fill)
 
 
-@dataclass
-class _RenderingWidget:
-    context: Context
-    active: bool = True
-
-
-# The render that is running in the current asyncio task. A ContextVar, because Shiny
-# can run a session's outputs as concurrent tasks that interleave at each `await`, and
-# each task needs to see only its own render.
-_rendering_widget: ContextVar[_RenderingWidget | None] = ContextVar(
+# The render Context that is running in the current asyncio task, or None outside
+# a render (or inside session_lifetime()). A ContextVar, because Shiny can run a
+# session's outputs as concurrent tasks that interleave at each `await`, and each
+# task needs to see only its own render.
+#
+# asyncio.create_task() snapshots the current contextvars, so a task started
+# during a render keeps seeing that render's Context even after the render body
+# has returned. A widget the task builds later still registers for cleanup on
+# that Context (see RENDER_OWNED_WIDGETS in _shinywidgets.py), same as one built
+# directly in the render body -- it closes with the render instead of leaking
+# until the session ends.
+_rendering_widget: ContextVar[Context | None] = ContextVar(
     "shinywidgets_rendering_widget", default=None
 )
 
 
 class WidgetRenderContext:
     """
-    Record the widget render that is running in the current asyncio task.
+    Record the reactive Context of the widget render running in the current
+    asyncio task.
 
-    This is used to ensure that widget's that are initialized in a render_widget()
-    context are cleaned up properly when that context is re-entered.
+    This is used to ensure that widgets initialized in a render_widget() context
+    are cleaned up properly when that context is invalidated.
 
     The render Context is captured at __enter__ time so that init_shiny_widget can
     register cleanup callbacks on the correct Context, even if the widget is
@@ -256,33 +294,42 @@ class WidgetRenderContext:
     """
 
     def __init__(self):
-        self._rendering: _RenderingWidget | None = None
-        self._token: Token[_RenderingWidget | None] | None = None
+        self._context: Context | None = None
+        self._token: Token[Context | None] | None = None
 
     def __enter__(self):
-        self._rendering = _RenderingWidget(get_current_context())
-        self._token = _rendering_widget.set(self._rendering)
+        self._context = get_current_context()
+        self._token = _rendering_widget.set(self._context)
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        assert self._rendering is not None and self._token is not None
-        # A task started during the render has a copy of this render's value. Mark
-        # it inactive, so a widget that such a task builds later is not tied to
-        # this output.
-        self._rendering.active = False
+        assert self._context is not None and self._token is not None
         _rendering_widget.reset(self._token)
         return False
 
     @staticmethod
-    def _current() -> _RenderingWidget | None:
-        rendering = _rendering_widget.get()
-        if rendering is None or not rendering.active:
-            return None
-        return rendering
+    def is_rendering_widget() -> bool:
+        return _rendering_widget.get() is not None
 
     @staticmethod
-    def is_rendering_widget() -> bool:
-        return WidgetRenderContext._current() is not None
+    @contextmanager
+    def suspended() -> Iterator[None]:
+        """Widgets constructed in the block get session (not render) lifetime."""
+        token = _rendering_widget.set(None)
+        try:
+            yield
+        finally:
+            _rendering_widget.reset(token)
+
+    @staticmethod
+    @contextmanager
+    def resumed(context: Context | None) -> Iterator[None]:
+        """Re-enter a render captured earlier, so widgets created now share its cleanup."""
+        token = _rendering_widget.set(context)
+        try:
+            yield
+        finally:
+            _rendering_widget.reset(token)
 
     @staticmethod
     def get_render_context() -> Context:
@@ -292,7 +339,20 @@ class WidgetRenderContext:
         This returns the render output's Context rather than the current Context,
         which may be a temporary isolate Context.
         """
-        rendering = WidgetRenderContext._current()
-        if rendering is None:
+        context = _rendering_widget.get()
+        if context is None:
             raise RuntimeError("Not currently rendering a widget")
-        return rendering.context
+        return context
+
+
+def is_closed_widget(widget: Widget) -> bool:
+    """
+    A widget we closed keeps an inert OrphanedShinyComm (so model_id still works)
+    but is no longer in ipywidgets' instance map; a user-closed widget has no comm.
+    """
+    if widget.comm is None:
+        return True
+    return (
+        isinstance(widget.comm, OrphanedShinyComm)
+        and WIDGET_INSTANCE_MAP.get(widget.model_id) is not widget
+    )
