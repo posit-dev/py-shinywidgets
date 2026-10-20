@@ -173,6 +173,7 @@ def init_shiny_widget(w: Widget):
 
         with WidgetRenderContext.resumed(render_ctx):
             # Plotly's display hook snapshots the data and layout for get_state().
+            # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
             # Other display hooks can create preview widgets, causing an infinite
             # widget-creation loop (e.g. pythreejs, #244).
             if any(widget_pkg(cls) == "plotly" for cls in type(w).__mro__):
