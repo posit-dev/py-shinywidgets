@@ -1,4 +1,4 @@
-import type { WidgetModel } from '@jupyter-widgets/base';
+import { DOMWidgetView, type WidgetModel, type WidgetView } from '@jupyter-widgets/base';
 
 /**
  * ipympl canvases render at the matplotlib figure's fixed pixel size and have
@@ -56,3 +56,54 @@ export function setupMplAutoResize(
 
   return () => observer.disconnect();
 }
+
+export function mplCanvasViewClass(ViewType: typeof WidgetView): typeof WidgetView {
+  const CanvasView = ViewType as MplCanvasViewConstructor;
+  return class extends CanvasView {
+    private _removed = false;
+
+    // ipympl binds these handlers with model.on(), retaining removed views of
+    // a cached canvas. listenTo() preserves their behavior and lets base view
+    // disposal release them.
+    model_events(): void {
+      this.listenTo(this.model, {
+        'change:header_visible': this._update_header_visible,
+        'change:footer_visible': this._update_footer_visible,
+        'change:toolbar_visible': this._update_toolbar_visible,
+        'change:toolbar_position': this._update_toolbar_position,
+        'change:_figure_label': this._update_figure_label,
+        'change:_message': this._update_message,
+        'change:_cursor': this._update_cursor,
+      });
+    }
+
+    remove(): this {
+      if (this._removed) return this;
+      this._removed = true;
+      // ipympl removes its window listeners but omits the base implementation.
+      // Lumino disposal can initiate or reenter removal, so guard the whole
+      // operation independently of Lumino's disposed state.
+      try {
+        super.remove();
+      } finally {
+        DOMWidgetView.prototype.remove.call(this);
+      }
+      return this;
+    }
+  };
+}
+
+interface MplCanvasView extends DOMWidgetView {
+  _update_header_visible(): void;
+  _update_footer_visible(): void;
+  _update_toolbar_visible(): void;
+  _update_toolbar_position(): void;
+  _update_figure_label(): void;
+  _update_message(): void;
+  _update_cursor(): void;
+}
+
+type MplCanvasViewConstructor = Omit<typeof WidgetView, 'prototype'> & {
+  new (...args: ConstructorParameters<typeof WidgetView>): MplCanvasView;
+  prototype: MplCanvasView;
+};

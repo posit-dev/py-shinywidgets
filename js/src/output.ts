@@ -1,6 +1,7 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
 import { WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
+import { mplCanvasViewClass } from './mpl';
 import { jsonParse } from './utils';
 import { disposeNative, finishDetach, hasAncestor, viewParent } from './views';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
@@ -36,6 +37,17 @@ class OutputManager extends HTMLManager {
   // resolves after its ancestor was removed can tear itself down. Weak so
   // removed views can still be garbage collected.
   private _removedViews = new WeakSet<WidgetView>();
+
+  protected async loadViewClass(
+    className: string,
+    moduleName: string,
+    moduleVersion: string,
+  ): Promise<typeof WidgetView> {
+    const ViewType = await super.loadViewClass(className, moduleName, moduleVersion);
+    return moduleName === 'jupyter-matplotlib' && className === 'MPLCanvasView'
+      ? mplCanvasViewClass(ViewType)
+      : ViewType;
+  }
 
   create_view<VT extends DOMWidgetView = DOMWidgetView>(model: DOMWidgetModel, options?: any): Promise<VT>;
   create_view<VT extends WidgetView = WidgetView>(model: WidgetModel, options?: any): Promise<VT>;

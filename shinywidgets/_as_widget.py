@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import warnings
+from threading import RLock, get_ident
 from typing import TYPE_CHECKING, Optional, cast
+from weakref import WeakSet
 
 from htmltools import HTMLDependency
 from ipywidgets.widgets.widget import Widget
@@ -11,6 +13,8 @@ from ._dependencies import widget_pkg
 
 if TYPE_CHECKING:
     from bokeh.models import LayoutDOM
+    from ipympl.backend_nbagg import Canvas as MplCanvas
+    from ipympl.backend_nbagg import FigureManager as MplFigureManager
     from jupyter_bokeh import BokehModel
     from matplotlib.figure import Figure
     from panel.viewable import Viewable
@@ -26,15 +30,19 @@ def as_widget(x: object) -> Widget:
 
     pkg = widget_pkg(x)
 
-    _as_widget = AS_WIDGET_MAP.get(pkg, None)
-    if _as_widget is None:
+    coerce = AS_WIDGET_MAP.get(pkg)
+    if coerce is None and any(
+        widget_pkg(base) == "matplotlib" for base in type(x).__mro__
+    ):
+        coerce = as_widget_mpl
+    if coerce is None:
         msg = f"Don't know how to coerce {x} into a ipywidget.Widget object."
         if callable(getattr(x, "_repr_html_", None)):
             msg += " Instead of using shinywidgets to render this object, try using shiny's @render.ui decorator "
             msg += " https://shiny.posit.co/py/api/ui.output_ui.html#shiny.ui.output_ui"
         raise TypeError(msg)
 
-    res = _as_widget(x)
+    res = coerce(x)
 
     if not isinstance(res, Widget):
         raise TypeError(
@@ -117,70 +125,38 @@ def as_widget_maplibre(x: object) -> Optional[Widget]:
     return res  # type: ignore
 
 
-def as_widget_mpl(x: object) -> Optional[Widget]:
-    # matplotlib is guaranteed to be installed here since this function is only
-    # called when x comes from the matplotlib package
+def as_widget_mpl(x: object) -> MplCanvas:
     from matplotlib.axes import Axes
-    from matplotlib.figure import Figure
+    from matplotlib.figure import Figure, SubFigure
 
-    # Several higher-level APIs (e.g., pandas.DataFrame.plot()) return an Axes
-    # rather than a Figure
     if isinstance(x, Axes):
-        x = x.figure  # type: ignore
+        x = x.figure
+        if isinstance(x, SubFigure):
+            x = x.figure
 
     if not isinstance(x, Figure):
         raise TypeError(
             f"Don't know how to coerce {x} into a matplotlib.figure.Figure object."
         )
 
-    try:
-        from ipympl.backend_nbagg import Canvas, FigureManager
-    except ImportError:
-        raise ImportError(
-            "Install the ipympl package to use matplotlib with shinywidgets (pip install ipympl)."
-        )
+    Canvas, FigureManager = mpl_canvas_classes()
 
-    # Canvas(figure=x) alone isn't enough -- ipympl's browser message handling
-    # goes through canvas.manager (e.g., a resize message calls
-    # manager.handle_json()), so the canvas needs a FigureManager (which also
-    # wires up the toolbar).
-    canvas = Canvas(x)
-    FigureManager(canvas, getattr(x, "number", id(x)))
+    # The renderer imports this module, so its closed-widget check must be
+    # imported after initialization to avoid a circular import.
+    from ._render_widget_base import is_closed_widget
 
-    _close_mpl_figure_with_widget(canvas, x)
+    if isinstance(x.canvas, Canvas) and not is_closed_widget(x.canvas):
+        canvas = x.canvas
+    else:
+        canvas = Canvas(x)
+    # Browser messages go through canvas.manager, including resize and toolbar
+    # messages. A manually constructed Canvas may not have a manager yet.
+    if canvas.manager is None:
+        FigureManager(canvas, getattr(x, "number", id(x)))
+
+    close_mpl_figure_with_widget(canvas, x)
 
     return canvas
-
-
-def _close_mpl_figure_with_widget(canvas: Widget, fig: Figure) -> None:
-    """
-    Deregister a pyplot figure (via plt.close()) when the canvas widget closes.
-
-    Figures created through pyplot (e.g., plt.subplots()) stay registered in
-    pyplot's global figure manager, which leaks memory (and triggers "More
-    than 20 figures have been opened" warnings) as renders repeat. The widget
-    machinery already closes the ipympl canvas at the end of its lifetime, so
-    tying the pyplot deregistration to the widget's close means it happens
-    exactly when the canvas goes away -- at render retirement, or at session
-    end for widgets kept alive via session_lifetime().
-    """
-    num = getattr(fig, "number", None)
-    if num is None:
-        # Not a pyplot-managed figure, so there's nothing to deregister
-        return
-
-    def on_comm_change(change: dict[str, object]) -> None:
-        # The comm becomes None exactly once: when the widget closes
-        if change["new"] is not None:
-            return
-        canvas.unobserve(on_comm_change, names="comm")
-        import matplotlib.pyplot as plt
-
-        # plt.close(fig) deregisters by figure identity (Gcf.destroy_fig()), so
-        # it's safe even if the user already closed it or the number was reused
-        plt.close(fig)
-
-    canvas.observe(on_comm_change, names="comm")
 
 
 def as_widget_plotly(x: object) -> Optional[Widget]:
@@ -303,3 +279,67 @@ def panel_to_widget(x: object, *, context: str, missing_panel_message: str) -> W
 
     widget.observe(on_comm_change, names="comm")
     return widget
+
+
+def mpl_canvas_classes() -> tuple[type[MplCanvas], type[MplFigureManager]]:
+    import matplotlib
+
+    # ipympl's initializer selects its pyplot backend. Switching back afterward
+    # closes existing figures on matplotlib 3.10, so prevent that selection.
+    # Serialize our shims and leave other threads' explicit use() calls intact.
+    with MPL_IMPORT_LOCK:
+        use = matplotlib.use
+        importing_thread = get_ident()
+
+        def preserve_backend(backend: str, *, force: bool = True) -> None:
+            if (
+                get_ident() != importing_thread
+                or backend != "module://ipympl.backend_nbagg"
+            ):
+                use(backend, force=force)
+
+        matplotlib.use = preserve_backend
+        try:
+            from ipympl.backend_nbagg import Canvas, FigureManager
+        except ImportError:
+            raise ImportError(
+                "Install the ipympl package to use matplotlib with shinywidgets (pip install ipympl)."
+            ) from None
+        finally:
+            matplotlib.use = use
+
+    return Canvas, FigureManager
+
+
+def close_mpl_figure_with_widget(canvas: Widget, fig: Figure) -> None:
+    """
+    Deregister a pyplot figure (via plt.close()) when the canvas widget closes.
+
+    Figures created through pyplot (e.g., plt.subplots()) stay registered in
+    pyplot's global figure manager, which leaks memory (and triggers "More
+    than 20 figures have been opened" warnings) as renders repeat. The widget
+    machinery already closes the ipympl canvas at the end of its lifetime, so
+    tying the pyplot deregistration to the widget's close means it happens
+    exactly when the canvas goes away -- at render retirement, or at session
+    end for widgets kept alive via session_lifetime().
+    """
+    if getattr(fig, "number", None) is None or canvas in MPL_CLEANUP_CANVASES:
+        return
+    MPL_CLEANUP_CANVASES.add(canvas)
+
+    def on_comm_change(change: dict[str, object]) -> None:
+        # The comm becomes None exactly once: when the widget closes
+        if change["new"] is not None:
+            return
+        canvas.unobserve(on_comm_change, names="comm")
+        import matplotlib.pyplot as plt
+
+        # plt.close(fig) deregisters by figure identity (Gcf.destroy_fig()), so
+        # it's safe even if the user already closed it or the number was reused
+        plt.close(fig)
+
+    canvas.observe(on_comm_change, names="comm")
+
+
+MPL_IMPORT_LOCK = RLock()
+MPL_CLEANUP_CANVASES: WeakSet[Widget] = WeakSet()

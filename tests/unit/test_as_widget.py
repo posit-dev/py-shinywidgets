@@ -29,14 +29,23 @@ class StubSession:
 
 
 def _fake_matplotlib(monkeypatch: pytest.MonkeyPatch):
-    _inject_package(monkeypatch, "matplotlib")
+    matplotlib = _inject_package(monkeypatch, "matplotlib")
+
+    def use(backend: str, *, force: bool = True) -> None:
+        pass
+
+    setattr(matplotlib, "use", use)
 
     figure_mod = ModuleType("matplotlib.figure")
 
     class Figure:
+        canvas = None
+
+    class SubFigure:
         pass
 
     figure_mod.Figure = Figure  # type: ignore[attr-defined]
+    setattr(figure_mod, "SubFigure", SubFigure)
     monkeypatch.setitem(sys.modules, "matplotlib.figure", figure_mod)
 
     axes_mod = ModuleType("matplotlib.axes")
@@ -61,11 +70,14 @@ def _fake_ipympl_canvas(monkeypatch: pytest.MonkeyPatch):
         def __init__(self, figure):
             # Deliberately skip Widget.__init__() (it requires an active session)
             captured["figure"] = figure
+            self.manager: object | None = None
+            self.comm = None
 
     class FigureManager:
         def __init__(self, canvas, num):
             captured["num"] = num
             captured["canvas"] = canvas
+            canvas.manager = self
 
     nbagg.Canvas = Canvas  # type: ignore[attr-defined]
     nbagg.FigureManager = FigureManager  # type: ignore[attr-defined]
@@ -283,10 +295,13 @@ def test_as_widget_mpl_rejects_non_figure(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_as_widget_mpl_import_error_path(monkeypatch: pytest.MonkeyPatch) -> None:
     Figure, _ = _fake_matplotlib(monkeypatch)
+    use = getattr(sys.modules["matplotlib"], "use")
     # A module that exists but doesn't provide backend_nbagg still triggers ImportError.
     monkeypatch.setitem(sys.modules, "ipympl", ModuleType("ipympl"))
+    monkeypatch.setitem(sys.modules, "ipympl.backend_nbagg", None)
     with pytest.raises(ImportError, match="pip install ipympl"):
         as_widget_mpl(Figure())
+    assert getattr(sys.modules["matplotlib"], "use") is use
 
 
 def test_as_widget_mpl_success_with_fake_module(
