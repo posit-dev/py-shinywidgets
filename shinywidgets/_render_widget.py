@@ -15,6 +15,7 @@ else:
 
 from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
+from .types import PlotlyConfig
 
 __all__ = (
     "render_widget",
@@ -245,6 +246,12 @@ class render_plotly(render_widget_base[ValueT, FigureWidget]):  # pyright: ignor
     API. The config is merged over plotly's defaults, so it also takes precedence over
     shinywidgets' own defaults (e.g., `responsive`).
 
+    The output's `.value` attribute is exactly what the render function returned (a
+    figure, or the `(figure, config)` tuple), while `.widget` is always the coerced
+    `FigureWidget` (with `config` merged into its ``_config`` trait). For type
+    annotations, :data:`~shinywidgets.types.PlotlyFigure` and
+    :data:`~shinywidgets.types.PlotlyConfig` describe the supported return shape.
+
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Parameters
@@ -292,12 +299,23 @@ class render_plotly(render_widget_base[ValueT, FigureWidget]):  # pyright: ignor
         return widget
 
 
-def _split_config(value: object) -> tuple[object, Optional[dict]]:
-    # Dash-style (figure, config) tuple. Any other value is passed through to
+def _split_config(value: object) -> tuple[object, Optional[PlotlyConfig]]:
+    # Dash-style (figure, config) tuple. Any non-tuple value is passed through to
     # as_widget(), which raises a helpful error if it can't be coerced.
-    if isinstance(value, tuple) and len(value) == 2 and isinstance(value[1], dict):
+    if not isinstance(value, tuple):
+        return value, None
+    if len(value) == 2 and isinstance(value[1], dict):
         return value[0], value[1]
-    return value, None
+    # A tuple that isn't (figure, config) would just fail coercion in as_widget()
+    # anyway, so fail here with a more actionable message instead.
+    problem = f"a tuple of length {len(value)}"
+    if len(value) >= 2 and not isinstance(value[1], dict):
+        problem += f" whose second element is {type(value[1]).__name__}, not a dict"
+    raise TypeError(
+        "A @render_plotly render function may return a (figure, config) tuple, where "
+        "config is a dict of Plotly.js config options (e.g., {'displayModeBar': False}), "
+        f"but got {problem}."
+    )
 
 
 class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):

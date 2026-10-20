@@ -50,6 +50,21 @@ def test_render_plotly_config_tuple_overrides_shinywidgets_defaults(
     assert r.widget._config["responsive"] is False  # type: ignore
 
 
+def test_render_plotly_malformed_tuple_errors(widget_session) -> None:
+    pytest.importorskip("plotly")
+    import plotly.graph_objects as go
+
+    r = rw.render_plotly()
+
+    @r
+    def _():  # noqa: ANN202
+        return (go.Figure(), "displayModeBar=False")
+
+    with session_context(widget_session):
+        with pytest.raises(TypeError, match=r"\(figure, config\) tuple"):
+            asyncio.run(r._render())
+
+
 def test_render_plotly_plain_figure_still_works(widget_session) -> None:
     pytest.importorskip("plotly")
     import plotly.graph_objects as go

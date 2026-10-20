@@ -15,6 +15,7 @@ except ImportError:
     except PackageNotFoundError:
         __version__ = "0+unknown"
 
+from . import types
 from ._as_widget import as_widget
 from ._bokeh import bokeh_dependency
 from ._output_widget import output_widget
@@ -48,6 +49,8 @@ __all__ = (
     # Other methods last
     "as_widget",
     "bokeh_dependency",
+    # Type aliases (submodule)
+    "types",
     # Soft deprecated
     "register_widget",
     "session_lifetime",
