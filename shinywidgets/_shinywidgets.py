@@ -414,7 +414,44 @@ SESSION_WIDGET_ID_MAP: dict[str, list[str]] = {}
 
 def reactive_read(widget: Widget, names: Union[str, Sequence[str]]) -> Any:
     """
-    Reactively read a widget trait
+    Reactively read a widget trait.
+
+    Takes a reactive dependency on the given trait(s), so the calling reactive context
+    (e.g., a ``@reactive.Calc``, ``@reactive.Effect``, or render function) is
+    invalidated whenever the trait's value changes (e.g., in response to user
+    interaction with the widget in the browser).
+
+    Parameters
+    ----------
+    widget
+        The widget to read from (often obtained via the ``.widget`` attribute of a
+        shinywidgets render decorator).
+    names
+        A trait name, or a sequence of trait names, to read.
+
+    Returns
+    -------
+    :
+        The trait's current value, or a tuple of values if `names` is a sequence.
+
+    Examples
+    --------
+    ```python
+    from shiny import reactive
+    from shinywidgets import reactive_read, render_widget
+    import ipyleaflet
+
+
+    @render_widget
+    def map():
+        return ipyleaflet.Map(center=(51.5, -0.09), zoom=4)
+
+
+    @reactive.Effect
+    def _():
+        # Re-runs whenever the map's zoom level changes
+        print(reactive_read(map.widget, "zoom"))
+    ```
     """
     reactive_depend(widget, names)
     if isinstance(names, str):
@@ -463,7 +500,10 @@ def register_widget(
     id: str, widget: Widget, session: Optional[Session] = None
 ) -> Widget:
     """
-    Deprecated. Use @render_widget instead.
+    Deprecated. Use ``@render_widget`` instead.
+
+    Registers `widget` as the Shiny output with id `id` on the given `session` (the
+    current session, if not specified), and returns the widget.
     """
     if session is None:
         session = require_active_session(session)
