@@ -4,6 +4,7 @@ import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { jsonParse } from './utils';
 import { disposeNative, finishDetach, hasAncestor, viewParent } from './views';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
+import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
 
@@ -413,16 +414,12 @@ if (taskQueue) {
 * Handle messages from the server-side Widget
 ******************************************************************************/
 
-type HtmlDependency = NonNullable<
-  Parameters<typeof Shiny.renderDependenciesAsync>[0]
->[number];
-
 // Initialize the comm and model when a new widget is created
 // This is basically our version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1144-L1176
 Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
   setBaseURL();
   const msg = jsonParse(msg_txt);
-  const deps = msg.content.html_deps as HtmlDependency[];
+  const deps = msg.content.html_deps as HtmlDep[];
   // Dependencies (e.g. BokehJS) must finish loading before the model is
   // constructed below; otherwise require() of the widget's module fails.
   await Shiny.renderDependenciesAsync(deps);
