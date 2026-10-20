@@ -11,7 +11,6 @@ import packaging.version
 from htmltools import HTMLDependency, tags
 from htmltools._core import (
     HTMLDependencySource,  # pyright: ignore[reportPrivateImportUsage]
-    ScriptItem,
 )
 from ipywidgets.widgets.domwidget import DOMWidget
 from ipywidgets.widgets.widget import Widget
@@ -113,26 +112,6 @@ def require_dependency(
         source=source,
         all_files=True,
         head=tags.script(f"window.require.config({json.dumps(config)})"),
-    )
-
-
-def bokeh_dependency() -> HTMLDependency:
-    from bokeh import __version__ as bokeh_version
-    from bokeh.resources import Resources
-
-    resources = Resources(mode="absolute")
-    suffix = ".min" if resources.minified else ""
-    scripts: List[ScriptItem] = [
-        {"src": f"js/{component}{suffix}.js"}
-        for component in resources.components_for("js")
-    ]
-    return HTMLDependency(
-        name="bokeh",
-        version=bokeh_version,
-        source={"subdir": str(resources.base_dir)},
-        script=scripts,
-        head=tags.script("\n".join(resources.js_raw)),
-        all_files=True,
     )
 
 
