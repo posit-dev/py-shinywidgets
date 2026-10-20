@@ -3,7 +3,7 @@ import os
 import posixpath
 import re
 import warnings
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple
 
 from htmltools import HTMLDependency, head_content, tags
 from htmltools._core import (
@@ -34,39 +34,77 @@ def bokeh_dependency() -> HTMLDependency:
     )
 
 
-def bokeh_extension_dependencies(w: Widget, session: Session) -> List[HTMLDependency]:
-    """
-    Obtain HTMLDependencies for bokeh extension models
-    referenced by a jupyter_bokeh.BokehModel.
+class ExtensionAssets(NamedTuple):
+    """Browser assets required by bokeh extension models."""
 
-    Returns [] for non-BokehModel widgets and for BokehModels that only
-    reference core bokeh models.
+    # Dependencies that load classic scripts/styles (via head content)
+    # and/or mount local asset directories.
+    deps: List[HTMLDependency]
+    # Side-effect-only ES modules (import()'d client-side before the model
+    # is constructed).
+    module_urls: List[str]
+    # Global name -> ES module URL; the module's default export is assigned
+    # to the global (also client-side, before model construction).
+    module_exports: Dict[str, str]
+
+
+def bokeh_extension_assets(w: Widget, session: Session) -> ExtensionAssets:
+    """
+    Obtain browser assets for bokeh extension models referenced by a
+    jupyter_bokeh.BokehModel.
+
+    Returns empty assets for non-BokehModel widgets and for BokehModels that
+    only reference core bokeh models.
     """
     if getattr(w, "_model_module", None) != "@bokeh/jupyter_bokeh":
-        return []
+        return ExtensionAssets([], [], {})
 
     model = getattr(w, "_model", None)
     if model is None:
-        return []
+        return ExtensionAssets([], [], {})
 
     ext_pkgs = {type(m).__view_module__.split(".")[0] for m in model.references()} - {
         "bokeh"
     }
     if not ext_pkgs:
-        return []
+        return ExtensionAssets([], [], {})
 
-    js_urls, css_urls = bokeh_extension_urls(model, ext_pkgs)
-    return extension_urls_to_dependencies(js_urls, css_urls, session)
+    js_urls, css_urls, modules = bokeh_extension_urls(model, ext_pkgs)
+    return extension_assets(js_urls, css_urls, modules, session)
 
 
-def bokeh_extension_urls(model: Any, ext_pkgs: Set[str]) -> Tuple[List[str], List[str]]:
+def bokeh_extension_urls(
+    model: Any, ext_pkgs: Set[str]
+) -> Tuple[List[str], List[str], Dict[str, List[str]]]:
     """
-    Compute scripts and styles for the bokeh document, excluding
+    Compute scripts, styles, and module exports for the bokeh document, excluding
     base bokeh assets (already provided by bokeh_dependency()).
     """
     from bokeh.resources import Resources
 
     resources = Resources(mode="server", root_url="")
+
+    if "panel" in ext_pkgs:
+        try:
+            from panel.io.resources import bundle_resources
+        except ImportError:
+            pass
+        else:
+            try:
+                bundle = bundle_resources([model], resources)
+            except Exception:
+                # bundle_resources() scans *all* registered bokeh model classes
+                # (not just the document's), so an unrelated unimportable
+                # extension class can break it. Fall back to the scoped,
+                # generic bokeh path below.
+                pass
+            else:
+                js_urls = filter_bokeh_core([str(u) for u in bundle.js_files])
+                css_urls = filter_bokeh_core([str(u) for u in bundle.css_files])
+                modules = {str(url): [] for url in bundle.js_modules}
+                for name, url in bundle.js_module_exports.items():
+                    modules.setdefault(str(url), []).append(name)
+                return js_urls, css_urls, modules
 
     from bokeh.embed.bundle import bundle_for_objs_and_resources
 
@@ -81,7 +119,7 @@ def bokeh_extension_urls(model: Any, ext_pkgs: Set[str]) -> Tuple[List[str], Lis
         for pkg in sorted(ext_pkgs):
             if not importable(pkg):
                 warn_missing_extension(pkg)
-        return [], []
+        return [], [], {}
 
     js_urls = filter_bokeh_core([str(u) for u in bundle.js_files])
     css_urls = filter_bokeh_core([str(u) for u in bundle.css_files])
@@ -95,7 +133,37 @@ def bokeh_extension_urls(model: Any, ext_pkgs: Set[str]) -> Tuple[List[str], Lis
     for pkg in sorted(ext_pkgs - covered):
         warn_missing_extension(pkg)
 
-    return js_urls, css_urls
+    return js_urls, css_urls, {}
+
+
+def extension_assets(
+    js_urls: List[str],
+    css_urls: List[str],
+    modules: Dict[str, List[str]],
+    session: Session,
+) -> ExtensionAssets:
+    """
+    Convert bokeh-server-style extension URLs (static/extensions/<pkg>/<path>)
+    into browser-loadable assets; pass through remote (http/https) URLs.
+    """
+    deps = extension_urls_to_dependencies(js_urls, css_urls, session)
+
+    module_urls: List[str] = []
+    module_exports: Dict[str, str] = {}
+    for url, names in modules.items():
+        resolved = serve_extension_url(url, session)
+        if resolved is None:
+            continue
+        served_url, mount = resolved
+        if mount is not None:
+            deps.append(mount)
+        if names:
+            for name in names:
+                module_exports[name] = served_url
+        else:
+            module_urls.append(served_url)
+
+    return ExtensionAssets(deps, module_urls, module_exports)
 
 
 def extension_urls_to_dependencies(
@@ -134,14 +202,26 @@ def extension_urls_to_dependencies(
 def extension_url_to_dependencies(
     url: str, *, is_script: bool, session: Session
 ) -> List[HTMLDependency]:
-    if url.startswith(("http://", "https://")):
-        return [asset_loader(url, is_script=is_script)]
-
-    served = local_extension_url(url, session)
-    if served is None:
+    resolved = serve_extension_url(url, session)
+    if resolved is None:
         return []
-    served_url, mount = served
-    return [mount, asset_loader(served_url, is_script=is_script)]
+    served_url, mount = resolved
+    deps = [mount] if mount is not None else []
+    return [*deps, asset_loader(served_url, is_script=is_script)]
+
+
+def serve_extension_url(
+    url: str, session: Session
+) -> Optional[Tuple[str, Optional[HTMLDependency]]]:
+    """
+    Resolve an extension asset URL to a servable URL, plus the mount
+    dependency (for local assets) that makes Shiny serve it. Remote
+    (http/https) URLs pass through with no mount. Returns None (with a
+    warning) if a local asset can't be located.
+    """
+    if url.startswith(("http://", "https://")):
+        return url, None
+    return local_extension_url(url, session)
 
 
 def local_extension_url(
@@ -201,6 +281,33 @@ def asset_loader(url: str, *, is_script: bool) -> HTMLDependency:
     if is_script:
         return head_content(tags.script(src=url))
     return head_content(tags.link(rel="stylesheet", href=url))
+
+
+def guard_widget_close(w: Widget) -> None:
+    """
+    Make a widget's close() safe to call more than once.
+
+    jupyter_bokeh's BokehModel.close() removes its document change callback
+    unconditionally, so a second close() raises KeyError (and its __del__
+    calls close() as well). Wrap close() so only the first call runs, and so
+    a close notification arriving while close() is running can't re-enter it.
+    """
+    close = w.close
+    closing = False
+    closed = False
+
+    def close_once() -> None:
+        nonlocal closing, closed
+        if closing or closed:
+            return
+        closing = True
+        try:
+            close()
+            closed = True
+        finally:
+            closing = False
+
+    w.close = close_once  # type: ignore[method-assign]
 
 
 def importable(pkg: str) -> bool:

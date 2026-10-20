@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### New features
 
 * Bokeh documents that reference [bokeh extension](https://docs.bokeh.org/en/latest/docs/user_guide/advanced/extensions.html) models (any package shipping a `bokeh.ext.json`/prebuilt `dist` bundle) now have their extension assets served automatically. (#88, #256)
+* Added support for [panel](https://panel.holoviz.org) widgets and layouts (e.g., `pn.widgets.Tabulator`) via the new `@render_panel` decorator or `@render_widget`. Required JS/CSS assets (panel's model bundle, third-party assets like Tabulator, and model stylesheets) are served automatically. (#82, #88, #253)
+* Added support for [hvPlot](https://hvplot.holoviz.org) (and holoviews) objects via the new `@render_hvplot` decorator. (#87, #253)
 * Added `session_lifetime()`, a context manager for constructing widgets that should outlive the current render (for example, one cached widget per dataset that is displayed again when the user switches back). Widgets constructed while an output renders are still closed when that render is invalidated; returning such a closed widget from a later render now raises an error that points to `session_lifetime()` instead of timing out in the browser. (#258)
 
 ### Bug fixes
@@ -26,7 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Returning a widget that belongs to another Shiny session (for example, one cached in a module-level variable so every visitor shares it) used to leave that session's output stuck recalculating for 30 seconds and then blank. It now raises an immediate, clear error instead, whether the foreign or closed widget is returned directly or nested inside a freshly built container. (#262)
 * Fixed an issue where re-rendering a widget constructed with an explicit `model_id` left the output blank: the old widget's `comm_close` is sent after the replacement's `comm_open` (by design, to avoid flicker), so the browser tore the new model down by id. A close is now suppressed when a newer comm has re-registered the id by send time. (#263)
 * Bokeh widgets now load the installed BokehJS assets automatically in Core and Express apps, including apps mounted under a URL prefix. Adding `bokeh_dependency()` to the UI is no longer required. (#210, #255)
-
 * Fixed an issue where widgets nested inside other widgets didn't work reliably with ipywidgets 8. Depending on the widget, they either didn't render at all (e.g., an `HTML` child with a `style`, or a Plotly `FigureWidget`, inside an ipyleaflet popup) or rendered while logging errors like `Class HTMLStyleModel not found` (e.g., ipyleaflet popups, `WidgetControl` children, and leafmap legends). Widget outputs inserted dynamically, such as `output_widget()` inside `@render.ui`, had the same problem. The cause was that shinywidgets still bundled the ipywidgets 7-era JavaScript widget manager (`@jupyter-widgets/html-manager` 0.20); it now uses 1.0. (#75, #101, #137, #157, #194, #237)
 * Fixed an issue where an ipyleaflet map with many markers could turn gray and show no markers when re-rendered. (#215, #237)
 * Fixed an issue where fonts used by widget CSS, such as FontAwesome icons, failed to load (404). (#237)

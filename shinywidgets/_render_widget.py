@@ -19,6 +19,8 @@ __all__ = (
     "render_widget",
     "render_altair",
     "render_bokeh",
+    "render_hvplot",
+    "render_panel",
     "render_plotly",
     "render_pydeck",
 )
@@ -35,6 +37,20 @@ class render_altair(render_widget_base[ValueT, JupyterChart]): ...
 
 
 class render_bokeh(render_widget_base[ValueT, BokehModel]):
+    def auto_output_ui(self) -> Tag:
+        res = super().auto_output_ui()
+        res.children.append(bokeh_dependency())
+        return res
+
+
+class render_panel(render_widget_base[ValueT, BokehModel]):
+    def auto_output_ui(self) -> Tag:
+        res = super().auto_output_ui()
+        res.children.append(bokeh_dependency())
+        return res
+
+
+class render_hvplot(render_widget_base[ValueT, BokehModel]):
     def auto_output_ui(self) -> Tag:
         res = super().auto_output_ui()
         res.children.append(bokeh_dependency())

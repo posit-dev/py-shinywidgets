@@ -6,6 +6,7 @@ from base64 import b64decode
 from contextlib import contextmanager
 from typing import (
     Any,
+    Dict,
     Iterable,
     Iterator,
     List,
@@ -35,7 +36,7 @@ from shiny.reactive._core import (
 from shiny.session import get_current_session, require_active_session, session_context
 
 from ._as_widget import as_widget
-from ._bokeh import bokeh_dependency, bokeh_extension_dependencies
+from ._bokeh import bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
 from ._dependencies import require_dependency
@@ -127,9 +128,21 @@ def init_shiny_widget(w: Widget):
     id = cast(str, w._model_id)
 
     widget_deps: List[Optional[HTMLDependency]] = [widget_dep]
+    open_keys: Dict[str, object] = {}
     if getattr(w, "_model_module", None) == "@bokeh/jupyter_bokeh":
         widget_deps.append(bokeh_dependency())
-        widget_deps.extend(bokeh_extension_dependencies(w, session))
+        ext = bokeh_extension_assets(w, session)
+        widget_deps.extend(ext.deps)
+        if ext.module_urls or ext.module_exports:
+            # ES modules load via dynamic import() client-side (default
+            # exports get assigned to globals); they can't ride the
+            # dependency channel since import() must be awaited.
+            open_keys["modules"] = {
+                "urls": ext.module_urls,
+                "exports": ext.module_exports,
+            }
+        # BokehModel.close() is not idempotent; guard against double close.
+        guard_widget_close(w)
 
     # Since the actual ShinyComm() is initialized _after_ the Widget is initialized,
     # and Widget.__init__() includes a call to Widget.open() which opens an unnecessary
@@ -181,6 +194,7 @@ def init_shiny_widget(w: Widget):
             # TODO: should this be hard-coded?
             metadata={"version": __protocol_version__},
             html_deps=session._process_ui(TagList(*widget_deps))["deps"],
+            **open_keys,
         )
 
     # If the widget initialized in a reactive _output_ context, then cleanup the widget

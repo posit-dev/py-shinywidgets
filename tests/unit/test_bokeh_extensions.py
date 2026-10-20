@@ -1,3 +1,4 @@
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -5,15 +6,20 @@ from types import ModuleType, SimpleNamespace
 from typing import List, cast
 
 import bokeh
+import pandas as pd
+import panel as pn
 import pytest
 from bokeh.core.has_props import Local
 from bokeh.embed.bundle import extension_dirs
 from bokeh.models import Div
-from htmltools import HTMLDependency, TagList
-from shiny import Session
+from htmltools import HTMLDependency, TagChild, TagList
+from shiny import Session, reactive
+from shiny.session import session_context
+from shiny.session._utils import RenderedDeps
+from shinywidgets._as_widget import as_widget_panel
 from shinywidgets._bokeh import (
     bokeh_dependency,
-    bokeh_extension_dependencies,
+    bokeh_extension_assets,
     extension_urls_to_dependencies,
 )
 
@@ -26,7 +32,7 @@ def _fake_session() -> Session:
 def _bokeh_model(root):
     # Avoid calling the BokehModel constructor: shinywidgets registers a
     # widget-construction callback that requires an active Shiny session.
-    # bokeh_extension_dependencies() only duck-types on _model anyway.
+    # bokeh_extension_assets() only duck-types on _model anyway.
     from jupyter_bokeh import BokehModel
 
     w = BokehModel.__new__(BokehModel)
@@ -54,14 +60,53 @@ def test_no_extension_for_plain_bokeh():
     from bokeh.plotting import figure
 
     w = _bokeh_model(figure())
-    assert bokeh_extension_dependencies(w, _fake_session()) == []
+    assert bokeh_extension_assets(w, _fake_session()).deps == []
 
 
 def test_no_extension_for_non_bokeh_widget():
     from ipywidgets.widgets.widget import Widget
 
     w = Widget.__new__(Widget)
-    assert bokeh_extension_dependencies(w, _fake_session()) == []
+    assert bokeh_extension_assets(w, _fake_session()).deps == []
+
+
+def test_panel_tabulator_extension_files():
+    w = _bokeh_model(pn.widgets.Tabulator(pd.DataFrame({"x": [1]})).get_root())
+    assets = bokeh_extension_assets(w, _fake_session())
+    heads = _dep_heads(assets.deps)
+    assert any("panel.min.js" in h for h in heads), heads
+    assert any("tabulator" in h and ".js" in h for h in heads), heads
+    assert any("tabulator" in h and ".css" in h for h in heads), heads
+    # Base bokeh JS is provided by bokeh_dependency(); must not be duplicated
+    assert not any("bokeh.min.js" in h for h in heads), heads
+    assert not any("cdn.bokeh.org" in h for h in heads), heads
+
+
+def test_panel_module_dependencies_preserve_exports() -> None:
+    pane = pn.pane.Perspective(pd.DataFrame({"x": [1, 2]}))
+    root = pane.get_root()
+    try:
+        assets = bokeh_extension_assets(_bokeh_model(root), _fake_session())
+
+        assert set(assets.module_exports) == {"perspective", "perspective_viewer"}
+        n_modules = len(assets.module_urls) + len(set(assets.module_exports.values()))
+        assert n_modules == 4
+    finally:
+        pn.state._views.pop(root.id, None)
+        pane._cleanup(root)
+
+
+def test_extension_asset_urls_are_not_pre_encoded():
+    # Assets delivered via session._process_ui() (websocket messages) get
+    # encodeURI()'d by Shiny's client; if the server also pre-encodes (as
+    # HTMLDependency.as_dict() does), URLs end up double-encoded (e.g.,
+    # 'tabulator-tables@6.4.0' -> '%40' -> '%2540') and 404.
+    w = _bokeh_model(pn.widgets.Tabulator(pd.DataFrame({"x": [1]})).get_root())
+    assets = bokeh_extension_assets(w, _fake_session())
+    urls = _dep_heads(assets.deps) + assets.module_urls
+    urls += list(assets.module_exports.values())
+    for url in urls:
+        assert "%" not in url, url
 
 
 def test_unresolvable_extension_warns():
@@ -70,8 +115,27 @@ def test_unresolvable_extension_warns():
 
     w = _bokeh_model(FakeExtModel(text="hi"))
     with pytest.warns(UserWarning, match="fakeextpkg12345"):
-        deps = bokeh_extension_dependencies(w, _fake_session())
-    assert not any("fakeextpkg12345" in head for head in _dep_heads(deps))
+        assets = bokeh_extension_assets(w, _fake_session())
+    assert not any("fakeextpkg12345" in head for head in _dep_heads(assets.deps))
+
+
+def test_extension_deps_included_in_comm_open(
+    monkeypatch: pytest.MonkeyPatch, widget_session: Session
+) -> None:
+    dependencies: list[HTMLDependency] = []
+    process_ui = widget_session._process_ui
+
+    def capture_dependencies(value: TagChild) -> RenderedDeps:
+        if isinstance(value, TagList):
+            dependencies.extend(value.get_dependencies())
+        return process_ui(value)
+
+    monkeypatch.setattr(widget_session, "_process_ui", capture_dependencies)
+    with session_context(widget_session):
+        as_widget_panel(pn.widgets.Tabulator(pd.DataFrame({"x": [1]})))
+        asyncio.run(reactive.flush())
+
+    assert any(dep.name == "bokeh-ext-panel" for dep in dependencies)
 
 
 def test_later_remote_extension_assets_survive_dependency_deduplication() -> None:
@@ -122,17 +186,15 @@ def test_prebuilt_extension_uses_its_local_bundle_directory(
     class BundledExtension(Div, Local):
         __view_module__ = "review_test_ext.models"
 
-    deps = bokeh_extension_dependencies(
-        _bokeh_model(BundledExtension()), _fake_session()
-    )
+    assets = bokeh_extension_assets(_bokeh_model(BundledExtension()), _fake_session())
 
     # The directory behind the package's static/extensions URLs gets mounted
     # for local serving...
-    mounts = [dep for dep in deps if dep.name == "bokeh-ext-review_test_ext"]
+    mounts = [dep for dep in assets.deps if dep.name == "bokeh-ext-review_test_ext"]
     assert len(mounts) == 1
     paths = mounts[0].source_path_map()
     assert paths["source"] == str(artifact.parent)
 
     # ...and the bundle loads via a <script> tag pointing at that mount
     script = f'<script src="{paths["href"]}/{asset_path}"></script>'
-    assert script in _dep_heads(deps)
+    assert script in _dep_heads(assets.deps)

@@ -3,6 +3,7 @@ from types import ModuleType
 
 import pytest
 import shinywidgets._as_widget as asw
+from bokeh.document import Document
 from ipywidgets import Widget
 from shinywidgets._as_widget import (
     as_widget,
@@ -174,3 +175,88 @@ def test_as_widget_pydeck_show_returning_widget_succeeds() -> None:
 
     res = as_widget_pydeck(Deck())
     assert isinstance(res, Widget)
+
+
+def _fake_panel(monkeypatch: pytest.MonkeyPatch, root: object) -> None:
+    panel = ModuleType("panel")
+
+    class FakePane:
+        def get_root(self, doc: Document | None = None) -> object:
+            return root
+
+    panel.panel = lambda x: FakePane()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "panel", panel)
+
+
+def _fake_jupyter_bokeh(monkeypatch: pytest.MonkeyPatch) -> None:
+    jb = ModuleType("jupyter_bokeh")
+    jb.BokehModel = lambda x: Widget.__new__(Widget)  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "jupyter_bokeh", jb)
+
+
+def test_as_widget_panel_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_panel(monkeypatch, root=object())
+    _fake_jupyter_bokeh(monkeypatch)
+
+    class PanelObj:
+        __module__ = "panel.widgets.tables"
+
+    res = as_widget(PanelObj())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_holoviews_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_panel(monkeypatch, root=object())
+    _fake_jupyter_bokeh(monkeypatch)
+
+    class HVObj:
+        __module__ = "holoviews.element.chart"
+
+    res = as_widget(HVObj())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_hvplot_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_panel(monkeypatch, root=object())
+    _fake_jupyter_bokeh(monkeypatch)
+
+    class HvPlotObj:
+        __module__ = "hvplot.plotting"
+
+    res = as_widget(HvPlotObj())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_panel_without_panel_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "panel", None)
+
+    class PanelObj:
+        __module__ = "panel.widgets.tables"
+
+    with pytest.raises(ImportError, match="pip install panel"):
+        as_widget(PanelObj())
+
+
+def test_as_widget_holoviews_without_panel_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "panel", None)
+
+    class HVObj:
+        __module__ = "holoviews.element.chart"
+
+    with pytest.raises(ImportError, match="pip install panel"):
+        as_widget(HVObj())
+
+
+def test_as_widget_panel_without_jupyter_bokeh_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_panel(monkeypatch, root=object())
+    monkeypatch.setitem(sys.modules, "jupyter_bokeh", ModuleType("jupyter_bokeh"))
+
+    class PanelObj:
+        __module__ = "panel.widgets.tables"
+
+    with pytest.raises(ImportError, match="Install the jupyter_bokeh package"):
+        as_widget(PanelObj())
