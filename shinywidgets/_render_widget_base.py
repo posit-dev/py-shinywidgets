@@ -43,7 +43,13 @@ T = TypeVar("T", bound=object)
 
 
 class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
-    """ """
+    """
+    Base class for the render decorators in `shinywidgets._render_widget`.
+
+    Handles coercion of the render function's return value into an ipywidget (via
+    `_as_widget()`), applies smart layout defaults, and produces the payload that the
+    browser-side output binding uses to display the widget.
+    """
 
     def auto_output_ui(self) -> Tag:
         return output_widget(
