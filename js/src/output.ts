@@ -4,6 +4,7 @@ import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { jsonParse } from './utils';
 import { disposeNative, finishDetach, hasAncestor, viewParent } from './views';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
+import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
 
@@ -413,10 +414,6 @@ if (taskQueue) {
 * Handle messages from the server-side Widget
 ******************************************************************************/
 
-type HtmlDependency = NonNullable<
-  Parameters<typeof Shiny.renderDependenciesAsync>[0]
->[number];
-
 // ES modules referenced by widget models (e.g., Panel's Perspective).
 // They can't ride the dependency channel: their import() must be awaited
 // (models consult the globals at render time), and only import() exposes
@@ -434,7 +431,7 @@ type ModuleAssets = {
 Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
   setBaseURL();
   const msg = jsonParse(msg_txt);
-  const deps = msg.content.html_deps as HtmlDependency[];
+  const deps = msg.content.html_deps as HtmlDep[];
   // Dependencies (e.g. BokehJS) must finish loading before the model is
   // constructed below; otherwise require() of the widget's module fails.
   await Shiny.renderDependenciesAsync(deps);
