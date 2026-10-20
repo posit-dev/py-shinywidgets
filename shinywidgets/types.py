@@ -56,20 +56,19 @@ as accepted by the ``(figure, config)`` tuple form of ``@render_plotly``.
 """
 
 if TYPE_CHECKING:
-    PlotlyFigure = Union[go.Figure, Tuple[go.Figure, PlotlyConfig]]
+    PlotlyFigure = Union[go.Figure, go.FigureWidget]
     """
-    The supported return type of a ``@render_plotly`` render function: either a
-    plotly figure, or a Dash-style ``(figure, config)`` tuple (see
-    `PlotlyConfig`).
+    A plotly figure: either a plain ``go.Figure`` (coerced to a
+    ``go.FigureWidget`` on render) or a pre-built ``go.FigureWidget``. (The
+    two are sibling classes, not subclasses of one another, so both are
+    listed.)
     """
 
-    PlotlyValue = Union[PlotlyFigure, Tuple[go.FigureWidget, PlotlyConfig], Widget]
+    PlotlyValue = Union[PlotlyFigure, Tuple[PlotlyFigure, PlotlyConfig], Widget]
     """
     The supported return type of a ``@render_plotly`` render function: a
-    `PlotlyFigure`, a ``(FigureWidget, config)`` tuple, or any
-    ``ipywidgets.Widget``. (``FigureWidget`` is not a subclass of
-    ``go.Figure``, so the ``(FigureWidget, config)`` tuple is listed
-    separately from `PlotlyFigure`.)
+    `PlotlyFigure`, optionally paired with a `PlotlyConfig` as a Dash-style
+    ``(figure, config)`` tuple, or any ``ipywidgets.Widget``.
     """
 
     AltairValue = Union[alt.TopLevelMixin, Widget]
@@ -125,15 +124,11 @@ def _require(alias: str, module: str) -> Any:
 def __getattr__(name: str) -> object:
     if name == "PlotlyFigure":
         go = _require(name, "plotly.graph_objects")
-        return Union[go.Figure, Tuple[go.Figure, PlotlyConfig]]
+        return Union[go.Figure, go.FigureWidget]
     if name == "PlotlyValue":
         go = _require(name, "plotly.graph_objects")
-        return Union[
-            go.Figure,
-            Tuple[go.Figure, PlotlyConfig],
-            Tuple[go.FigureWidget, PlotlyConfig],
-            Widget,
-        ]
+        figure = Union[go.Figure, go.FigureWidget]
+        return Union[figure, Tuple[figure, PlotlyConfig], Widget]
     if name == "AltairValue":
         return Union[_require(name, "altair").TopLevelMixin, Widget]
     if name == "BokehValue":

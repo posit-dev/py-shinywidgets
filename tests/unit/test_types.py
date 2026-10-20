@@ -29,19 +29,19 @@ def test_plotly_figure_alias() -> None:
     from ipywidgets import Widget
     from shinywidgets.types import PlotlyConfig, PlotlyFigure, PlotlyValue
 
-    figure, tuple_of = typing.get_args(PlotlyFigure)
-    assert figure is go.Figure
-    assert typing.get_args(tuple_of)[0] is go.Figure
-
-    # PlotlyValue additionally accepts a (FigureWidget, config) tuple and any
-    # ipywidgets.Widget. Note FigureWidget is not a subclass of go.Figure, so
-    # the tuple form needs its own union member.
-    *plotly_figure_args, fw_tuple, widget = typing.get_args(PlotlyValue)
-    assert tuple(plotly_figure_args) == typing.get_args(PlotlyFigure)
-    assert typing.get_args(fw_tuple) == (go.FigureWidget, PlotlyConfig)
-    assert widget is Widget
+    # A PlotlyFigure is a raw figure or a pre-built widget (sibling classes)
+    assert set(typing.get_args(PlotlyFigure)) == {go.Figure, go.FigureWidget}
     assert not issubclass(go.FigureWidget, go.Figure)
     assert issubclass(go.FigureWidget, Widget)
+
+    # A PlotlyValue is a PlotlyFigure, optionally paired with a config as a
+    # (figure, config) tuple, or any ipywidgets.Widget
+    *figure_args, tuple_of, widget = typing.get_args(PlotlyValue)
+    assert set(figure_args) == set(typing.get_args(PlotlyFigure))
+    inner_figure, config = typing.get_args(tuple_of)
+    assert set(typing.get_args(inner_figure)) == set(typing.get_args(PlotlyFigure))
+    assert config == PlotlyConfig
+    assert widget is Widget
 
 
 def test_altair_value_alias() -> None:

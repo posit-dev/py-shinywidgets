@@ -249,8 +249,8 @@ class render_plotly(render_widget_base[ValueT, FigureWidget]):  # pyright: ignor
     The output's `.value` attribute is exactly what the render function returned (a
     figure, or the `(figure, config)` tuple), while `.widget` is always the coerced
     `FigureWidget` (with `config` merged into its ``_config`` trait). For type
-    annotations, :data:`~shinywidgets.types.PlotlyValue` (a `PlotlyFigure`, a
-    ``(FigureWidget, config)`` tuple, or any ``ipywidgets.Widget``) and
+    annotations, :data:`~shinywidgets.types.PlotlyValue` (a `PlotlyFigure`,
+    optionally paired with a `PlotlyConfig`, or any ``ipywidgets.Widget``) and
     :data:`~shinywidgets.types.PlotlyConfig` describe the supported return
     shape.
 
