@@ -300,17 +300,12 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
-# Per-package layout adjustments for filling layouts, keyed by widget_pkg()
-# (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
-# in js/src/fill.ts). A handler receives the widget and the current fill
-# decision, applies package-specific mutations, and returns the (possibly
-# tightened) fill decision.
-#
-def _ipysigma_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+def ipysigma_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # Sigma always syncs a concrete CSS `height` (500px unless the user passes
     # `height`/`raw_height`), and its `layout` trait is a node-position dict rather
     # than an ipywidgets Layout, so the generic height check above can't see it.
-    # Only the untouched default is treated as "unset".
+    # Only the untouched default (including one set via `Sigma.set_defaults()`) is
+    # treated as "unset".
     sigma = cast("Sigma", widget)
     if sigma.height == f"{type(sigma).default_height}px":
         sigma.height = "100%"
@@ -318,13 +313,19 @@ def _ipysigma_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill and sigma.height == "100%"
 
 
+# Per-package layout adjustments for filling layouts, keyed by widget_pkg()
+# (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
+# in js/src/fill.ts). A handler receives the widget and the current fill
+# decision, applies package-specific mutations, and returns the (possibly
+# tightened) fill decision.
+#
 # N.B. bokeh is intentionally absent: its sizing_mode hack lives in
 # as_widget_bokeh() because applying it here doesn't work (see the TODO
 # there).
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
-    "ipysigma": _ipysigma_layout_defaults,
+    "ipysigma": ipysigma_layout_defaults,
 }
 
 

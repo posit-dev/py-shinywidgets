@@ -151,7 +151,8 @@ class render_ipysigma(render_widget_base[ValueT, Sigma]):
     answer for [pyvis](https://pyvis.readthedocs.io) users: ipysigma renders larger
     networks more smoothly and, being a widget, can report the selected node back to
     Python. In a filling layout, the graph fills its container, unless the widget has
-    an explicit `height` or `raw_height`.
+    an explicit `height` or `raw_height` (a height of 500px, sigma's default, or one set
+    globally with `Sigma.set_defaults(height=...)`, counts as unset and fills).
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
@@ -182,7 +183,7 @@ class render_ipysigma(render_widget_base[ValueT, Sigma]):
     def _as_widget(self, value: ValueT) -> Sigma:
         if isinstance(value, Widget):
             return super()._as_widget(value)
-        return cast(Sigma, as_widget_ipysigma(value))
+        return as_widget_ipysigma(value)
 
 
 class render_maplibre(render_widget_base[ValueT, MapWidget]):

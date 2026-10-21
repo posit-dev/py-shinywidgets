@@ -14,6 +14,7 @@ from ._dependencies import widget_pkg
 
 if TYPE_CHECKING:
     from bokeh.models import LayoutDOM
+    from ipysigma import Sigma
     from jupyter_bokeh import BokehModel
     from matplotlib.figure import Figure
     from panel.viewable import Viewable
@@ -159,7 +160,7 @@ def as_widget_maplibre(x: object) -> Optional[Widget]:
     return res  # type: ignore
 
 
-def as_widget_ipysigma(x: object) -> Widget:
+def as_widget_ipysigma(x: object) -> Sigma:
     # Not in AS_WIDGET_MAP: a networkx graph is generic (ipycytoscape accepts one
     # too), so only @render_ipysigma coerces it.
     try:
