@@ -65,6 +65,18 @@ export function disposeNative(view: WidgetView): void {
   }
 
   disposeLeafletMap(view);
+  disposeMplCanvas(view);
+}
+
+// ipympl's MPLCanvasView overrides remove() without calling super.remove(), so
+// Lumino disposal, stopListening(), and the "remove" event (which fires our
+// cleanups) never happen. Run the remove() it overrides.
+function disposeMplCanvas(view: WidgetView): void {
+  if (view.model.get('_view_name') !== 'MPLCanvasView') {
+    return;
+  }
+  const overridden: WidgetView = Object.getPrototypeOf(Object.getPrototypeOf(view));
+  overridden.remove.call(view);
 }
 
 interface DestroyableView {

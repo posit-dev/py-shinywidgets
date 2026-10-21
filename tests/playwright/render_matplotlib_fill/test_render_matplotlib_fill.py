@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from playwright.sync_api import Page, expect
-from tests.playwright.conftest import assert_no_unexpected_errors, collect_errors
+from tests.playwright.conftest import (
+    assert_no_unexpected_errors,
+    collect_errors,
+    expose_manager,
+)
 
 # True once the ipympl canvas fills the output container's width and fits
 # within its height (i.e., no overflow). ipympl draws the figure at a fixed
@@ -14,6 +18,32 @@ CANVAS_FILLS_JS = """() => {
   const c = canvas.getBoundingClientRect();
   return c.width >= 0.95 * o.width && c.height <= o.height && c.height >= 0.6 * o.height;
 }"""
+
+# Counts ResizeObservers that are observing (i.e., not yet disconnected)
+COUNT_RESIZE_OBSERVERS_JS = """
+(() => {
+  const Native = window.ResizeObserver;
+  window.liveResizeObservers = 0;
+  window.ResizeObserver = class extends Native {
+    observing = false;
+    observe(...args) {
+      if (!this.observing) window.liveResizeObservers++;
+      this.observing = true;
+      return super.observe(...args);
+    }
+    disconnect() {
+      if (this.observing) window.liveResizeObservers--;
+      this.observing = false;
+      return super.disconnect();
+    }
+  };
+})();
+"""
+
+LIVE_COUNTS_JS = """() => ({
+  views: window.widgetManager._liveViews.size,
+  observers: window.liveResizeObservers,
+})"""
 
 CANVAS_WIDTH_JS = """() => {
   const canvas = document.querySelector('#mpl .jupyter-matplotlib-canvas-div canvas');
@@ -40,5 +70,28 @@ def test_matplotlib_fills_fillable_container(page: Page, local_app) -> None:
     assert narrow < wide, (
         f"canvas width should shrink with the window ({wide} -> {narrow})"
     )
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_matplotlib_rerender_releases_old_views(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.add_init_script(COUNT_RESIZE_OBSERVERS_JS)
+    page.route("**/output.js", expose_manager)
+    page.goto(local_app.url)
+
+    expect(page.locator("#mpl canvas").first).to_be_visible(timeout=30000)
+    page.wait_for_function(CANVAS_FILLS_JS, timeout=30000)
+    initial = page.evaluate(LIVE_COUNTS_JS)
+
+    for _ in range(3):
+        old_canvas = page.locator("#mpl canvas").first.element_handle()
+        page.click("#rerender")
+        page.wait_for_function("(el) => !el.isConnected", arg=old_canvas)
+        page.wait_for_function(CANVAS_FILLS_JS, timeout=30000)
+
+    # ipympl's canvas view must be fully removed on rerender, else its fill
+    # ResizeObserver stays connected and keeps resizing the retired model
+    assert page.evaluate(LIVE_COUNTS_JS) == initial
 
     assert_no_unexpected_errors(errors, failed_requests)
