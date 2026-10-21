@@ -174,9 +174,10 @@ def init_shiny_widget(w: Widget):
         with WidgetRenderContext.resumed(render_ctx):
             # Plotly's display hook snapshots the data and layout for get_state().
             # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
+            # ipympl's sets _data_url, the image the frontend first paints.
             # Other display hooks can create preview widgets, causing an infinite
             # widget-creation loop (e.g. pythreejs, #244).
-            if any(widget_pkg(cls) == "plotly" for cls in type(w).__mro__):
+            if any(widget_pkg(cls) in ("plotly", "ipympl") for cls in type(w).__mro__):
                 w._repr_mimebundle_()
 
             # Now, get the state
