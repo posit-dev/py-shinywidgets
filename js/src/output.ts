@@ -2,7 +2,7 @@ import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
 import { WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
 import { jsonParse } from './utils';
-import { disposeNative, finishDetach, hasAncestor, viewParent } from './views';
+import { disposeNative, finishDetach, hasAncestor, patchMplCanvasRemove, viewParent } from './views';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
@@ -43,6 +43,7 @@ class OutputManager extends HTMLManager {
     const viewPromise = super.create_view(model, options);
     viewPromise.then(
       (view) => {
+        patchMplCanvasRemove(view);
         // An ancestor may have been removed while this view was still being
         // created (e.g. dynamic UI removed the output mid-render).
         // removeViewTree() only sweeps views live at the time, so tear the
