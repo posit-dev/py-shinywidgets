@@ -3,7 +3,16 @@ from __future__ import annotations
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from typing import Any, Callable, Generic, Iterator, Optional, Tuple, TypeVar, cast
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Generic,
+    Iterator,
+    Optional,
+    Tuple,
+    TypeVar,
+    cast,
+)
 
 from htmltools import Tag
 from ipywidgets.widgets import DOMWidget, Layout, Widget
@@ -20,6 +29,9 @@ from ._comm import OrphanedShinyComm
 from ._dependencies import widget_pkg
 from ._output_widget import output_widget
 from ._widget_registry import WIDGET_INSTANCE_MAP
+
+if TYPE_CHECKING:
+    from itables.widget import ITable
 
 __all__ = (
     "render_widget_base",
@@ -295,16 +307,18 @@ def itables_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # widgets with the marker class.
     from itables import options as itables_options
 
-    dt_args: dict[str, Any] = widget._dt_args  # type: ignore
+    # ITable has no public API for these traits, so the private attributes are used
+    table = cast("ITable", widget)
+    dt_args = table._dt_args
     if "scrollY" in dt_args:
         return fill
 
-    widget._dt_args = {**dt_args, "scrollY": "100%"}  # type: ignore
-    widget.add_class("shinywidgets-itables-fill")
+    table._dt_args = {**dt_args, "scrollY": "100%"}
+    table.add_class("shinywidgets-itables-fill")
     # itables' default `width:auto` leaves a scrolling table's header and body
     # columns misaligned (a style the user chose is left alone)
-    if widget._style == itables_options.style:  # type: ignore
-        widget._style = widget._style.replace("width:auto", "width:100%")  # type: ignore
+    if table._style == itables_options.style:
+        table._style = table._style.replace("width:auto", "width:100%")
     return fill
 
 
