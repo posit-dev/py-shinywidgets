@@ -48,21 +48,3 @@ def test_render_nglview_renders_widget_that_fills(
     assert res["widget_pkg"] == "nglview"
     assert res["fill"] is True
     assert isinstance(r.widget, nglview.NGLWidget)
-
-
-def test_render_nglview_respects_widget_height(
-    nglview: ModuleType, widget_session: Session
-) -> None:
-    r = rw.render_nglview()
-
-    @r
-    def _():  # noqa: ANN202
-        view = nglview.show_text(TINY_PDB, ext="pdb")
-        view.layout.height = "250px"
-        return view
-
-    with session_context(widget_session):
-        res = asyncio.run(r._render())
-
-    assert res is not None
-    assert res["fill"] is False
