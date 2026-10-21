@@ -37,6 +37,7 @@ def test_render_quak_coerces_dataframe(widget_session) -> None:
     with session_context(widget_session):
         assert asyncio.run(r._render()) is not None
 
+    assert r.widget is not None
     assert isinstance(r.widget, quak.Widget)
     assert r.widget.sql == 'SELECT * FROM "df"'
 
