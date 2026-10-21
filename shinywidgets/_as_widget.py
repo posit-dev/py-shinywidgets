@@ -190,6 +190,10 @@ def as_widget_mpl(x: object) -> Optional[Widget]:
     if isinstance(x.canvas, Canvas) and not is_closed_widget(x.canvas):
         canvas = x.canvas
     else:
+        # The previous canvas may have scaled the dpi by its screen's pixel ratio
+        # (e.g., pyplot's macosx backend on a HiDPI display); ipympl applies the
+        # browser's ratio instead.
+        x.set_dpi(x.dpi / x.canvas.device_pixel_ratio)
         canvas = Canvas(x)
     if canvas.manager is None:
         FigureManager(canvas, getattr(x, "number", id(x)))
