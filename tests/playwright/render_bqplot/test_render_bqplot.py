@@ -7,11 +7,16 @@ from tests.playwright.conftest import (
     expose_manager,
 )
 
-# bqplot's stylesheet reads JupyterLab theme variables; without them the plot
-# area fill is invalid and falls back to black
-PLOT_AREA_FILL_JS = """(sel) => {
+# Resolves --bs-body-bg to an rgb() string (a custom property's raw value could be
+# a hex color, so let the browser compute it) alongside the plot area's fill
+THEME_COLORS_JS = """(sel) => {
   const rect = document.querySelector(sel + ' .plotarea_background');
-  return rect ? getComputedStyle(rect).fill : null;
+  const probe = document.createElement('div');
+  probe.style.backgroundColor = 'var(--bs-body-bg)';
+  document.body.appendChild(probe);
+  const bodyBg = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return { fill: getComputedStyle(rect).fill, bodyBg };
 }"""
 
 # Height of the output element, the figure inside it, and the content box
@@ -51,7 +56,15 @@ def test_bqplot_renders_with_theme_colors(page: Page, local_app) -> None:
     expect(page.locator("#fig .dot")).to_have_count(4)
     expect(page.locator("#fig_height .bqplot svg").first).to_be_visible()
 
-    assert page.evaluate(PLOT_AREA_FILL_JS, "#fig") != "rgb(0, 0, 0)"
+    # bqplot's stylesheet reads JupyterLab theme variables; without them the plot
+    # area fill is invalid and falls back to black. It should follow Shiny's theme.
+    light = page.evaluate(THEME_COLORS_JS, "#fig")
+    assert light["fill"] == light["bodyBg"] != "rgb(0, 0, 0)"
+
+    page.evaluate("document.documentElement.setAttribute('data-bs-theme', 'dark')")
+    dark = page.evaluate(THEME_COLORS_JS, "#fig")
+    assert dark["fill"] == dark["bodyBg"]
+    assert dark["fill"] != light["fill"]
 
     assert_no_unexpected_errors(errors, failed_requests)
 
@@ -63,7 +76,6 @@ def test_bqplot_fills_fixed_height_container(page: Page, local_app) -> None:
     expect(page.locator("#fig .dot")).to_have_count(4, timeout=30000)
 
     boxes = page.evaluate(FILL_BOXES_JS)
-    print("fill boxes (900px wide):", boxes)
     assert abs(boxes["fig"] - boxes["bodyHeight"]) <= 1
     assert abs(boxes["out"] - boxes["bodyHeight"]) <= 1
     assert abs(boxes["figWidth"] - boxes["bodyWidth"]) <= 1
@@ -77,7 +89,6 @@ def test_bqplot_fills_fixed_height_container(page: Page, local_app) -> None:
         }"""
     )
     boxes = page.evaluate(FILL_BOXES_JS)
-    print("fill boxes (600px wide):", boxes)
     assert abs(boxes["fig"] - boxes["bodyHeight"]) <= 1
     assert abs(boxes["figWidth"] - boxes["bodyWidth"]) <= 1
 
@@ -91,12 +102,10 @@ def test_bqplot_respects_explicit_heights(page: Page, local_app) -> None:
     expect(page.locator("#fig_layout .bqplot svg").first).to_be_visible()
 
     on_output = page.evaluate(HEIGHT_JS, "#fig_height")
-    print("height on output_widget():", on_output)
     assert on_output["out"] == 250
     assert on_output["fig"] == 250
 
     on_layout = page.evaluate(HEIGHT_JS, "#fig_layout")
-    print("height on widget layout:", on_layout)
     assert on_layout["fig"] == 300
 
     assert_no_unexpected_errors(errors, failed_requests)

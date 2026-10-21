@@ -103,7 +103,9 @@
 
 /*
 * bqplot gives figures a fixed 480px height, so an explicit output_widget(height=)
-* would clip the figure rather than size it.
+* would clip the figure rather than size it. The attribute selector matches the
+* inline style output_widget(height=) emits (see _output_widget.py), so keep the two
+* in sync.
 */
 .shiny-ipywidget-output[style*="height:"] > .bqplot {
   height: 100%;
