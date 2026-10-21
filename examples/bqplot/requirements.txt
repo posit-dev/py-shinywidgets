@@ -1,0 +1,5 @@
+shiny
+shinywidgets
+bqplot
+numpy
+pandas

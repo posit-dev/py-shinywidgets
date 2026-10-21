@@ -35,6 +35,7 @@ Issues = "https://github.com/rstudio/py-shinywidgets/issues"
 test = [
   "altair",
   "bokeh",
+  "bqplot",
   "coverage>=7",
   "hvplot",
   "ipyleaflet>=0.20.0",
@@ -56,6 +57,7 @@ test = [
 dev = [
   "altair",
   "bokeh",
+  "bqplot",
   "coverage>=7",
   "hvplot",
   "ipyleaflet>=0.20.0",
@@ -80,6 +82,7 @@ dev = [
 test = [
   "altair",
   "bokeh",
+  "bqplot",
   "coverage>=7",
   "hvplot",
   "ipyleaflet>=0.20.0",

@@ -120,6 +120,41 @@ wheels = [
 ]
 
 [[package]]
+name = "bqplot"
+version = "0.13.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "bqscales" },
+    { name = "ipywidgets" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pandas", version = "3.0.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "traitlets" },
+    { name = "traittypes" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/59/4d/be05e7b7fac8f1daf3e772bc0fa266dfbd34ad6947b1599662e7b2f667db/bqplot-0.13.1.tar.gz", hash = "sha256:dd1f55c9bf971b1c3edf571a23edecd707aab5a72c3f5dac3cb98ee233fc6216", size = 905515, upload-time = "2026-05-07T08:56:59.413Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cd/7e/7a5ffa173dd1cffde4f6f41a7dcc8ef4cefdd3bb9cc6cab8341a4802b686/bqplot-0.13.1-py2.py3-none-any.whl", hash = "sha256:ae6a3bc687c400451524c56e7a05a0f943a0bb38d4e8b065d129a2bcbbd08ddc", size = 935352, upload-time = "2026-05-07T08:56:56.425Z" },
+]
+
+[[package]]
+name = "bqscales"
+version = "0.3.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "ipywidgets" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "traitlets" },
+    { name = "traittypes" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a8/da/457966a433f50f518d9404f350f523119dda2f39b0c042c2cc78a9aafbb4/bqscales-0.3.7.tar.gz", hash = "sha256:061488c68efba046ba166bbb9f87c8908c93b0bbe1a4636c36ca680553a121c1", size = 393410, upload-time = "2025-12-10T15:26:51.515Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/11/28/19843833ad088cd433350ecce75e1c98bb283e8d52d52a472946bcca6719/bqscales-0.3.7-py3-none-any.whl", hash = "sha256:f38625bfbc502aa010f2b87a5f7dddecfb439c4ca4ce2ec3a4db6e26c99b58db", size = 516301, upload-time = "2025-12-10T15:26:49.889Z" },
+]
+
+[[package]]
 name = "branca"
 version = "0.8.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3079,6 +3114,7 @@ dependencies = [
 dev = [
     { name = "altair" },
     { name = "bokeh" },
+    { name = "bqplot" },
     { name = "coverage" },
     { name = "holoviews" },
     { name = "hvplot" },
@@ -3102,6 +3138,7 @@ dev = [
 test = [
     { name = "altair" },
     { name = "bokeh" },
+    { name = "bqplot" },
     { name = "coverage" },
     { name = "holoviews" },
     { name = "hvplot" },
@@ -3126,6 +3163,7 @@ test = [
 dev = [
     { name = "altair" },
     { name = "bokeh" },
+    { name = "bqplot" },
     { name = "coverage" },
     { name = "holoviews" },
     { name = "hvplot" },
@@ -3149,6 +3187,7 @@ dev = [
 test = [
     { name = "altair" },
     { name = "bokeh" },
+    { name = "bqplot" },
     { name = "coverage" },
     { name = "holoviews" },
     { name = "hvplot" },
@@ -3176,6 +3215,8 @@ requires-dist = [
     { name = "anywidget" },
     { name = "bokeh", marker = "extra == 'dev'" },
     { name = "bokeh", marker = "extra == 'test'" },
+    { name = "bqplot", marker = "extra == 'dev'" },
+    { name = "bqplot", marker = "extra == 'test'" },
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7" },
     { name = "coverage", marker = "extra == 'test'", specifier = ">=7" },
     { name = "holoviews", marker = "extra == 'dev'" },
@@ -3222,6 +3263,7 @@ provides-extras = ["dev", "test"]
 dev = [
     { name = "altair" },
     { name = "bokeh" },
+    { name = "bqplot" },
     { name = "coverage", specifier = ">=7" },
     { name = "holoviews" },
     { name = "hvplot" },
@@ -3244,6 +3286,7 @@ dev = [
 test = [
     { name = "altair" },
     { name = "bokeh" },
+    { name = "bqplot" },
     { name = "coverage", specifier = ">=7" },
     { name = "holoviews" },
     { name = "hvplot" },
