@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import subprocess
+import sys
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -131,6 +134,33 @@ def test_open_sends_initial_image(
         if msg["content"]["comm_id"] == canvas.model_id
     )
     assert state["_data_url"].startswith("data:image/png;base64,")
+
+
+def test_coercion_preserves_pyplot_backend() -> None:
+    # ipympl selects itself as pyplot's backend when first imported, so this
+    # must run in a process that hasn't imported it yet
+    script = """
+import asyncio
+
+import matplotlib.pyplot as plt
+from shiny import App, ui
+from shiny._connection import MockConnection
+from shiny.session import session_context
+from shinywidgets import as_widget
+
+asyncio.set_event_loop(asyncio.new_event_loop())
+session = App(ui.page_fluid(), lambda input, output, session: None)._create_session(
+    MockConnection()
+)
+unrelated = plt.figure()
+with session_context(session):
+    as_widget(plt.figure())
+
+assert plt.get_backend() == "agg", plt.get_backend()
+assert plt.fignum_exists(unrelated.number)
+"""
+    env = {**os.environ, "MPLBACKEND": "agg"}
+    subprocess.run([sys.executable, "-c", script], check=True, env=env)
 
 
 class CustomAxes(Axes):

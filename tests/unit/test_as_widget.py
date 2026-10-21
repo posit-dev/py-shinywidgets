@@ -29,7 +29,8 @@ class StubSession:
 
 
 def _fake_matplotlib(monkeypatch: pytest.MonkeyPatch):
-    _inject_package(monkeypatch, "matplotlib")
+    mpl = _inject_package(monkeypatch, "matplotlib")
+    setattr(mpl, "use", lambda backend: None)
 
     figure_mod = ModuleType("matplotlib.figure")
 
