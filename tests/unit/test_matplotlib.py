@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from ipywidgets import Widget
 from matplotlib.axes import Axes
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure, SubFigure
 from mpl_toolkits.mplot3d import Axes3D
 from shiny import Session, reactive
@@ -105,6 +106,22 @@ def test_reusing_session_canvas_preserves_its_lifetime(
         assert canvas.comm is not None
         assert toolbar.comm is not None
         assert as_widget(figure) is canvas
+
+
+def test_coercion_undoes_previous_canvas_pixel_ratio(widget_session: Session) -> None:
+    # GUI backends (e.g., macosx on a HiDPI screen) scale the figure's dpi by
+    # their screen's pixel ratio
+    figure = Figure(dpi=100)
+    FigureCanvasAgg(figure)._set_device_pixel_ratio(2)
+    assert figure.dpi == 200
+
+    with session_context(widget_session):
+        canvas = cast("Canvas", as_widget(figure))
+    assert figure.dpi == 100
+
+    # ipympl applies the browser's pixel ratio instead
+    canvas._set_device_pixel_ratio(2)
+    assert figure.dpi == 200
 
 
 def test_open_sends_initial_image(

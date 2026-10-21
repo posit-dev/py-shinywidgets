@@ -34,8 +34,16 @@ def _fake_matplotlib(monkeypatch: pytest.MonkeyPatch):
 
     figure_mod = ModuleType("matplotlib.figure")
 
+    class FigureCanvasBase:
+        device_pixel_ratio = 1.0
+
     class Figure:
-        canvas = None
+        def __init__(self):
+            self.canvas = FigureCanvasBase()
+            self.dpi = 100.0
+
+        def set_dpi(self, dpi: float) -> None:
+            self.dpi = dpi
 
     class SubFigure:
         pass
