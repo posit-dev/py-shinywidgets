@@ -274,7 +274,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // Only forward the potential to fill if `output_widget(fillable=True)`
     // _and_ the widget instance wants to fill
     const fill = data.fill && el.classList.contains("html-fill-container");
-    if (fill) el.classList.add("forward-fill-potential");
+    el.classList.toggle("forward-fill-potential", fill);
 
     // At this time point, we should've already handled an 'open' message, and so
     // the model should be ready to use
