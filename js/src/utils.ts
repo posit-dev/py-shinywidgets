@@ -102,8 +102,10 @@ function protectPageJQuery(): void {
   pageJQueryProtected = true;
 
   const win = window as Window & { $?: unknown; jQuery?: unknown };
-  let hasOverride = false;
-  let override: unknown;
+  // Keep a non-jQuery `$` that is already in place (e.g., after noConflict())
+  const current = win.$;
+  let hasOverride = current !== win.jQuery && !isJQuery(current);
+  let override: unknown = hasOverride ? current : undefined;
   Object.defineProperty(win, '$', {
     configurable: true,
     enumerable: true,

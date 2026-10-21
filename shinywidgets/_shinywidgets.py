@@ -144,7 +144,7 @@ def init_shiny_widget(w: Widget):
         # BokehModel.close() is not idempotent; guard against double close.
         guard_widget_close(w)
 
-    if widget_pkg(w) == "itables":
+    if any(widget_pkg(cls) == "itables" for cls in type(w).__mro__):
         # itables' bundle replaces the global `$` when its module is evaluated (see
         # protectPageJQuery() in js/src/utils.ts), which happens after this open
         open_keys["protect_jquery"] = True

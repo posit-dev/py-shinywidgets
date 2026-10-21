@@ -11,6 +11,7 @@ import shinywidgets._render_widget_base as rwb
 from ipywidgets import Widget
 from shiny import Session, reactive
 from shiny.session import session_context
+from shiny.session._session import AppSession
 
 pytest.importorskip("itables")
 pytest.importorskip("anywidget")
@@ -186,11 +187,12 @@ def comm_open_contents(
             messages.append(message)
 
     monkeypatch.setattr(widget_session, "send_custom_message", send_custom_message)
+    assert isinstance(widget_session, AppSession)
     with session_context(widget_session):
         widget = make()
         asyncio.get_event_loop().run_until_complete(reactive.flush())
         asyncio.get_event_loop().run_until_complete(
-            widget_session._flush_callbacks.invoke()  # pyright: ignore[reportAttributeAccessIssue]
+            widget_session._flush_callbacks.invoke()
         )
     return next(
         msg["content"]
@@ -203,6 +205,17 @@ def test_itable_comm_open_asks_client_to_protect_page_jquery(
     widget_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     content = comm_open_contents(widget_session, monkeypatch, ITable)
+    assert content["protect_jquery"] is True
+
+
+class CustomITable(ITable):
+    pass
+
+
+def test_itable_subclass_comm_open_asks_client_to_protect_page_jquery(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    content = comm_open_contents(widget_session, monkeypatch, CustomITable)
     assert content["protect_jquery"] is True
 
 
