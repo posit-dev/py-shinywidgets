@@ -1,10 +1,23 @@
 from __future__ import annotations
 
+import pytest
+import shiny
 from playwright.sync_api import Page, expect
 from tests.playwright.conftest import (
     CANVAS_HAS_PIXELS_JS,
     assert_no_unexpected_errors,
     collect_errors,
+)
+
+# holoviews re-aggregates from its own asyncio task, outside Shiny's input ->
+# flush cycle. Shiny 1.9 sends widget messages published that way right away;
+# older versions hold them until the next client input, so the re-aggregated
+# image never shows up here. `Session.run_once_when_idle` arrived with that
+# change, so its presence stands in for the version (dev builds are still
+# numbered 1.8.x).
+pytestmark = pytest.mark.skipif(
+    not hasattr(shiny.Session, "run_once_when_idle"),
+    reason="datashader re-aggregation needs shiny >= 1.9",
 )
 
 # jupyter_bokeh's frontend first tries to load its extension JS from a path

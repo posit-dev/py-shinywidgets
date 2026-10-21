@@ -299,7 +299,7 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
     [datashader](https://datashader.org) are supported too (e.g., hvPlot's
     ``rasterize=True`` or holoviews' ``rasterize()`` operation; requires
     ``pip install datashader``): they re-aggregate the data on the server for the
-    visible region whenever the user zooms or pans.
+    visible region whenever the user zooms or pans (requires shiny >= 1.9).
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
