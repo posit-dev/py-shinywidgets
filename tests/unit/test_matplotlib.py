@@ -50,6 +50,47 @@ def test_axes_coercion_uses_root_figure(kind: str, widget_session: Session) -> N
     assert figure.canvas is widget
 
 
+def test_seaborn_grid_coerced_via_its_figure(widget_session: Session) -> None:
+    # seaborn's figure-level functions (e.g., relplot()) return a Grid that
+    # holds its figure (seaborn isn't a test dependency, so mimic one)
+    figure = Figure()
+    grid = SeabornGrid(figure)
+
+    with session_context(widget_session):
+        widget = as_widget(grid)
+
+    assert cast("Canvas", widget).figure is figure
+
+
+def test_returned_canvas_gets_figure_manager(widget_session: Session) -> None:
+    with session_context(widget_session):
+        canvas_type = type(cast("Canvas", as_widget(Figure())))
+        canvas = canvas_type(Figure())
+        assert canvas.manager is None
+
+        assert as_widget(canvas) is canvas
+        # ipympl's browser messages (e.g., resize) go through the manager
+        assert canvas.manager is not None
+
+
+def test_returned_pyplot_canvas_closed_at_render_retirement(
+    widget_session: Session,
+) -> None:
+    import matplotlib.pyplot as plt
+
+    with session_context(widget_session):
+        canvas_type = type(cast("Canvas", as_widget(Figure())))
+        context = Context()
+        with context(), WidgetRenderContext():
+            figure = plt.figure()
+            canvas = canvas_type(figure)
+            assert as_widget(canvas) is canvas
+
+        assert plt.fignum_exists(figure.number)
+        context.invalidate()
+        assert not plt.fignum_exists(figure.number)
+
+
 def test_existing_canvas_is_reused_with_its_settings(widget_session: Session) -> None:
     with session_context(widget_session):
         figure = Figure()
@@ -182,3 +223,10 @@ assert plt.fignum_exists(unrelated.number)
 
 class CustomAxes(Axes):
     pass
+
+
+class SeabornGrid:
+    __module__ = "seaborn.axisgrid"
+
+    def __init__(self, figure: Figure) -> None:
+        self.figure = figure
