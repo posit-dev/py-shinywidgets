@@ -1,0 +1,6 @@
+shiny
+shinywidgets
+ipympl
+matplotlib
+numpy
+pandas
