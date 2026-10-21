@@ -3,7 +3,7 @@ from __future__ import annotations
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from typing import Callable, Generic, Iterator, Optional, Tuple, TypeVar, cast
+from typing import Any, Callable, Generic, Iterator, Optional, Tuple, TypeVar, cast
 
 from htmltools import Tag
 from ipywidgets.widgets import DOMWidget, Layout, Widget
@@ -294,12 +294,26 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 # decision, applies package-specific mutations, and returns the (possibly
 # tightened) fill decision.
 #
+def _itables_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # DataTables only gets a scrollable body (which is what lets the table fill
+    # its container instead of growing past it) when scrollY is set. shinywidgets.css
+    # turns this "100%" into actual filling; any other user-specified scrollY wins.
+    dt_args: dict[str, Any] = widget._dt_args  # type: ignore
+    if "scrollY" not in dt_args:
+        widget._dt_args = {**dt_args, "scrollY": "100%"}  # type: ignore
+        # itables' default `width:auto` leaves a scrolling table's header and body
+        # columns misaligned
+        widget._style = widget._style.replace("width:auto", "width:100%")  # type: ignore
+    return fill
+
+
 # N.B. bokeh is intentionally absent: its sizing_mode hack lives in
 # as_widget_bokeh() because applying it here doesn't work (see the TODO
 # there).
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
+    "itables": _itables_layout_defaults,
 }
 
 

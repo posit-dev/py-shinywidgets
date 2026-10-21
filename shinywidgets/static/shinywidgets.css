@@ -85,3 +85,51 @@
 .html-fill-container > .lm-Widget:not(.html-fill-item) {
   flex: 0 0 auto;
 }
+
+/*
+* itables (DataTables): render_itables() defaults scrollY to "100%" (see
+* _itables_layout_defaults), which DataTables applies to the scrolling table body
+* as an inline height. A percentage can't resolve against the table's auto-height
+* ancestors, so instead lay the controls, body and footer out as a flex column that
+* fills the output (the body takes the space left over, and scrolls).
+*/
+.shiny-ipywidget-output > .itables_anywidget {
+  height: 100%;
+}
+
+.itables_anywidget .dt-container:has(.dt-scroll-body[style*="100%"]) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.itables_anywidget .dt-container:has(.dt-scroll-body[style*="100%"]) .dt-layout-row.dt-layout-table {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.itables_anywidget .dt-container:has(.dt-scroll-body[style*="100%"]) .dt-layout-table > .dt-layout-cell {
+  display: flex !important;
+  flex-direction: column;
+  align-items: stretch !important;
+  min-height: 0;
+}
+
+.itables_anywidget .dt-container:has(.dt-scroll-body[style*="100%"]) .dt-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.itables_anywidget .dt-container .dt-scroll-body[style*="100%"] {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+  height: auto !important;
+}
+
+.itables_anywidget .dt-container:has(.dt-scroll-body[style*="100%"]) .dt-scroll > :not(.dt-scroll-body) {
+  flex: none;
+}

@@ -1,0 +1,5 @@
+shiny
+shinywidgets
+itables[widget]
+numpy
+pandas

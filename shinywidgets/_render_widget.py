@@ -3,19 +3,21 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, cast
 
 from htmltools import Tag
+from ipywidgets.widgets.widget import Widget
 
 if TYPE_CHECKING:
     import plotly.graph_objects as go
     from altair import JupyterChart
     from ipympl.backend_nbagg import Canvas as MplCanvas
+    from itables.widget import ITable
     from jupyter_bokeh import BokehModel
     from maplibre.ipywidget import MapWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
-        object
-    )
+    JupyterChart = MplCanvas = ITable = BokehModel = MapWidget = FigureWidget = (
+        DeckGLWidget
+    ) = object
 
 from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
@@ -36,6 +38,7 @@ __all__ = (
     "render_altair",
     "render_bokeh",
     "render_holoviews",
+    "render_itables",
     "render_maplibre",
     "render_matplotlib",
     "render_panel",
@@ -133,6 +136,41 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     """
+
+
+class render_itables(render_widget_base[ValueT, ITable]):
+    """
+    Reactively render a [pandas](https://pandas.pydata.org) or
+    [polars](https://pola.rs) data frame as an interactive
+    [itables](https://mwouts.github.io/itables/) (DataTables) Shiny output.
+
+    The decorated function may return either a data frame (which is coerced to an
+    `itables.widget.ITable`) or an `itables.widget.ITable` widget, which is how to
+    pass itables options such as ``select=True`` (requires ``pip install
+    'itables[widget]'``).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `ITable` instance. Use `.widget` to programmatically update the rendered table
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state (e.g., `selected_rows`) with
+    :func:`~shinywidgets.reactive_read`.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    """
+
+    def _as_widget(self, value: ValueT) -> ITable:
+        if isinstance(value, Widget):
+            return super()._as_widget(value)
+        try:
+            from itables.widget import ITable
+        except ImportError:
+            raise ImportError(
+                "Install the itables package to use data frames with shinywidgets "
+                "(pip install 'itables[widget]')."
+            )
+        return ITable(value)
 
 
 class render_maplibre(render_widget_base[ValueT, MapWidget]):

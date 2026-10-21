@@ -84,8 +84,21 @@ const quakBehavior: WidgetBehavior = {
   },
 };
 
+// itables' widget bundle replaces the global `$` with its own jQuery (4.x), which
+// breaks code that expects Shiny's jQuery (e.g., bslib reads
+// `$(el).data("shinyOutputBinding")` when a card resizes). `window.jQuery` is left
+// untouched, so point `$` back at it.
+const itablesBehavior: WidgetBehavior = {
+  onDisplayed: (ctx) => {
+    const win = window as Window & { $?: unknown; jQuery?: unknown };
+    if (win.jQuery && win.$ !== win.jQuery) win.$ = win.jQuery;
+    ctx.dispatchResize();
+  },
+};
+
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
+  itables: itablesBehavior,
   plotly: plotlyBehavior,
   quak: quakBehavior,
 };
