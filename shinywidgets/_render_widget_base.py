@@ -260,6 +260,22 @@ def _plotly_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+JSCATTER_DEFAULT_HEIGHT = 240
+"""
+The pixel height jscatter gives a `Scatter` unless the user sets one
+"""
+
+
+def jscatter_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # jupyter-scatter always has a pixel height (there's no "auto"), so the only
+    # sign that the user chose one is a value other than jscatter's own default.
+    # In a filling layout, the browser drives the height from the container size
+    # (see jscatter in js/src/fill.ts).
+    if getattr(widget, "height", JSCATTER_DEFAULT_HEIGHT) != JSCATTER_DEFAULT_HEIGHT:
+        return False
+    return fill
+
+
 def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # altair, confusingly, isn't setup to fill it's Layout() container by default. I
     # can't imagine a situation where you'd actually want it to _not_ fill the parent
@@ -300,6 +316,7 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
+    "jscatter": jscatter_layout_defaults,
 }
 
 

@@ -130,3 +130,32 @@ def test_altair_concat_chart_emits_warning(monkeypatch) -> None:
 
     with pytest.warns(UserWarning, match="layout_column_wrap"):
         rwb.set_layout_defaults(w)
+
+
+def _jscatter_widget():  # noqa: ANN202
+    pytest.importorskip("jscatter")
+    pd = pytest.importorskip("pandas")
+    from jscatter import Scatter
+
+    df = pd.DataFrame({"x": [0.1, 0.5, 0.9], "y": [0.3, 0.6, 0.2]})
+    return Scatter(data=df, x="x", y="y")
+
+
+def test_jscatter_default_height_keeps_fill_true() -> None:
+    scatter = _jscatter_widget()
+    _, fill = rwb.set_layout_defaults(scatter.widget)
+    assert fill is True
+
+
+def test_jscatter_explicit_height_disables_fill() -> None:
+    scatter = _jscatter_widget()
+    scatter.height(500)
+    _, fill = rwb.set_layout_defaults(scatter.widget)
+    assert fill is False
+
+
+def test_jscatter_default_height_matches_package_default() -> None:
+    # The layout default compares against jscatter's own default height, so
+    # fail loudly if jscatter changes it
+    scatter = _jscatter_widget()
+    assert scatter.height() == rwb.JSCATTER_DEFAULT_HEIGHT

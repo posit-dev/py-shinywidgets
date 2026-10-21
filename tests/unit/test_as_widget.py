@@ -9,6 +9,7 @@ from shinywidgets._as_widget import (
     as_widget,
     as_widget_altair,
     as_widget_bokeh,
+    as_widget_jscatter,
     as_widget_maplibre,
     as_widget_mpl,
     as_widget_plotly,
@@ -547,3 +548,29 @@ def test_as_widget_panel_without_jupyter_bokeh_errors(
 
     with pytest.raises(ImportError, match="Install the jupyter_bokeh package"):
         as_widget(PanelObj())
+
+
+def test_as_widget_jscatter_rejects_non_scatter() -> None:
+    pytest.importorskip("jscatter")
+    with pytest.raises(TypeError, match="jscatter"):
+        as_widget_jscatter(object())
+
+
+def test_as_widget_jscatter_real_scatter(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("jscatter")
+    pd = pytest.importorskip("pandas")
+
+    import shinywidgets._shinywidgets as sw
+
+    monkeypatch.setattr(sw, "get_current_session", lambda: StubSession())
+
+    from jscatter import Scatter
+    from jscatter.widget import JupyterScatter
+
+    scatter = Scatter(
+        data=pd.DataFrame({"x": [0.1, 0.5, 0.9], "y": [0.3, 0.6, 0.2]}), x="x", y="y"
+    )
+
+    res = as_widget(scatter)
+    assert isinstance(res, JupyterScatter)
+    assert res is scatter.widget

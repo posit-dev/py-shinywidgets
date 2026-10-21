@@ -1,0 +1,69 @@
+import type { WidgetModel } from '@jupyter-widgets/base';
+
+// The regl-scatterplot instance jupyter-scatter attaches to its plot container
+interface ScatterplotApi {
+  set(options: { height: number | 'auto' }): unknown;
+}
+
+/**
+ * jupyter-scatter sizes its plot from the model's pixel `height` trait (there's
+ * no "auto" height), and ignores its container's size. To make
+ * render_jscatter() outputs fill a fillable container, observe the container
+ * and drive `height` from its size, which jupyter-scatter applies to its layout
+ * (and syncs back to the Python widget). Its drawing surface doesn't follow
+ * the trait once rendered, so it's switched to track its layout box instead.
+ *
+ * Returns a cleanup function that detaches the observer.
+ */
+export function setupJscatterAutoHeight(
+  el: HTMLElement,
+  lmWidget: HTMLElement,
+  model: WidgetModel
+): () => void {
+  let disposed = false;
+  let frame = 0;
+  const observer = new ResizeObserver(() => fitHeight());
+
+  // The element jupyter-scatter sizes: the regl canvas sits in a wrapper, which
+  // sits in this container. N.B. the container is taller than the `height`
+  // trait by the axes' padding.
+  const findPlotContainer = () =>
+    lmWidget.querySelector('canvas')?.parentElement?.parentElement ?? null;
+
+  function fitHeight(): void {
+    // While the output recalculates, Shiny's busy indicator briefly changes
+    // the output's size. Following that would re-layout a plot that's about to
+    // be replaced, and jupyter-scatter throws if its (queued) resize runs
+    // after the view has been destroyed.
+    if (el.classList.contains('recalculating')) return;
+    const plot = findPlotContainer();
+    if (!plot) return;
+    const padding = plot.offsetHeight - model.get('height');
+    const height = Math.floor(el.clientHeight - padding);
+    if (height < 1 || height === model.get('height')) return;
+    model.set('height', height);
+    model.save_changes();
+  }
+
+  // jupyter-scatter creates its plot (and starts listening for `height`
+  // changes) on the next animation frame after rendering
+  const start = () => {
+    if (disposed) return;
+    const plot = findPlotContainer() as (HTMLElement & { api?: ScatterplotApi }) | null;
+    if (!plot?.api) {
+      frame = requestAnimationFrame(start);
+      return;
+    }
+    plot.api.set({ height: 'auto' });
+    // Observe the plot container too, for padding changes (e.g., toggling axes)
+    observer.observe(el);
+    observer.observe(plot);
+  };
+  start();
+
+  return () => {
+    disposed = true;
+    cancelAnimationFrame(frame);
+    observer.disconnect();
+  };
+}
