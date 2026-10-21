@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from typing import Callable
 
 import pytest
 import shinywidgets._render_widget as rw
@@ -14,10 +15,6 @@ pd = pytest.importorskip("pandas")
 pytest.importorskip("pyarrow")
 
 from perspective.widget import PerspectiveWidget  # noqa: E402
-
-
-def hosted_table_names() -> list[str]:
-    return perspective.GLOBAL_CLIENT.get_hosted_table_names()
 
 
 def render(renderer: rw.render_perspective, value: object) -> object:
@@ -95,9 +92,11 @@ def test_render_perspective_dataframe_requires_perspective_widget(
             render(r, pd.DataFrame({"a": [1]}))
 
 
-def test_perspective_comm_open_includes_custom_element_guard(
-    monkeypatch: pytest.MonkeyPatch, widget_session: Session
-) -> None:
+def comm_open_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+    widget_session: Session,
+    make_widget: Callable[[], object],
+) -> list[HTMLDependency]:
     dependencies: list[HTMLDependency] = []
     process_ui = widget_session._process_ui
 
@@ -108,8 +107,17 @@ def test_perspective_comm_open_includes_custom_element_guard(
 
     monkeypatch.setattr(widget_session, "_process_ui", capture_dependencies)
     with session_context(widget_session):
-        PerspectiveWidget({"a": [1]})
+        make_widget()
         asyncio.run(reactive.flush())
+    return dependencies
+
+
+def test_perspective_comm_open_includes_custom_element_guard(
+    monkeypatch: pytest.MonkeyPatch, widget_session: Session
+) -> None:
+    dependencies = comm_open_dependencies(
+        monkeypatch, widget_session, lambda: PerspectiveWidget({"a": [1]})
+    )
 
     # Perspective's ESM registers custom elements at module scope, and anywidget
     # evaluates it once per model, so a second model in the page (e.g., after a
@@ -117,3 +125,14 @@ def test_perspective_comm_open_includes_custom_element_guard(
     guards = [dep for dep in dependencies if dep.name == "shinywidgets-custom-elements"]
     assert len(guards) == 1
     assert "customElements.define" in str(guards[0].head)
+
+
+def test_other_widgets_do_not_get_custom_element_guard(
+    monkeypatch: pytest.MonkeyPatch, widget_session: Session
+) -> None:
+    import ipywidgets
+
+    dependencies = comm_open_dependencies(
+        monkeypatch, widget_session, lambda: ipywidgets.IntSlider()
+    )
+    assert not any(dep.name == "shinywidgets-custom-elements" for dep in dependencies)

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from jupyter_bokeh import BokehModel
     from matplotlib.figure import Figure
     from panel.viewable import Viewable
+    from perspective.widget import PerspectiveWidget
 
 __all__ = ("as_widget",)
 
@@ -173,7 +174,7 @@ def as_widget_perspective(x: object) -> Optional[Widget]:
     return perspective_widget(x)
 
 
-def perspective_widget(data: object) -> Widget:
+def perspective_widget(data: object) -> "PerspectiveWidget":
     try:
         from perspective.widget import PerspectiveWidget
     except ImportError:

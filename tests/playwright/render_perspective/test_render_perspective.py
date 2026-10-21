@@ -38,6 +38,21 @@ def test_perspective_update_streams_to_browser(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_perspective_viewers_share_a_page(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+
+    # Perspective's ESM registers custom elements at module scope, so a second
+    # viewer in the page only initializes if redefinition is ignored
+    expect(page.locator(VIEWER).locator("td", has_text="row-0").first).to_be_visible(
+        timeout=60000
+    )
+    second = page.locator("#second_viewer perspective-viewer")
+    expect(second.locator("td", has_text="other-1").first).to_be_visible(timeout=60000)
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_perspective_viewer_state_roundtrips_to_python(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)

@@ -15,6 +15,7 @@ app_ui = ui.page_fluid(
     ui.output_text("render_count"),
     ui.output_text("sort_state"),
     output_widget("viewer"),
+    output_widget("second_viewer"),
 )
 
 
@@ -35,6 +36,10 @@ def server(input, output, session):
     def viewer():
         counter.get()
         return pd.DataFrame([make_row(i) for i in range(3)])
+
+    @render_perspective
+    def second_viewer():
+        return pd.DataFrame({"name": ["other-0", "other-1"]})
 
     @render.text
     def sort_state():
