@@ -61,6 +61,18 @@ def test_users_plot_is_not_mutated(widget_session: Session) -> None:
     assert len(second.figure.axes) == 1
 
 
+def test_users_composition_is_not_mutated(widget_session: Session) -> None:
+    left, right = scatter(), scatter()
+    composition = left | right
+    with session_context(widget_session):
+        first = cast("Canvas", as_widget(composition))
+        second = cast("Canvas", as_widget(composition))
+
+    assert not any(hasattr(p, "figure") for p in (composition, left, right))
+    assert first.figure is not second.figure
+    assert len(second.figure.axes) == 2
+
+
 def test_header_hidden(widget_session: Session) -> None:
     with session_context(widget_session):
         canvas = cast("Canvas", as_widget(scatter()))

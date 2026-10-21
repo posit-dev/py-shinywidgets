@@ -221,8 +221,10 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
     returned plot itself isn't modified (a copy is drawn). In a filling layout, the
     figure is resized to fit its container (overriding ``theme(figure_size=...)``),
     and plotnine re-lays out the plot (e.g., legends and axis labels) at each size.
-    Otherwise (e.g., with an explicit ``height``), the plot is drawn at its
-    ``figure_size``.
+    With an explicit ``height``, the figure isn't fitted to the output (it's drawn
+    at its ``figure_size``, and a larger figure is clipped), so set
+    ``theme(figure_size=...)`` to match. With ``fill=False`` (and no ``height``),
+    the figure's width still follows its container.
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered

@@ -43,7 +43,9 @@ def test_plotnine_renders(page: Page, local_app) -> None:
     expect(page.locator("#plot canvas").first).to_be_visible(timeout=30000)
     assert page.evaluate(CANVAS_HAS_PIXELS_JS, "#plot")
     # plotnine closes its pyplot figure, so "Figure <n>" would be meaningless
-    expect(page.locator("#plot .jupyter-matplotlib-header")).to_be_hidden()
+    header = page.locator("#plot .jupyter-matplotlib-header")
+    expect(header).to_have_count(1)
+    assert header.evaluate("(el) => getComputedStyle(el).display") == "none"
 
     assert_no_unexpected_errors(errors, failed_requests)
 

@@ -74,8 +74,6 @@ def server(input, output, session):
     @reactive.effect
     def _():
         canvas = plot.widget
-        if canvas is None:
-            return
         canvas.mpl_connect(
             "button_press_event",
             lambda event: clicks.set(clicks.get() + 1) if event.inaxes else None,

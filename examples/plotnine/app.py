@@ -61,7 +61,7 @@ app_ui = ui.page_navbar(
                 ),
                 ui.card(
                     ui.card_header("Clicked penguin"),
-                    ui.output_data_frame("clicked_table"),
+                    ui.output_ui("clicked_info"),
                 ),
                 col_widths=(8, 4),
             ),
@@ -124,12 +124,19 @@ def server(input, output, session):
 
         canvas.mpl_connect("button_press_event", on_click)
 
-    @render.data_frame
-    def clicked_table():
+    @render.ui
+    def clicked_info():
         row = clicked()
         if row.empty:
-            return None
-        return row.T.reset_index().set_axis(["variable", "value"], axis=1)
+            return note("Click a point on the plot to see that penguin here.")
+        details = (
+            row.iloc[0]
+            .map(lambda v: f"{v:g}" if isinstance(v, float) else v)
+            .rename(lambda var: labels.get(var, var.capitalize()))
+        )
+        return ui.HTML(
+            details.to_frame().to_html(header=False, classes="table table-sm")
+        )
 
     # ---- 2. Compositions ------------------------------------------------------
     @render_plotnine
