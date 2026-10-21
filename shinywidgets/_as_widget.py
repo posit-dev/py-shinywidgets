@@ -24,6 +24,36 @@ MPL_CLEANUP_CANVASES: WeakSet[Widget] = WeakSet()
 # Some objects aren't directly renderable as an ipywidget, but in some cases,
 # we can coerce them into one
 def as_widget(x: object) -> Widget:
+    """
+    Coerce an object into an `ipywidgets.Widget`.
+
+    If `x` is already a `Widget`, it is returned as-is. Otherwise, the object is
+    coerced based on the package it comes from:
+
+    * altair `Chart` -> `altair.JupyterChart`
+    * bokeh model (e.g., `bokeh.plotting.figure`) -> `jupyter_bokeh.BokehModel`
+    * holoviews/hvplot object -> bokeh model (via panel)
+    * maplibre `Map` -> `maplibre.ipywidget.MapWidget`
+    * panel pane/viewable -> bokeh model
+    * plotly `Figure` -> `plotly.graph_objects.FigureWidget`
+    * pydeck `Deck` -> `pydeck.widget.DeckGLWidget`
+
+    Parameters
+    ----------
+    x
+        The object to coerce.
+
+    Returns
+    -------
+    :
+        An `ipywidgets.Widget`.
+
+    Raises
+    ------
+    TypeError
+        If `x` can't be coerced into a `Widget` (the error message points to shiny's
+        ``@render.ui`` decorator as a fallback for objects with an HTML repr).
+    """
     if isinstance(x, Widget):
         return x
 

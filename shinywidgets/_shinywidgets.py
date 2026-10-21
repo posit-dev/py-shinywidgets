@@ -39,7 +39,7 @@ from ._as_widget import as_widget
 from ._bokeh import bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
-from ._dependencies import require_dependency
+from ._dependencies import require_dependency, widget_pkg
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -172,12 +172,11 @@ def init_shiny_widget(w: Widget):
             return
 
         with WidgetRenderContext.resumed(render_ctx):
-            # Call _repr_mimebundle_() before get_state() since it may modify the widget
-            # in an important way (unfortunately, it does for plotly). Only call real
-            # overrides: the base implementation just repr()s the widget, which
-            # recurses forever on widget-reference cycles.
+            # Plotly's display hook snapshots the data and layout for get_state().
             # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
-            if type(w)._repr_mimebundle_ is not Widget._repr_mimebundle_:
+            # Other display hooks can create preview widgets, causing an infinite
+            # widget-creation loop (e.g. pythreejs, #244).
+            if any(widget_pkg(cls) == "plotly" for cls in type(w).__mro__):
                 w._repr_mimebundle_()
 
             # Now, get the state
@@ -414,7 +413,44 @@ SESSION_WIDGET_ID_MAP: dict[str, list[str]] = {}
 
 def reactive_read(widget: Widget, names: Union[str, Sequence[str]]) -> Any:
     """
-    Reactively read a widget trait
+    Reactively read a widget trait.
+
+    Takes a reactive dependency on the given trait(s), so the calling reactive context
+    (e.g., a ``@reactive.Calc``, ``@reactive.Effect``, or render function) is
+    invalidated whenever the trait's value changes (e.g., in response to user
+    interaction with the widget in the browser).
+
+    Parameters
+    ----------
+    widget
+        The widget to read from (often obtained via the ``.widget`` attribute of a
+        shinywidgets render decorator).
+    names
+        A trait name, or a sequence of trait names, to read.
+
+    Returns
+    -------
+    :
+        The trait's current value, or a tuple of values if `names` is a sequence.
+
+    Examples
+    --------
+    ```python
+    from shiny import reactive
+    from shinywidgets import reactive_read, render_widget
+    import ipyleaflet
+
+
+    @render_widget
+    def map():
+        return ipyleaflet.Map(center=(51.5, -0.09), zoom=4)
+
+
+    @reactive.Effect
+    def _():
+        # Re-runs whenever the map's zoom level changes
+        print(reactive_read(map.widget, "zoom"))
+    ```
     """
     reactive_depend(widget, names)
     if isinstance(names, str):
@@ -463,7 +499,10 @@ def register_widget(
     id: str, widget: Widget, session: Optional[Session] = None
 ) -> Widget:
     """
-    Deprecated. Use @render_widget instead.
+    Deprecated. Use ``@render_widget`` instead.
+
+    Registers `widget` as the Shiny output with id `id` on the given `session` (the
+    current session, if not specified), and returns the widget.
     """
     if session is None:
         session = require_active_session(session)

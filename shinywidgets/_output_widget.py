@@ -21,6 +21,38 @@ def output_widget(
     fill: Optional[bool] = None,
     fillable: Optional[bool] = None,
 ) -> Tag:
+    """
+    Create an output container for a Shiny widget (i.e., a placeholder for an
+    ipywidget rendered by a shinywidgets render decorator).
+
+    Place this in the UI wherever the widget should appear, and use the matching
+    ``id`` on the corresponding render decorator (e.g.,
+    :func:`~shinywidgets.render_widget`, :func:`~shinywidgets.render_plotly`) in the
+    server function.
+
+    Parameters
+    ----------
+    id
+        An output id, matching the id of the render decorator that fills this output.
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Returns
+    -------
+    :
+        A UI tag suitable for inclusion in the app's UI definition.
+    """
     id = resolve_id(id)
     res = tags.div(
         output_binding_dependency(),
