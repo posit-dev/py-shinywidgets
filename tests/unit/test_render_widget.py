@@ -63,8 +63,6 @@ def test_render_ipydatagrid_passes_datagrid_through(widget_session) -> None:
 
 
 def test_render_ipydatagrid_rejects_unsupported_value(widget_session) -> None:
-    pytest.importorskip("ipydatagrid")
-
     class Unsupported:
         pass
 

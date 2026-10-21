@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, ca
 from htmltools import Tag
 
 if TYPE_CHECKING:
+    import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
     from ipydatagrid import DataGrid
@@ -371,11 +372,11 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
     # registered with as_widget()
     def _as_widget(self, value: ValueT) -> DataGrid:
         if widget_pkg(type(value)) == "pandas" and type(value).__name__ == "DataFrame":
-            return dataframe_to_datagrid(value)
+            return dataframe_to_datagrid(cast("pd.DataFrame", value))
         return super()._as_widget(value)
 
 
-def dataframe_to_datagrid(df: object) -> DataGrid:
+def dataframe_to_datagrid(df: pd.DataFrame) -> DataGrid:
     try:
         from ipydatagrid import DataGrid
     except ImportError:
@@ -383,7 +384,7 @@ def dataframe_to_datagrid(df: object) -> DataGrid:
             "Install the ipydatagrid package to use render_ipydatagrid with "
             "shinywidgets (pip install ipydatagrid)."
         )
-    return DataGrid(df)  # pyright: ignore[reportArgumentType]
+    return DataGrid(df)
 
 
 class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
