@@ -52,9 +52,12 @@
 /*
 * ipycytoscape's stylesheet gives every widget a fixed `height: 400px`, which already
 * shrinks and grows to fit a filling container but ignores a height set on the output.
-* (An explicit height on the widget itself is inline, so it still takes precedence.)
+* The [style*="height:"] selector matches the inline style that output_widget(height=)
+* emits (keep in sync with _output_widget.py). An explicit height on the widget itself
+* is inline, so it still takes precedence. `.__________cytoscape_container` is
+* ipycytoscape's own internal class on its widget container.
 */
-.shiny-ipywidget-output[style*="height"] > .__________cytoscape_container {
+.shiny-ipywidget-output[style*="height:"] > .__________cytoscape_container {
   height: 100%;
 }
 
