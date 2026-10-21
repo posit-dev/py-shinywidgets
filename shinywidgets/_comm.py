@@ -56,7 +56,7 @@ class ShinyCommManager:
                 self.flush_requested = True
                 task = loop.create_task(self.flush_undelivered())
                 self.flush_tasks.add(task)
-                task.add_done_callback(self.flush_tasks.discard)
+                task.add_done_callback(self.flush_done)
 
         if running_loop() is loop:
             queue_and_request_flush()
@@ -81,9 +81,16 @@ class ShinyCommManager:
                 self.flush_requested = False
                 if self.undelivered > 0:
                     await reactive.flush()
-        except BaseException:
+        except Exception:
             traceback.print_exc()
             raise
+
+    def flush_done(self, task: asyncio.Task[None]) -> None:
+        self.flush_tasks.discard(task)
+        # A request that never got to reset the flag (e.g., cancelled before
+        # acquiring the lock) mustn't block future ones.
+        if task.cancelled() or task.exception() is not None:
+            self.flush_requested = False
 
 
 MsgCallback = Callable[[Dict[str, object]], None]
@@ -233,6 +240,9 @@ class ShinyComm:
         msg_txt = json_packer(msg)
 
         async def _send():
+            # Session flushes run on the session's loop, so this corrects any
+            # loop captured from the wrong thread.
+            manager.loop = running_loop()
             try:
                 if msg_type == "shinywidgets_comm_close":
                     # The close is sent on_flushed; by then, a replacement widget

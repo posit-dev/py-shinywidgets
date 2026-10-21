@@ -415,3 +415,18 @@ def test_manager_created_off_the_loop_adopts_it_when_publishing():
         assert await wait_for(lambda: len(conn.custom_types()) == 2)
 
     run_with_session(test)
+
+
+def test_a_cancelled_flush_request_does_not_block_later_ones():
+    async def test(session: Session, conn: RecordingConnection) -> None:
+        async with reactive.lock():
+            c = open_comm(session)
+            flush_tasks = set(c.comm_manager.flush_tasks)
+            for task in flush_tasks:
+                task.cancel()
+            await asyncio.gather(*flush_tasks, return_exceptions=True)
+            await asyncio.sleep(0)  # let done callbacks run
+        c.send(data={"x": 1})
+        assert await wait_for(lambda: len(conn.custom_types()) == 2)
+
+    run_with_session(test)
