@@ -2,14 +2,14 @@ import ipyleaflet as L
 from shiny import reactive, render, req
 from shiny.express import input, ui
 
-from shinywidgets import reactive_read, render_widget
+from shinywidgets import reactive_read, render_ipyleaflet
 
-ui.page_opts(title="ipyleaflet demo")
+ui.page_opts(title="ipyleaflet demo", fillable=True)
 
 with ui.sidebar():
     ui.input_slider("zoom", "Map zoom level", value=4, min=1, max=10)
 
-@render_widget
+@render_ipyleaflet
 def lmap():
     return L.Map(center=(52, 360), zoom=4)
 

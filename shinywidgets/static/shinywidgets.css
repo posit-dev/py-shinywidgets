@@ -189,3 +189,12 @@
 .html-fill-container > .lm-Widget:not(.html-fill-item) {
   flex: 0 0 auto;
 }
+
+/*
+* ipyleaflet hard-codes `height: 400px` on the map container, which ignores an
+* output's explicit height (it overflows or underfills it). A Layout(height=...)
+* on the map is an inline style, so it still takes precedence over this.
+*/
+.shiny-ipywidget-output[style*="height"] > .jupyter-widgets.leaflet-widgets {
+  height: 100%;
+}
