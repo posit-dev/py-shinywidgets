@@ -175,7 +175,7 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
     """
 
     def _as_widget(self, value: ValueT) -> CytoscapeWidget:
-        # A networkx graph is a generic type (other renderers don't accept it), so
+        # A networkx graph is a generic type (render_ipysigma accepts one too), so
         # it's coerced here rather than registered in AS_WIDGET_MAP
         if is_networkx_graph(value):
             return networkx_to_cytoscape(value)
