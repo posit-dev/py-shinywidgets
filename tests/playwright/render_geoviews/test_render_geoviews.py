@@ -90,7 +90,7 @@ LEFTMOST_RED_JS = (
 }"""
 )
 
-# True once the largest canvas under a selector spans most of the output's box
+# True once the first canvas under a selector spans most of the output's box
 CANVAS_FILLS_OUTPUT_JS = (
     "(sel) => {"
     + CANVASES_UNDER_JS
