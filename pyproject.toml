@@ -232,3 +232,11 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 docstring-code-format = true
 docstring-code-line-length = "dynamic"
+
+[tool.uv.sources]
+# Development resolves shiny from py-shiny main. Widget updates published from a
+# background task (e.g. datashader re-aggregation on zoom) need its output-flush
+# changes, due in shiny 1.9. Once 1.9 is released, drop this and raise the
+# `shiny>=` floor above instead. Affects only `uv lock`/`uv sync`, not the
+# package's published requirements.
+shiny = { git = "https://github.com/posit-dev/py-shiny", branch = "main" }
