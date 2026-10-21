@@ -1,0 +1,4 @@
+shiny
+shinywidgets
+k3d
+numpy

@@ -288,6 +288,21 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+K3D_DEFAULT_HEIGHT = 512
+
+
+def k3d_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from k3d.plot import Plot
+
+    # k3d.plot() always sets `height` explicitly (in pixels, default 512), so the
+    # default value is the only signal that the user didn't ask for a height. When
+    # filling, the plot's pixel height is only a flex basis (the `.lm-Widget`
+    # container stretches it), so no adjustment is needed.
+    if isinstance(widget, Plot) and widget.height != K3D_DEFAULT_HEIGHT:
+        return False
+    return fill
+
+
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
 # (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
 # in js/src/fill.ts). A handler receives the widget and the current fill
@@ -300,6 +315,7 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
+    "k3d": k3d_layout_defaults,
 }
 
 

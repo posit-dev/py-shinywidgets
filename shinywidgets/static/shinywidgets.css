@@ -85,3 +85,14 @@
 .html-fill-container > .lm-Widget:not(.html-fill-item) {
   flex: 0 0 auto;
 }
+
+/*
+* k3d sets a fixed pixel height (its `height` trait) as an inline style on its inner
+* container, which would overflow (and get clipped by) an output with an explicit height.
+*/
+.shiny-ipywidget-output[style*="height:"] > .k3d-plot {
+  height: 100%;
+}
+.shiny-ipywidget-output[style*="height:"] > .k3d-plot > div {
+  height: 100% !important;
+}
