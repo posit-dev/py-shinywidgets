@@ -32,9 +32,6 @@ BOXES_JS = """(id) => {
 }"""
 
 
-# Serve the banner's remote images as empty so tests don't depend on them
-# (PyGWalker also loads leaflet's CSS from unpkg, which has to come from the
-# network since it's pinned with a subresource integrity hash).
 # Content box of an element (its bounding box minus padding and border)
 CONTENT_BOX_JS = """(sel) => {
   const el = document.querySelector(sel);
@@ -48,6 +45,9 @@ CONTENT_BOX_JS = """(sel) => {
 }"""
 
 
+# Serve the banner's remote images as empty so tests don't depend on them
+# (PyGWalker also loads leaflet's CSS from unpkg, which has to come from the
+# network since it's pinned with a subresource integrity hash).
 def stub_banner_assets(page: Page) -> None:
     def fulfill_empty(route: Route) -> None:
         route.fulfill(status=200, body="")
