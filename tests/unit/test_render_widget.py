@@ -74,13 +74,25 @@ def test_render_plotly_config_tuple_overrides_shinywidgets_defaults(
     assert r.widget._config["responsive"] is False  # type: ignore
 
 
-def test_render_plotly_importable_without_plotly() -> None:
-    # render_plotly's value-type bound must stay a lazy forward reference so
-    # that plotly remains an optional dependency.
-    script = """
+def test_import_shinywidgets_without_optional_deps() -> None:
+    # shinywidgets must import cleanly with every optional widget dependency
+    # missing (render_plotly's value-type bound, in particular, must stay a
+    # lazy forward reference so plotly remains optional).
+    pkgs = [
+        "altair",
+        "bokeh",
+        "holoviews",
+        "hvplot",
+        "jupyter_bokeh",
+        "maplibre",
+        "panel",
+        "plotly",
+        "pydeck",
+    ]
+    script = f"""
 import sys
-sys.modules["plotly"] = None
-sys.modules["plotly.graph_objects"] = None
+for pkg in {pkgs!r}:
+    sys.modules[pkg] = None
 
 import shinywidgets  # noqa: F401
 """
