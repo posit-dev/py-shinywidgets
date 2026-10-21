@@ -10,6 +10,7 @@ from shinywidgets._as_widget import (
     as_widget_altair,
     as_widget_bokeh,
     as_widget_maplibre,
+    as_widget_mpl,
     as_widget_plotly,
     as_widget_pydeck,
 )
@@ -25,6 +26,67 @@ def _inject_package(monkeypatch: pytest.MonkeyPatch, name: str) -> ModuleType:
 class StubSession:
     def is_stub_session(self) -> bool:
         return True
+
+
+def _fake_matplotlib(monkeypatch: pytest.MonkeyPatch):
+    mpl = _inject_package(monkeypatch, "matplotlib")
+    setattr(mpl, "use", lambda backend: None)
+
+    figure_mod = ModuleType("matplotlib.figure")
+
+    class FigureCanvasBase:
+        device_pixel_ratio = 1.0
+
+    class Figure:
+        def __init__(self):
+            self.canvas = FigureCanvasBase()
+            self.dpi = 100.0
+
+        def set_dpi(self, dpi: float) -> None:
+            self.dpi = dpi
+
+    class SubFigure:
+        pass
+
+    figure_mod.Figure = Figure  # type: ignore[attr-defined]
+    setattr(figure_mod, "SubFigure", SubFigure)
+    monkeypatch.setitem(sys.modules, "matplotlib.figure", figure_mod)
+
+    axes_mod = ModuleType("matplotlib.axes")
+
+    class Axes:
+        def __init__(self, figure=None):
+            self.figure = figure if figure is not None else Figure()
+
+    axes_mod.Axes = Axes  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "matplotlib.axes", axes_mod)
+
+    return Figure, Axes
+
+
+def _fake_ipympl_canvas(monkeypatch: pytest.MonkeyPatch):
+    captured = {}
+
+    _inject_package(monkeypatch, "ipympl")
+    nbagg = ModuleType("ipympl.backend_nbagg")
+
+    class Canvas(Widget):
+        def __init__(self, figure):
+            # Deliberately skip Widget.__init__() (it requires an active session)
+            captured["figure"] = figure
+            self.manager: object | None = None
+            self.comm = None
+
+    class FigureManager:
+        def __init__(self, canvas, num):
+            captured["num"] = num
+            captured["canvas"] = canvas
+            canvas.manager = self
+
+    nbagg.Canvas = Canvas  # type: ignore[attr-defined]
+    nbagg.FigureManager = FigureManager  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "ipympl.backend_nbagg", nbagg)
+    return captured
 
 
 def test_as_widget_passthrough_widget() -> None:
@@ -229,6 +291,56 @@ def test_as_widget_maplibre_dispatch_via_as_widget(
     assert isinstance(res, Widget)
 
 
+def test_as_widget_mpl_rejects_non_figure(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_matplotlib(monkeypatch)
+    with pytest.raises(TypeError, match="matplotlib"):
+        as_widget_mpl(object())
+
+
+def test_as_widget_mpl_import_error_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    Figure, _ = _fake_matplotlib(monkeypatch)
+    # A module that exists but doesn't provide backend_nbagg still triggers ImportError.
+    monkeypatch.setitem(sys.modules, "ipympl", ModuleType("ipympl"))
+    with pytest.raises(ImportError, match="pip install ipympl"):
+        as_widget_mpl(Figure())
+
+
+def test_as_widget_mpl_success_with_fake_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Figure, _ = _fake_matplotlib(monkeypatch)
+    captured = _fake_ipympl_canvas(monkeypatch)
+
+    fig = Figure()
+    res = as_widget_mpl(fig)
+    assert isinstance(res, Widget)
+    assert captured["figure"] is fig
+
+
+def test_as_widget_mpl_axes_coerced_to_parent_figure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Figure, Axes = _fake_matplotlib(monkeypatch)
+    captured = _fake_ipympl_canvas(monkeypatch)
+
+    fig = Figure()
+    res = as_widget_mpl(Axes(fig))
+    assert isinstance(res, Widget)
+    assert captured["figure"] is fig
+
+
+def test_as_widget_mpl_dispatch_via_as_widget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Figure, _ = _fake_matplotlib(monkeypatch)
+    _fake_ipympl_canvas(monkeypatch)
+
+    MplFigure = type("Figure", (Figure,), {"__module__": "matplotlib.figure"})
+
+    res = as_widget(MplFigure())
+    assert isinstance(res, Widget)
+
+
 def test_as_widget_maplibre_real_map_widget(monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("maplibre")
     pytest.importorskip("anywidget")
@@ -250,6 +362,73 @@ def test_as_widget_maplibre_real_map_widget(monkeypatch: pytest.MonkeyPatch) -> 
     assert isinstance(res, MapWidget)
     assert res.map_options == m.to_dict()["mapOptions"]
     assert res._message_queue == m.to_dict()["calls"]
+
+
+def test_as_widget_mpl_real_ipympl_canvas(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("ipympl")
+
+    import shinywidgets._shinywidgets as sw
+
+    monkeypatch.setattr(sw, "get_current_session", lambda: StubSession())
+
+    import matplotlib.pyplot as plt
+    from ipympl.backend_nbagg import Canvas
+
+    fig, ax = plt.subplots()
+    ax.plot([1, 2, 3])
+
+    res = as_widget(fig)
+    assert isinstance(res, Canvas)
+    plt.close(fig)
+
+
+def test_as_widget_mpl_pyplot_figure_closed_at_render_retirement(
+    widget_session,
+) -> None:
+    plt = pytest.importorskip("matplotlib.pyplot")
+    pytest.importorskip("ipympl")
+
+    from shiny.reactive._core import Context
+    from shiny.session import session_context
+    from shinywidgets._render_widget_base import WidgetRenderContext
+
+    with session_context(widget_session):
+        context = Context()
+        with context():
+            with WidgetRenderContext():
+                fig, ax = plt.subplots()
+                ax.plot([1, 2, 3])
+                as_widget_mpl(fig)
+
+        assert fig.number in plt.get_fignums()
+        context.invalidate()
+        # Retiring the render deregisters the figure from pyplot (otherwise
+        # repeated renders leak figures in pyplot's global registry)
+        assert fig.number not in plt.get_fignums()
+
+
+def test_as_widget_mpl_non_pyplot_figure_retirement_is_noop(
+    widget_session,
+) -> None:
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("ipympl")
+
+    from matplotlib.figure import Figure
+    from shiny.reactive._core import Context
+    from shiny.session import session_context
+    from shinywidgets._render_widget_base import WidgetRenderContext
+
+    with session_context(widget_session):
+        context = Context()
+        with context():
+            with WidgetRenderContext():
+                # A bare Figure() isn't registered with pyplot, so there's
+                # nothing to clean up at retirement
+                as_widget_mpl(Figure())
+
+        # Retirement should be a clean no-op for this figure
+        context.invalidate()
 
 
 def test_as_widget_pydeck_missing_show_errors() -> None:

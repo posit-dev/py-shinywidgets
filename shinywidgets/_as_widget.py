@@ -1,5 +1,10 @@
+from __future__ import annotations
+
 import warnings
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Optional, cast
+from weakref import WeakSet
 
 from htmltools import HTMLDependency
 from ipywidgets.widgets.widget import Widget
@@ -10,9 +15,12 @@ from ._dependencies import widget_pkg
 if TYPE_CHECKING:
     from bokeh.models import LayoutDOM
     from jupyter_bokeh import BokehModel
+    from matplotlib.figure import Figure
     from panel.viewable import Viewable
 
 __all__ = ("as_widget",)
+
+MPL_CLEANUP_CANVASES: WeakSet[Widget] = WeakSet()
 
 
 # Some objects aren't directly renderable as an ipywidget, but in some cases,
@@ -28,6 +36,8 @@ def as_widget(x: object) -> Widget:
     * bokeh model (e.g., `bokeh.plotting.figure`) -> `jupyter_bokeh.BokehModel`
     * holoviews/hvplot object -> bokeh model (via panel)
     * maplibre `Map` -> `maplibre.ipywidget.MapWidget`
+    * matplotlib `Figure` or `Axes` (or a seaborn figure-level grid) ->
+      `ipympl.backend_nbagg.Canvas`
     * panel pane/viewable -> bokeh model
     * plotly `Figure` -> `plotly.graph_objects.FigureWidget`
     * pydeck `Deck` -> `pydeck.widget.DeckGLWidget`
@@ -49,11 +59,16 @@ def as_widget(x: object) -> Widget:
         ``@render.ui`` decorator as a fallback for objects with an HTML repr).
     """
     if isinstance(x, Widget):
-        return x
+        # A Canvas may still need its FigureManager and pyplot cleanup
+        return as_widget_mpl(x) if is_ipympl_canvas(x) else x
 
     pkg = widget_pkg(x)
 
     _as_widget = AS_WIDGET_MAP.get(pkg, None)
+    if _as_widget is None and any(
+        widget_pkg(base) == "matplotlib" for base in type(x).__mro__
+    ):
+        _as_widget = as_widget_mpl
     if _as_widget is None:
         msg = f"Don't know how to coerce {x} into a ipywidget.Widget object."
         if callable(getattr(x, "_repr_html_", None)):
@@ -144,6 +159,112 @@ def as_widget_maplibre(x: object) -> Optional[Widget]:
     return res  # type: ignore
 
 
+def as_widget_mpl(x: object) -> Widget:
+    from matplotlib.figure import Figure, SubFigure
+
+    # The renderer imports this module, so defer this circular import.
+    from ._render_widget_base import is_closed_widget
+
+    # Several higher-level APIs return something that holds the figure: an Axes
+    # (e.g., pandas.DataFrame.plot()), an ipympl Canvas, or a seaborn grid
+    # (e.g., seaborn.relplot())
+    if not isinstance(x, Figure):
+        x = getattr(x, "figure", x)
+        if isinstance(x, SubFigure):
+            x = x.figure
+
+    if not isinstance(x, Figure):
+        raise TypeError(
+            f"Don't know how to coerce {x} into a matplotlib.figure.Figure object."
+        )
+
+    try:
+        with backend_selection_suppressed():
+            from ipympl.backend_nbagg import Canvas, FigureManager
+    except ImportError:
+        raise ImportError(
+            "Install the ipympl package to use matplotlib with shinywidgets (pip install ipympl)."
+        )
+
+    # Canvas(figure=x) alone isn't enough -- ipympl's browser message handling
+    # goes through canvas.manager (e.g., a resize message calls
+    # manager.handle_json()), so the canvas needs a FigureManager (which also
+    # wires up the toolbar).
+    if isinstance(x.canvas, Canvas) and not is_closed_widget(x.canvas):
+        canvas = x.canvas
+    else:
+        # The previous canvas may have scaled the dpi by its screen's pixel ratio
+        # (e.g., pyplot's macosx backend on a HiDPI display); ipympl applies the
+        # browser's ratio instead.
+        x.set_dpi(x.dpi / x.canvas.device_pixel_ratio)
+        canvas = Canvas(x)
+    if canvas.manager is None:
+        FigureManager(canvas, getattr(x, "number", id(x)))
+
+    close_mpl_figure_with_widget(canvas, x)
+
+    return canvas
+
+
+def is_ipympl_canvas(x: Widget) -> bool:
+    if widget_pkg(x) != "ipympl":
+        return False
+    with backend_selection_suppressed():
+        from ipympl.backend_nbagg import Canvas
+    return isinstance(x, Canvas)
+
+
+@contextmanager
+def backend_selection_suppressed() -> Iterator[None]:
+    """
+    Make matplotlib.use() a no-op for the duration of the block.
+
+    When first imported, ipympl selects itself as pyplot's backend, which
+    would make every pyplot figure in the process (e.g., those drawn by
+    shiny's @render.plot) an ipympl widget.
+    https://github.com/matplotlib/ipympl/issues/623
+    """
+    import matplotlib
+
+    use = matplotlib.use
+    matplotlib.use = lambda *args, **kwargs: None
+    try:
+        yield
+    finally:
+        matplotlib.use = use
+
+
+def close_mpl_figure_with_widget(canvas: Widget, fig: Figure) -> None:
+    """
+    Deregister a pyplot figure (via plt.close()) when the canvas widget closes.
+
+    Figures created through pyplot (e.g., plt.subplots()) stay registered in
+    pyplot's global figure manager, which leaks memory (and triggers "More
+    than 20 figures have been opened" warnings) as renders repeat. The widget
+    machinery already closes the ipympl canvas at the end of its lifetime, so
+    tying the pyplot deregistration to the widget's close means it happens
+    exactly when the canvas goes away -- at render retirement, or at session
+    end for widgets kept alive via session_lifetime().
+    """
+    num = getattr(fig, "number", None)
+    if num is None or canvas in MPL_CLEANUP_CANVASES:
+        return
+    MPL_CLEANUP_CANVASES.add(canvas)
+
+    def on_comm_change(change: dict[str, object]) -> None:
+        # The comm becomes None exactly once: when the widget closes
+        if change["new"] is not None:
+            return
+        canvas.unobserve(on_comm_change, names="comm")
+        import matplotlib.pyplot as plt
+
+        # plt.close(fig) deregisters by figure identity (Gcf.destroy_fig()), so
+        # it's safe even if the user already closed it or the number was reused
+        plt.close(fig)
+
+    canvas.observe(on_comm_change, names="comm")
+
+
 def as_widget_plotly(x: object) -> Optional[Widget]:
     # Don't need a try import here since this won't be called unless x is a plotly object
     import plotly.graph_objects as go
@@ -198,9 +319,11 @@ AS_WIDGET_MAP = {
     "holoviews": as_widget_holoviews,
     "hvplot": as_widget_holoviews,
     "maplibre": as_widget_maplibre,
+    "matplotlib": as_widget_mpl,
     "panel": as_widget_panel,
     "plotly": as_widget_plotly,
     "pydeck": as_widget_pydeck,
+    "seaborn": as_widget_mpl,
 }
 
 

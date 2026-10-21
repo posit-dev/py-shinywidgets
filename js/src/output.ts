@@ -1,8 +1,8 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
-import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
+import { WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
 import { jsonParse } from './utils';
-import { disposeNative, finishDetach, hasAncestor, viewParent } from './views';
+import { disposeNative, finishDetach, hasAncestor, patchMplCanvasRemove, viewParent } from './views';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
@@ -43,6 +43,7 @@ class OutputManager extends HTMLManager {
     const viewPromise = super.create_view(model, options);
     viewPromise.then(
       (view) => {
+        patchMplCanvasRemove(view);
         // An ancestor may have been removed while this view was still being
         // created (e.g. dynamic UI removed the output mid-render).
         // removeViewTree() only sweeps views live at the time, so tear the
@@ -266,8 +267,9 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       return;
     }
 
-    const isPlotlyWidget = data.widget_pkg === "plotly";
-    el.style.visibility = isPlotlyWidget ? hiddenVisibility : revealVisibility;
+    // Package-specific fill/resize behavior (see js/src/fill.ts)
+    const behavior = WIDGET_BEHAVIORS[data.widget_pkg];
+    el.style.visibility = behavior?.hideUntilSettled ? hiddenVisibility : revealVisibility;
 
     // Only forward the potential to fill if `output_widget(fillable=True)`
     // _and_ the widget instance wants to fill
@@ -294,36 +296,35 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;
 
-    if (fill) {
-      this._onImplementation(lmWidget, () => this._doAddFillClasses(lmWidget));
-    }
-    if (!isPlotlyWidget) {
-      this._onImplementation(lmWidget, () => this._doResize());
-    } else {
+    const setupFill = fill ? behavior?.setupFill : undefined;
+    if (setupFill) {
       this._onImplementation(lmWidget, () => {
-        if (!this._isCurrentRenderToken(el, renderToken)) {
-          return;
-        }
-
-        const plotEl = findPlotlyGraphDiv(lmWidget);
-        if (!plotEl) {
-          this._doResize();
-          if (this._isCurrentRenderToken(el, renderToken)) {
-            el.style.visibility = revealVisibility;
-          }
-          return;
-        }
-
-        // Plotly FigureWidget may first render at its internal 360px fallback,
-        // then resize after paint. Keep it hidden until a direct Plotly resize
-        // completes so the first visible paint is already settled.
-        void waitForPlotlyReadyToReveal(plotEl, () => this._doResize()).finally(() => {
-          if (this._isCurrentRenderToken(el, renderToken)) {
-            el.style.visibility = revealVisibility;
-          }
-        });
+        // Don't set up fill behavior if this view has since been replaced
+        if (this._views.get(el) !== view) return;
+        const cleanup = setupFill({ el, lmWidget, view, model });
+        if (cleanup) view.once("remove", cleanup);
       });
     }
+    this._onImplementation(lmWidget, () => {
+      const ctx: PostDisplayContext = {
+        el,
+        lmWidget,
+        view,
+        model,
+        isStale: () => !this._isCurrentRenderToken(el, renderToken),
+        dispatchResize: () => this._doResize(),
+        reveal: () => {
+          if (this._isCurrentRenderToken(el, renderToken)) {
+            el.style.visibility = revealVisibility;
+          }
+        },
+      };
+      if (behavior?.onDisplayed) {
+        behavior.onDisplayed(ctx);
+      } else {
+        ctx.dispatchResize();
+      }
+    });
   }
   _nextRenderToken(el: HTMLElement): number {
     const trackedEl = el as HTMLElement & { __shinywidgetsRenderToken?: number };
@@ -350,19 +351,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     });
 
     mo.observe(lmWidget, {childList: true});
-  }
-  // In most cases, we can get widgets to fill through Python/CSS, but some widgets
-  // (e.g., quak) don't have a Python API and use shadow DOM, which can only access
-  // from JS
-  _doAddFillClasses(lmWidget: HTMLElement): void {
-    const impl = lmWidget.children[0];
-    const isQuakWidget = impl && !!impl.shadowRoot?.querySelector(".quak");
-    if (isQuakWidget) {
-      impl.classList.add("html-fill-container", "html-fill-item");
-      const quakWidget = impl.shadowRoot.querySelector(".quak") as HTMLElement;
-      quakWidget.style.maxHeight = "unset";
-    }
-
   }
   _doResize(): void {
     // Trigger resize event to force layout (setTimeout() is needed for altair)

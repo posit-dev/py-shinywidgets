@@ -3,7 +3,7 @@ from __future__ import annotations
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from typing import Generic, Iterator, Optional, Tuple, TypeVar, cast
+from typing import Callable, Generic, Iterator, Optional, Tuple, TypeVar, cast
 
 from htmltools import Tag
 from ipywidgets.widgets import DOMWidget, Layout, Widget
@@ -219,61 +219,88 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
         if layout.height is not None and layout.height != "auto":
             fill = False
 
-    pkg = widget_pkg(widget)
+    # Package-specific adjustments (mirrors AS_WIDGET_MAP in _as_widget.py):
+    # each handler may mutate the widget and/or tighten `fill` to False
+    defaults = _LAYOUT_DEFAULTS.get(widget_pkg(widget))
+    if defaults is not None:
+        fill = defaults(widget, fill)
 
+    return (widget, fill)
+
+
+def _plotly_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # Plotly provides it's own layout API (which isn't a subclass of ipywidgets.Layout)
-    if pkg == "plotly":
-        from plotly.basewidget import BaseFigureWidget
-        from plotly.graph_objs import Layout as PlotlyLayout
+    from plotly.basewidget import BaseFigureWidget
+    from plotly.graph_objs import Layout as PlotlyLayout
 
-        if isinstance(layout, PlotlyLayout):
-            if layout.height is not None:
-                fill = False
-            # Default margins are also way too big
-            layout.template.layout.margin = dict(  # pyright: ignore
-                l=16, t=32, r=16, b=16
-            )
-            # Unfortunately, plotly doesn't want to respect the top margin template,
-            # so change that 60px default to 32px
-            if layout.margin["t"] == 60:  # pyright: ignore
-                layout.margin["t"] = 32  # pyright: ignore
-            # In plotly >=v6.0, the plot won't actually fill unless it's responsive
-            if fill:
-                widget._config = {"responsive": True, **widget._config}  # type: ignore
+    layout = widget.layout  # type: ignore
 
-        if isinstance(widget, BaseFigureWidget):
-            # Reassigning the layout to a FigureWidget drops installed callbacks;
-            # use native update_layout instead.
-            widget.update_layout(layout)
-        else:
-            widget.layout = layout
+    if isinstance(layout, PlotlyLayout):
+        if layout.height is not None:
+            fill = False
+        # Default margins are also way too big
+        layout.template.layout.margin = dict(  # pyright: ignore
+            l=16, t=32, r=16, b=16
+        )
+        # Unfortunately, plotly doesn't want to respect the top margin template,
+        # so change that 60px default to 32px
+        if layout.margin["t"] == 60:  # pyright: ignore
+            layout.margin["t"] = 32  # pyright: ignore
+        # In plotly >=v6.0, the plot won't actually fill unless it's responsive
+        if fill:
+            widget._config = {"responsive": True, **widget._config}  # type: ignore
 
+    if isinstance(widget, BaseFigureWidget):
+        # Reassigning the layout to a FigureWidget drops installed callbacks;
+        # use native update_layout instead.
+        widget.update_layout(layout)
+    else:
+        widget.layout = layout
+
+    return fill
+
+
+def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # altair, confusingly, isn't setup to fill it's Layout() container by default. I
     # can't imagine a situation where you'd actually want it to _not_ fill the parent
     # container since it'll be contained within the Layout() container, which has a
     # full-fledged sizing API.
-    if pkg == "altair":
-        import altair as alt
+    import altair as alt
 
-        # Since as_widget() has already happened, we only need to handle JupyterChart
-        if isinstance(widget, alt.JupyterChart):
-            chart = cast(alt.JupyterChart, widget).chart  # type: ignore
-            if isinstance(chart, alt.ConcatChart):
-                # Throw warning to use ui.layout_column_wrap() instead
-                warnings.warn(
-                    "Consider using shiny.ui.layout_column_wrap() instead of alt.concat() "
-                    "for multi-column layout (the latter doesn't support filling layout).",
-                    stacklevel=2,
-                )
-            else:
-                UndefinedType = alt.utils.schemapi.UndefinedType  # type: ignore
-                if hasattr(chart, "width") and isinstance(chart.width, UndefinedType):  # type: ignore[reportMissingTypeStubs]
-                    chart = chart.properties(width="container")  # type: ignore
-                if hasattr(chart, "height") and isinstance(chart.height, UndefinedType):  # type: ignore[reportMissingTypeStubs]
-                    chart = chart.properties(height="container")  # type: ignore
-            widget.chart = chart
+    # Since as_widget() has already happened, we only need to handle JupyterChart
+    if isinstance(widget, alt.JupyterChart):
+        chart = cast(alt.JupyterChart, widget).chart  # type: ignore
+        if isinstance(chart, alt.ConcatChart):
+            # Throw warning to use ui.layout_column_wrap() instead
+            warnings.warn(
+                "Consider using shiny.ui.layout_column_wrap() instead of alt.concat() "
+                "for multi-column layout (the latter doesn't support filling layout).",
+                stacklevel=2,
+            )
+        else:
+            UndefinedType = alt.utils.schemapi.UndefinedType  # type: ignore
+            if hasattr(chart, "width") and isinstance(chart.width, UndefinedType):  # type: ignore[reportMissingTypeStubs]
+                chart = chart.properties(width="container")  # type: ignore
+            if hasattr(chart, "height") and isinstance(chart.height, UndefinedType):  # type: ignore[reportMissingTypeStubs]
+                chart = chart.properties(height="container")  # type: ignore
+        widget.chart = chart
 
-    return (widget, fill)
+    return fill
+
+
+# Per-package layout adjustments for filling layouts, keyed by widget_pkg()
+# (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
+# in js/src/fill.ts). A handler receives the widget and the current fill
+# decision, applies package-specific mutations, and returns the (possibly
+# tightened) fill decision.
+#
+# N.B. bokeh is intentionally absent: its sizing_mode hack lives in
+# as_widget_bokeh() because applying it here doesn't work (see the TODO
+# there).
+_LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
+    "plotly": _plotly_layout_defaults,
+    "altair": _altair_layout_defaults,
+}
 
 
 # The render Context that is running in the current asyncio task, or None outside
