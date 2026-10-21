@@ -295,7 +295,11 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
 
     The decorated function may return either a holoviews/hvplot object (which is
     rendered through panel; requires ``pip install panel``) or the underlying
-    `jupyter_bokeh.BokehModel` widget.
+    `jupyter_bokeh.BokehModel` widget. Plots rasterized with
+    [datashader](https://datashader.org) are supported too (e.g., hvPlot's
+    ``rasterize=True``, or holoviews' ``rasterize()``/``datashade()`` operations;
+    requires ``pip install datashader``): they re-aggregate the data on the server
+    for the visible region whenever the user zooms or pans.
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
