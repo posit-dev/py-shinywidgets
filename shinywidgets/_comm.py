@@ -1,7 +1,8 @@
 import asyncio
+import traceback
 from base64 import b64encode
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Set
 
 from shiny import Session, reactive
 
@@ -22,7 +23,9 @@ class ShinyCommManager:
         # a thread) must request a flush themselves, on the session's loop.
         self.loop = running_loop()
         self.undelivered = 0
-        self.flush_task: Optional[asyncio.Task[None]] = None
+        self.flush_requested = False
+        # asyncio only keeps weak references to tasks
+        self.flush_tasks: Set[asyncio.Task[None]] = set()
 
     def register_comm(self, comm: "ShinyComm") -> str:
         id = comm.comm_id
@@ -39,6 +42,9 @@ class ShinyCommManager:
 
     def publish(self, queue: Callable[[], None]) -> None:
         """Queue a message (via `queue`) and make sure a flush will send it."""
+        if self.loop is None:
+            # The session's first widget was constructed off the loop's thread.
+            self.loop = running_loop()
         loop = self.loop
         if loop is None or not loop.is_running():
             queue()
@@ -46,27 +52,38 @@ class ShinyCommManager:
 
         def queue_and_request_flush() -> None:
             queue()
-            if self.active and self.flush_task is None:
-                self.flush_task = loop.create_task(self.flush_undelivered())
+            if self.active and not self.flush_requested:
+                self.flush_requested = True
+                task = loop.create_task(self.flush_undelivered())
+                self.flush_tasks.add(task)
+                task.add_done_callback(self.flush_tasks.discard)
 
         if running_loop() is loop:
             queue_and_request_flush()
-        else:
-            # Session callbacks and the reactive lock belong to the loop's thread.
+            return
+        # Session callbacks and the reactive lock belong to the loop's thread.
+        try:
             loop.call_soon_threadsafe(queue_and_request_flush)
+        except RuntimeError:
+            # The loop closed (app shutdown) since the is_running() check.
+            queue()
 
     async def flush_undelivered(self) -> None:
         # Same pattern Shiny uses for invalidate_later() and ExtendedTask. If
         # the lock is held, a flush is underway (Shiny holds it while handling
         # input, through the flush that follows), which usually sends our
         # messages too, in which case there's nothing left to do.
-        async with reactive.lock():
-            # Reset first: a message published during this flush may miss it
-            # (e.g. once the session has started its on_flushed callbacks), so
-            # it must be able to request another one.
-            self.flush_task = None
-            if self.undelivered > 0:
-                await reactive.flush()
+        try:
+            async with reactive.lock():
+                # Reset first: a message published during this flush may miss it
+                # (e.g. once the session has started its on_flushed callbacks), so
+                # it must be able to request another one.
+                self.flush_requested = False
+                if self.undelivered > 0:
+                    await reactive.flush()
+        except BaseException:
+            traceback.print_exc()
+            raise
 
 
 MsgCallback = Callable[[Dict[str, object]], None]
@@ -247,6 +264,12 @@ class ShinyComm:
                 # widgets introduced by the update have already sent their comm_open
                 # messages. Without that ordering, the browser can receive a parent update
                 # that references child models it does not know about yet.
+                # (One gap remains: a child opened partway through a session's
+                # flush -- after it started its on_flush callbacks, before its
+                # on_flushed ones -- misses that flush, so its comm_open trails
+                # the parent's update by one flush. Since publish() requests that
+                # next flush right away, that's milliseconds rather than until the
+                # next client input.)
                 session.on_flushed(_send)
             else:
                 session.on_flush(_send)
@@ -268,13 +291,6 @@ class ShinyComm:
     def handle_close(self, msg: Dict[str, object]) -> None:
         if self._close_callback is not None:
             self._close_callback(msg)
-
-
-def running_loop() -> Optional[asyncio.AbstractEventLoop]:
-    try:
-        return asyncio.get_running_loop()
-    except RuntimeError:
-        return None
 
 
 @dataclass
@@ -302,3 +318,10 @@ class OrphanedShinyComm:
 
     def on_msg(self, callback: MsgCallback) -> None:
         pass
+
+
+def running_loop() -> Optional[asyncio.AbstractEventLoop]:
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        return None

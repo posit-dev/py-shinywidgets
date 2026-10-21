@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-from typing import Any, Awaitable, Callable, Dict, List
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import pytest
 from shiny import App, Session, reactive, ui
 from shiny._connection import MockConnection
+from shiny.reactive import _core as reactive_core
 from shinywidgets._comm import ShinyComm, ShinyCommManager
 
 from tests.unit._fakes import FakeSession
@@ -265,6 +266,13 @@ def test_messages_go_to_the_session_that_opened_the_comm():
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def fresh_reactive_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Shiny's reactive lock is process-global and binds to the first event
+    # loop that contends it, but each test here runs its own loop.
+    monkeypatch.setattr(reactive_core._reactive_environment, "_lock", None)
+
+
 class RecordingConnection(MockConnection):
     def __init__(self) -> None:
         super().__init__()
@@ -288,7 +296,7 @@ def run_with_session(
         session = App(ui.page_fluid(), None)._create_session(conn)
         run = asyncio.create_task(session._run())
         conn.cause_receive(json.dumps({"method": "init", "data": {}}))
-        await wait_for(lambda: conn.flush_count() > 0)
+        assert await wait_for(lambda: conn.flush_count() > 0)
         try:
             await test(session, conn)
         finally:
@@ -308,10 +316,12 @@ async def wait_for(cond: Callable[[], bool], timeout: float = 1.0) -> bool:
     return True
 
 
-def open_comm(session: Session) -> ShinyComm:
+def open_comm(
+    session: Session, manager: Optional[ShinyCommManager] = None
+) -> ShinyComm:
     return ShinyComm(
         comm_id="c1",
-        comm_manager=ShinyCommManager(),
+        comm_manager=manager or ShinyCommManager(),
         target_name="jupyter.widget",
         session=session,
     )
@@ -351,6 +361,8 @@ def test_messages_published_during_a_flush_are_sent_by_that_flush():
         async with reactive.lock():
             c = open_comm(session)
             c.send(data={"x": 1})
+            flush_tasks = set(c.comm_manager.flush_tasks)
+            assert len(flush_tasks) == 1
             await asyncio.sleep(0.05)
             assert conn.custom_types() == []
             await reactive.flush()
@@ -358,8 +370,9 @@ def test_messages_published_during_a_flush_are_sent_by_that_flush():
             "shinywidgets_comm_open",
             "shinywidgets_comm_msg",
         ]
-        # ...and no extra flush is needed afterwards.
-        await asyncio.sleep(0.05)
+        # The requested flush runs (without error), sees there's nothing left
+        # to deliver, and skips flushing again.
+        await asyncio.gather(*flush_tasks)
         assert conn.flush_count() == n_flushes + 1
 
     run_with_session(test)
@@ -388,5 +401,17 @@ def test_no_flush_is_requested_after_the_session_ended():
         c.send(data={"x": 1})
         await asyncio.sleep(0.05)
         assert conn.flush_count() == n_flushes
+
+    run_with_session(test)
+
+
+def test_manager_created_off_the_loop_adopts_it_when_publishing():
+    manager = ShinyCommManager()
+    assert manager.loop is None
+
+    async def test(session: Session, conn: RecordingConnection) -> None:
+        c = open_comm(session, manager)
+        c.send(data={"x": 1})
+        assert await wait_for(lambda: len(conn.custom_types()) == 2)
 
     run_with_session(test)
