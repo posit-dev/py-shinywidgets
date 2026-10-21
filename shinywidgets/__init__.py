@@ -27,6 +27,7 @@ from ._render_widget import (
     render_panel,
     render_plotly,
     render_pydeck,
+    render_pygwalker,
     render_widget,
 )
 from ._shinywidgets import reactive_read, register_widget, session_lifetime
@@ -43,6 +44,7 @@ __all__ = (
     "render_panel",
     "render_plotly",
     "render_pydeck",
+    "render_pygwalker",
     # Reactive read second
     "reactive_read",
     # UI methods third

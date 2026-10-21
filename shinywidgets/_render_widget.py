@@ -12,12 +12,14 @@ if TYPE_CHECKING:
     from maplibre.ipywidget import MapWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
+    from pygwalker.api.anywidget import _WalkerWidget as WalkerWidget
 else:
     JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
-        object
-    )
+        WalkerWidget
+    ) = object
 
 from ._bokeh import bokeh_dependency
+from ._dependencies import widget_pkg
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
 if TYPE_CHECKING:
@@ -41,6 +43,7 @@ __all__ = (
     "render_panel",
     "render_plotly",
     "render_pydeck",
+    "render_pygwalker",
 )
 
 
@@ -457,3 +460,63 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     """
+
+
+class render_pygwalker(render_widget_base[ValueT, WalkerWidget]):
+    """
+    Reactively render a [PyGWalker](https://docs.kanaries.net/pygwalker) data
+    exploration app as a Shiny output.
+
+    The decorated function may return either a pandas `DataFrame` (which is coerced to
+    a PyGWalker widget; requires ``pip install pygwalker``) or a widget created by
+    `pygwalker.api.anywidget.walk()` (use this to pass options like ``theme_key``).
+    Note that, by default, PyGWalker sends anonymous usage events from the Python
+    process and checks for updates; call
+    ``pygwalker.GlobalVarManager.set_privacy("offline")`` to disable both.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    PyGWalker widget. Use `.widget` to programmatically update the rendered app in
+    place (trait changes on the widget are synced to the browser), or to reactively
+    read widget state with :func:`~shinywidgets.reactive_read`.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    # DataFrames are generic (several renderers accept them), so they can't be
+    # registered in AS_WIDGET_MAP
+    def _as_widget(self, value: ValueT) -> WalkerWidget:
+        if not is_pandas_dataframe(value):
+            return super()._as_widget(value)
+
+        try:
+            from pygwalker.api.anywidget import walk
+        except ImportError:
+            raise ImportError(
+                "Install the pygwalker package to use PyGWalker with shinywidgets (pip install pygwalker)."
+            )
+
+        return walk(value)
+
+
+def is_pandas_dataframe(x: object) -> bool:
+    return any(
+        widget_pkg(cls) == "pandas" and cls.__name__ == "DataFrame"
+        for cls in type(x).__mro__
+    )

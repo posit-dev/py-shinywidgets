@@ -1,0 +1,5 @@
+shiny
+shinywidgets
+pygwalker
+numpy
+pandas
