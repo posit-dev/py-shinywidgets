@@ -37,7 +37,8 @@ test = [
   "bokeh",
   "coverage>=7",
   # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
-  # cartopy 0.25 has no Python 3.14 wheels
+  # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
+  # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "geoviews; python_version < '3.14'",
   "hvplot",
@@ -62,7 +63,8 @@ dev = [
   "bokeh",
   "coverage>=7",
   # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
-  # cartopy 0.25 has no Python 3.14 wheels
+  # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
+  # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "geoviews; python_version < '3.14'",
   "hvplot",
@@ -90,7 +92,8 @@ test = [
   "bokeh",
   "coverage>=7",
   # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
-  # cartopy 0.25 has no Python 3.14 wheels
+  # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
+  # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "geoviews; python_version < '3.14'",
   "hvplot",

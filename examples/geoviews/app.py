@@ -45,8 +45,6 @@ def server(input, output, session):
             size=hv.dim("population") * 2 + 6,
             tools=["hover"],
         )
-        # responsive=True makes the plot fill its container (otherwise
-        # holoviews gives it a fixed pixel size)
         return (gv.tile_sources.OSM * points).opts(responsive=True)
 
 

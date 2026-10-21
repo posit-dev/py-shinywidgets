@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Added several new `@render_*` decorators that bring more visualization and widget ecosystems into shinywidgets:
   * `@render_panel` for [panel](https://panel.holoviz.org) widgets and layouts (e.g., `pn.widgets.Tabulator`). All required JS/CSS assets are served automatically. (#82, #88, #253)
-  * `@render_holoviews` for [HoloViews](https://holoviews.org) and [hvPlot](https://hvplot.holoviz.org) objects. (#87, #250, #253)
+  * `@render_holoviews` for [HoloViews](https://holoviews.org), [hvPlot](https://hvplot.holoviz.org), and [geoviews](https://geoviews.org) objects. Add `.opts(responsive=True)` to make a plot fill its container. (#87, #250, #253, #278)
   * `@render_maplibre` for [maplibre](https://eoda-dev.github.io/py-maplibregl/) maps (requires `pip install 'maplibre[anywidget]'`). While maplibre ships its own native Shiny bindings, the widget route gives you `reactive_read()` access to map state (e.g., `view_state`, `clicked`).
   * `@render_matplotlib` for matplotlib figures -- covering anything that produces one (seaborn, `pandas.DataFrame.plot()`, scikit-learn displays, etc.) -- rendered as interactive [ipympl](https://matplotlib.org/ipympl/) widgets (requires `pip install ipympl`). Figures fill and resize with their container in filling layouts, and repeated re-renders don't leak pyplot figures.
 * Bokeh plots using [extension models](https://docs.bokeh.org/en/latest/docs/user_guide/advanced/extensions.html) now work out of the box -- their assets are served automatically. (#88, #256)
@@ -24,7 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Improvements
 
-* `@render_holoviews` also renders [geoviews](https://geoviews.org) objects (maps, tile-source overlays, geographic points and polygons). Add `.opts(responsive=True)` to make a map fill its container. (#278)
 * Bokeh widgets now load the installed BokehJS assets automatically in Core and Express apps, including apps mounted under a URL prefix. Adding `bokeh_dependency()` to the UI is no longer required. (#210, #255)
 * `@render_plotly` (and `@render_widget`) now warn when given a plotly figure with frames (i.e., an animation), since `FigureWidget` doesn't support frames and silently drops them. The warning points to the `@render.ui` + `fig.to_html()` workaround. (#156)
 

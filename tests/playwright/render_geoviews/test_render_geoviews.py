@@ -19,39 +19,44 @@ TILE_RGB = (170, 211, 223)
 
 ALL_OUTPUTS = ("#tiles", "#fixed", "#dynamic", "#polygons")
 
-# Bounding box of the largest canvas under a selector, piercing shadow roots
-# (bokeh renders into shadow DOM)
-CANVAS_RECT_JS = """(sel) => {
-  const canvases = [];
-  const walk = (root) => {
-    if (root.tagName === 'CANVAS') canvases.push(root);
-    for (const el of root.querySelectorAll('*')) {
-      if (el.tagName === 'CANVAS') canvases.push(el);
-      if (el.shadowRoot) walk(el.shadowRoot);
-    }
+# Defines canvasesUnder(sel): the canvases under a selector, piercing shadow
+# roots (bokeh renders into shadow DOM, which querySelectorAll doesn't reach)
+CANVASES_UNDER_JS = """
+  const canvasesUnder = (sel) => {
+    const canvases = [];
+    const walk = (root) => {
+      if (root.tagName === 'CANVAS') canvases.push(root);
+      for (const el of root.querySelectorAll('*')) {
+        if (el.tagName === 'CANVAS') canvases.push(el);
+        if (el.shadowRoot) walk(el.shadowRoot);
+      }
+    };
+    for (const root of document.querySelectorAll(sel)) walk(root);
+    return canvases;
   };
-  for (const root of document.querySelectorAll(sel)) walk(root);
+"""
+
+# Bounding box of the largest canvas under a selector
+CANVAS_RECT_JS = (
+    "(sel) => {"
+    + CANVASES_UNDER_JS
+    + """
   let best = null;
-  for (const c of canvases) {
+  for (const c of canvasesUnder(sel)) {
     const r = c.getBoundingClientRect();
     if (!best || r.width * r.height > best.width * best.height) best = r;
   }
   return best && { width: best.width, height: best.height };
 }"""
+)
 
 # Counts pixels close to (r, g, b) on the canvases under a selector
-COUNT_COLOR_PIXELS_JS = """([sel, [r, g, b]]) => {
-  const canvases = [];
-  const walk = (root) => {
-    if (root.tagName === 'CANVAS') canvases.push(root);
-    for (const el of root.querySelectorAll('*')) {
-      if (el.tagName === 'CANVAS') canvases.push(el);
-      if (el.shadowRoot) walk(el.shadowRoot);
-    }
-  };
-  for (const root of document.querySelectorAll(sel)) walk(root);
+COUNT_COLOR_PIXELS_JS = (
+    "([sel, [r, g, b]]) => {"
+    + CANVASES_UNDER_JS
+    + """
   let n = 0;
-  for (const c of canvases) {
+  for (const c of canvasesUnder(sel)) {
     let ctx = null;
     try { ctx = c.getContext('2d'); } catch (e) { continue; }
     if (!ctx || !c.width || !c.height) continue;
@@ -63,19 +68,14 @@ COUNT_COLOR_PIXELS_JS = """([sel, [r, g, b]]) => {
   }
   return n;
 }"""
+)
 
-# x position of the leftmost red pixel on the first canvas of a selector
-LEFTMOST_RED_JS = """(sel) => {
-  const canvases = [];
-  const walk = (root) => {
-    if (root.tagName === 'CANVAS') canvases.push(root);
-    for (const el of root.querySelectorAll('*')) {
-      if (el.tagName === 'CANVAS') canvases.push(el);
-      if (el.shadowRoot) walk(el.shadowRoot);
-    }
-  };
-  for (const root of document.querySelectorAll(sel)) walk(root);
-  for (const c of canvases) {
+# x position of the leftmost red pixel on the first drawable canvas of a selector
+LEFTMOST_RED_JS = (
+    "(sel) => {"
+    + CANVASES_UNDER_JS
+    + """
+  for (const c of canvasesUnder(sel)) {
     let ctx = null;
     try { ctx = c.getContext('2d'); } catch (e) { continue; }
     if (!ctx || !c.width || !c.height) continue;
@@ -88,6 +88,20 @@ LEFTMOST_RED_JS = """(sel) => {
   }
   return -1;
 }"""
+)
+
+# True once the largest canvas under a selector spans most of the output's box
+CANVAS_FILLS_OUTPUT_JS = (
+    "(sel) => {"
+    + CANVASES_UNDER_JS
+    + """
+  const o = document.querySelector(sel).getBoundingClientRect();
+  const cs = canvasesUnder(sel);
+  if (!cs.length) return false;
+  const c = cs[0].getBoundingClientRect();
+  return c.width >= 0.9 * o.width && c.height >= 0.9 * o.height;
+}"""
+)
 
 
 def solid_png(rgb: tuple[int, int, int], size: int = 256) -> bytes:
@@ -165,24 +179,7 @@ def test_geoviews_fills_container_and_respects_explicit_size(
     # In a fixed-height card, a responsive map fills the output's box (the
     # remainder is bokeh's own margin around the plot)
     for selector in ("#tiles", "#polygons"):
-        page.wait_for_function(
-            """(sel) => {
-              const o = document.querySelector(sel).getBoundingClientRect();
-              const walk = (root, out) => {
-                for (const el of root.querySelectorAll('*')) {
-                  if (el.tagName === 'CANVAS') out.push(el);
-                  if (el.shadowRoot) walk(el.shadowRoot, out);
-                }
-                return out;
-              };
-              const cs = walk(document.querySelector(sel), []);
-              if (!cs.length) return false;
-              const c = cs[0].getBoundingClientRect();
-              return c.width >= 0.9 * o.width && c.height >= 0.9 * o.height;
-            }""",
-            arg=selector,
-            timeout=30000,
-        )
+        page.wait_for_function(CANVAS_FILLS_OUTPUT_JS, arg=selector, timeout=30000)
         out = page.locator(selector).bounding_box()
         canvas = page.evaluate(CANVAS_RECT_JS, selector)
         card = page.locator(f"{selector}_card").bounding_box()

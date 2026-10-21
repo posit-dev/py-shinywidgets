@@ -35,15 +35,14 @@ def server(input, output, session):
     def render_count():
         return str(counter.get())
 
-    # Web map tiles under points. responsive=True is what makes a holoviews/
-    # geoviews plot fill its container (otherwise it keeps a fixed pixel size)
+    # Web map tiles under points
     @render_holoviews
     def tiles():
         counter.get()
         points = gv.Points(CITIES).opts(color="red", size=12)
         return (gv.tile_sources.OSM * points).opts(responsive=True)
 
-    # An explicit size must be respected (no responsive=True)
+    # An explicit size, which must be respected
     @render_holoviews
     def fixed():
         return gv.Points(CITIES).opts(color="red", size=12, width=350, height=250)
