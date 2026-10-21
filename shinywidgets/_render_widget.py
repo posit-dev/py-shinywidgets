@@ -51,6 +51,12 @@ class render_widget(render_widget_base[WidgetT, WidgetT]):
     packages, but prefer the dedicated decorators like `render_plotly` for those, since
     they provide better type checking.)
 
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `ipywidgets.Widget` instance. Use `.widget` to programmatically update the
+    rendered widget in place (trait changes on the widget are synced to the browser),
+    or to reactively read widget state with :func:`~shinywidgets.reactive_read`.
+
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Parameters
@@ -96,8 +102,14 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     """
     Reactively render an [altair](https://altair-viz.github.io) chart as a Shiny output.
 
-    The decorated function should return an `altair.Chart` (or an
-    `altair.JupyterChart`), which is coerced to a `JupyterChart` widget.
+    The decorated function may return either an `altair.Chart` (which is coerced to
+    an `altair.JupyterChart` widget) or an `altair.JupyterChart` widget.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `JupyterChart` instance. Use `.widget` to programmatically update the rendered
+    chart in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -124,8 +136,15 @@ class render_maplibre(render_widget_base[ValueT, MapWidget]):
     Reactively render a [maplibre](https://eoda-dev.github.io/py-maplibregl/) map as a
     Shiny output.
 
-    The decorated function should return a `maplibre.Map`, which is coerced to a
-    `maplibre.ipywidget.MapWidget` (requires ``pip install 'maplibre[anywidget]'``).
+    The decorated function may return either a `maplibre.Map` (which is coerced to a
+    `maplibre.ipywidget.MapWidget`; requires ``pip install 'maplibre[anywidget]'``)
+    or a `maplibre.ipywidget.MapWidget` widget.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `MapWidget` instance. Use `.widget` to programmatically update the rendered map
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -151,9 +170,16 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
     """
     Reactively render a [bokeh](https://bokeh.org) plot as a Shiny output.
 
-    The decorated function should return a bokeh model (e.g., a
-    `bokeh.plotting.figure`), which is coerced to a `jupyter_bokeh.BokehModel` widget
-    (requires ``pip install jupyter_bokeh``).
+    The decorated function may return either a bokeh model (e.g., a
+    `bokeh.plotting.figure`), which is coerced to a `jupyter_bokeh.BokehModel`
+    widget, or a `jupyter_bokeh.BokehModel` widget (requires ``pip install
+    jupyter_bokeh``).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `BokehModel` instance. Use `.widget` to programmatically update the rendered
+    plot in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -184,8 +210,15 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
     """
     Reactively render a [panel](https://panel.holoviz.org) object as a Shiny output.
 
-    The decorated function should return a panel pane or viewable, which is rendered
-    through bokeh (requires ``pip install panel``).
+    The decorated function may return either a panel pane or viewable (which is
+    rendered through bokeh; requires ``pip install panel``) or the underlying
+    `jupyter_bokeh.BokehModel` widget.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `BokehModel` instance. Use `.widget` to programmatically update the rendered
+    output in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -217,8 +250,15 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
     Reactively render a [holoviews](https://holoviews.org) or
     [hvPlot](https://hvplot.holoviz.org) object as a Shiny output.
 
-    The decorated function should return a holoviews/hvplot object, which is rendered
-    through panel (requires ``pip install panel``).
+    The decorated function may return either a holoviews/hvplot object (which is
+    rendered through panel; requires ``pip install panel``) or the underlying
+    `jupyter_bokeh.BokehModel` widget.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `BokehModel` instance. Use `.widget` to programmatically update the rendered
+    output in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -249,17 +289,21 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     """
     Reactively render a [plotly](https://plotly.com/python/) figure as a Shiny output.
 
-    The decorated function should return a `plotly.graph_objects.Figure`, which is
-    coerced to a `FigureWidget`. Alternatively, it may return a Dash-style
+    The decorated function may return either a `plotly.graph_objects.Figure` (which
+    is coerced to a `FigureWidget`) or a `plotly.graph_objects.FigureWidget` widget.
+    Alternatively, it may return a Dash-style
     `(figure, config)` tuple, where `config` is a dict of Plotly.js [config
     options](https://plotly.com/javascript/configuration-options/) (e.g.,
     `{"displayModeBar": False}`), mirroring Dash's `dcc.Graph(figure=..., config=...)`
     API. The config is merged over plotly's defaults, so it also takes precedence over
     shinywidgets' own defaults (e.g., `responsive`).
 
-    The output's `.value` attribute is exactly what the render function returned (a
-    figure or the `(figure, config)` tuple), while `.widget` is always the coerced
-    `FigureWidget` (with `config` merged into its ``_config`` trait).
+    The decorated function also gains two read-only attributes: `.value`, which is
+    exactly what the render function returned (a figure or the `(figure, config)`
+    tuple), and `.widget`, which is always the coerced `FigureWidget` (with `config`
+    merged into its ``_config`` trait). Use `.widget` to programmatically update the
+    rendered figure in place (trait changes on the widget are synced to the browser),
+    or to reactively read widget state with :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -342,9 +386,15 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
     """
     Reactively render a [pydeck](https://pydeck.gl) map as a Shiny output.
 
-    The decorated function should return a `pydeck.Deck`, which is coerced to a
-    `pydeck.widget.DeckGLWidget` (requires pydeck <= 0.8, since pydeck v0.9 removed
-    ipywidgets support).
+    The decorated function may return either a `pydeck.Deck` (which is coerced to a
+    `pydeck.widget.DeckGLWidget`) or a `pydeck.widget.DeckGLWidget` widget (requires
+    pydeck <= 0.8, since pydeck v0.9 removed ipywidgets support).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `DeckGLWidget` instance. Use `.widget` to programmatically update the rendered
+    map in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
