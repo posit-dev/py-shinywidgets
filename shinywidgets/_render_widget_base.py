@@ -299,15 +299,14 @@ def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # height
     fill = widget.layout.height in (None, "auto", "100%")
 
-    # lonboard's default height (500px) suits a notebook cell, but here the
-    # output container decides the height. A user-specified height wins (an
-    # explicit "500px" is indistinguishable from the default, though).
-    if widget.height == widget.trait_defaults("height"):
-        widget.height = "100%"
-    elif widget.height != "100%":
+    # The map's root element is styled `min-height: 100%; height: <height>`, so
+    # with lonboard's default height it already grows to fill a definite-height
+    # container (and shinywidgets.css clamps it so it can't overflow one). A
+    # user-specified height, on the other hand, gets overridden by that
+    # min-height, so size the widget container to the map rather than to its
+    # parent.
+    if widget.height not in (widget.trait_defaults("height"), "100%"):
         fill = False
-        # The map's min-height is its widget container's height, so size that
-        # container to the map rather than to its parent
         if widget.layout.height == "100%":
             widget.layout.height = "auto"
 

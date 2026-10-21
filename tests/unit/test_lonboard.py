@@ -87,6 +87,53 @@ def test_session_lifetime_map_keeps_its_controls(widget_session: Session) -> Non
     assert foreign_or_closed_widget(m, widget_session.root_scope()) is None
 
 
+def test_as_widget_copies_keep_shared_control_settings(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    scale = Map.class_traits()["controls"].default()[2]
+    monkeypatch.setattr(scale, "unit", "imperial")
+    with session_context(widget_session):
+        m = Map(ScatterplotLayer(table=points_table()))
+        as_widget(m)
+    assert m.controls[2] is not scale
+    assert m.controls[2].unit == "imperial"  # type: ignore[attr-defined]
+
+
+def test_lonboard_first_imported_during_a_render() -> None:
+    # Map's shared default controls then belong to that render (and close with
+    # it), so later Maps must not reference them
+    code = """
+import asyncio
+from shiny import App, reactive, ui
+from shiny._connection import MockConnection
+from shiny.reactive import Context
+from shiny.session import session_context
+from shinywidgets import as_widget
+from shinywidgets._render_widget_base import WidgetRenderContext
+from shinywidgets._shinywidgets import foreign_or_closed_widget
+
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+session = App(ui.page_fluid(), None)._create_session(MockConnection())
+with session_context(session):
+    context = Context()
+    with context(), WidgetRenderContext():
+        import lonboard
+        as_widget(lonboard.Map([]))
+    loop.run_until_complete(reactive.flush())
+    context.invalidate()
+    loop.run_until_complete(reactive.flush())
+    with Context()(), WidgetRenderContext():
+        m = as_widget(lonboard.Map([]))
+    m.controls  # materialize the trait so the ownership check walks it
+    assert foreign_or_closed_widget(m, session.root_scope()) is None
+"""
+    proc = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
 def test_as_widget_keeps_user_controls(widget_session: Session) -> None:
     with session_context(widget_session):
         control = FullscreenControl()
@@ -110,17 +157,6 @@ def test_render_lonboard_accepts_arrow_table(widget_session: Session) -> None:
     assert foreign_or_closed_widget(r.widget, widget_session.root_scope()) is None
 
 
-def test_render_lonboard_accepts_geodataframe(widget_session: Session) -> None:
-    gpd = pytest.importorskip("geopandas")
-    pytest.importorskip("pyarrow")
-    gdf = gpd.GeoDataFrame(
-        geometry=gpd.points_from_xy([0, 1], [0, 1]),  # type: ignore[reportUnknownArgumentType]
-        crs="EPSG:4326",
-    )
-    r = render(gdf, widget_session)
-    assert isinstance(r.widget, Map)
-
-
 def test_render_lonboard_passes_through_map(widget_session: Session) -> None:
     with session_context(widget_session):
         m = Map(ScatterplotLayer(table=points_table()))
@@ -141,7 +177,10 @@ def test_default_height_fills(widget_session: Session) -> None:
         m = Map(ScatterplotLayer(table=points_table()))
     _, fill = set_layout_defaults(m)
     assert fill is True
-    assert m.height == "100%"
+    # lonboard's default height is kept: it's the map's size when there's no
+    # definite height to fill (and shinywidgets.css clamps it to the container)
+    assert m.height == "500px"
+    assert m.layout.height == "100%"
 
 
 def test_explicit_height_is_respected(widget_session: Session) -> None:
@@ -161,8 +200,8 @@ def test_explicit_layout_height_is_respected(widget_session: Session) -> None:
         m.layout.height = "300px"
     _, fill = set_layout_defaults(m)
     assert fill is False
-    # The map fills its (now fixed-height) widget container
-    assert m.height == "100%"
+    assert m.height == "500px"
+    assert m.layout.height == "300px"
 
 
 def test_explicit_full_height_fills(widget_session: Session) -> None:

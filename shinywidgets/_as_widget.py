@@ -152,12 +152,19 @@ def as_widget_lonboard(x: object) -> Widget:
         # this Map its own copies.
         shared = Map.class_traits()["controls"].default()
         if any(c in shared for c in x.controls):
-            x.controls = tuple(type(c)() if c in shared else c for c in x.controls)
+            x.controls = tuple(
+                copy_lonboard_control(c) if c in shared else c for c in x.controls
+            )
 
     if not isinstance(x, Widget):
         raise TypeError(f"Don't know how to coerce {x} into a lonboard Map object.")
 
     return x
+
+
+def copy_lonboard_control(control: Widget) -> Widget:
+    names = [k for k in control.trait_names(sync=True) if not k.startswith("_")]
+    return type(control)(**{k: getattr(control, k) for k in names})
 
 
 def as_widget_maplibre(x: object) -> Optional[Widget]:

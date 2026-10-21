@@ -70,6 +70,25 @@
 }
 
 /*
+* A lonboard map's root is styled `min-height: 100%; height: 500px` (its default
+* height), so it grows to fill a definite-height container but overflows (and gets
+* clipped by) one shorter than 500px. Clamping to the container fixes the latter,
+* while a container with no definite height leaves the map at 500px (a percentage
+* max-height doesn't apply there). See lonboard_layout_defaults().
+*/
+.shiny-ipywidget-output .lonboard {
+  max-height: 100%;
+}
+
+/*
+* lonboard shifts its map up 5px (presumably to offset notebook output padding),
+* which here just clips the top of the map and misaligns its bottom edge.
+*/
+.shiny-ipywidget-output > .lm-Widget > [data-overlay-container] {
+  margin-top: 0;
+}
+
+/*
 * Our fill.css ends up overriding this rule from bqplot...
 * https://github.com/bqplot/bqplot/blob/c186fcd/js/less/bqplot.less#L170
 */

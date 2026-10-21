@@ -34,8 +34,7 @@ def assert_fills(page: Page, id: str) -> None:
     assert out["height"] > 200, m
     assert abs(map["width"] - out["width"]) <= 1, m
     assert abs(map["bottom"] - out["bottom"]) <= 1, m
-    # lonboard's own stylesheet shifts the map up by 5px (margin-top: -5px)
-    assert out["height"] - 1 <= map["height"] <= out["height"] + 6, m
+    assert abs(map["height"] - out["height"]) <= 1, m
 
 
 def test_lonboard_renders_with_controls(page: Page, local_app) -> None:
@@ -80,6 +79,16 @@ def test_lonboard_fills_and_respects_explicit_heights(page: Page, local_app) -> 
     assert abs(out_height["map"]["height"] - 300) <= 1, out_height
 
 
+def test_lonboard_without_definite_height_keeps_default_height(
+    page: Page, local_app
+) -> None:
+    page.goto(local_app.url)
+
+    # With nothing to fill, the map keeps lonboard's own default height
+    unfillable = measure(page, "map_unfillable")
+    assert abs(unfillable["map"]["height"] - 500) <= 1, unfillable
+
+
 def test_lonboard_view_state_roundtrips_to_python(page: Page, local_app) -> None:
     page.goto(local_app.url)
 
@@ -89,7 +98,9 @@ def test_lonboard_view_state_roundtrips_to_python(page: Page, local_app) -> None
     expect(view_state).to_contain_text("longitude=", timeout=30000)
     before = view_state.inner_text()
 
-    box = page.locator("#map .lonboard canvas").first.bounding_box()
+    canvas = page.locator("#map .lonboard canvas").first
+    expect(canvas).to_be_visible()
+    box = canvas.bounding_box()
     assert box is not None
     x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
     page.mouse.move(x, y)
@@ -117,9 +128,9 @@ def test_lonboard_rerender_lifecycle(page: Page, local_app) -> None:
         expect(page.locator("#map .lonboard canvas").first).to_be_visible(timeout=30000)
 
     expect(page.locator("#map .lonboard")).to_have_count(1)
-    # One live view per displayed map (3 outputs); retired maps hold none
+    # One live view per displayed map (4 outputs); retired maps hold none
     map_views = [m["views"] for m in client_models(page) if m["name"] == "AnyModel"]
-    assert sum(map_views) == 3, map_views
+    assert sum(map_views) == 4, map_views
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)

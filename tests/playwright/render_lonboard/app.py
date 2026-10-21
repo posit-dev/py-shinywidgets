@@ -19,6 +19,8 @@ app_ui = ui.page_fillable(
         ui.card(output_widget("map")),
         ui.card(output_widget("map_fixed")),
         ui.card(output_widget("map_output_height", height="300px")),
+        # An output with no definite height to fill (and no explicit height)
+        ui.div(output_widget("map_unfillable", fillable=False)),
     ),
     ui.input_action_button("rerender", "Rerender"),
     ui.output_text("render_count"),
@@ -50,6 +52,10 @@ def server(input, output, session):
 
     @render_lonboard
     def map_output_height():
+        return ScatterplotLayer(table=points())
+
+    @render_lonboard
+    def map_unfillable():
         return ScatterplotLayer(table=points())
 
     @render.text
