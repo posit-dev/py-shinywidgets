@@ -288,6 +288,18 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def _keplergl_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # KeplerGl sizes itself from a pixel `height` trait (default 400), so the only
+    # way to tell the user asked for a specific height is that it isn't the default
+    from keplergl import KeplerGl
+
+    default_height = KeplerGl.class_traits()["height"].default_value
+    if isinstance(widget, KeplerGl) and widget.height != default_height:
+        fill = False
+
+    return fill
+
+
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
 # (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
 # in js/src/fill.ts). A handler receives the widget and the current fill
@@ -300,6 +312,7 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
+    "keplergl": _keplergl_layout_defaults,
 }
 
 

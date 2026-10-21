@@ -1,4 +1,5 @@
 import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
+import { setupKeplerAutoHeight } from './keplergl';
 import { setupMplAutoResize } from './mpl';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 
@@ -88,8 +89,24 @@ const quakBehavior: WidgetBehavior = {
   },
 };
 
+// kepler.gl's size comes from a pixel `height` trait, so it needs to be driven
+// from the container whenever the container's height is defined by the app
+// (a filling layout, or an explicit output_widget(height=)). This can't use
+// setupFill, which only runs in a filling layout.
+const keplerglBehavior: WidgetBehavior = {
+  onDisplayed: (ctx) => {
+    const { el, model, view } = ctx;
+    const filling = el.classList.contains('forward-fill-potential');
+    if (!ctx.isStale() && (filling || el.style.height !== '')) {
+      view.once('remove', setupKeplerAutoHeight(el, model));
+    }
+    ctx.dispatchResize();
+  },
+};
+
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
+  keplergl: keplerglBehavior,
   plotly: plotlyBehavior,
   quak: quakBehavior,
 };

@@ -3,21 +3,24 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, cast
 
 from htmltools import Tag
+from ipywidgets.widgets.widget import Widget
 
 if TYPE_CHECKING:
     import plotly.graph_objects as go
     from altair import JupyterChart
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from jupyter_bokeh import BokehModel
+    from keplergl import KeplerGl
     from maplibre.ipywidget import MapWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
-        object
-    )
+    JupyterChart = MplCanvas = BokehModel = KeplerGl = MapWidget = FigureWidget = (
+        DeckGLWidget
+    ) = object
 
 from ._bokeh import bokeh_dependency
+from ._dependencies import widget_pkg
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
 if TYPE_CHECKING:
@@ -36,6 +39,7 @@ __all__ = (
     "render_altair",
     "render_bokeh",
     "render_holoviews",
+    "render_keplergl",
     "render_maplibre",
     "render_matplotlib",
     "render_panel",
@@ -133,6 +137,60 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     """
+
+
+class render_keplergl(render_widget_base[ValueT, KeplerGl]):
+    """
+    Reactively render a [kepler.gl](https://kepler.gl) map as a Shiny output.
+
+    The decorated function may return either a `pandas.DataFrame` or
+    `geopandas.GeoDataFrame` (which is coerced to a `keplergl.KeplerGl` widget with
+    the data added as a single dataset; requires ``pip install keplergl``) or a
+    `keplergl.KeplerGl` widget. In a filling layout, the map is resized to fit its
+    container (unless the `KeplerGl` widget was given an explicit ``height``).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `KeplerGl` instance. Use `.widget` to programmatically update the rendered map
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    def _as_widget(self, value: ValueT) -> KeplerGl:
+        # A DataFrame is generic (several renderers accept one), so it's only
+        # coerced here rather than via AS_WIDGET_MAP
+        if widget_pkg(type(value)) in ("pandas", "geopandas"):
+            return cast("KeplerGl", dataframe_to_keplergl(value))
+        return super()._as_widget(value)
+
+
+def dataframe_to_keplergl(df: object) -> Widget:
+    try:
+        from keplergl import KeplerGl
+    except ImportError:
+        raise ImportError(
+            "Install the keplergl package to use kepler.gl with shinywidgets (pip install keplergl)."
+        )
+
+    return KeplerGl(data={"data": df})
 
 
 class render_maplibre(render_widget_base[ValueT, MapWidget]):

@@ -1,0 +1,5 @@
+shiny
+shinywidgets
+keplergl>=0.4.0rc4
+numpy
+pandas
