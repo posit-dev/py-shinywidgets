@@ -90,7 +90,7 @@
 * k3d sets a fixed pixel height (its `height` trait) as an inline style on its inner
 * container, which would overflow (and get clipped by) an output with an explicit height.
 * (`[style*="height:"]` would also match min-/max-height, but output_widget() only emits
-* width and height.)
+* width and height. Keep in sync with _output_widget.py.)
 */
 .shiny-ipywidget-output[style*="height:"] > .k3d-plot {
   height: 100%;
