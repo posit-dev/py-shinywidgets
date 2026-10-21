@@ -22,9 +22,6 @@ export interface BehaviorContext {
   lmWidget: HTMLElement;
   view: DOMWidgetView;
   model: WidgetModel;
-  // Whether this render is filling its container (the server's fill decision
-  // for the widget, and a fillable output container)
-  fill: boolean;
 }
 
 export interface PostDisplayContext extends BehaviorContext {
@@ -94,15 +91,11 @@ const quakBehavior: WidgetBehavior = {
 
 // kepler.gl's size comes from a pixel `height` trait, so it needs to be driven
 // from the container whenever the container's height is defined by the app
-// (a filling layout, or an explicit output_widget(height=)). This can't use
-// setupFill, which only runs in a filling layout.
+// (a filling layout, or an explicit output_widget(height=)).
 const keplerglBehavior: WidgetBehavior = {
-  onDisplayed: (ctx) => {
-    const { el, model, view } = ctx;
-    if (!ctx.isStale() && (ctx.fill || el.style.height !== '')) {
-      view.once('remove', setupKeplerAutoHeight(el, model));
-    }
-    ctx.dispatchResize();
+  setupFill: ({ el, model }) => setupKeplerAutoHeight(el, model),
+  setupFixedSize: ({ el, model }) => {
+    if (el.style.height) return setupKeplerAutoHeight(el, model);
   },
 };
 
