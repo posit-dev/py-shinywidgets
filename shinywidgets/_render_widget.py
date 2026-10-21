@@ -1,26 +1,34 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, cast
 
 from htmltools import Tag
+from ipywidgets import Widget
 
 if TYPE_CHECKING:
+    import plotly.graph_objects as go
     from altair import JupyterChart
     from jupyter_bokeh import BokehModel
     from maplibre.ipywidget import MapWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
-
-    from .types import PlotlyValue
 else:
     JupyterChart = BokehModel = MapWidget = FigureWidget = DeckGLWidget = object
 
 from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
-from .types import PlotlyConfig
+
+if TYPE_CHECKING:
+    # The values a @render_plotly render function may return: a plotly figure
+    # (raw or pre-built FigureWidget -- sibling classes, so both are listed),
+    # optionally paired with a Plotly.js config dict, or any ipywidgets.Widget
+    # (which as_widget() passes through unchanged). Only referenced by the
+    # TypeVar bound below, so there's no need for them at runtime.
+    PlotlyFigure = Union[go.Figure, go.FigureWidget]
+    PlotlyValue = Union[PlotlyFigure, Tuple[PlotlyFigure, Dict[str, Any]], Widget]
 
 # The bound is a string so it stays a lazy forward reference at runtime (the
-# alias it points to imports plotly, an optional dependency, when resolved).
+# alias it points to references plotly, an optional dependency).
 PlotlyValueT = TypeVar("PlotlyValueT", bound="PlotlyValue")
 
 __all__ = (
@@ -254,13 +262,20 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
 
     The output's `.value` attribute is exactly what the render function returned (a
     figure or the `(figure, config)` tuple), while `.widget` is always the coerced
-    `FigureWidget` (with `config` merged into its ``_config`` trait). The accepted
-    return shape is described by :data:`~shinywidgets.types.PlotlyValue` (which also
-    bounds this renderer's value type, so type checkers validate render functions
-    against it automatically), :data:`~shinywidgets.types.PlotlyFigure`, and
-    :data:`~shinywidgets.types.PlotlyConfig`.
+    `FigureWidget` (with `config` merged into its ``_config`` trait).
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Typing**: no return-type annotation is needed -- the renderer's value
+    type is statically bounded, so type checkers flag unsupported return
+    values at decoration time, and the output's `.value` attribute is
+    inferred from the render function's actual return type. If you do
+    annotate, annotate narrowly (e.g., ``-> go.Figure`` or ``-> tuple[go.Figure,
+    dict[str, Any]]``): `.value` is typed from the annotation, so annotating
+    with a wide union of all supported shapes would force you to narrow
+    `.value` before each use.
 
     Parameters
     ----------
@@ -307,7 +322,7 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         return widget
 
 
-def _split_config(value: object) -> tuple[object, Optional[PlotlyConfig]]:
+def _split_config(value: object) -> tuple[object, Optional[Dict[str, Any]]]:
     # Dash-style (figure, config) tuple. Any non-tuple value is passed through to
     # as_widget(), which raises a helpful error if it can't be coerced.
     if not isinstance(value, tuple):

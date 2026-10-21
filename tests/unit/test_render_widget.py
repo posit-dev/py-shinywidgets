@@ -1,4 +1,6 @@
 import asyncio
+import subprocess
+import sys
 
 import pytest
 import shinywidgets._render_widget as rw
@@ -70,6 +72,19 @@ def test_render_plotly_config_tuple_overrides_shinywidgets_defaults(
     with session_context(widget_session):
         assert asyncio.run(r._render()) is not None
     assert r.widget._config["responsive"] is False  # type: ignore
+
+
+def test_render_plotly_importable_without_plotly() -> None:
+    # render_plotly's value-type bound must stay a lazy forward reference so
+    # that plotly remains an optional dependency.
+    script = """
+import sys
+sys.modules["plotly"] = None
+sys.modules["plotly.graph_objects"] = None
+
+import shinywidgets  # noqa: F401
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)
 
 
 def test_render_plotly_malformed_tuple_errors(widget_session) -> None:

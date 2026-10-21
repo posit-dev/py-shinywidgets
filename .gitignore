@@ -117,3 +117,4 @@ rsconnect-python/
 # Deploy to Connect Cloud Button
 examples/*/README_FILES/*
 examples/*/README.html
+.claude/
