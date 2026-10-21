@@ -56,6 +56,29 @@ def output_binding_dependency() -> HTMLDependency:
     )
 
 
+def custom_elements_dependency() -> HTMLDependency:
+    # Some anywidgets (e.g., perspective) ship an ES module that calls
+    # customElements.define() at module scope. anywidget evaluates that module once
+    # per model, so a second model in the page (e.g., after a re-render) throws
+    # "the name ... has already been used" and never initializes. Ignoring the
+    # redefinition leaves the elements registered by the first evaluation in place.
+    return HTMLDependency(
+        name="shinywidgets-custom-elements",
+        version=__version__,
+        head=tags.script(
+            """
+(function () {
+  const define = customElements.define;
+  customElements.define = function (name, constructor, options) {
+    if (customElements.get(name)) return;
+    define.call(customElements, name, constructor, options);
+  };
+})();
+"""
+        ),
+    )
+
+
 # TODO: this function might have to be recursive since it's technically
 # possible for a Widget to have traits that are themselves Widgets
 # (which could have their own npm module), but in practice, I haven't seen any cases

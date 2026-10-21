@@ -39,6 +39,7 @@ def as_widget(x: object) -> Widget:
     * matplotlib `Figure` or `Axes` (or a seaborn figure-level grid) ->
       `ipympl.backend_nbagg.Canvas`
     * panel pane/viewable -> bokeh model
+    * perspective `Table` -> `perspective.widget.PerspectiveWidget`
     * plotly `Figure` -> `plotly.graph_objects.FigureWidget`
     * pydeck `Deck` -> `pydeck.widget.DeckGLWidget`
 
@@ -157,6 +158,30 @@ def as_widget_maplibre(x: object) -> Optional[Widget]:
     res.map_options = state["mapOptions"]
     res._message_queue = state["calls"]
     return res  # type: ignore
+
+
+def as_widget_perspective(x: object) -> Optional[Widget]:
+    # perspective is guaranteed to be installed here since this function is only
+    # called when x comes from the perspective package
+    from perspective import Table
+
+    if not isinstance(x, Table):
+        raise TypeError(
+            f"Don't know how to coerce {x} into a perspective.widget.PerspectiveWidget object."
+        )
+
+    return perspective_widget(x)
+
+
+def perspective_widget(data: object) -> Widget:
+    try:
+        from perspective.widget import PerspectiveWidget
+    except ImportError:
+        raise ImportError(
+            "Install the perspective-python package to use perspective with shinywidgets (pip install perspective-python)."
+        )
+
+    return PerspectiveWidget(data)
 
 
 def as_widget_mpl(x: object) -> Widget:
@@ -321,6 +346,7 @@ AS_WIDGET_MAP = {
     "maplibre": as_widget_maplibre,
     "matplotlib": as_widget_mpl,
     "panel": as_widget_panel,
+    "perspective": as_widget_perspective,
     "plotly": as_widget_plotly,
     "pydeck": as_widget_pydeck,
     "seaborn": as_widget_mpl,

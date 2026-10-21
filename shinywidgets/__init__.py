@@ -25,6 +25,7 @@ from ._render_widget import (
     render_maplibre,
     render_matplotlib,
     render_panel,
+    render_perspective,
     render_plotly,
     render_pydeck,
     render_widget,
@@ -41,6 +42,7 @@ __all__ = (
     "render_maplibre",
     "render_matplotlib",
     "render_panel",
+    "render_perspective",
     "render_plotly",
     "render_pydeck",
     # Reactive read second
