@@ -1,5 +1,6 @@
 import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
 import { setupMplAutoResize } from './mpl';
+import { setupNglviewAutoSize } from './nglview';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 
 /**
@@ -90,20 +91,12 @@ const quakBehavior: WidgetBehavior = {
 
 // nglview sizes its stage with fixed inline pixels (300px tall by default) and
 // never re-measures its parent, so drive the stage size from the output
-// whenever the output has a size of its own (a fill container or an explicit
-// height). Observe the output rather than the widget so the stage's own size
-// changes don't create a feedback loop.
+// whenever the output has a size of its own (a filling layout or an explicit
+// output_widget(height=)).
 const nglviewBehavior: WidgetBehavior = {
-  onDisplayed: ({ el, view, isStale }) => {
-    const hasOwnSize = el.classList.contains('forward-fill-potential') || el.style.height !== '';
-    if (!hasOwnSize || isStale()) return;
-
-    const stage = view as unknown as { setSize(width: string, height: string): void };
-    const observer = new ResizeObserver(() => {
-      stage.setSize(`${el.clientWidth}px`, `${el.clientHeight}px`);
-    });
-    observer.observe(el);
-    view.once('remove', () => observer.disconnect());
+  setupFill: ({ el, view }) => setupNglviewAutoSize(el, view),
+  setupFixedSize: ({ el, view }) => {
+    if (el.style.height) return setupNglviewAutoSize(el, view);
   },
 };
 
