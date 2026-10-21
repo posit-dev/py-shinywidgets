@@ -1,12 +1,14 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
 import { WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
-import { jsonParse } from './utils';
+import { jsonParse, protectPageJQuery } from './utils';
 import { disposeNative, finishDetach, hasAncestor, patchMplCanvasRemove, viewParent } from './views';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
+
+protectPageJQuery();
 
 /******************************************************************************
  * Define a custom HTMLManager for use with Shiny

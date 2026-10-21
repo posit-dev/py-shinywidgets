@@ -87,49 +87,50 @@
 }
 
 /*
-* itables (DataTables): render_itables() defaults scrollY to "100%" (see
-* _itables_layout_defaults), which DataTables applies to the scrolling table body
-* as an inline height. A percentage can't resolve against the table's auto-height
-* ancestors, so instead lay the controls, body and footer out as a flex column that
-* fills the output (the body takes the space left over, and scrolls).
+* itables (DataTables): render_itables() adds the .shinywidgets-itables-fill class
+* (and defaults scrollY) unless the user chose their own scrollY (see
+* itables_layout_defaults). DataTables sizes the scrolling table body with an inline
+* height, which can't fill an auto-height ancestor chain, so lay the controls, body
+* and footer out as a flex column that fills the output (the body takes the space
+* left over, and scrolls).
 */
-.shiny-ipywidget-output > .itables_anywidget {
+.shiny-ipywidget-output > .shinywidgets-itables-fill {
   height: 100%;
 }
 
-.itables_anywidget .dt-container:has(.dt-scroll-body[style*="100%"]) {
+.shinywidgets-itables-fill .dt-container {
   display: flex;
   flex-direction: column;
   height: 100%;
 }
 
-.itables_anywidget .dt-container:has(.dt-scroll-body[style*="100%"]) .dt-layout-row.dt-layout-table {
+.shinywidgets-itables-fill .dt-layout-row.dt-layout-table {
   flex: 1 1 auto;
   min-height: 0;
   align-items: stretch;
 }
 
-.itables_anywidget .dt-container:has(.dt-scroll-body[style*="100%"]) .dt-layout-table > .dt-layout-cell {
+.shinywidgets-itables-fill .dt-layout-table > .dt-layout-cell {
   display: flex !important;
   flex-direction: column;
   align-items: stretch !important;
   min-height: 0;
 }
 
-.itables_anywidget .dt-container:has(.dt-scroll-body[style*="100%"]) .dt-scroll {
+.shinywidgets-itables-fill .dt-scroll {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-.itables_anywidget .dt-container .dt-scroll-body[style*="100%"] {
+.shinywidgets-itables-fill .dt-scroll > :not(.dt-scroll-body) {
+  flex: none;
+}
+
+.shinywidgets-itables-fill .dt-scroll-body {
   flex: 1 1 auto;
   min-height: 0;
   max-height: none !important;
   height: auto !important;
-}
-
-.itables_anywidget .dt-container:has(.dt-scroll-body[style*="100%"]) .dt-scroll > :not(.dt-scroll-body) {
-  flex: none;
 }

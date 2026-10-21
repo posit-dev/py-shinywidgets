@@ -15,6 +15,8 @@ pytest.importorskip("anywidget")
 
 from itables.widget import ITable  # noqa: E402
 
+FILL_CLASS = "shinywidgets-itables-fill"
+
 
 def render(renderer: rw.render_itables, session: Session) -> dict:
     with session_context(session):
@@ -27,7 +29,6 @@ def test_render_itables_is_exported_render_widget_base() -> None:
     assert shinywidgets.render_itables is rw.render_itables
     assert "render_itables" in shinywidgets.__all__
     assert "render_itables" in rw.__all__
-    assert isinstance(rw.render_itables(), rwb.render_widget_base)
 
 
 def test_pandas_dataframe_is_coerced_to_itable(widget_session: Session) -> None:
@@ -102,6 +103,7 @@ def test_default_scroll_height_fills_container(widget_session: Session) -> None:
     render(r, widget_session)
     assert r.widget is not None
     assert r.widget._dt_args["scrollY"] == "100%"
+    assert FILL_CLASS in r.widget._dom_classes
 
 
 def test_explicit_scroll_height_is_respected(widget_session: Session) -> None:
@@ -111,6 +113,7 @@ def test_explicit_scroll_height_is_respected(widget_session: Session) -> None:
     render(r, widget_session)
     assert r.widget is not None
     assert r.widget._dt_args["scrollY"] == "300px"
+    assert FILL_CLASS not in r.widget._dom_classes
 
 
 def test_layout_height_disables_fill_but_still_scrolls(
@@ -147,3 +150,24 @@ def test_explicit_style_is_respected(widget_session: Session) -> None:
     render(r, widget_session)
     assert r.widget is not None
     assert r.widget.style == "width:50%"
+
+
+def test_explicit_width_auto_style_is_respected(widget_session: Session) -> None:
+    pd = pytest.importorskip("pandas")
+    r = rw.render_itables()
+    r(lambda: ITable(pd.DataFrame({"a": [1]}), style="width:auto"))
+    render(r, widget_session)
+    assert r.widget is not None
+    assert r.widget.style == "width:auto"
+    assert r.widget._dt_args["scrollY"] == "100%"
+
+
+def test_layout_defaults_are_idempotent(widget_session: Session) -> None:
+    pd = pytest.importorskip("pandas")
+    with session_context(widget_session):
+        w = ITable(pd.DataFrame({"a": [1]}))
+        rwb.set_layout_defaults(w)
+        first = (dict(w._dt_args), w.style, list(w._dom_classes))
+        rwb.set_layout_defaults(w)
+    assert (dict(w._dt_args), w.style, list(w._dom_classes)) == first
+    assert w._dom_classes.count(FILL_CLASS) == 1

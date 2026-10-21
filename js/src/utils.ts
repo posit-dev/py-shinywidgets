@@ -88,4 +88,23 @@ class Throttler {
 }
 
 
-export { base64EncodeBuffers, jsonParse, Throttler };
+// Some widget bundles (e.g., itables) assign their own jQuery to the global `$` when
+// their module is evaluated, which can happen at any point after page load (e.g.,
+// for a widget nested inside another widget). That breaks code that expects the page's
+// jQuery (e.g., bslib's resize handling reads `$(el).data("shinyOutputBinding")`),
+// so ignore assignments to `$` (`window.jQuery` is left alone by those bundles).
+// Widget code that relies on the global `$` being its own jQuery will see the
+// page's instead.
+function protectPageJQuery(): void {
+  const win = window as Window & { $?: unknown };
+  const pageJQuery = win.$;
+  if (!pageJQuery) return;
+  Object.defineProperty(win, '$', {
+    configurable: true,
+    enumerable: true,
+    get: () => pageJQuery,
+    set: () => {},
+  });
+}
+
+export { base64EncodeBuffers, jsonParse, protectPageJQuery, Throttler };

@@ -288,32 +288,39 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def itables_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # DataTables only gets a scrollable body (which is what lets the table fill
+    # its container instead of growing past it) when scrollY is set, so default it
+    # unless the user chose their own. shinywidgets.css does the actual filling for
+    # widgets with the marker class.
+    from itables import options as itables_options
+
+    dt_args: dict[str, Any] = widget._dt_args  # type: ignore
+    if "scrollY" in dt_args:
+        return fill
+
+    widget._dt_args = {**dt_args, "scrollY": "100%"}  # type: ignore
+    widget.add_class("shinywidgets-itables-fill")
+    # itables' default `width:auto` leaves a scrolling table's header and body
+    # columns misaligned (a style the user chose is left alone)
+    if widget._style == itables_options.style:  # type: ignore
+        widget._style = widget._style.replace("width:auto", "width:100%")  # type: ignore
+    return fill
+
+
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
 # (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
 # in js/src/fill.ts). A handler receives the widget and the current fill
 # decision, applies package-specific mutations, and returns the (possibly
 # tightened) fill decision.
 #
-def _itables_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
-    # DataTables only gets a scrollable body (which is what lets the table fill
-    # its container instead of growing past it) when scrollY is set. shinywidgets.css
-    # turns this "100%" into actual filling; any other user-specified scrollY wins.
-    dt_args: dict[str, Any] = widget._dt_args  # type: ignore
-    if "scrollY" not in dt_args:
-        widget._dt_args = {**dt_args, "scrollY": "100%"}  # type: ignore
-        # itables' default `width:auto` leaves a scrolling table's header and body
-        # columns misaligned
-        widget._style = widget._style.replace("width:auto", "width:100%")  # type: ignore
-    return fill
-
-
 # N.B. bokeh is intentionally absent: its sizing_mode hack lives in
 # as_widget_bokeh() because applying it here doesn't work (see the TODO
 # there).
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
-    "itables": _itables_layout_defaults,
+    "itables": itables_layout_defaults,
 }
 
 
