@@ -68,8 +68,9 @@ def test_embedding_atlas_fills_fillable_container(page: Page, local_app) -> None
     assert wide["atlas"]["height"] == wide["output"]["height"]
     assert wide["output"]["height"] > 300
     # The output spans its card body's width and doesn't overflow its height
-    assert wide["output"]["width"] == wide["body"]["width"]
-    assert wide["output"]["height"] <= wide["body"]["height"]
+    # clientWidth/Height are rounded; the bounding boxes are fractional
+    assert abs(wide["output"]["width"] - wide["body"]["width"]) <= 1
+    assert wide["output"]["height"] <= wide["body"]["height"] + 1
 
     # ... and it tracks the container when the window shrinks
     page.set_viewport_size({"width": 700, "height": 520})
@@ -89,7 +90,7 @@ def test_embedding_atlas_fills_fillable_container(page: Page, local_app) -> None
     )
     tall = page.evaluate(BOXES_JS)
     assert tall["atlas"]["height"] == tall["output"]["height"]
-    assert tall["output"]["height"] <= tall["body"]["height"]
+    assert tall["output"]["height"] <= tall["body"]["height"] + 1
 
     assert_no_unexpected_errors(unexpected_errors(errors), failed_requests)
 
