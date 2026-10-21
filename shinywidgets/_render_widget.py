@@ -343,13 +343,6 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
     `perspective.widget.PerspectiveWidget` widget. A pandas index becomes an ``index``
     column.
 
-    Note
-    ---
-    Perspective keeps every table it hosts in memory for the life of the process, so a
-    table created from a DataFrame is not freed when the output re-renders. To change
-    the data, prefer updating the existing viewer in place (`.widget.update()` or
-    `.widget.replace()`), or return a `perspective.Table` that you manage yourself.
-
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
     `PerspectiveWidget` instance. Use `.widget` to programmatically update the rendered
@@ -358,6 +351,13 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
     `group_by`, `sort`, or `filter`) with :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    Perspective keeps every table it hosts in memory for the life of the process, so a
+    table created from a DataFrame is not freed when the output re-renders. To change
+    the data, prefer updating the existing viewer in place (`.widget.update()` or
+    `.widget.replace()`), or return a `perspective.Table` that you manage yourself.
 
     Parameters
     ----------
