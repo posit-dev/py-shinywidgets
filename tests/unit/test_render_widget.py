@@ -6,6 +6,7 @@ import pytest
 import shinywidgets._render_widget as rw
 import shinywidgets._render_widget_base as rwb
 from htmltools import HTMLDependency, div
+from ipywidgets import Layout
 from shiny.session import session_context
 
 
@@ -155,8 +156,6 @@ def test_render_ipyleaflet_renders_map_and_exposes_widget(widget_session) -> Non
 
 def test_render_ipyleaflet_fills_unless_map_height_is_set(widget_session) -> None:
     ipyleaflet = pytest.importorskip("ipyleaflet")
-    from ipywidgets import Layout
-
     r = rw.render_ipyleaflet()
 
     with session_context(widget_session):

@@ -10,7 +10,7 @@ app_ui = ui.page_fluid(
     ui.output_text("render_count"),
     ui.output_text("zoom_text"),
     ui.card(
-        output_widget("map"),
+        output_widget("lmap"),
         id="fill_card",
         height="450px",
     ),
@@ -38,7 +38,7 @@ def server(input, output, session):
         return str(counter.get())
 
     @render_ipyleaflet
-    def map():
+    def lmap():
         n = counter.get()
         m = L.Map(center=(52 + n, 360 - n), zoom=4)
         m.add(L.Marker(location=(52 + n, 360 - n)))
@@ -62,7 +62,7 @@ def server(input, output, session):
 
     @render.text
     def zoom_text():
-        return str(reactive_read(map.widget, "zoom"))
+        return str(reactive_read(lmap.widget, "zoom"))
 
 
 app = App(app_ui, server)
