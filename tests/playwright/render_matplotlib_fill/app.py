@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
-from shiny import App, reactive, ui
+from shiny import App, ui
 from shinywidgets import output_widget, render_matplotlib
 
 app_ui = ui.page_fillable(
