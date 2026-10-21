@@ -92,6 +92,7 @@ def test_import_shinywidgets_without_optional_deps() -> None:
         "ipympl",
         "maplibre",
         "matplotlib",
+        "mosaic_widget",
         "panel",
         "plotly",
         "pydeck",
