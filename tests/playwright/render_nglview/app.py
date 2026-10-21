@@ -13,6 +13,7 @@ END
 
 app_ui = ui.page_fluid(
     ui.input_action_button("rerender", "Rerender"),
+    ui.input_action_button("own_height", "Rerender with own height"),
     ui.output_text("render_count"),
     ui.div(
         output_widget("view"),
@@ -40,7 +41,11 @@ def server(input, output, session):
     @render_nglview
     def view():
         counter.get()
-        return nglview.show_text(TINY_PDB, ext="pdb")
+        widget = nglview.show_text(TINY_PDB, ext="pdb")
+        # A widget-level height opts this render out of filling
+        if input.own_height():
+            widget.layout.height = "200px"
+        return widget
 
     @render_nglview
     def fixed():

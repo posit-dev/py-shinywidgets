@@ -109,6 +109,31 @@ def test_nglview_respects_explicit_height(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_nglview_rerender_with_own_height_stops_filling(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    expect(page.locator("#view canvas")).to_have_count(1, timeout=30000)
+    page.wait_for_function(CANVAS_FILLS_OUTPUT_JS, arg="view", timeout=30000)
+
+    # The output filled on the first render; a re-render whose widget has its own
+    # height must not be resized to the (still fillable) container
+    page.click("#own_height")
+    page.wait_for_function(
+        """() => document.querySelector('#view .lm-Widget')?.style.height === '200px'""",
+        timeout=30000,
+    )
+    expect(page.locator("#view canvas")).to_have_count(1, timeout=30000)
+    page.wait_for_function(
+        """() => document.querySelector('#view canvas')
+            .getBoundingClientRect().height === 200""",
+        timeout=30000,
+    )
+    container = page.locator("#fill_container").bounding_box()
+    assert container is not None and container["height"] == 400
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_nglview_click_roundtrips_to_python(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
