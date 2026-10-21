@@ -34,9 +34,13 @@ def _fake_matplotlib(monkeypatch: pytest.MonkeyPatch):
     figure_mod = ModuleType("matplotlib.figure")
 
     class Figure:
+        canvas = None
+
+    class SubFigure:
         pass
 
     figure_mod.Figure = Figure  # type: ignore[attr-defined]
+    setattr(figure_mod, "SubFigure", SubFigure)
     monkeypatch.setitem(sys.modules, "matplotlib.figure", figure_mod)
 
     axes_mod = ModuleType("matplotlib.axes")
@@ -61,11 +65,14 @@ def _fake_ipympl_canvas(monkeypatch: pytest.MonkeyPatch):
         def __init__(self, figure):
             # Deliberately skip Widget.__init__() (it requires an active session)
             captured["figure"] = figure
+            self.manager: object | None = None
+            self.comm = None
 
     class FigureManager:
         def __init__(self, canvas, num):
             captured["num"] = num
             captured["canvas"] = canvas
+            canvas.manager = self
 
     nbagg.Canvas = Canvas  # type: ignore[attr-defined]
     nbagg.FigureManager = FigureManager  # type: ignore[attr-defined]
