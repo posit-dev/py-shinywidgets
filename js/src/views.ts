@@ -65,18 +65,32 @@ export function disposeNative(view: WidgetView): void {
   }
 
   disposeLeafletMap(view);
-  disposeMplCanvas(view);
 }
+
+const patchedMplCanvasViews = new WeakSet<WidgetView>();
 
 // ipympl's MPLCanvasView overrides remove() without calling super.remove(), so
 // Lumino disposal, stopListening(), and the "remove" event (which fires our
-// cleanups) never happen. Run the remove() it overrides.
-function disposeMplCanvas(view: WidgetView): void {
+// cleanups) never happen, and a container that drops the view (e.g. a VBox
+// whose children change) leaves its figure on screen. Patch the class once,
+// on its first view, so remove() also runs the remove() it overrides. Running
+// the base remove() twice is harmless (ipywidgets' own Lumino disposal already
+// re-enters it), so this stays safe if ipympl starts calling super.remove().
+export function patchMplCanvasRemove(view: WidgetView): void {
   if (view.model.get('_view_name') !== 'MPLCanvasView') {
     return;
   }
-  const overridden: WidgetView = Object.getPrototypeOf(Object.getPrototypeOf(view));
-  overridden.remove.call(view);
+  const proto: WidgetView = Object.getPrototypeOf(view);
+  if (patchedMplCanvasViews.has(proto)) {
+    return;
+  }
+  patchedMplCanvasViews.add(proto);
+  const nativeRemove = proto.remove;
+  const baseRemove = (Object.getPrototypeOf(proto) as WidgetView).remove;
+  proto.remove = function (this: WidgetView) {
+    nativeRemove.call(this);
+    return baseRemove.call(this);
+  };
 }
 
 interface DestroyableView {
