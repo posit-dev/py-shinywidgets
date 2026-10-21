@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
-from typing import Any, Dict
+from typing import Any, Awaitable, Callable, Dict, List
 
 import pytest
+from shiny import App, Session, reactive, ui
+from shiny._connection import MockConnection
+from shinywidgets._comm import ShinyComm, ShinyCommManager
 
 from tests.unit._fakes import FakeSession
 
@@ -252,3 +256,137 @@ def test_messages_go_to_the_session_that_opened_the_comm():
 
     assert len(owner._flushed_handlers) == 1
     assert owner._flush_handlers == []
+
+
+# ---------------------------------------------------------------------------
+# Delivery of messages published outside a reactive flush. These run a real
+# Shiny session (on a MockConnection) so that sends only happen when Shiny
+# itself would flush.
+# ---------------------------------------------------------------------------
+
+
+class RecordingConnection(MockConnection):
+    def __init__(self) -> None:
+        super().__init__()
+        self.sent: List[Dict[str, Any]] = []
+
+    async def send(self, message: str) -> None:
+        self.sent.append(json.loads(message))
+
+    def custom_types(self) -> List[str]:
+        return [t for m in self.sent for t in m.get("custom", {})]
+
+    def flush_count(self) -> int:
+        return sum("values" in m for m in self.sent)
+
+
+def run_with_session(
+    test: Callable[[Session, RecordingConnection], Awaitable[None]],
+) -> None:
+    async def main() -> None:
+        conn = RecordingConnection()
+        session = App(ui.page_fluid(), None)._create_session(conn)
+        run = asyncio.create_task(session._run())
+        conn.cause_receive(json.dumps({"method": "init", "data": {}}))
+        await wait_for(lambda: conn.flush_count() > 0)
+        try:
+            await test(session, conn)
+        finally:
+            conn.cause_disconnect()
+            await run
+
+    asyncio.run(main())
+
+
+async def wait_for(cond: Callable[[], bool], timeout: float = 1.0) -> bool:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not cond():
+        if loop.time() > deadline:
+            return False
+        await asyncio.sleep(0.01)
+    return True
+
+
+def open_comm(session: Session) -> ShinyComm:
+    return ShinyComm(
+        comm_id="c1",
+        comm_manager=ShinyCommManager(),
+        target_name="jupyter.widget",
+        session=session,
+    )
+
+
+def test_messages_published_outside_a_flush_are_delivered():
+    async def test(session: Session, conn: RecordingConnection) -> None:
+        c = open_comm(session)
+        c.send(data={"x": 1})
+        assert await wait_for(lambda: len(conn.custom_types()) == 2)
+        assert conn.custom_types() == [
+            "shinywidgets_comm_open",
+            "shinywidgets_comm_msg",
+        ]
+
+    run_with_session(test)
+
+
+def test_messages_published_from_another_thread_are_delivered():
+    async def test(session: Session, conn: RecordingConnection) -> None:
+        c = open_comm(session)
+        await asyncio.to_thread(c.send, data={"x": 1})
+        assert await wait_for(lambda: len(conn.custom_types()) == 2)
+        assert conn.custom_types() == [
+            "shinywidgets_comm_open",
+            "shinywidgets_comm_msg",
+        ]
+
+    run_with_session(test)
+
+
+def test_messages_published_during_a_flush_are_sent_by_that_flush():
+    async def test(session: Session, conn: RecordingConnection) -> None:
+        n_flushes = conn.flush_count()
+        # Holding the lock is what Shiny does while handling client input
+        # (which always ends with a flush).
+        async with reactive.lock():
+            c = open_comm(session)
+            c.send(data={"x": 1})
+            await asyncio.sleep(0.05)
+            assert conn.custom_types() == []
+            await reactive.flush()
+        assert conn.custom_types() == [
+            "shinywidgets_comm_open",
+            "shinywidgets_comm_msg",
+        ]
+        # ...and no extra flush is needed afterwards.
+        await asyncio.sleep(0.05)
+        assert conn.flush_count() == n_flushes + 1
+
+    run_with_session(test)
+
+
+def test_messages_published_late_in_a_flush_are_delivered():
+    async def test(session: Session, conn: RecordingConnection) -> None:
+        c = open_comm(session)
+        assert await wait_for(lambda: len(conn.custom_types()) == 1)
+        # A message published while the session is already running its
+        # on_flushed callbacks misses that flush.
+        session.on_flushed(lambda: c.send(data={"x": 1}))
+        async with reactive.lock():
+            await reactive.flush()
+        assert await wait_for(lambda: len(conn.custom_types()) == 2)
+
+    run_with_session(test)
+
+
+def test_no_flush_is_requested_after_the_session_ended():
+    async def test(session: Session, conn: RecordingConnection) -> None:
+        c = open_comm(session)
+        assert await wait_for(lambda: len(conn.custom_types()) == 1)
+        n_flushes = conn.flush_count()
+        c.comm_manager.active = False
+        c.send(data={"x": 1})
+        await asyncio.sleep(0.05)
+        assert conn.flush_count() == n_flushes
+
+    run_with_session(test)

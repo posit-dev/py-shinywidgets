@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * Fixed additional cleanup edge cases involving widgets closed before opening, background tasks, and cross-session references. (#258, #261)
 * Fixed an issue where an ipyleaflet map with many markers could turn gray and show no markers when re-rendered. (#215, #237)
 * Fixed an issue where fonts used by widget CSS, such as FontAwesome icons, failed to load (404). (#237)
+* Fixed an issue where widget changes made outside of Shiny's reactive cycle -- for example, from an `asyncio` task, a timer, or a background thread -- didn't reach the browser until some unrelated input (like a click elsewhere in the app) occurred. Live and streaming widgets now update on their own. (#278)
 
 ## [0.8.2] - 2026-10-15
 
