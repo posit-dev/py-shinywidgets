@@ -2,6 +2,7 @@ import asyncio
 import sys
 from typing import Callable
 
+import ipywidgets
 import pytest
 import shinywidgets._render_widget as rw
 from htmltools import HTMLDependency, TagChild, TagList
@@ -130,8 +131,6 @@ def test_perspective_comm_open_includes_custom_element_guard(
 def test_other_widgets_do_not_get_custom_element_guard(
     monkeypatch: pytest.MonkeyPatch, widget_session: Session
 ) -> None:
-    import ipywidgets
-
     dependencies = comm_open_dependencies(
         monkeypatch, widget_session, lambda: ipywidgets.IntSlider()
     )
