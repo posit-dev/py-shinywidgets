@@ -1,0 +1,4 @@
+shiny
+shinywidgets
+ipycytoscape
+networkx

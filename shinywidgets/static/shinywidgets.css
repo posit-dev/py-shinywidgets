@@ -49,6 +49,14 @@
   min-width: 0;
 }
 
+/*
+* ipycytoscape's stylesheet gives every widget a fixed `height: 400px`, which already
+* shrinks and grows to fit a filling container but ignores a height set on the output.
+* (An explicit height on the widget itself is inline, so it still takes precedence.)
+*/
+.shiny-ipywidget-output[style*="height"] > .__________cytoscape_container {
+  height: 100%;
+}
 
 /*
 * Allow Shiny's busy indicator (spinner) to show while recalculating, even though
