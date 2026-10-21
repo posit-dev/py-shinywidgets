@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from base64 import b64decode
 from contextlib import contextmanager
 from typing import (
@@ -59,6 +60,8 @@ __all__ = (
 def init_shiny_widget(w: Widget):
     session = get_current_session()
     if session is None:
+        if importing_lonboard():
+            return
         raise RuntimeError(
             "shinywidgets requires that all ipywidgets be constructed within an active Shiny session"
         )
@@ -243,6 +246,19 @@ def init_shiny_widget(w: Widget):
 
 # TODO: can we restore the widget constructor in a sensible way?
 Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
+
+
+def importing_lonboard() -> bool:
+    """
+    Is lonboard's `Map` class body executing (i.e., is lonboard mid-import)?
+
+    That class body constructs `Map`'s default controls (and their sub-widgets)
+    outside any session. They're shared by every `Map`, so they can't belong to a
+    session anyway: `as_widget()` swaps them for per-session copies before display.
+    """
+    lonboard = sys.modules.get("lonboard")
+    # lonboard.Map is only bound once its class body has finished executing
+    return lonboard is not None and not hasattr(lonboard, "Map")
 
 
 @contextmanager

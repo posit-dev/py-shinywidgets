@@ -220,7 +220,7 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
             fill = False
 
     # Package-specific adjustments (mirrors AS_WIDGET_MAP in _as_widget.py):
-    # each handler may mutate the widget and/or tighten `fill` to False
+    # each handler may mutate the widget and/or revise `fill`
     defaults = _LAYOUT_DEFAULTS.get(widget_pkg(widget))
     if defaults is not None:
         fill = defaults(widget, fill)
@@ -288,11 +288,37 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from lonboard import Map
+
+    if not isinstance(widget, Map):
+        return fill
+
+    # Map.__init__() sets layout.height to "100%" itself (deferring to the map's
+    # own `height`), which the generic check above mistakes for a user-specified
+    # height
+    fill = widget.layout.height in (None, "auto", "100%")
+
+    # lonboard's default height (500px) suits a notebook cell, but here the
+    # output container decides the height. A user-specified height wins (an
+    # explicit "500px" is indistinguishable from the default, though).
+    if widget.height == widget.trait_defaults("height"):
+        widget.height = "100%"
+    elif widget.height != "100%":
+        fill = False
+        # The map's min-height is its widget container's height, so size that
+        # container to the map rather than to its parent
+        if widget.layout.height == "100%":
+            widget.layout.height = "auto"
+
+    return fill
+
+
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
 # (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
 # in js/src/fill.ts). A handler receives the widget and the current fill
 # decision, applies package-specific mutations, and returns the (possibly
-# tightened) fill decision.
+# revised) fill decision.
 #
 # N.B. bokeh is intentionally absent: its sizing_mode hack lives in
 # as_widget_bokeh() because applying it here doesn't work (see the TODO
@@ -300,6 +326,7 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
+    "lonboard": lonboard_layout_defaults,
 }
 
 
