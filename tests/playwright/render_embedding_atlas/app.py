@@ -6,6 +6,17 @@ from embedding_atlas.widget import EmbeddingAtlasWidget
 from shiny import App, reactive, render, ui
 from shinywidgets import output_widget, reactive_read, render_embedding_atlas
 
+rng = np.random.default_rng(0)
+N = 300
+docs = pd.DataFrame(
+    {
+        "x": rng.normal(size=N),
+        "y": rng.normal(size=N),
+        "text": [f"item {i}" for i in range(N)],
+        "group": rng.choice(["a", "b", "c"], size=N),
+    }
+)
+
 app_ui = ui.page_fillable(
     ui.input_action_button("rerender", "Rerender"),
     ui.output_text("render_count"),
@@ -33,24 +44,15 @@ def server(input, output, session):
     @render_embedding_atlas
     def atlas():
         counter.get()
-        rng = np.random.default_rng(0)
-        n = 300
-        df = pd.DataFrame(
-            {
-                "x": rng.normal(size=n),
-                "y": rng.normal(size=n),
-                "text": [f"item {i}" for i in range(n)],
-                "group": rng.choice(["a", "b", "c"], size=n),
-            }
-        )
-        return EmbeddingAtlasWidget(df, x="x", y="y", text="text")
+        return EmbeddingAtlasWidget(docs, x="x", y="y", text="text")
 
     @render.text
     def selection_size():
         # `_predicate` is the SQL filter the browser syncs when the user
-        # selects/filters points; selection() applies it to the data
+        # selects/filters points (upstream-internal, but the only selection state
+        # the widget syncs); selection() applies it to the data
         reactive_read(atlas.widget, "_predicate")
-        return str(len(atlas.widget.selection()))  # type: ignore
+        return str(len(atlas.widget.selection()))
 
 
 app = App(app_ui, server)

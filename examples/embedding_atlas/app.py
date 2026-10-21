@@ -52,11 +52,12 @@ def server(input, output, session):
         return EmbeddingAtlasWidget(docs, x="x", y="y", text="text")
 
     # The widget syncs the filter the user builds in the browser (a SQL predicate)
-    # back to Python, where selection() applies it to the data
+    # back to Python, where selection() applies it to the data. `_predicate` is
+    # upstream-internal, but it's the only selection state the widget syncs.
     @reactive.calc
     def selection() -> pd.DataFrame:
         reactive_read(atlas.widget, "_predicate")
-        return atlas.widget.selection()  # type: ignore
+        return atlas.widget.selection()
 
     @render.text
     def summary():

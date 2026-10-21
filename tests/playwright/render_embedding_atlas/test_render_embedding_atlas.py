@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from playwright.sync_api import Page, expect
 from tests.playwright.conftest import (
     assert_no_unexpected_errors,
@@ -7,6 +9,7 @@ from tests.playwright.conftest import (
     collect_errors,
     expose_manager,
 )
+from tests.playwright.render_embedding_atlas.app import docs
 
 CONTAINER = "#atlas .embedding-atlas-widget-container"
 
@@ -17,10 +20,17 @@ BOXES_JS = """() => {
     const r = el.getBoundingClientRect();
     return { width: r.width, height: r.height };
   };
+  const contentBox = (el) => {
+    const cs = getComputedStyle(el);
+    return {
+      width: el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+      height: el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom),
+    };
+  };
   return {
     output: rect(document.querySelector('#atlas')),
     atlas: rect(document.querySelector('#atlas .embedding-atlas-widget-container')),
-    body: rect(document.querySelector('.card-body')),
+    body: contentBox(document.querySelector('.card-body')),
   };
 }"""
 
@@ -58,7 +68,7 @@ def test_embedding_atlas_fills_fillable_container(page: Page, local_app) -> None
     assert wide["atlas"]["height"] == wide["output"]["height"]
     assert wide["output"]["height"] > 300
     # The output spans its card body's width and doesn't overflow its height
-    assert wide["output"]["width"] == wide["body"]["width"] - 2 * 16
+    assert wide["output"]["width"] == wide["body"]["width"]
     assert wide["output"]["height"] <= wide["body"]["height"]
 
     # ... and it tracks the container when the window shrinks
@@ -94,9 +104,13 @@ def test_embedding_atlas_selection_roundtrips_to_python(page: Page, local_app) -
     )
 
     # Clicking a bar in the "group" chart filters the data; the browser syncs
-    # the resulting predicate to Python, where reactive_read() picks it up
-    page.locator("#atlas").get_by_text("c", exact=True).last.click()
-    expect(page.locator("#selection_size")).to_have_text("117", timeout=30000)
+    # the resulting predicate to Python, where reactive_read() picks it up.
+    # (Chart bar labels, unlike table cells, are `flex-none` elements.)
+    bar_label = page.locator("#atlas div.flex-none", has_text=re.compile(r"^c$"))
+    bar_label.click()
+    expected = int((docs["group"] == "c").sum())
+    assert 0 < expected < len(docs)
+    expect(page.locator("#selection_size")).to_have_text(str(expected), timeout=30000)
 
     assert_no_unexpected_errors(unexpected_errors(errors), failed_requests)
 

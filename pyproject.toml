@@ -146,6 +146,16 @@ version_scheme = "no-guess-dev"
 [tool.hatch.build.hooks.vcs]
 version-file = "shinywidgets/__version.py"
 
+[tool.uv]
+# embedding_atlas.widget never imports these; only embedding_atlas.projection and the
+# CLI do. Skipping them keeps torch (and CUDA wheels on Linux) out of the dev/CI env.
+# uv-only: the published package metadata is unaffected.
+override-dependencies = [
+  "torch; python_version < '0'",
+  "sentence-transformers; python_version < '0'",
+  "umap-learn; python_version < '0'",
+]
+
 [tool.pyright]
 include = ["shinywidgets", "tests"]
 exclude = [
