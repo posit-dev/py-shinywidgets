@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, cast
 
 from htmltools import Tag
 
 if TYPE_CHECKING:
+    import plotly.graph_objects as go
     from altair import JupyterChart
     from jupyter_bokeh import BokehModel
     from maplibre.ipywidget import MapWidget
@@ -15,6 +16,17 @@ else:
 
 from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
+
+if TYPE_CHECKING:
+    # The values a @render_plotly render function may return (bound below):
+    # a plotly figure (raw or pre-built FigureWidget -- sibling classes, so
+    # both are listed), optionally paired with a Plotly.js config dict.
+    PlotlyFigure = Union[go.Figure, go.FigureWidget]
+    PlotlyValue = Union[PlotlyFigure, Tuple[PlotlyFigure, Dict[str, Any]]]
+
+# The bound is a string so it stays a lazy forward reference at runtime (the
+# alias it points to references plotly, an optional dependency).
+PlotlyValueT = TypeVar("PlotlyValueT", bound="PlotlyValue")
 
 __all__ = (
     "render_widget",
@@ -233,8 +245,97 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
         return res
 
 
-class render_plotly(render_widget_base[ValueT, FigureWidget]):  # pyright: ignore[reportInvalidTypeArguments]
-    ...
+class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
+    """
+    Reactively render a [plotly](https://plotly.com/python/) figure as a Shiny output.
+
+    The decorated function should return a `plotly.graph_objects.Figure`, which is
+    coerced to a `FigureWidget`. Alternatively, it may return a Dash-style
+    `(figure, config)` tuple, where `config` is a dict of Plotly.js [config
+    options](https://plotly.com/javascript/configuration-options/) (e.g.,
+    `{"displayModeBar": False}`), mirroring Dash's `dcc.Graph(figure=..., config=...)`
+    API. The config is merged over plotly's defaults, so it also takes precedence over
+    shinywidgets' own defaults (e.g., `responsive`).
+
+    The output's `.value` attribute is exactly what the render function returned (a
+    figure or the `(figure, config)` tuple), while `.widget` is always the coerced
+    `FigureWidget` (with `config` merged into its ``_config`` trait).
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Typing**: no return-type annotation is needed -- the renderer's value
+    type is statically bounded, so type checkers flag unsupported return
+    values at decoration time, and the output's `.value` attribute is
+    inferred from the render function's actual return type. If you do
+    annotate, annotate narrowly (e.g., ``-> go.Figure`` or ``-> tuple[go.Figure,
+    dict[str, Any]]``): `.value` is typed from the annotation, so annotating
+    with a wide union of all supported shapes would force you to narrow
+    `.value` before each use.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    from shiny import App, ui
+    from shinywidgets import output_widget, render_plotly
+    import plotly.graph_objects as go
+
+    app_ui = ui.page_fluid(output_widget("plot"))
+
+
+    def server(input, output, session):
+        @render_plotly
+        def plot():
+            fig = go.Figure(go.Scatter(x=[1, 2, 3], y=[1, 4, 9]))
+            return fig, {"displayModeBar": False}
+
+
+    app = App(app_ui, server)
+    ```
+    """
+
+    def _as_widget(self, value: PlotlyValueT) -> FigureWidget:
+        fig, config = _split_config(value)
+        widget = super()._as_widget(cast(PlotlyValueT, fig))
+        if config:
+            widget._config = {**widget._config, **config}  # type: ignore
+        return widget
+
+
+def _split_config(value: object) -> tuple[object, Optional[Dict[str, Any]]]:
+    # Dash-style (figure, config) tuple. Any non-tuple value is passed through to
+    # as_widget(), which raises a helpful error if it can't be coerced.
+    if not isinstance(value, tuple):
+        return value, None
+    if len(value) == 2 and isinstance(value[1], dict):
+        return value[0], value[1]
+    # A tuple that isn't (figure, config) would just fail coercion in as_widget()
+    # anyway, so fail here with a more actionable message instead.
+    problem = f"a tuple of length {len(value)}"
+    if len(value) >= 2 and not isinstance(value[1], dict):
+        problem += f" whose second element is {type(value[1]).__name__}, not a dict"
+    raise TypeError(
+        "A @render_plotly render function may return a (figure, config) tuple, where "
+        "config is a dict of Plotly.js config options (e.g., {'displayModeBar': False}), "
+        f"but got {problem}."
+    )
 
 
 class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):

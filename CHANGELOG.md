@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### New features
 
+* `@render_plotly()` now accepts a Dash-style `(figure, config)` tuple return value, where `config` is a dict of [Plotly.js config options](https://plotly.com/javascript/configuration-options/) (e.g., `{"displayModeBar": False}`). The config is merged over plotly's defaults and takes precedence over shinywidgets' own defaults. `@render_plotly`'s value type is also now statically bounded by the set of accepted return shapes, so type checkers flag unsupported return values at decoration time (no annotation needed, and plotly remains an optional dependency). (#173)
 * Added a `render_maplibre()` renderer, and `as_widget()` now coerces a [maplibre](https://eoda-dev.github.io/py-maplibregl/) `Map` into its `MapWidget` (requires `pip install 'maplibre[anywidget]'`). Note that maplibre also ships its own native Shiny bindings, but the widget route gives you `reactive_read()` access to map state (e.g., `view_state`, `clicked`).
 
 ### Breaking changes
