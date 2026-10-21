@@ -49,6 +49,15 @@
   min-width: 0;
 }
 
+/*
+* ipydatagrid's stylesheet gives the grid a fixed 500px height, so in an output with
+* an explicit height (set inline by output_widget()) fit the grid to that height
+* instead of letting it overflow (and be clipped by) the output.
+*/
+.shiny-ipywidget-output[style*="height"] > .datagrid-container {
+  height: 100%;
+}
+
 
 /*
 * Allow Shiny's busy indicator (spinner) to show while recalculating, even though

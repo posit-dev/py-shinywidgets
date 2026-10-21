@@ -7,17 +7,19 @@ from htmltools import Tag
 if TYPE_CHECKING:
     import plotly.graph_objects as go
     from altair import JupyterChart
+    from ipydatagrid import DataGrid
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from jupyter_bokeh import BokehModel
     from maplibre.ipywidget import MapWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
-        object
-    )
+    JupyterChart = DataGrid = MplCanvas = BokehModel = MapWidget = FigureWidget = (
+        DeckGLWidget
+    ) = object
 
 from ._bokeh import bokeh_dependency
+from ._dependencies import widget_pkg
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
 if TYPE_CHECKING:
@@ -36,6 +38,7 @@ __all__ = (
     "render_altair",
     "render_bokeh",
     "render_holoviews",
+    "render_ipydatagrid",
     "render_maplibre",
     "render_matplotlib",
     "render_panel",
@@ -326,6 +329,61 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
         res = super().auto_output_ui()
         res.children.append(bokeh_dependency())
         return res
+
+
+class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
+    """
+    Reactively render a pandas DataFrame as an interactive
+    [ipydatagrid](https://github.com/bloomberg/ipydatagrid) data grid Shiny output.
+
+    The decorated function may return either a `pandas.DataFrame` (which is coerced to
+    an `ipydatagrid.DataGrid`; requires ``pip install ipydatagrid``) or an
+    `ipydatagrid.DataGrid` widget. Pass a `DataGrid` to customize the grid (e.g.,
+    `selection_mode`, `editable`, or cell renderers).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `DataGrid` instance. Use `.widget` to programmatically update the rendered grid
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state (e.g., `selections`) with
+    :func:`~shinywidgets.reactive_read`.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    # A DataFrame is a generic type (several renderers accept one), so it isn't
+    # registered with as_widget()
+    def _as_widget(self, value: ValueT) -> DataGrid:
+        if widget_pkg(type(value)) == "pandas" and type(value).__name__ == "DataFrame":
+            return dataframe_to_datagrid(value)
+        return super()._as_widget(value)
+
+
+def dataframe_to_datagrid(df: object) -> DataGrid:
+    try:
+        from ipydatagrid import DataGrid
+    except ImportError:
+        raise ImportError(
+            "Install the ipydatagrid package to use render_ipydatagrid with "
+            "shinywidgets (pip install ipydatagrid)."
+        )
+    return DataGrid(df)  # pyright: ignore[reportArgumentType]
 
 
 class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
