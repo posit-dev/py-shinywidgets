@@ -154,3 +154,10 @@ def test_k3d_layout_height_disables_fill() -> None:
     plot.layout = widgets.Layout(height="300px")
     _, fill = rwb.set_layout_defaults(plot)
     assert fill is False
+
+
+def test_k3d_height_512_is_treated_as_unset_and_fills() -> None:
+    k3d = pytest.importorskip("k3d")
+
+    _, fill = rwb.set_layout_defaults(k3d.plot(height=512))
+    assert fill is True

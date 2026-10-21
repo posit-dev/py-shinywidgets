@@ -30,6 +30,16 @@ def count_red_pixels(page: Page, selector: str) -> int:
     return int(red.sum())
 
 
+def wait_for_red_pixels(page: Page, selector: str, timeout_ms: int = 30000) -> None:
+    # k3d adds scene objects asynchronously after the canvas exists, so poll
+    # until the points have been drawn
+    waited = 0
+    while count_red_pixels(page, selector) <= MIN_RED_PIXELS:
+        assert waited < timeout_ms, f"no scene pixels drawn in {selector}"
+        page.wait_for_timeout(250)
+        waited += 250
+
+
 def canvas_size(page: Page, selector: str) -> tuple[float, float]:
     box = page.locator(selector).first.bounding_box()
     assert box is not None
@@ -46,10 +56,7 @@ def test_k3d_renders_webgl_scene(page: Page, local_app) -> None:
 
     # WebGL pixels can't be read back from the canvas itself, so check the
     # composited pixels for the scene's red points
-    page.wait_for_function(
-        "() => document.querySelector('#fill_plot canvas')?.width > 0"
-    )
-    assert count_red_pixels(page, "#fill_plot canvas") > MIN_RED_PIXELS
+    wait_for_red_pixels(page, "#fill_plot canvas")
 
     assert_no_unexpected_errors(errors, failed_requests)
 
@@ -128,12 +135,15 @@ def test_k3d_rerender_lifecycle(page: Page, local_app) -> None:
     expect(page.locator("#render_count")).to_have_text("0")
 
     for i in range(1, 4):
+        old_canvas = page.locator("#fill_plot canvas").first.element_handle()
         page.click("#rerender")
         expect(page.locator("#render_count")).to_have_text(str(i))
+        page.wait_for_function("(el) => !el.isConnected", arg=old_canvas, timeout=30000)
         expect(page.locator("#fill_plot canvas")).to_have_count(1, timeout=30000)
 
+    # The old views were all disposed, and the surviving one is the newest
     expect(page.locator("#fill_plot .k3d-plot")).to_have_count(1)
-    assert count_red_pixels(page, "#fill_plot canvas") > MIN_RED_PIXELS
+    wait_for_red_pixels(page, "#fill_plot canvas")
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
