@@ -9,6 +9,55 @@ from htmltools import HTMLDependency, div
 from shiny.session import session_context
 
 
+def test_render_embedding_atlas_is_render_widget_base() -> None:
+    renderer = rw.render_embedding_atlas()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
+def test_render_embedding_atlas_renders_widget_as_is(widget_session) -> None:
+    pytest.importorskip("embedding_atlas")
+    import pandas as pd
+    from embedding_atlas.widget import EmbeddingAtlasWidget
+
+    r = rw.render_embedding_atlas()
+    created = []
+
+    @r
+    def _():  # noqa: ANN202
+        df = pd.DataFrame({"x": [0.0, 1.0], "y": [1.0, 0.0], "text": ["a", "b"]})
+        w = EmbeddingAtlasWidget(df, x="x", y="y", text="text")
+        created.append(w)
+        return w
+
+    with session_context(widget_session):
+        res = asyncio.run(r._render())
+
+    assert res is not None
+    assert r.widget is created[0]
+    assert res["fill"] is True
+
+
+def test_render_embedding_atlas_respects_widget_layout_height(widget_session) -> None:
+    pytest.importorskip("embedding_atlas")
+    import pandas as pd
+    from embedding_atlas.widget import EmbeddingAtlasWidget
+
+    r = rw.render_embedding_atlas()
+
+    @r
+    def _():  # noqa: ANN202
+        df = pd.DataFrame({"x": [0.0, 1.0], "y": [1.0, 0.0]})
+        w = EmbeddingAtlasWidget(df, x="x", y="y")
+        w.layout.height = "300px"
+        return w
+
+    with session_context(widget_session):
+        res = asyncio.run(r._render())
+
+    assert res is not None
+    assert res["fill"] is False
+
+
 def test_render_maplibre_is_render_widget_base() -> None:
     renderer = rw.render_maplibre()
     assert isinstance(renderer, rwb.render_widget_base)

@@ -51,6 +51,21 @@
 
 
 /*
+* Embedding Atlas hard-codes a 650px (user-resizable) height on its container in an
+* inline style. When the output or the widget has an explicit height, fit the container
+* to it instead of clipping it. (Filling layouts are handled by .forward-fill-potential.)
+*/
+.shiny-ipywidget-output[style*="height:"] > .lm-Widget:has(> .embedding-atlas-widget-container) {
+  height: 100%;
+}
+
+.shiny-ipywidget-output[style*="height:"] > .lm-Widget > .embedding-atlas-widget-container,
+.lm-Widget[style*="height:"]:not([style*="height: auto"]) > .embedding-atlas-widget-container {
+  height: 100% !important;
+  resize: none;
+}
+
+/*
 * Allow Shiny's busy indicator (spinner) to show while recalculating, even though
 * renderValue() puts `visibility: hidden` on the output element (both when the
 * widget value is None/null and while a plotly widget is settling). This mirrors

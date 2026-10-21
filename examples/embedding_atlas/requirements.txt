@@ -1,0 +1,5 @@
+shiny
+shinywidgets
+embedding-atlas
+pandas
+numpy
