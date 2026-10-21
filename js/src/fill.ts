@@ -88,8 +88,28 @@ const quakBehavior: WidgetBehavior = {
   },
 };
 
+// nglview sizes its stage with fixed inline pixels (300px tall by default) and
+// never re-measures its parent, so drive the stage size from the output
+// whenever the output has a size of its own (a fill container or an explicit
+// height). Observe the output rather than the widget so the stage's own size
+// changes don't create a feedback loop.
+const nglviewBehavior: WidgetBehavior = {
+  onDisplayed: ({ el, view, isStale }) => {
+    const hasOwnSize = el.classList.contains('forward-fill-potential') || el.style.height !== '';
+    if (!hasOwnSize || isStale()) return;
+
+    const stage = view as unknown as { setSize(width: string, height: string): void };
+    const observer = new ResizeObserver(() => {
+      stage.setSize(`${el.clientWidth}px`, `${el.clientHeight}px`);
+    });
+    observer.observe(el);
+    view.once('remove', () => observer.disconnect());
+  },
+};
+
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
+  nglview: nglviewBehavior,
   plotly: plotlyBehavior,
   quak: quakBehavior,
 };

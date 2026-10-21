@@ -10,12 +10,13 @@ if TYPE_CHECKING:
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from jupyter_bokeh import BokehModel
     from maplibre.ipywidget import MapWidget
+    from nglview import NGLWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
-        object
-    )
+    JupyterChart = MplCanvas = BokehModel = MapWidget = NGLWidget = FigureWidget = (
+        DeckGLWidget
+    ) = object
 
 from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
@@ -38,6 +39,7 @@ __all__ = (
     "render_holoviews",
     "render_maplibre",
     "render_matplotlib",
+    "render_nglview",
     "render_panel",
     "render_plotly",
     "render_pydeck",
@@ -186,6 +188,40 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
     `Canvas` instance. Use `.widget` to programmatically update the rendered figure
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+
+class render_nglview(render_widget_base[ValueT, NGLWidget]):
+    """
+    Reactively render an [nglview](https://nglviewer.org/nglview/latest/) molecular
+    structure viewer as a Shiny output.
+
+    The decorated function should return an `nglview.NGLWidget` (e.g., from
+    `nglview.show_file()` or `nglview.show_pdbid()`; requires ``pip install nglview``).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `NGLWidget` instance. Use `.widget` to programmatically update the rendered viewer
     in place (trait changes on the widget are synced to the browser), or to
     reactively read widget state with :func:`~shinywidgets.reactive_read`.
 
