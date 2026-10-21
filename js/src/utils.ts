@@ -88,23 +88,36 @@ class Throttler {
 }
 
 
-// Some widget bundles (e.g., itables) assign their own jQuery to the global `$` when
-// their module is evaluated, which can happen at any point after page load (e.g.,
-// for a widget nested inside another widget). That breaks code that expects the page's
-// jQuery (e.g., bslib's resize handling reads `$(el).data("shinyOutputBinding")`),
-// so ignore assignments to `$` (`window.jQuery` is left alone by those bundles).
-// Widget code that relies on the global `$` being its own jQuery will see the
-// page's instead.
+// itables' widget bundle assigns its own jQuery to the global `$` when its module is
+// evaluated (which can happen at any point after page load, e.g., for an ITable nested
+// in another widget). That breaks code that expects the page's jQuery (e.g., bslib's
+// resize handling reads `$(el).data("shinyOutputBinding")`). `window.jQuery` is left
+// alone by the bundle, so make `$` mirror it, but refuse jQuery instances assigned to
+// `$` (anything else, e.g., `var $ = ...`, is honored). The server asks for this
+// (`protect_jquery`) only when opening an itables model, before its module loads.
+let pageJQueryProtected = false;
+
 function protectPageJQuery(): void {
-  const win = window as Window & { $?: unknown };
-  const pageJQuery = win.$;
-  if (!pageJQuery) return;
+  if (pageJQueryProtected) return;
+  pageJQueryProtected = true;
+
+  const win = window as Window & { $?: unknown; jQuery?: unknown };
+  let hasOverride = false;
+  let override: unknown;
   Object.defineProperty(win, '$', {
     configurable: true,
     enumerable: true,
-    get: () => pageJQuery,
-    set: () => {},
+    get: () => (hasOverride ? override : win.jQuery),
+    set: (value: unknown) => {
+      hasOverride = !isJQuery(value);
+      override = hasOverride ? value : undefined;
+    },
   });
+}
+
+function isJQuery(value: unknown): boolean {
+  const fn = (value as { fn?: { jquery?: unknown } } | undefined)?.fn;
+  return typeof value === 'function' && typeof fn?.jquery === 'string';
 }
 
 export { base64EncodeBuffers, jsonParse, protectPageJQuery, Throttler };

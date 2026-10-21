@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 
 import pytest
 import shinywidgets
 import shinywidgets._render_widget as rw
 import shinywidgets._render_widget_base as rwb
-from shiny import Session
+from ipywidgets import Widget
+from shiny import Session, reactive
 from shiny.session import session_context
 
 pytest.importorskip("itables")
@@ -171,3 +173,41 @@ def test_layout_defaults_are_idempotent(widget_session: Session) -> None:
         rwb.set_layout_defaults(w)
     assert (dict(w._dt_args), w.style, list(w._dom_classes)) == first
     assert w._dom_classes.count(FILL_CLASS) == 1
+
+
+def comm_open_contents(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch, make: type[Widget]
+) -> dict[str, object]:
+    messages: list[str] = []
+
+    async def send_custom_message(type: str, message: object) -> None:
+        if type == "shinywidgets_comm_open":
+            assert isinstance(message, str)
+            messages.append(message)
+
+    monkeypatch.setattr(widget_session, "send_custom_message", send_custom_message)
+    with session_context(widget_session):
+        widget = make()
+        asyncio.get_event_loop().run_until_complete(reactive.flush())
+        asyncio.get_event_loop().run_until_complete(
+            widget_session._flush_callbacks.invoke()  # pyright: ignore[reportAttributeAccessIssue]
+        )
+    return next(
+        msg["content"]
+        for msg in map(json.loads, messages)
+        if msg["content"]["comm_id"] == widget.model_id
+    )
+
+
+def test_itable_comm_open_asks_client_to_protect_page_jquery(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    content = comm_open_contents(widget_session, monkeypatch, ITable)
+    assert content["protect_jquery"] is True
+
+
+def test_other_widget_comm_open_does_not_protect_page_jquery(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    content = comm_open_contents(widget_session, monkeypatch, Widget)
+    assert "protect_jquery" not in content

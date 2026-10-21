@@ -8,8 +8,6 @@ import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
 
 
-protectPageJQuery();
-
 /******************************************************************************
  * Define a custom HTMLManager for use with Shiny
  ******************************************************************************/
@@ -426,6 +424,7 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
   // constructed below; otherwise require() of the widget's module fails.
   await Shiny.renderDependenciesAsync(deps);
   await loadModules(msg.content.modules as ModuleAssets | undefined);
+  if (msg.content.protect_jquery) protectPageJQuery();
   const comm = new ShinyComm(msg.content.comm_id);
   // An explicit model_id survives widget re-creation on the Python side, so
   // an id can reopen after being closed; it must not stay marked closed or
