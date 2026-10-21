@@ -3,20 +3,23 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, cast
 
 from htmltools import Tag
+from ipywidgets.widgets.widget import Widget
 
 if TYPE_CHECKING:
     import plotly.graph_objects as go
     from altair import JupyterChart
     from ipympl.backend_nbagg import Canvas as MplCanvas
+    from ipysigma import Sigma
     from jupyter_bokeh import BokehModel
     from maplibre.ipywidget import MapWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
-        object
-    )
+    JupyterChart = MplCanvas = Sigma = BokehModel = MapWidget = FigureWidget = (
+        DeckGLWidget
+    ) = object
 
+from ._as_widget import as_widget_ipysigma
 from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
@@ -36,6 +39,7 @@ __all__ = (
     "render_altair",
     "render_bokeh",
     "render_holoviews",
+    "render_ipysigma",
     "render_maplibre",
     "render_matplotlib",
     "render_panel",
@@ -133,6 +137,52 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     """
+
+
+class render_ipysigma(render_widget_base[ValueT, Sigma]):
+    """
+    Reactively render a graph with [ipysigma](https://github.com/medialab/ipysigma)
+    (sigma.js) as a Shiny output.
+
+    The decorated function may return either a networkx graph (which is coerced to an
+    `ipysigma.Sigma` widget with default options; requires ``pip install ipysigma``) or
+    an `ipysigma.Sigma` widget, which is the way to customize node and edge appearance
+    (e.g., `Sigma(G, node_size=G.degree, node_color="community")`). This is also the
+    answer for [pyvis](https://pyvis.readthedocs.io) users: ipysigma renders larger
+    networks more smoothly and, being a widget, can report the selected node back to
+    Python. In a filling layout, the graph fills its container, unless the widget has
+    an explicit `height` or `raw_height`.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `Sigma` instance. Use `.widget` to programmatically update the rendered graph
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state (e.g., ``reactive_read(sigma.widget,
+    "selected_node")``) with :func:`~shinywidgets.reactive_read`.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    def _as_widget(self, value: ValueT) -> Sigma:
+        if isinstance(value, Widget):
+            return super()._as_widget(value)
+        return cast(Sigma, as_widget_ipysigma(value))
 
 
 class render_maplibre(render_widget_base[ValueT, MapWidget]):

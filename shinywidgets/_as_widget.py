@@ -159,6 +159,20 @@ def as_widget_maplibre(x: object) -> Optional[Widget]:
     return res  # type: ignore
 
 
+def as_widget_ipysigma(x: object) -> Widget:
+    # Not in AS_WIDGET_MAP: a networkx graph is generic (ipycytoscape accepts one
+    # too), so only @render_ipysigma coerces it.
+    try:
+        from ipysigma import Sigma
+    except ImportError:
+        raise ImportError(
+            "Install the ipysigma package to use ipysigma with shinywidgets (pip install ipysigma)."
+        )
+
+    # Sigma validates the graph itself (raising a TypeError for non-graphs)
+    return Sigma(x)
+
+
 def as_widget_mpl(x: object) -> Widget:
     from matplotlib.figure import Figure, SubFigure
 

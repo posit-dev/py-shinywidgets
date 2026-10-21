@@ -137,3 +137,13 @@ function disposeLeafletMap(view: WidgetView): void {
     }
   });
 }
+
+// ipysigma reuses the `layout` trait (normally an ipywidgets Layout model) for its
+// node positions, so a plain object reaches DOMWidgetView.setLayout(), which tries to
+// create a child view for it and rejects. The view never has a Layout to apply, so
+// make setLayout() a no-op. `widgetModule` is the module's untyped export object.
+export function ignoreLayoutTrait(widgetModule: { SigmaView?: { prototype: object } }): void {
+  if (widgetModule.SigmaView) {
+    Object.assign(widgetModule.SigmaView.prototype, { setLayout: () => {} });
+  }
+}

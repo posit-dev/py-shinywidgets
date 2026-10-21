@@ -3,7 +3,16 @@ from __future__ import annotations
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from typing import Callable, Generic, Iterator, Optional, Tuple, TypeVar, cast
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Generic,
+    Iterator,
+    Optional,
+    Tuple,
+    TypeVar,
+    cast,
+)
 
 from htmltools import Tag
 from ipywidgets.widgets import DOMWidget, Layout, Widget
@@ -20,6 +29,9 @@ from ._comm import OrphanedShinyComm
 from ._dependencies import widget_pkg
 from ._output_widget import output_widget
 from ._widget_registry import WIDGET_INSTANCE_MAP
+
+if TYPE_CHECKING:
+    from ipysigma import Sigma
 
 __all__ = (
     "render_widget_base",
@@ -294,12 +306,25 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 # decision, applies package-specific mutations, and returns the (possibly
 # tightened) fill decision.
 #
+def _ipysigma_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # Sigma always syncs a concrete CSS `height` (500px unless the user passes
+    # `height`/`raw_height`), and its `layout` trait is a node-position dict rather
+    # than an ipywidgets Layout, so the generic height check above can't see it.
+    # Only the untouched default is treated as "unset".
+    sigma = cast("Sigma", widget)
+    if sigma.height == f"{type(sigma).default_height}px":
+        sigma.height = "100%"
+        return fill
+    return fill and sigma.height == "100%"
+
+
 # N.B. bokeh is intentionally absent: its sizing_mode hack lives in
 # as_widget_bokeh() because applying it here doesn't work (see the TODO
 # there).
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
+    "ipysigma": _ipysigma_layout_defaults,
 }
 
 

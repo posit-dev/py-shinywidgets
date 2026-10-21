@@ -1,0 +1,48 @@
+from __future__ import annotations
+
+import networkx as nx
+from ipysigma import Sigma
+from shiny import App, reactive, render, ui
+from shinywidgets import output_widget, reactive_read, render_ipysigma
+
+app_ui = ui.page_fluid(
+    ui.input_action_button("rerender", "Rerender"),
+    ui.output_text("render_count"),
+    ui.output_text("selected"),
+    ui.card(output_widget("fills"), id="fill_card", height="400px"),
+    ui.card(output_widget("fixed_output", height="350px"), id="fixed_card"),
+    ui.card(output_widget("fixed_widget"), id="widget_card", height="500px"),
+)
+
+
+def server(input, output, session):
+    counter = reactive.value(0)
+
+    @reactive.effect
+    @reactive.event(input.rerender)
+    def _():
+        counter.set(counter.get() + 1)
+
+    @render.text
+    def render_count():
+        return str(counter.get())
+
+    @render_ipysigma
+    def fills():
+        counter.get()
+        return nx.karate_club_graph()
+
+    @render.text
+    def selected():
+        return str(reactive_read(fills.widget, "selected_node"))
+
+    @render_ipysigma
+    def fixed_output():
+        return nx.karate_club_graph()
+
+    @render_ipysigma
+    def fixed_widget():
+        return Sigma(nx.karate_club_graph(), height=300)
+
+
+app = App(app_ui, server)
