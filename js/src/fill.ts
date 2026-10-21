@@ -22,6 +22,9 @@ export interface BehaviorContext {
   lmWidget: HTMLElement;
   view: DOMWidgetView;
   model: WidgetModel;
+  // Whether this render is filling its container (the server's fill decision
+  // for the widget, and a fillable output container)
+  fill: boolean;
 }
 
 export interface PostDisplayContext extends BehaviorContext {
@@ -96,8 +99,7 @@ const quakBehavior: WidgetBehavior = {
 const keplerglBehavior: WidgetBehavior = {
   onDisplayed: (ctx) => {
     const { el, model, view } = ctx;
-    const filling = el.classList.contains('forward-fill-potential');
-    if (!ctx.isStale() && (filling || el.style.height !== '')) {
+    if (!ctx.isStale() && (ctx.fill || el.style.height !== '')) {
       view.once('remove', setupKeplerAutoHeight(el, model));
     }
     ctx.dispatchResize();

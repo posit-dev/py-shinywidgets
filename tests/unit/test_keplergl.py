@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -59,7 +60,33 @@ def test_dataframe_without_keplergl_gives_install_hint(
     widget_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setitem(sys.modules, "keplergl", None)
-    with pytest.raises(ImportError, match=r"pip install keplergl"):
+    with pytest.raises(ImportError, match=r"pip install 'keplergl>=0\.4\.0rc4'"):
+        as_widget(widget_session, points())
+
+
+def test_keplergl_failing_on_pkg_resources_points_to_newer_release(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # keplergl 0.3.x imports pkg_resources, which setuptools >= 81 no longer
+    # ships; the fix is a newer keplergl, not (re)installing keplergl
+    (tmp_path / "keplergl").mkdir()
+    (tmp_path / "keplergl" / "__init__.py").write_text(
+        "from pkg_resources import resource_string\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delitem(sys.modules, "keplergl", raising=False)
+    monkeypatch.setitem(sys.modules, "pkg_resources", None)
+
+    with pytest.raises(ImportError, match=r"keplergl>=0\.4\.0rc4") as exc_info:
+        as_widget(widget_session, points())
+    assert "pkg_resources" in str(exc_info.value)
+
+
+def test_keplergl_older_than_0_4_is_rejected(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(rw, "package_version", lambda name: "0.3.7")
+    with pytest.raises(ImportError, match=r"requires keplergl>=0\.4\.0rc4"):
         as_widget(widget_session, points())
 
 
@@ -74,3 +101,19 @@ def test_layout_defaults_fill_unless_widget_has_explicit_height(
 
     assert default_fill is True
     assert explicit_fill is False
+
+
+def test_layout_defaults_keep_filling_after_browser_sets_height(
+    widget_session: Session,
+) -> None:
+    # The browser writes the measured size into the `height` trait, so a widget
+    # that was auto-sized the first time it was displayed must stay auto-sized
+    # when the same instance is displayed again
+    with session_context(widget_session):
+        widget = keplergl.KeplerGl(data={"data": points()})
+        first = set_layout_defaults(widget)[1]
+        widget.height = 466
+        second = set_layout_defaults(widget)[1]
+
+    assert first is True
+    assert second is True

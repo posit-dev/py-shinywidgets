@@ -4,6 +4,7 @@ import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import Callable, Generic, Iterator, Optional, Tuple, TypeVar, cast
+from weakref import WeakSet
 
 from htmltools import Tag
 from ipywidgets.widgets import DOMWidget, Layout, Widget
@@ -288,16 +289,23 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
-def _keplergl_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+def keplergl_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # KeplerGl sizes itself from a pixel `height` trait (default 400), so the only
-    # way to tell the user asked for a specific height is that it isn't the default
+    # way to tell the user asked for a specific height is that it isn't the default.
+    # The browser overwrites that trait with the size it measures, so decide once
+    # per instance (the first time it's seen) to keep re-displays filling.
     from keplergl import KeplerGl
 
     default_height = KeplerGl.class_traits()["height"].default_value
+    if widget in AUTO_SIZED_KEPLERGL_WIDGETS:
+        return fill
     if isinstance(widget, KeplerGl) and widget.height != default_height:
-        fill = False
-
+        return False
+    AUTO_SIZED_KEPLERGL_WIDGETS.add(widget)
     return fill
+
+
+AUTO_SIZED_KEPLERGL_WIDGETS: WeakSet[Widget] = WeakSet()
 
 
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
@@ -312,7 +320,7 @@ def _keplergl_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
-    "keplergl": _keplergl_layout_defaults,
+    "keplergl": keplergl_layout_defaults,
 }
 
 

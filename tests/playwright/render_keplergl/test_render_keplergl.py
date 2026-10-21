@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from playwright.sync_api import Page, expect
 from tests.playwright.conftest import (
     assert_no_unexpected_errors,
@@ -90,11 +92,10 @@ def test_keplergl_config_roundtrips_to_python(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
 
-    # Kepler's `config` trait starts empty; once it has loaded the data it
-    # syncs the layers it created back to Python (browser -> reactive_read)
-    expect(page.locator("#n_layers")).to_have_text("layers: 0", timeout=LOAD_TIMEOUT)
-    expect(page.locator("#n_layers")).not_to_have_text(
-        "layers: 0", timeout=LOAD_TIMEOUT
+    # Once kepler has loaded the data, it syncs the layers it created into its
+    # `config` trait (browser -> reactive_read)
+    expect(page.locator("#n_layers")).to_have_text(
+        re.compile(r"layers: [1-9]"), timeout=LOAD_TIMEOUT
     )
 
     assert_no_unexpected_errors(errors, failed_requests)

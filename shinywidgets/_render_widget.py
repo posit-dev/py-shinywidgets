@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from importlib.metadata import version as package_version
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, cast
 
 from htmltools import Tag
-from ipywidgets.widgets.widget import Widget
+from packaging.version import Version
 
 if TYPE_CHECKING:
     import plotly.graph_objects as go
@@ -145,9 +146,11 @@ class render_keplergl(render_widget_base[ValueT, KeplerGl]):
 
     The decorated function may return either a `pandas.DataFrame` or
     `geopandas.GeoDataFrame` (which is coerced to a `keplergl.KeplerGl` widget with
-    the data added as a single dataset; requires ``pip install keplergl``) or a
-    `keplergl.KeplerGl` widget. In a filling layout, the map is resized to fit its
-    container (unless the `KeplerGl` widget was given an explicit ``height``).
+    the data added as a single dataset; requires ``pip install 'keplergl>=0.4.0rc4'``)
+    or a `keplergl.KeplerGl` widget. In a filling layout, the map is resized to fit its
+    container, unless the `KeplerGl` widget was given an explicit ``height``. An
+    explicit ``height`` on the output (see ``height`` below) takes precedence over the
+    widget's own.
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
@@ -178,19 +181,8 @@ class render_keplergl(render_widget_base[ValueT, KeplerGl]):
         # A DataFrame is generic (several renderers accept one), so it's only
         # coerced here rather than via AS_WIDGET_MAP
         if widget_pkg(type(value)) in ("pandas", "geopandas"):
-            return cast("KeplerGl", dataframe_to_keplergl(value))
+            return dataframe_to_keplergl(value)
         return super()._as_widget(value)
-
-
-def dataframe_to_keplergl(df: object) -> Widget:
-    try:
-        from keplergl import KeplerGl
-    except ImportError:
-        raise ImportError(
-            "Install the keplergl package to use kepler.gl with shinywidgets (pip install keplergl)."
-        )
-
-    return KeplerGl(data={"data": df})
 
 
 class render_maplibre(render_widget_base[ValueT, MapWidget]):
@@ -515,3 +507,27 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     """
+
+
+def dataframe_to_keplergl(df: object) -> "KeplerGl":
+    # keplergl 0.3.x imports pkg_resources, which setuptools >= 81 no longer ships
+    hint = "pip install 'keplergl>=0.4.0rc4'"
+    try:
+        from keplergl import KeplerGl
+    except ModuleNotFoundError as e:
+        if e.name == "keplergl":
+            raise ImportError(
+                f"Install the keplergl package to use kepler.gl with shinywidgets ({hint})."
+            )
+        raise ImportError(
+            f"keplergl failed to import (missing module {e.name!r}); "
+            f"@render_keplergl requires keplergl>=0.4.0rc4 ({hint})."
+        ) from e
+
+    if Version(package_version("keplergl")) < Version("0.4.0rc4"):
+        raise ImportError(
+            f"@render_keplergl requires keplergl>=0.4.0rc4, but {package_version('keplergl')} "
+            f"is installed ({hint})."
+        )
+
+    return KeplerGl(data={"data": df})
