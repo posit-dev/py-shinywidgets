@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, Optional, TypeVar, cast
 
 from htmltools import Tag
 
@@ -10,12 +10,18 @@ if TYPE_CHECKING:
     from maplibre.ipywidget import MapWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
+
+    from .types import PlotlyValue
 else:
     JupyterChart = BokehModel = MapWidget = FigureWidget = DeckGLWidget = object
 
 from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 from .types import PlotlyConfig
+
+# The bound is a string so it stays a lazy forward reference at runtime (the
+# alias it points to imports plotly, an optional dependency, when resolved).
+PlotlyValueT = TypeVar("PlotlyValueT", bound="PlotlyValue")
 
 __all__ = (
     "render_widget",
@@ -234,7 +240,7 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
         return res
 
 
-class render_plotly(render_widget_base[ValueT, FigureWidget]):  # pyright: ignore[reportInvalidTypeArguments]
+class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     """
     Reactively render a [plotly](https://plotly.com/python/) figure as a Shiny output.
 
@@ -247,10 +253,12 @@ class render_plotly(render_widget_base[ValueT, FigureWidget]):  # pyright: ignor
     shinywidgets' own defaults (e.g., `responsive`).
 
     The output's `.value` attribute is exactly what the render function returned (a
-    figure, or the `(figure, config)` tuple), while `.widget` is always the coerced
-    `FigureWidget` (with `config` merged into its ``_config`` trait). For type
-    annotations, :data:`~shinywidgets.types.PlotlyFigure` and
-    :data:`~shinywidgets.types.PlotlyConfig` describe the supported return shape.
+    figure or the `(figure, config)` tuple), while `.widget` is always the coerced
+    `FigureWidget` (with `config` merged into its ``_config`` trait). The accepted
+    return shape is described by :data:`~shinywidgets.types.PlotlyValue` (which also
+    bounds this renderer's value type, so type checkers validate render functions
+    against it automatically), :data:`~shinywidgets.types.PlotlyFigure`, and
+    :data:`~shinywidgets.types.PlotlyConfig`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -291,9 +299,9 @@ class render_plotly(render_widget_base[ValueT, FigureWidget]):  # pyright: ignor
     ```
     """
 
-    def _as_widget(self, value: ValueT) -> FigureWidget:
+    def _as_widget(self, value: PlotlyValueT) -> FigureWidget:
         fig, config = _split_config(value)
-        widget = super()._as_widget(cast(ValueT, fig))
+        widget = super()._as_widget(cast(PlotlyValueT, fig))
         if config:
             widget._config = {**widget._config, **config}  # type: ignore
         return widget
