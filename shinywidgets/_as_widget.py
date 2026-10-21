@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import warnings
 from typing import TYPE_CHECKING, Optional, cast
+from weakref import WeakSet
 
 from htmltools import HTMLDependency
 from ipywidgets.widgets.widget import Widget
@@ -17,6 +18,8 @@ if TYPE_CHECKING:
 
 __all__ = ("as_widget",)
 
+MPL_CLEANUP_CANVASES: WeakSet[Widget] = WeakSet()
+
 
 # Some objects aren't directly renderable as an ipywidget, but in some cases,
 # we can coerce them into one
@@ -27,6 +30,10 @@ def as_widget(x: object) -> Widget:
     pkg = widget_pkg(x)
 
     _as_widget = AS_WIDGET_MAP.get(pkg, None)
+    if _as_widget is None and any(
+        widget_pkg(base) == "matplotlib" for base in type(x).__mro__
+    ):
+        _as_widget = as_widget_mpl
     if _as_widget is None:
         msg = f"Don't know how to coerce {x} into a ipywidget.Widget object."
         if callable(getattr(x, "_repr_html_", None)):
@@ -118,15 +125,18 @@ def as_widget_maplibre(x: object) -> Optional[Widget]:
 
 
 def as_widget_mpl(x: object) -> Optional[Widget]:
-    # matplotlib is guaranteed to be installed here since this function is only
-    # called when x comes from the matplotlib package
     from matplotlib.axes import Axes
-    from matplotlib.figure import Figure
+    from matplotlib.figure import Figure, SubFigure
+
+    # The renderer imports this module, so defer this circular import.
+    from ._render_widget_base import is_closed_widget
 
     # Several higher-level APIs (e.g., pandas.DataFrame.plot()) return an Axes
     # rather than a Figure
     if isinstance(x, Axes):
-        x = x.figure  # type: ignore
+        x = x.figure
+        if isinstance(x, SubFigure):
+            x = x.figure
 
     if not isinstance(x, Figure):
         raise TypeError(
@@ -144,15 +154,19 @@ def as_widget_mpl(x: object) -> Optional[Widget]:
     # goes through canvas.manager (e.g., a resize message calls
     # manager.handle_json()), so the canvas needs a FigureManager (which also
     # wires up the toolbar).
-    canvas = Canvas(x)
-    FigureManager(canvas, getattr(x, "number", id(x)))
+    if isinstance(x.canvas, Canvas) and not is_closed_widget(x.canvas):
+        canvas = x.canvas
+    else:
+        canvas = Canvas(x)
+    if canvas.manager is None:
+        FigureManager(canvas, getattr(x, "number", id(x)))
 
-    _close_mpl_figure_with_widget(canvas, x)
+    close_mpl_figure_with_widget(canvas, x)
 
     return canvas
 
 
-def _close_mpl_figure_with_widget(canvas: Widget, fig: Figure) -> None:
+def close_mpl_figure_with_widget(canvas: Widget, fig: Figure) -> None:
     """
     Deregister a pyplot figure (via plt.close()) when the canvas widget closes.
 
@@ -165,9 +179,9 @@ def _close_mpl_figure_with_widget(canvas: Widget, fig: Figure) -> None:
     end for widgets kept alive via session_lifetime().
     """
     num = getattr(fig, "number", None)
-    if num is None:
-        # Not a pyplot-managed figure, so there's nothing to deregister
+    if num is None or canvas in MPL_CLEANUP_CANVASES:
         return
+    MPL_CLEANUP_CANVASES.add(canvas)
 
     def on_comm_change(change: dict[str, object]) -> None:
         # The comm becomes None exactly once: when the widget closes
