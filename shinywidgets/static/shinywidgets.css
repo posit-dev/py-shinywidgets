@@ -84,7 +84,7 @@
 * lonboard shifts its map up 5px (presumably to offset notebook output padding),
 * which here just clips the top of the map and misaligns its bottom edge.
 */
-.shiny-ipywidget-output > .lm-Widget > [data-overlay-container] {
+.shiny-ipywidget-output > .lm-Widget > [data-overlay-container]:has(> .lonboard) {
   margin-top: 0;
 }
 

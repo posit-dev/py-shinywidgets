@@ -90,13 +90,15 @@ def test_session_lifetime_map_keeps_its_controls(widget_session: Session) -> Non
 def test_as_widget_copies_keep_shared_control_settings(
     widget_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    scale = Map.class_traits()["controls"].default()[2]
+    shared = Map.class_traits()["controls"].default()
+    assert shared
+    scale = shared[2]
     monkeypatch.setattr(scale, "unit", "imperial")
     with session_context(widget_session):
         m = Map(ScatterplotLayer(table=points_table()))
         as_widget(m)
     assert m.controls[2] is not scale
-    assert m.controls[2].unit == "imperial"  # type: ignore[attr-defined]
+    assert m.controls[2].unit == "imperial"
 
 
 def test_lonboard_first_imported_during_a_render() -> None:
