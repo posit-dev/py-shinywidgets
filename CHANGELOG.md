@@ -7,47 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### New features
+### Changed
 
-* `@render_plotly()` now accepts a Dash-style `(figure, config)` tuple return value, where `config` is a dict of [Plotly.js config options](https://plotly.com/javascript/configuration-options/) (e.g., `{"displayModeBar": False}`). The config is merged over plotly's defaults and takes precedence over shinywidgets' own defaults. `@render_plotly`'s value type is also now statically bounded by the set of accepted return shapes, so type checkers flag unsupported return values at decoration time (no annotation needed, and plotly remains an optional dependency). (#173)
-* Added a `render_maplibre()` renderer, and `as_widget()` now coerces a [maplibre](https://eoda-dev.github.io/py-maplibregl/) `Map` into its `MapWidget` (requires `pip install 'maplibre[anywidget]'`). Note that maplibre also ships its own native Shiny bindings, but the widget route gives you `reactive_read()` access to map state (e.g., `view_state`, `clicked`).
-* Added a `render_matplotlib()` renderer, and `as_widget()` now coerces matplotlib `Figure` (and `Axes`) objects into an interactive [ipympl](https://matplotlib.org/ipympl/) widget. This covers anything that produces a matplotlib figure (e.g., seaborn, `pandas.DataFrame.plot()`, scikit-learn displays) and requires `pip install ipympl`. Figures fill their container (and resize with it) in filling layouts -- note that, in this case, the `Figure` object's own size is updated to match its container (opt out with `@render_matplotlib(fill=False)`, `output_widget(fillable=False)`, or an explicit `height`, as with any other widget). In addition, pyplot figures rendered this way are automatically deregistered from pyplot's global figure registry when the render retires, so repeated re-renders don't leak figures (or trigger "More than 20 figures have been opened" warnings).
-
-### Breaking changes
-
-* shinywidgets now requires ipywidgets 8.1 or newer. (#237, #259)
+* shinywidgets now requires ipywidgets 8.1 or newer, and the bundled JavaScript widget manager (`@jupyter-widgets/html-manager`) was upgraded from 0.20 to 1.0. Together these fix a wide range of long-standing issues with ipywidgets 8 (see the bug fixes below). (#237, #259)
 
 ### New features
 
-* Bokeh documents that reference [bokeh extension](https://docs.bokeh.org/en/latest/docs/user_guide/advanced/extensions.html) models (any package shipping a `bokeh.ext.json`/prebuilt `dist` bundle) now have their extension assets served automatically. (#88, #256)
-* Added support for [panel](https://panel.holoviz.org) widgets and layouts (e.g., `pn.widgets.Tabulator`) via the new `@render_panel` decorator or `@render_widget`. Required JS/CSS assets (panel's model bundle, third-party assets like Tabulator, and model stylesheets) are served automatically. (#82, #88, #253)
-* Added support for [HoloViews](https://holoviews.org) and [hvPlot](https://hvplot.holoviz.org) objects via the new `@render_holoviews` decorator. (#87, #253, #250)
-* Added `session_lifetime()`, a context manager for constructing widgets that should outlive the current render (for example, one cached widget per dataset that is displayed again when the user switches back). Widgets constructed while an output renders are still closed when that render is invalidated; returning such a closed widget from a later render now raises an error that points to `session_lifetime()` instead of timing out in the browser. (#258)
+* Added several new `@render_*` decorators that bring more visualization and widget ecosystems into shinywidgets:
+  * `@render_panel` for [panel](https://panel.holoviz.org) widgets and layouts (e.g., `pn.widgets.Tabulator`). All required JS/CSS assets are served automatically. (#82, #88, #253)
+  * `@render_holoviews` for [HoloViews](https://holoviews.org) and [hvPlot](https://hvplot.holoviz.org) objects. (#87, #250, #253)
+  * `@render_maplibre` for [maplibre](https://eoda-dev.github.io/py-maplibregl/) maps (requires `pip install 'maplibre[anywidget]'`). While maplibre ships its own native Shiny bindings, the widget route gives you `reactive_read()` access to map state (e.g., `view_state`, `clicked`).
+  * `@render_matplotlib` for matplotlib figures -- covering anything that produces one (seaborn, `pandas.DataFrame.plot()`, scikit-learn displays, etc.) -- rendered as interactive [ipympl](https://matplotlib.org/ipympl/) widgets (requires `pip install ipympl`). Figures fill and resize with their container in filling layouts, and repeated re-renders don't leak pyplot figures.
+* Bokeh plots using [extension models](https://docs.bokeh.org/en/latest/docs/user_guide/advanced/extensions.html) now work out of the box -- their assets are served automatically. (#88, #256)
+* `@render_plotly` now accepts a Dash-style `(figure, config)` tuple return value, where `config` is a dict of [Plotly.js config options](https://plotly.com/javascript/configuration-options/) (e.g., `{"displayModeBar": False}`). The config is merged over plotly's defaults and takes precedence over shinywidgets' own defaults. (#173)
+* Added `session_lifetime()`, a context manager for constructing widgets that should outlive the current render (for example, one cached widget per dataset that is displayed again when the user switches back). Attempting to return a widget that was already closed by an earlier render now raises an error pointing to `session_lifetime()` instead of timing out in the browser. (#258)
 
 ### Improvements
 
-* `@render_plotly()` (and `@render_widget()`) now warn when given a plotly figure with frames (i.e., an animation), since `FigureWidget` doesn't support frames and silently drops them. The warning points to the `@render.ui` + `fig.to_html()` workaround. (#156)
+* Bokeh widgets now load the installed BokehJS assets automatically in Core and Express apps, including apps mounted under a URL prefix. Adding `bokeh_dependency()` to the UI is no longer required. (#210, #255)
+* `@render_plotly` (and `@render_widget`) now warn when given a plotly figure with frames (i.e., an animation), since `FigureWidget` doesn't support frames and silently drops them. The warning points to the `@render.ui` + `fig.to_html()` workaround. (#156)
 
 ### Bug fixes
 
-* Fixed an issue where pythreejs widgets caused Shiny sessions to hang indefinitely with ipywidgets 8. (#244)
-* Fixed a leak where the `Layout`/`Style` models that ipywidgets creates lazily while serializing a widget were never closed: every re-render of an output leaked a few models on the server and in the browser for the rest of the session. They now share the cleanup of the widget that created them, unless a live widget still references them. (#258)
-* Fixed an issue where closing a widget before its comm had opened (for example, re-rendering an output twice in one flush) reopened the widget anyway. (#258)
-* Widget comm messages are now always sent through the session that created the widget, and each session routes client messages only to its own widgets. (#258)
-* Fixed further widget cleanup gaps found after #258: a widget still referenced by a live widget (e.g. a container) when its render was invalidated could stay open forever, even after that reference was later dropped; a widget built by a background task after its render had already returned could leak until the session ended; and a widget could crash a later session with `AttributeError: 'NoneType' object has no attribute 'comm_id'` if something still referenced it after its own session had ended. (#261)
-* The per-render cleanup sweep added in #258 now scales with a session's own widgets rather than every widget across every session, and only follows traits that can actually hold a widget reference (skipping large opaque payloads like GeoJSON `data` or Altair specs). This keeps re-rendering fast with many concurrent sessions or large widgets. (#261)
-* Returning a widget that belongs to another Shiny session (for example, one cached in a module-level variable so every visitor shares it) used to leave that session's output stuck recalculating for 30 seconds and then blank. It now raises an immediate, clear error instead, whether the foreign or closed widget is returned directly or nested inside a freshly built container. (#262)
-* Fixed an issue where re-rendering a widget constructed with an explicit `model_id` left the output blank: the old widget's `comm_close` is sent after the replacement's `comm_open` (by design, to avoid flicker), so the browser tore the new model down by id. A close is now suppressed when a newer comm has re-registered the id by send time. (#263)
-* Bokeh widgets now load the installed BokehJS assets automatically in Core and Express apps, including apps mounted under a URL prefix. Adding `bokeh_dependency()` to the UI is no longer required. (#210, #255)
-* Fixed an issue where widgets nested inside other widgets didn't work reliably with ipywidgets 8. Depending on the widget, they either didn't render at all (e.g., an `HTML` child with a `style`, or a Plotly `FigureWidget`, inside an ipyleaflet popup) or rendered while logging errors like `Class HTMLStyleModel not found` (e.g., ipyleaflet popups, `WidgetControl` children, and leafmap legends). Widget outputs inserted dynamically, such as `output_widget()` inside `@render.ui`, had the same problem. The cause was that shinywidgets still bundled the ipywidgets 7-era JavaScript widget manager (`@jupyter-widgets/html-manager` 0.20); it now uses 1.0. (#75, #101, #137, #157, #194, #237)
+* Fixed numerous issues with widgets nested inside other widgets and widget outputs inserted dynamically (e.g., `output_widget()` inside `@render.ui`). With ipywidgets 8, these either didn't render at all (e.g., an `HTML` child with a `style`, or a Plotly `FigureWidget`, inside an ipyleaflet popup) or rendered while logging errors like `Class HTMLStyleModel not found` (e.g., ipyleaflet popups, `WidgetControl` children, and leafmap legends). (#75, #101, #137, #157, #194, #237)
+* Substantially overhauled widget cleanup and lifecycle management. Re-rendering, replacing, hiding/showing, or removing widget outputs no longer leaks widgets, views, or event listeners on the server or in the browser (#246, #258, #260, #261, #262, #263), and many related failure modes are fixed:
+  * pythreejs widgets no longer cause Shiny sessions to hang indefinitely with ipywidgets 8. (#244)
+  * Every re-render of an output no longer leaks a few helper models for the rest of the session. (#258)
+  * Re-showing a widget output hidden by `@render.ui` (or removed with `remove_ui()` and re-inserted) no longer hangs for 30 seconds when the widget changed while hidden. (#260)
+  * Re-rendering an ipyleaflet map no longer throws uncaught page errors or leaks the old map's listeners and child views. (#260)
+  * Re-rendering a widget constructed with an explicit `model_id` no longer leaves the output blank. (#263)
+  * Returning a widget that belongs to another Shiny session (for example, one cached in a module-level variable so every visitor shares it) now raises an immediate, clear error instead of leaving the output stuck recalculating for 30 seconds and then blank. (#262)
+  * Re-rendering stays fast with many concurrent sessions or large widgets (e.g., large GeoJSON payloads or Altair specs). (#261)
+  * Fixed additional cleanup edge cases involving widgets closed before opening, background tasks, and cross-session references. (#258, #261)
 * Fixed an issue where an ipyleaflet map with many markers could turn gray and show no markers when re-rendered. (#215, #237)
 * Fixed an issue where fonts used by widget CSS, such as FontAwesome icons, failed to load (404). (#237)
-* Replacing, clearing, or showing an error in a widget output now removes its previous view through the widget lifecycle, so detached views do not remain tracked by the browser manager. Reusing the same widget across renders keeps its model alive. (#246)
-* Re-showing a widget output hidden by `@render.ui` (or removed with `remove_ui()` and re-inserted) no longer hangs for 30 seconds when the widget changed while hidden. (#260)
-* Outputs removed by dynamic UI now release their widget views instead of leaking one per hide/show cycle. (#260)
-* Re-rendering an ipyleaflet map no longer throws uncaught page errors or leaks the old map's listeners and child views. (#260)
-* A child view that finishes creating after its parent was removed (e.g., dynamic UI removed the output mid-render) is now torn down instead of leaking. (#260)
-* Widget views removed by dynamic UI now get the same widget-specific teardown as views removed at comm close (e.g., `destroy()` for plotly <6 `FigureWidget`s). (#260)
 
 ## [0.8.2] - 2026-10-15
 
