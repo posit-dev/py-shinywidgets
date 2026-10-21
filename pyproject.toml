@@ -51,6 +51,7 @@ test = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "quak",
   "tox-uv>=1",
 ]
 dev = [
@@ -72,6 +73,7 @@ dev = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "quak",
   "ruff>=0.6.5",
   "tox-uv>=1",
 ]
@@ -96,6 +98,7 @@ test = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "quak",
   "tox-uv>=1",
 ]
 dev = [

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, cast
 
 from htmltools import Tag
+from ipywidgets.widgets.widget import Widget
 
 if TYPE_CHECKING:
     import plotly.graph_objects as go
@@ -12,10 +13,11 @@ if TYPE_CHECKING:
     from maplibre.ipywidget import MapWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
+    from quak import Widget as QuakWidget
 else:
     JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
-        object
-    )
+        QuakWidget
+    ) = object
 
 from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
@@ -41,6 +43,7 @@ __all__ = (
     "render_panel",
     "render_plotly",
     "render_pydeck",
+    "render_quak",
 )
 
 
@@ -457,3 +460,56 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     """
+
+
+class render_quak(render_widget_base[ValueT, QuakWidget]):
+    """
+    Reactively render a [quak](https://github.com/manzt/quak) data table as a Shiny
+    output.
+
+    The decorated function may return either a DataFrame-like object (e.g., a pandas
+    or polars `DataFrame`, or a pyarrow `Table`), which is coerced to a `quak.Widget`
+    (requires ``pip install quak``), or a `quak.Widget`. In a filling layout, the table
+    grows to fit its container.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `quak.Widget` instance. Use `.widget` to programmatically update the rendered
+    table in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read` (e.g.,
+    `reactive_read(table.widget, "sql")` is the SQL query for the table's current
+    sort and filter state).
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    # DataFrames are a generic type that several renderers accept, so rather than
+    # registering them in AS_WIDGET_MAP, coerce them here
+    def _as_widget(self, value: ValueT) -> QuakWidget:
+        if isinstance(value, Widget):
+            return super()._as_widget(value)
+
+        try:
+            import quak
+        except ImportError:
+            raise ImportError(
+                "Install the quak package to use DataFrames with shinywidgets (pip install quak)."
+            )
+
+        return quak.Widget(value)
