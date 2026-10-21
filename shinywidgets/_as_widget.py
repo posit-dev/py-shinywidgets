@@ -160,7 +160,7 @@ def as_widget_maplibre(x: object) -> Optional[Widget]:
     return res  # type: ignore
 
 
-def as_widget_ipysigma(x: object) -> Sigma:
+def networkx_to_sigma(x: object) -> Sigma:
     # Not in AS_WIDGET_MAP: a networkx graph is generic (ipycytoscape accepts one
     # too), so only @render_ipysigma coerces it.
     try:

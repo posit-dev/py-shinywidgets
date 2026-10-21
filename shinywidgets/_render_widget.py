@@ -19,7 +19,7 @@ else:
         DeckGLWidget
     ) = object
 
-from ._as_widget import as_widget_ipysigma
+from ._as_widget import networkx_to_sigma
 from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
@@ -183,7 +183,7 @@ class render_ipysigma(render_widget_base[ValueT, Sigma]):
     def _as_widget(self, value: ValueT) -> Sigma:
         if isinstance(value, Widget):
             return super()._as_widget(value)
-        return as_widget_ipysigma(value)
+        return networkx_to_sigma(value)
 
 
 class render_maplibre(render_widget_base[ValueT, MapWidget]):
