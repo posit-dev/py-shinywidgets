@@ -296,12 +296,12 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;
 
-    const setupFill = fill ? behavior?.setupFill : undefined;
-    if (setupFill) {
+    const setupSize = fill ? behavior?.setupFill : behavior?.setupFixedSize;
+    if (setupSize) {
       this._onImplementation(lmWidget, () => {
-        // Don't set up fill behavior if this view has since been replaced
+        // Don't set up fill/size behavior if this view has since been replaced
         if (this._views.get(el) !== view) return;
-        const cleanup = setupFill({ el, lmWidget, view, model });
+        const cleanup = setupSize({ el, lmWidget, view, model });
         if (cleanup) view.once("remove", cleanup);
       });
     }
