@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * Returning a widget that belongs to another Shiny session (for example, one cached in a module-level variable so every visitor shares it) now raises an immediate, clear error instead of leaving the output stuck recalculating for 30 seconds and then blank. (#262)
   * Re-rendering stays fast with many concurrent sessions or large widgets (e.g., large GeoJSON payloads or Altair specs). (#261)
   * Fixed additional cleanup edge cases involving widgets closed before opening, background tasks, and cross-session references. (#258, #261)
-* Returning an unsupported builtin value (e.g., a string, number, or dict) from a `@render_widget` function now raises the intended "Don't know how to coerce ..." `TypeError` instead of a confusing `AttributeError: ... has no attribute '__module__'`.
+* Returning an unsupported builtin value (e.g., a string, number, or dict) from a `@render_widget` function now raises the intended "Don't know how to coerce ..." `TypeError` instead of a confusing `AttributeError: ... has no attribute '__module__'`. (#287)
 * Fixed an issue where an ipyleaflet map with many markers could turn gray and show no markers when re-rendered. (#215, #237)
 * Fixed an issue where fonts used by widget CSS, such as FontAwesome icons, failed to load (404). (#237)
 
