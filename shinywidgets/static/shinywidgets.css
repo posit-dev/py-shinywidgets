@@ -193,8 +193,10 @@
 /*
 * ipyleaflet hard-codes `height: 400px` on the map container, which ignores an
 * output's explicit height (it overflows or underfills it). A Layout(height=...)
-* on the map is an inline style, so it still takes precedence over this.
+* on the map is an inline style, so it still takes precedence over this. The attribute
+* selector matches the inline style output_widget(height=) emits (keep in sync with
+* _output_widget.py).
 */
-.shiny-ipywidget-output[style*="height"] > .jupyter-widgets.leaflet-widgets {
+.shiny-ipywidget-output[style*="height:"] > .jupyter-widgets.leaflet-widgets {
   height: 100%;
 }
