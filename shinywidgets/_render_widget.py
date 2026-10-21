@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, cast
 
 from htmltools import Tag
-from ipywidgets import Widget
 
 if TYPE_CHECKING:
     import plotly.graph_objects as go
@@ -19,13 +18,11 @@ from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
 if TYPE_CHECKING:
-    # The values a @render_plotly render function may return: a plotly figure
-    # (raw or pre-built FigureWidget -- sibling classes, so both are listed),
-    # optionally paired with a Plotly.js config dict, or any ipywidgets.Widget
-    # (which as_widget() passes through unchanged). Only referenced by the
-    # TypeVar bound below, so there's no need for them at runtime.
+    # The values a @render_plotly render function may return (bound below):
+    # a plotly figure (raw or pre-built FigureWidget -- sibling classes, so
+    # both are listed), optionally paired with a Plotly.js config dict.
     PlotlyFigure = Union[go.Figure, go.FigureWidget]
-    PlotlyValue = Union[PlotlyFigure, Tuple[PlotlyFigure, Dict[str, Any]], Widget]
+    PlotlyValue = Union[PlotlyFigure, Tuple[PlotlyFigure, Dict[str, Any]]]
 
 # The bound is a string so it stays a lazy forward reference at runtime (the
 # alias it points to references plotly, an optional dependency).
