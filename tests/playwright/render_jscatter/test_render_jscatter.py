@@ -82,7 +82,6 @@ def test_jscatter_fills_fillable_container(page: Page, local_app) -> None:
     output_height = page.evaluate(
         "document.querySelector('#fill_scatter').clientHeight"
     )
-    print("fill measurements:", heights, "output.clientHeight:", output_height)
     assert output_height > 300
     assert abs(heights["plot"] - output_height) <= 1
     assert heights["canvas"] > 240
@@ -99,7 +98,8 @@ def test_jscatter_fills_fillable_container(page: Page, local_app) -> None:
         timeout=30000,
     )
     shrunk = page.evaluate(HEIGHTS_JS, "fill_scatter")
-    print("shrunk measurements:", shrunk)
+    assert abs(shrunk["plot"] - shrunk["output"]) <= 1
+    assert shrunk["canvas"] < heights["canvas"] - 100
 
     assert_no_unexpected_errors(errors, failed_requests)
 
@@ -113,7 +113,6 @@ def test_jscatter_explicit_height_is_respected(page: Page, local_app) -> None:
     wait_until_plot_fills_output(page, "fill_scatter")
 
     heights = page.evaluate(HEIGHTS_JS, "fixed_scatter")
-    print("fixed measurements:", heights)
     # The output still fills its card, but the plot keeps its own height (180px
     # plus 20px of axes padding)
     assert heights["canvas"] == 180

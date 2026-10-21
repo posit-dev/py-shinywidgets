@@ -4,6 +4,7 @@ import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import Callable, Generic, Iterator, Optional, Tuple, TypeVar, cast
+from weakref import WeakSet
 
 from htmltools import Tag
 from ipywidgets.widgets import DOMWidget, Layout, Widget
@@ -265,14 +266,25 @@ JSCATTER_DEFAULT_HEIGHT = 240
 The pixel height jscatter gives a `Scatter` unless the user sets one
 """
 
+FILLING_JSCATTERS: WeakSet[DOMWidget] = WeakSet()
+"""
+jscatter widgets that were displayed with fill (see jscatter_layout_defaults())
+"""
+
 
 def jscatter_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # jupyter-scatter always has a pixel height (there's no "auto"), so the only
     # sign that the user chose one is a value other than jscatter's own default.
     # In a filling layout, the browser drives the height from the container size
-    # (see jscatter in js/src/fill.ts).
+    # (see jscatter in js/src/fill.ts) and syncs it to the widget, so a widget
+    # that filled once (e.g., displayed again via session_lifetime()) must keep
+    # filling rather than look like it has a user-chosen height.
+    if widget in FILLING_JSCATTERS:
+        return fill
     if getattr(widget, "height", JSCATTER_DEFAULT_HEIGHT) != JSCATTER_DEFAULT_HEIGHT:
         return False
+    if fill:
+        FILLING_JSCATTERS.add(widget)
     return fill
 
 

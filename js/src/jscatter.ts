@@ -13,7 +13,10 @@ interface ScatterplotApi {
  * (and syncs back to the Python widget). Its drawing surface doesn't follow
  * the trait once rendered, so it's switched to track its layout box instead.
  *
- * Returns a cleanup function that detaches the observer.
+ * N.B. this assumes one view per model. Two views of the same model would each
+ * fit it to their own container (a rare setup that isn't handled).
+ *
+ * Returns a cleanup function that detaches the observers.
  */
 export function setupJscatterAutoHeight(
   el: HTMLElement,
@@ -23,6 +26,8 @@ export function setupJscatterAutoHeight(
   let disposed = false;
   let frame = 0;
   const observer = new ResizeObserver(() => fitHeight());
+  // The size change that ended while recalculating was skipped, so catch up
+  const classObserver = new MutationObserver(() => fitHeight());
 
   // The element jupyter-scatter sizes: the regl canvas sits in a wrapper, which
   // sits in this container. N.B. the container is taller than the `height`
@@ -33,8 +38,9 @@ export function setupJscatterAutoHeight(
   function fitHeight(): void {
     // While the output recalculates, Shiny's busy indicator briefly changes
     // the output's size. Following that would re-layout a plot that's about to
-    // be replaced, and jupyter-scatter throws if its (queued) resize runs
-    // after the view has been destroyed.
+    // be replaced, which makes it likelier that jupyter-scatter's queued resize
+    // runs after the view is destroyed (it throws "The instance was already
+    // destroyed"). This only reduces the odds of that race; it can't rule it out.
     if (el.classList.contains('recalculating')) return;
     const plot = findPlotContainer();
     if (!plot) return;
@@ -58,6 +64,7 @@ export function setupJscatterAutoHeight(
     // Observe the plot container too, for padding changes (e.g., toggling axes)
     observer.observe(el);
     observer.observe(plot);
+    classObserver.observe(el, { attributes: true, attributeFilter: ['class'] });
   };
   start();
 
@@ -65,5 +72,6 @@ export function setupJscatterAutoHeight(
     disposed = true;
     cancelAnimationFrame(frame);
     observer.disconnect();
+    classObserver.disconnect();
   };
 }

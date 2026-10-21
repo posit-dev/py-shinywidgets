@@ -1,5 +1,10 @@
+from typing import TYPE_CHECKING
+
 import pytest
 import shinywidgets._render_widget_base as rwb
+
+if TYPE_CHECKING:
+    from jscatter import Scatter
 
 
 class StubSession:
@@ -132,7 +137,7 @@ def test_altair_concat_chart_emits_warning(monkeypatch) -> None:
         rwb.set_layout_defaults(w)
 
 
-def _jscatter_widget():  # noqa: ANN202
+def _jscatter_widget() -> "Scatter":
     pytest.importorskip("jscatter")
     pd = pytest.importorskip("pandas")
     from jscatter import Scatter
@@ -159,3 +164,21 @@ def test_jscatter_default_height_matches_package_default() -> None:
     # fail loudly if jscatter changes it
     scatter = _jscatter_widget()
     assert scatter.height() == rwb.JSCATTER_DEFAULT_HEIGHT
+
+
+def test_jscatter_keeps_filling_after_browser_syncs_height() -> None:
+    # In a filling layout the browser sets the widget's height from its
+    # container's size, so displaying the same widget again (e.g., a widget
+    # reused via session_lifetime()) must not mistake that for a user-set height
+    widget = _jscatter_widget().widget
+    assert rwb.set_layout_defaults(widget)[1] is True
+
+    widget.height = 691
+    assert rwb.set_layout_defaults(widget)[1] is True
+
+
+def test_jscatter_explicit_height_stays_fixed_when_displayed_again() -> None:
+    scatter = _jscatter_widget()
+    scatter.height(500)
+    assert rwb.set_layout_defaults(scatter.widget)[1] is False
+    assert rwb.set_layout_defaults(scatter.widget)[1] is False
