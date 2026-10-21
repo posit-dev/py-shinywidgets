@@ -122,6 +122,32 @@ def test_jscatter_explicit_height_is_respected(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_jscatter_fits_explicit_output_height(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.set_viewport_size({"width": 1000, "height": 1000})
+    page.goto(local_app.url)
+    expect(page.locator("#sized_scatter canvas").first).to_be_visible(timeout=30000)
+    expect(page.locator("#sized_fixed_scatter canvas").first).to_be_visible(
+        timeout=30000
+    )
+
+    # The output isn't filling (it has an explicit height), but the plot still
+    # takes that height rather than jupyter-scatter's default 240px
+    wait_until_plot_fills_output(page, "sized_scatter")
+    sized = page.evaluate(HEIGHTS_JS, "sized_scatter")
+    assert sized["output"] == 420
+    assert abs(sized["plot"] - 420) <= 1
+    assert sized["canvas"] > 240
+
+    # ... unless the plot has a height of its own (180px plus 20px of axes padding)
+    fixed = page.evaluate(HEIGHTS_JS, "sized_fixed_scatter")
+    assert fixed["output"] == 420
+    assert fixed["canvas"] == 180
+    assert fixed["plot"] == 200
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_jscatter_selection_roundtrips_to_python(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.set_viewport_size({"width": 1000, "height": 1000})
@@ -179,7 +205,7 @@ def test_jscatter_rerender_lifecycle(page: Page, local_app) -> None:
     initial_canvases = page.locator("#fill_scatter canvas").count()
     initial_views = live_views()
     initial_observers = page.evaluate("window.liveResizeObservers")
-    assert initial_views == 2  # the fill and fixed outputs
+    assert initial_views == 4  # one per output
 
     for i in range(1, 4):
         old_canvas = page.locator("#fill_scatter canvas").first.element_handle()

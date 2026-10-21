@@ -13,6 +13,14 @@ app_ui = ui.page_fillable(
     ui.layout_columns(
         ui.card(ui.card_header("fill"), output_widget("fill_scatter")),
         ui.card(ui.card_header("fixed"), output_widget("fixed_scatter")),
+        ui.card(
+            ui.card_header("sized output"),
+            output_widget("sized_scatter", height="420px"),
+        ),
+        ui.card(
+            ui.card_header("sized output, fixed plot"),
+            output_widget("sized_fixed_scatter", height="420px"),
+        ),
     ),
 )
 
@@ -40,6 +48,14 @@ def server(input, output, session):
 
     @render_jscatter
     def fixed_scatter():
+        return Scatter(data=POINTS, x="x", y="y", height=180)
+
+    @render_jscatter
+    def sized_scatter():
+        return Scatter(data=POINTS, x="x", y="y")
+
+    @render_jscatter
+    def sized_fixed_scatter():
         return Scatter(data=POINTS, x="x", y="y", height=180)
 
     @render.text

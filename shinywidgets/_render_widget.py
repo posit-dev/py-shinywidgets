@@ -144,9 +144,9 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
 
     The decorated function may return a `jscatter.Scatter` (which is coerced to its
     `jscatter.widget.JupyterScatter` widget; requires ``pip install jupyter-scatter``)
-    or a `JupyterScatter` widget. In a filling layout, the plot is resized to fit its
-    container; give the output a `height` (or call `Scatter.height()`) for a fixed height
-    instead.
+    or a `JupyterScatter` widget. The plot is resized to fit its output, whether the
+    output fills its layout or has an explicit ``height`` (see below), unless the plot
+    has a height of its own (e.g., from `Scatter.height()`).
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
