@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import warnings
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Optional, cast
 from weakref import WeakSet
 
@@ -24,6 +26,36 @@ MPL_CLEANUP_CANVASES: WeakSet[Widget] = WeakSet()
 # Some objects aren't directly renderable as an ipywidget, but in some cases,
 # we can coerce them into one
 def as_widget(x: object) -> Widget:
+    """
+    Coerce an object into an `ipywidgets.Widget`.
+
+    If `x` is already a `Widget`, it is returned as-is. Otherwise, the object is
+    coerced based on the package it comes from:
+
+    * altair `Chart` -> `altair.JupyterChart`
+    * bokeh model (e.g., `bokeh.plotting.figure`) -> `jupyter_bokeh.BokehModel`
+    * holoviews/hvplot object -> bokeh model (via panel)
+    * maplibre `Map` -> `maplibre.ipywidget.MapWidget`
+    * panel pane/viewable -> bokeh model
+    * plotly `Figure` -> `plotly.graph_objects.FigureWidget`
+    * pydeck `Deck` -> `pydeck.widget.DeckGLWidget`
+
+    Parameters
+    ----------
+    x
+        The object to coerce.
+
+    Returns
+    -------
+    :
+        An `ipywidgets.Widget`.
+
+    Raises
+    ------
+    TypeError
+        If `x` can't be coerced into a `Widget` (the error message points to shiny's
+        ``@render.ui`` decorator as a fallback for objects with an HTML repr).
+    """
     if isinstance(x, Widget):
         return x
 
@@ -144,7 +176,8 @@ def as_widget_mpl(x: object) -> Optional[Widget]:
         )
 
     try:
-        from ipympl.backend_nbagg import Canvas, FigureManager
+        with backend_selection_suppressed():
+            from ipympl.backend_nbagg import Canvas, FigureManager
     except ImportError:
         raise ImportError(
             "Install the ipympl package to use matplotlib with shinywidgets (pip install ipympl)."
@@ -164,6 +197,26 @@ def as_widget_mpl(x: object) -> Optional[Widget]:
     close_mpl_figure_with_widget(canvas, x)
 
     return canvas
+
+
+@contextmanager
+def backend_selection_suppressed() -> Iterator[None]:
+    """
+    Make matplotlib.use() a no-op for the duration of the block.
+
+    When first imported, ipympl selects itself as pyplot's backend, which
+    would make every pyplot figure in the process (e.g., those drawn by
+    shiny's @render.plot) an ipympl widget.
+    https://github.com/matplotlib/ipympl/issues/623
+    """
+    import matplotlib
+
+    use = matplotlib.use
+    matplotlib.use = lambda *args, **kwargs: None
+    try:
+        yield
+    finally:
+        matplotlib.use = use
 
 
 def close_mpl_figure_with_widget(canvas: Widget, fig: Figure) -> None:
