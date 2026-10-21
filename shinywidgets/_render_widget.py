@@ -290,11 +290,12 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
 
 class render_holoviews(render_widget_base[ValueT, BokehModel]):
     """
-    Reactively render a [holoviews](https://holoviews.org) or
-    [hvPlot](https://hvplot.holoviz.org) object as a Shiny output.
+    Reactively render a [holoviews](https://holoviews.org),
+    [hvPlot](https://hvplot.holoviz.org), or [geoviews](https://geoviews.org) object
+    as a Shiny output.
 
-    The decorated function may return either a holoviews/hvplot object (which is
-    rendered through panel; requires ``pip install panel``) or the underlying
+    The decorated function may return either a holoviews/hvplot/geoviews object (which
+    is rendered through panel; requires ``pip install panel``) or the underlying
     `jupyter_bokeh.BokehModel` widget.
 
     The decorated function also gains two read-only attributes: `.value`, the value
