@@ -3,7 +3,8 @@ from __future__ import annotations
 import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Optional, cast
+from copy import deepcopy
+from typing import TYPE_CHECKING, Optional, Protocol, cast
 from weakref import WeakSet
 
 from htmltools import HTMLDependency
@@ -14,9 +15,14 @@ from ._dependencies import widget_pkg
 
 if TYPE_CHECKING:
     from bokeh.models import LayoutDOM
+    from ipympl.backend_nbagg import Canvas
     from jupyter_bokeh import BokehModel
     from matplotlib.figure import Figure
     from panel.viewable import Viewable
+
+    class PlotnineDrawable(Protocol):
+        def draw(self, *, show: bool = False) -> Figure: ...
+
 
 __all__ = ("as_widget",)
 
@@ -40,6 +46,7 @@ def as_widget(x: object) -> Widget:
       `ipympl.backend_nbagg.Canvas`
     * panel pane/viewable -> bokeh model
     * plotly `Figure` -> `plotly.graph_objects.FigureWidget`
+    * plotnine `ggplot` (or plot composition) -> `ipympl.backend_nbagg.Canvas`
     * pydeck `Deck` -> `pydeck.widget.DeckGLWidget`
 
     Parameters
@@ -159,7 +166,7 @@ def as_widget_maplibre(x: object) -> Optional[Widget]:
     return res  # type: ignore
 
 
-def as_widget_mpl(x: object) -> Widget:
+def as_widget_mpl(x: object, *, context: str = "matplotlib") -> Widget:
     from matplotlib.figure import Figure, SubFigure
 
     # The renderer imports this module, so defer this circular import.
@@ -183,7 +190,7 @@ def as_widget_mpl(x: object) -> Widget:
             from ipympl.backend_nbagg import Canvas, FigureManager
     except ImportError:
         raise ImportError(
-            "Install the ipympl package to use matplotlib with shinywidgets (pip install ipympl)."
+            f"Install the ipympl package to use {context} with shinywidgets (pip install ipympl)."
         )
 
     # Canvas(figure=x) alone isn't enough -- ipympl's browser message handling
@@ -292,6 +299,22 @@ def as_widget_plotly(x: object) -> Optional[Widget]:
     return go.FigureWidget(x.data, x.layout)  # type: ignore
 
 
+def as_widget_plotnine(x: object) -> Widget:
+    # Both ggplot and plot compositions (e.g., `p1 | p2`, plotnine >= 0.15)
+    # draw() to a matplotlib Figure
+    if not callable(getattr(x, "draw", None)):
+        raise TypeError(f"Don't know how to coerce {x} into a plotnine ggplot object.")
+
+    # draw() attaches the figure to the plot (and a later draw() reuses it), so
+    # draw a copy, like plotnine's own save() and show() do
+    figure = cast("PlotnineDrawable", deepcopy(x)).draw()
+    canvas = cast("Canvas", as_widget_mpl(figure, context="plotnine"))
+    # plotnine closes its pyplot figure after drawing, which frees the figure
+    # number for reuse, so the header's "Figure <number>" label is meaningless
+    canvas.header_visible = False
+    return canvas
+
+
 def as_widget_pydeck(x: object) -> Optional[Widget]:
     if not hasattr(x, "show"):
         raise TypeError(
@@ -322,6 +345,7 @@ AS_WIDGET_MAP = {
     "matplotlib": as_widget_mpl,
     "panel": as_widget_panel,
     "plotly": as_widget_plotly,
+    "plotnine": as_widget_plotnine,
     "pydeck": as_widget_pydeck,
     "seaborn": as_widget_mpl,
 }
