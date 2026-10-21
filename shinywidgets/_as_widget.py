@@ -36,6 +36,8 @@ def as_widget(x: object) -> Widget:
     * bokeh model (e.g., `bokeh.plotting.figure`) -> `jupyter_bokeh.BokehModel`
     * holoviews/hvplot object -> bokeh model (via panel)
     * maplibre `Map` -> `maplibre.ipywidget.MapWidget`
+    * matplotlib `Figure` or `Axes` (or a seaborn figure-level grid) ->
+      `ipympl.backend_nbagg.Canvas`
     * panel pane/viewable -> bokeh model
     * plotly `Figure` -> `plotly.graph_objects.FigureWidget`
     * pydeck `Deck` -> `pydeck.widget.DeckGLWidget`
@@ -57,7 +59,8 @@ def as_widget(x: object) -> Widget:
         ``@render.ui`` decorator as a fallback for objects with an HTML repr).
     """
     if isinstance(x, Widget):
-        return x
+        # A Canvas may still need its FigureManager and pyplot cleanup
+        return as_widget_mpl(x) if is_ipympl_canvas(x) else x
 
     pkg = widget_pkg(x)
 
@@ -156,17 +159,17 @@ def as_widget_maplibre(x: object) -> Optional[Widget]:
     return res  # type: ignore
 
 
-def as_widget_mpl(x: object) -> Optional[Widget]:
-    from matplotlib.axes import Axes
+def as_widget_mpl(x: object) -> Widget:
     from matplotlib.figure import Figure, SubFigure
 
     # The renderer imports this module, so defer this circular import.
     from ._render_widget_base import is_closed_widget
 
-    # Several higher-level APIs (e.g., pandas.DataFrame.plot()) return an Axes
-    # rather than a Figure
-    if isinstance(x, Axes):
-        x = x.figure
+    # Several higher-level APIs return something that holds the figure: an Axes
+    # (e.g., pandas.DataFrame.plot()), an ipympl Canvas, or a seaborn grid
+    # (e.g., seaborn.relplot())
+    if not isinstance(x, Figure):
+        x = getattr(x, "figure", x)
         if isinstance(x, SubFigure):
             x = x.figure
 
@@ -201,6 +204,14 @@ def as_widget_mpl(x: object) -> Optional[Widget]:
     close_mpl_figure_with_widget(canvas, x)
 
     return canvas
+
+
+def is_ipympl_canvas(x: Widget) -> bool:
+    if widget_pkg(x) != "ipympl":
+        return False
+    with backend_selection_suppressed():
+        from ipympl.backend_nbagg import Canvas
+    return isinstance(x, Canvas)
 
 
 @contextmanager
@@ -312,6 +323,7 @@ AS_WIDGET_MAP = {
     "panel": as_widget_panel,
     "plotly": as_widget_plotly,
     "pydeck": as_widget_pydeck,
+    "seaborn": as_widget_mpl,
 }
 
 
