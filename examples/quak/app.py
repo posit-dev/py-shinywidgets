@@ -45,8 +45,8 @@ def server(input, output, session):
 
     @render.data_frame
     def matching():
-        # Re-run whenever quak's query changes, then evaluate it in DuckDB. (The
-        # query is empty until the browser reports quak's initial state.)
+        # Re-run whenever quak's query changes, then evaluate it in DuckDB. The
+        # frontend briefly syncs an empty query back while it initializes.
         req(reactive_read(table.widget, "sql"))
         return render.DataGrid(table.widget.data().df().head(100))
 

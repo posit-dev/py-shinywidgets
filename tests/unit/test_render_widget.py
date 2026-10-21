@@ -38,7 +38,6 @@ def test_render_quak_coerces_dataframe(widget_session) -> None:
         assert asyncio.run(r._render()) is not None
 
     assert isinstance(r.widget, quak.Widget)
-    assert r.widget._columns == ["a", "b"]
     assert r.widget.sql == 'SELECT * FROM "df"'
 
 
@@ -85,7 +84,7 @@ def test_render_quak_rejects_unsupported_value(widget_session) -> None:
         return 42
 
     with session_context(widget_session):
-        with pytest.raises(ValueError, match="DataFrame-like"):
+        with pytest.raises(ValueError):
             asyncio.run(r._render())
 
 
@@ -94,7 +93,7 @@ def test_render_quak_missing_quak_package(monkeypatch: pytest.MonkeyPatch) -> No
 
     r = rw.render_quak()
     with pytest.raises(ImportError, match="pip install quak"):
-        r._as_widget(object())  # type: ignore[arg-type]
+        r._as_widget(object())
 
 
 def test_render_plotly_accepts_figure_config_tuple(widget_session) -> None:

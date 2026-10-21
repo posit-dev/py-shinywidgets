@@ -28,7 +28,10 @@ export function setupQuakFit(el: HTMLElement, lmWidget: HTMLElement, fill: boole
   Object.assign(scroller.style, { maxHeight: 'none', flex: '0 1 auto', minHeight: '0' });
 
   const observer = new ResizeObserver(() => {
-    if (scroller.scrollHeight <= scroller.clientHeight) requestMoreRows(scroller);
+    // A hidden output (e.g., an inactive tab) has no height; don't load rows for it
+    if (scroller.clientHeight > 0 && scroller.scrollHeight <= scroller.clientHeight) {
+      requestMoreRows(scroller);
+    }
   });
   // The scroller changes size with the container, and the table with each batch of rows
   observer.observe(scroller);
