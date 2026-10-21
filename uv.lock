@@ -14,6 +14,9 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 
+[manifest]
+constraints = [{ name = "narwhals", specifier = ">=2.22" }]
+
 [[package]]
 name = "altair"
 version = "6.0.0"
@@ -3305,7 +3308,6 @@ dev = [
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "mosaic-widget" },
-    { name = "narwhals" },
     { name = "panel" },
     { name = "perspective-python" },
     { name = "playwright" },
@@ -3330,7 +3332,6 @@ test = [
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "mosaic-widget" },
-    { name = "narwhals" },
     { name = "panel" },
     { name = "perspective-python" },
     { name = "playwright" },
@@ -3356,7 +3357,6 @@ dev = [
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "mosaic-widget" },
-    { name = "narwhals" },
     { name = "panel" },
     { name = "perspective-python" },
     { name = "playwright" },
@@ -3381,7 +3381,6 @@ test = [
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "mosaic-widget" },
-    { name = "narwhals" },
     { name = "panel" },
     { name = "perspective-python" },
     { name = "playwright" },
@@ -3420,8 +3419,6 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'test'" },
     { name = "mosaic-widget", marker = "extra == 'dev'" },
     { name = "mosaic-widget", marker = "extra == 'test'" },
-    { name = "narwhals", marker = "extra == 'dev'", specifier = ">=2.22" },
-    { name = "narwhals", marker = "extra == 'test'", specifier = ">=2.22" },
     { name = "panel", marker = "extra == 'dev'" },
     { name = "panel", marker = "extra == 'test'" },
     { name = "perspective-python", marker = "extra == 'dev'", specifier = ">=3.0" },
@@ -3459,7 +3456,6 @@ dev = [
     { name = "maplibre", extras = ["anywidget"] },
     { name = "matplotlib" },
     { name = "mosaic-widget" },
-    { name = "narwhals", specifier = ">=2.22" },
     { name = "panel" },
     { name = "perspective-python", specifier = ">=3.0" },
     { name = "playwright", specifier = ">=1.40.0" },
@@ -3483,7 +3479,6 @@ test = [
     { name = "maplibre", extras = ["anywidget"] },
     { name = "matplotlib" },
     { name = "mosaic-widget" },
-    { name = "narwhals", specifier = ">=2.22" },
     { name = "panel" },
     { name = "perspective-python", specifier = ">=3.0" },
     { name = "playwright", specifier = ">=1.40.0" },

@@ -219,8 +219,9 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     The decorated function should return a `mosaic_widget.MosaicWidget` (requires
     ``pip install mosaic-widget``), built from a Mosaic spec and the data (e.g., a
     DataFrame) to register with DuckDB. Mosaic specs set the size of each plot, so
-    the plots keep those sizes while the output itself fills its container (or
-    takes the explicit ``height``).
+    the plots keep those pixel sizes while the output itself fills its container
+    (or takes the explicit ``height``). With an explicit ``height`` smaller than
+    the plots, they overflow the output visibly (they aren't clipped).
 
     The decorated function also gains two read-only attributes: `.value` and
     `.widget`, which are both the rendered `MosaicWidget` instance. Use `.widget`

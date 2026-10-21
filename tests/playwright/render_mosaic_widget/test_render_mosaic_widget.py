@@ -52,7 +52,6 @@ def test_mosaic_fills_fillable_container(page: Page, local_app) -> None:
     wait_for_plots(page, "#mosaic")
 
     boxes = page.evaluate(BOXES_JS, "#mosaic")
-    print("fill boxes:", boxes)
     assert abs(boxes["out"][0] - boxes["container"][0]) <= 1
     assert abs(boxes["out"][1] - boxes["container"][1]) <= 1
     assert abs(boxes["widget"][0] - boxes["out"][0]) <= 1
@@ -67,7 +66,6 @@ def test_mosaic_fills_fillable_container(page: Page, local_app) -> None:
         "() => document.querySelector('#mosaic').getBoundingClientRect().height < 340"
     )
     resized = page.evaluate(BOXES_JS, "#mosaic")
-    print("resized boxes:", resized)
     assert abs(resized["out"][1] - resized["container"][1]) <= 1
     assert abs(resized["widget"][1] - resized["out"][1]) <= 1
 
@@ -80,7 +78,6 @@ def test_mosaic_respects_explicit_height(page: Page, local_app) -> None:
     wait_for_plots(page, "#mosaic_fixed")
 
     boxes = page.evaluate(BOXES_JS, "#mosaic_fixed")
-    print("fixed boxes:", boxes)
     assert abs(boxes["out"][1] - 260) <= 1
 
     assert_no_unexpected_errors(errors, failed_requests)
@@ -128,7 +125,6 @@ def test_mosaic_rerender_lifecycle(page: Page, local_app) -> None:
     expect(page.locator("#mosaic .mosaic-widget")).to_have_count(1)
     expect(page.locator("#mosaic .plot svg")).to_have_count(2)
     mosaic_views = [m["views"] for m in client_models(page) if m["name"] == "AnyModel"]
-    print("AnyModel views:", mosaic_views)
     # one view for each of the two outputs, none left over from retired renders
     assert sorted(mosaic_views) == [1, 1]
 

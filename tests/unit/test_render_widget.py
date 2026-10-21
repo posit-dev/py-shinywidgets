@@ -19,6 +19,11 @@ def test_render_matplotlib_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_mosaic_widget_is_render_widget_base() -> None:
+    renderer = rw.render_mosaic_widget()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_plotly_accepts_figure_config_tuple(widget_session) -> None:
     pytest.importorskip("plotly")
     import plotly.graph_objects as go
