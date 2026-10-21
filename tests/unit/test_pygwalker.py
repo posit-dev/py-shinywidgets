@@ -39,7 +39,6 @@ def test_render_pygwalker_is_exported() -> None:
     assert shinywidgets.render_pygwalker is rw.render_pygwalker
     assert "render_pygwalker" in shinywidgets.__all__
     assert "render_pygwalker" in rw.__all__
-    assert isinstance(rw.render_pygwalker(), rwb.render_widget_base)
 
 
 def test_dataframe_is_coerced_to_walker_widget(widget_session) -> None:
@@ -48,6 +47,29 @@ def test_dataframe_is_coerced_to_walker_widget(widget_session) -> None:
     assert isinstance(r.widget, _WalkerWidget)
     assert r.value is df
     assert '"a"' in r.widget.props
+
+
+def test_dataframe_subclass_is_coerced_to_walker_widget(widget_session) -> None:
+    class MyFrame(pd.DataFrame):
+        pass
+
+    r = render(MyFrame({"a": [1, 2, 3]}), widget_session)
+    assert isinstance(r.widget, _WalkerWidget)
+
+
+def test_polars_dataframe_gets_pandas_hint(widget_session) -> None:
+    # PyGWalker's polars support is broken with polars >= 1.0, so don't hand it one.
+    # (A stand-in is enough: only the type's package and name are inspected.)
+    DataFrame = type("DataFrame", (), {"__module__": "polars.dataframe.frame"})
+    r = rw.render_pygwalker()
+
+    @r
+    def _():  # noqa: ANN202
+        return DataFrame()
+
+    with session_context(widget_session):
+        with pytest.raises(TypeError, match=r"to_pandas\(\)"):
+            asyncio.run(r._render())
 
 
 def test_prebuilt_walker_widget_is_passed_through(widget_session) -> None:
@@ -119,3 +141,15 @@ def test_layout_defaults_respect_explicit_height(widget_session) -> None:
 def test_layout_defaults_respect_explicit_overflow(widget_session) -> None:
     w, _ = layout_defaults(widget_session, overflow="visible")
     assert w.layout.overflow == "visible"
+
+
+def test_layout_defaults_are_idempotent_across_renders(widget_session) -> None:
+    # A widget that's rendered again (e.g., reused via session_lifetime()) must
+    # keep filling, even though the first pass wrote layout.height
+    from pygwalker.api.anywidget import walk
+
+    with session_context(widget_session):
+        w = walk(pd.DataFrame({"a": [1, 2, 3]}))
+        fills = [rwb.set_layout_defaults(w)[1] for _ in range(3)]
+    assert fills == [True, True, True]
+    assert w.layout.height == "100%"

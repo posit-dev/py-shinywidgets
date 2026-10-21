@@ -288,7 +288,7 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
-def _pygwalker_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+def pygwalker_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # PyGWalker's UI is ~750px tall regardless of its container, so rather than
     # being clipped by a shorter container (or explicit height), let it scroll.
     # Sizing to 100% of the container is what makes an output_widget(height=...)
@@ -296,9 +296,12 @@ def _pygwalker_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     layout = widget.layout  # type: ignore
     if layout.overflow is None:
         layout.overflow = "auto"
-    if layout.height is None:
+    if layout.height in (None, "auto"):
         layout.height = "100%"
-    return fill
+    # This runs on every render, so a widget that's rendered again (e.g., one
+    # reused via session_lifetime()) already has the "100%" written above, which
+    # set_layout_defaults() reads as an explicit height.
+    return fill or layout.height == "100%"
 
 
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
@@ -313,7 +316,7 @@ def _pygwalker_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
-    "pygwalker": _pygwalker_layout_defaults,
+    "pygwalker": pygwalker_layout_defaults,
 }
 
 

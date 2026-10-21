@@ -502,7 +502,12 @@ class render_pygwalker(render_widget_base[ValueT, WalkerWidget]):
     # DataFrames are generic (several renderers accept them), so they can't be
     # registered in AS_WIDGET_MAP
     def _as_widget(self, value: ValueT) -> WalkerWidget:
-        if not is_pandas_dataframe(value):
+        if is_dataframe(value, "polars"):
+            raise TypeError(
+                "PyGWalker's polars support is broken with polars >= 1.0. "
+                "Pass a pandas DataFrame instead (e.g., df.to_pandas())."
+            )
+        if not is_dataframe(value, "pandas"):
             return super()._as_widget(value)
 
         try:
@@ -515,8 +520,8 @@ class render_pygwalker(render_widget_base[ValueT, WalkerWidget]):
         return walk(value)
 
 
-def is_pandas_dataframe(x: object) -> bool:
+def is_dataframe(x: object, pkg: str) -> bool:
     return any(
-        widget_pkg(cls) == "pandas" and cls.__name__ == "DataFrame"
+        widget_pkg(cls) == pkg and cls.__name__ == "DataFrame"
         for cls in type(x).__mro__
     )
