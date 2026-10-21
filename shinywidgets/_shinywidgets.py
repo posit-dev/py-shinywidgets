@@ -39,7 +39,7 @@ from ._as_widget import as_widget
 from ._bokeh import bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
-from ._dependencies import require_dependency
+from ._dependencies import require_dependency, widget_pkg
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -172,12 +172,11 @@ def init_shiny_widget(w: Widget):
             return
 
         with WidgetRenderContext.resumed(render_ctx):
-            # Call _repr_mimebundle_() before get_state() since it may modify the widget
-            # in an important way (unfortunately, it does for plotly). Only call real
-            # overrides: the base implementation just repr()s the widget, which
-            # recurses forever on widget-reference cycles.
+            # Plotly's display hook snapshots the data and layout for get_state().
             # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
-            if type(w)._repr_mimebundle_ is not Widget._repr_mimebundle_:
+            # Other display hooks can create preview widgets, causing an infinite
+            # widget-creation loop (e.g. pythreejs, #244).
+            if any(widget_pkg(cls) == "plotly" for cls in type(w).__mro__):
                 w._repr_mimebundle_()
 
             # Now, get the state

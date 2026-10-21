@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug fixes
 
+* Fixed an issue where pythreejs widgets caused Shiny sessions to hang indefinitely with ipywidgets 8. (#244)
 * Fixed a leak where the `Layout`/`Style` models that ipywidgets creates lazily while serializing a widget were never closed: every re-render of an output leaked a few models on the server and in the browser for the rest of the session. They now share the cleanup of the widget that created them, unless a live widget still references them. (#258)
 * Fixed an issue where closing a widget before its comm had opened (for example, re-rendering an output twice in one flush) reopened the widget anyway. (#258)
 * Widget comm messages are now always sent through the session that created the widget, and each session routes client messages only to its own widgets. (#258)

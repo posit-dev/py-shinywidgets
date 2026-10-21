@@ -106,7 +106,7 @@ def test_session_is_wired_once_and_open_effect_assigns_comm(
     assert isinstance(w1.comm, FakeShinyComm)
     assert sw.COMM_MANAGERS[root.id].comms["w1"] is w1.comm
     assert w1.comm.target_name == "jupyter.widget"
-    assert "_repr_mimebundle_" in w1.calls
+    assert "_repr_mimebundle_" not in w1.calls
     assert "get_state" in w1.calls
 
     # Second widget in same session should not re-wire session-level hooks/mounts.
