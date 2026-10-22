@@ -233,6 +233,13 @@ interface WidgetOutputValue {
   widget_pkg: string;
 }
 
+// Elements that render meaningful content without element children or text
+// (e.g. an Image widget's <img>, a direct <canvas>, an empty <button>).
+const RENDERABLE_LEAF_TAGS = new Set([
+  'AUDIO', 'BUTTON', 'CANVAS', 'EMBED', 'IFRAME', 'IMG', 'INPUT', 'OBJECT',
+  'PICTURE', 'SELECT', 'SVG', 'TEXTAREA', 'VIDEO',
+]);
+
 // Ideally we'd extend Shiny's HTMLOutputBinding, but the implementation isn't exported
 class IPyWidgetOutput extends Shiny.OutputBinding {
   private _views = new WeakMap<HTMLElement, DOMWidgetView>();
@@ -373,7 +380,11 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     const mo = new MutationObserver((_mutations) => {
       if (this._hasImplementation(lmWidget)) finish();
     });
-    mo.observe(lmWidget, {childList: true});
+    // Watch the whole subtree, including text changes: an already-attached
+    // but empty container can receive its content later without any mutation
+    // to lmWidget's direct child list, and that content is what the
+    // readiness predicate checks.
+    mo.observe(lmWidget, {childList: true, subtree: true, characterData: true});
 
     const timer = timeoutMs === undefined ? undefined : setTimeout(finish, timeoutMs);
   }
@@ -385,6 +396,19 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     }, 0);
   }
   _hasImplementation(lmWidget: HTMLElement): boolean {
+    // The view's root can itself be the implementation: an ipywidgets
+    // Button's root IS a <button> (holding its description as text) and an
+    // Image widget's root is an <img>. Deliberately not
+    // lmWidget.children.length > 0: a pending container child (attached
+    // before its real content, e.g. quak's wrapper ahead of .quak) must not
+    // count as rendered.
+    if (
+      RENDERABLE_LEAF_TAGS.has(lmWidget.tagName) ||
+      (lmWidget.shadowRoot?.children.length ?? 0) > 0 ||
+      this._hasDirectText(lmWidget)
+    ) {
+      return true;
+    }
     // Not just lmWidget.children[0]: DescriptionView (the base of most
     // ipywidgets controls, e.g. HTML, sliders) always inserts a <label> --
     // empty and display:none if the widget has no description -- as the
@@ -394,12 +418,25 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       if (impl.children.length > 0 || implEl.shadowRoot?.children.length) {
         return true;
       }
+      if (RENDERABLE_LEAF_TAGS.has(implEl.tagName)) {
+        return true;
+      }
       // A rendered implementation can also be a bare text node (e.g.,
       // HTML("foo") sets text inside .widget-html-content) or a leaf control
       // (e.g., a <button> holding only text). The description <label> is
       // excluded: it isn't the implementation, and it can carry text while
       // the actual content is still pending.
       if (!implEl.classList.contains('widget-label') && (implEl.textContent?.trim() ?? '') !== '') {
+        return true;
+      }
+    }
+    return false;
+  }
+  // Direct text nodes only: textContent would also pick up a description
+  // <label> descendant whose content is still pending.
+  private _hasDirectText(el: HTMLElement): boolean {
+    for (const node of Array.from(el.childNodes)) {
+      if (node.nodeType === Node.TEXT_NODE && (node.textContent?.trim() ?? '') !== '') {
         return true;
       }
     }
