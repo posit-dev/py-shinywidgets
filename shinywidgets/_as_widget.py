@@ -300,6 +300,11 @@ def leave_pyplot(fig: Figure, *, keep_canvas: bool) -> None:
         # to a plain canvas, which undoes a GUI backend's HiDPI dpi scaling
         # without firing resize_event.
         Gcf.destroy(manager)
+        # Matplotlib 3.10 leaves the figure on the destroyed manager's canvas, so
+        # resizing the figure (e.g., undoing the dpi scaling) would resize the
+        # destroyed window and fire resize_event.
+        if fig.canvas.manager is manager:
+            fig.canvas.manager = None
         return
     # The canvas comes from pyplot itself (ipympl is pyplot's backend) or from
     # the user. Destroying the manager would close or detach it, so only
