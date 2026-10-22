@@ -315,6 +315,25 @@ def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from maplibre.ipywidget import MapWidget
+
+    if not isinstance(widget, MapWidget):
+        return fill
+
+    # The map's root element is styled `height: <height>` (shinywidgets.css
+    # sizes it to the widget container instead), so a user-specified height has
+    # to go on the container. The default (MapWidget.__init__()'s 400) can't be
+    # told apart from an explicit 400, so treat it as unset, as with a
+    # percentage (which is relative to the container anyway).
+    if widget.height != "400px" and not str(widget.height).endswith("%"):
+        fill = False
+        if widget.layout.height in (None, "auto"):
+            widget.layout.height = widget.height
+
+    return fill
+
+
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
 # (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
 # in js/src/fill.ts). A handler receives the widget and the current fill
@@ -328,6 +347,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
     "lonboard": lonboard_layout_defaults,
+    "maplibre": maplibre_layout_defaults,
 }
 
 
