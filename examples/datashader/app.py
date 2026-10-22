@@ -47,6 +47,9 @@ app_ui = ui.page_sidebar(
 def server(input, output, session):
     @render_holoviews
     def points():
+        # Build the plot here, per session, not once at module level (the data can
+        # be shared): every display of the same holoviews object shares its zoom
+        # streams, so a shared plot would apply one user's zoom to everyone's plot.
         mean = input.agg() == "mean"
         return df.hvplot.points(
             "x",

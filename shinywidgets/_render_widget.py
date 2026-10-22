@@ -299,7 +299,13 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
     [datashader](https://datashader.org) are supported too (e.g., hvPlot's
     ``rasterize=True`` or holoviews' ``rasterize()`` operation; requires
     ``pip install datashader``): they re-aggregate the data on the server for the
-    visible region whenever the user zooms or pans (requires shiny >= 1.9).
+    visible region whenever the user zooms or pans (requires shiny >= 1.9; with
+    older shiny, each new image only arrives after the next unrelated input).
+    Build such plots inside the render function rather than once at module level:
+    holoviews links every display of the same object, so a shared plot would apply
+    one user's zoom to every session's plot. Also note that re-aggregation runs on
+    the server's event loop, so a slow aggregation delays every session served by
+    that process.
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
