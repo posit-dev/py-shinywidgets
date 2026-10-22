@@ -5,7 +5,12 @@ import io
 import numpy as np
 from PIL import Image
 from playwright.sync_api import Page, expect
-from tests.playwright.conftest import assert_no_unexpected_errors, collect_errors
+from tests.playwright.conftest import (
+    assert_no_unexpected_errors,
+    client_models,
+    collect_errors,
+    expose_manager,
+)
 
 # The app's points are pure red against a white background
 MIN_RED_PIXELS = 50
@@ -147,4 +152,32 @@ def test_k3d_rerender_lifecycle(page: Page, local_app) -> None:
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_k3d_rerender_closes_old_models(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.route("**/output.js", expose_manager)
+    page.goto(local_app.url)
+    expect(page.locator("#fill_plot canvas")).to_have_count(1, timeout=30000)
+    wait_for_red_pixels(page, "#fill_plot canvas")
+
+    def n_models() -> int:
+        # Plots and their objects are all anywidget models
+        return sum(1 for m in client_models(page) if m["name"] == "AnyModel")
+
+    initial = n_models()
+    for i in range(1, 4):
+        page.click("#rerender")
+        expect(page.locator("#render_count")).to_have_text(str(i))
+    wait_for_red_pixels(page, "#fill_plot canvas")
+
+    # Each re-render's old plot (not just its objects) must be closed in the
+    # browser, so the model count settles back to the initial one
+    waited = 0
+    while n_models() != initial:
+        assert waited < 10000, (initial, client_models(page))
+        page.wait_for_timeout(250)
+        waited += 250
+
     assert_no_unexpected_errors(errors, failed_requests)

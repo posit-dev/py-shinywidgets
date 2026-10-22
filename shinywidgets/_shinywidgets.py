@@ -143,6 +143,8 @@ def init_shiny_widget(w: Widget):
             }
         # BokehModel.close() is not idempotent; guard against double close.
         guard_widget_close(w)
+    elif widget_pkg(w) == "k3d":
+        close_comm_on_close(w)
 
     # Since the actual ShinyComm() is initialized _after_ the Widget is initialized,
     # and Widget.__init__() includes a call to Widget.open() which opens an unnecessary
@@ -326,6 +328,27 @@ def close_widget(w: Widget) -> None:
     # the widget instance, so remove it again
     if WIDGET_INSTANCE_MAP.get(model_id) is w:
         del WIDGET_INSTANCE_MAP[model_id]
+
+
+def close_comm_on_close(w: Widget) -> None:
+    """
+    Make a widget's close() also close its comm.
+
+    k3d's Plot overrides close() (to clear the ipywidgets Outputs it's displayed
+    in) without calling Widget.close(), so its comm never closes: every re-render
+    would leave the old plot's comm registered here and its model in the browser.
+    Widget.close() is a no-op once the comm is gone, so this is safe for widgets
+    whose close() already closes it.
+    """
+    close = w.close
+
+    def close_with_comm() -> None:
+        close()
+        Widget.close(w)
+
+    # Assigning to a method isn't expressible to the type checker, but patching
+    # the instance is the point (we don't control k3d's class)
+    w.close = close_with_comm  # type: ignore[method-assign]
 
 
 def walk_widget_tree(roots: Iterable[object]) -> Iterator[Widget]:
