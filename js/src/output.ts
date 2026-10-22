@@ -274,7 +274,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // Only forward the potential to fill if `output_widget(fillable=True)`
     // _and_ the widget instance wants to fill
     const fill = data.fill && el.classList.contains("html-fill-container");
-    if (fill) el.classList.add("forward-fill-potential");
+    el.classList.toggle("forward-fill-potential", fill);
 
     // At this time point, we should've already handled an 'open' message, and so
     // the model should be ready to use
@@ -296,12 +296,12 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;
 
-    const setupFill = fill ? behavior?.setupFill : undefined;
-    if (setupFill) {
+    const setupSize = fill ? behavior?.setupFill : behavior?.setupFixedSize;
+    if (setupSize) {
       this._onImplementation(lmWidget, () => {
-        // Don't set up fill behavior if this view has since been replaced
+        // Don't set up fill/size behavior if this view has since been replaced
         if (this._views.get(el) !== view) return;
-        const cleanup = setupFill({ el, lmWidget, view, model });
+        const cleanup = setupSize({ el, lmWidget, view, model });
         if (cleanup) view.once("remove", cleanup);
       });
     }
