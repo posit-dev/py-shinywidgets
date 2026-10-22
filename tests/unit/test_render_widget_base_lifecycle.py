@@ -122,6 +122,17 @@ def test_render_returns_none_when_widget_is_not_domwidget(monkeypatch) -> None:
     assert asyncio.run(r._render()) is None
 
 
+def test_render_of_unsupported_builtin_raises_helpful_type_error() -> None:
+    r = rwb.render_widget_base()
+
+    @r
+    async def _():  # noqa: ANN202
+        return "not a widget"
+
+    with pytest.raises(TypeError, match="Don't know how to coerce"):
+        asyncio.run(r._render())
+
+
 def test_render_includes_widget_package_for_domwidgets(monkeypatch) -> None:
     class FakeDOMWidget(FakeLiveWidget):
         def __init__(self) -> None:
