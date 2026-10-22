@@ -241,9 +241,10 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     `matplotlib.axes.Axes` (rendered via its figure), or an `ipympl.backend_nbagg.Canvas`
     widget. Figures and axes are coerced to a `Canvas` (requires ``pip install ipympl``),
     so this also works with libraries built on matplotlib (e.g., seaborn or
-    ``pandas.DataFrame.plot()``). Figures created through pyplot are closed (via
-    ``plt.close()``) when their widget is retired. In a filling layout, the figure is
-    resized to fit its container.
+    ``pandas.DataFrame.plot()``). Like `@render.plot`, a figure created through pyplot
+    is closed (as by ``plt.close()``) once it's rendered, so later pyplot calls (from
+    any session) can't draw into it. In a filling layout, the figure is resized to fit
+    its container.
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered

@@ -7,9 +7,12 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING, cast
 
+import matplotlib.pyplot as plt
 import pytest
 from ipywidgets import Widget
+from matplotlib._pylab_helpers import Gcf
 from matplotlib.axes import Axes
+from matplotlib.backend_bases import Event, ResizeEvent
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure, SubFigure
 from mpl_toolkits.mplot3d import Axes3D
@@ -73,22 +76,120 @@ def test_returned_canvas_gets_figure_manager(widget_session: Session) -> None:
         assert canvas.manager is not None
 
 
-def test_returned_pyplot_canvas_closed_at_render_retirement(
-    widget_session: Session,
+@pytest.mark.parametrize("returned", ["figure", "axes", "canvas"])
+def test_pyplot_figure_leaves_pyplot_at_coercion(
+    returned: str, widget_session: Session
 ) -> None:
-    import matplotlib.pyplot as plt
-
+    # pyplot's current figure is shared by every output and session in the
+    # process, so a live figure left there can be drawn into by another
+    # session's plt.gca() (e.g., a seaborn call without ax=)
     with session_context(widget_session):
         canvas_type = type(cast("Canvas", as_widget(Figure())))
-        context = Context()
-        with context(), WidgetRenderContext():
-            figure = plt.figure()
-            canvas = canvas_type(figure)
-            assert as_widget(canvas) is canvas
+        figure, axes = plt.subplots()
+        if returned == "figure":
+            x: object = figure
+        elif returned == "axes":
+            x = axes
+        else:
+            x = canvas_type(figure)
+        canvas = cast("Canvas", as_widget(x))
 
-        assert plt.fignum_exists(figure.number)
-        context.invalidate()
+    assert not plt.fignum_exists(figure.number)
+    assert all(m.canvas.figure is not figure for m in Gcf.get_all_fig_managers())
+    assert figure.canvas is canvas
+    assert canvas.comm is not None
+
+
+def test_canvas_works_after_leaving_pyplot(widget_session: Session) -> None:
+    with session_context(widget_session):
+        figure, axes = plt.subplots()
+        axes.plot([0, 10], [0, 10])
+        canvas = cast("Canvas", as_widget(figure))
         assert not plt.fignum_exists(figure.number)
+
+        presses: list[Event] = []
+        canvas.mpl_connect("button_press_event", presses.append)
+        xlim = axes.get_xlim()
+
+        def send(content: dict[str, object]) -> None:
+            canvas._handle_message(canvas, content, [])
+
+        def mouse(type: str, x: float, y: float, buttons: int) -> dict[str, object]:
+            return {
+                "type": type,
+                "x": x,
+                "y": y,
+                "button": 0,
+                "buttons": buttons,
+                "modifiers": [],
+            }
+
+        send({"type": "toolbar_button", "name": "zoom"})
+        send(mouse("button_press", 200, 200, 1))
+        send(mouse("motion_notify", 300, 300, 1))
+        send(mouse("button_release", 300, 300, 0))
+        send({"type": "resize", "width": 300, "height": 200})
+
+    assert figure.canvas is canvas
+    assert len(presses) == 1
+    assert axes.get_xlim() != xlim
+    assert tuple(figure.get_size_inches() * figure.dpi) == (300, 200)
+
+
+def test_pyplot_figure_coercion_fires_no_resize_event(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # On a HiDPI screen, a GUI backend (e.g., macosx) doubles a pyplot figure's
+    # dpi and resizes its window (firing resize_event) when the dpi changes. A
+    # resize_event callback that reads a reactive value would then run inside
+    # the render and invalidate it, re-rendering forever.
+    figure = plt.figure(dpi=100)
+    figure.canvas._set_device_pixel_ratio(2)
+    manager = figure.canvas.manager
+    assert manager is not None
+
+    def resize_window(width: int, height: int) -> None:
+        ResizeEvent("resize_event", figure.canvas)._process()
+
+    monkeypatch.setattr(manager, "resize", resize_window)
+    resizes: list[Event] = []
+    figure.canvas.mpl_connect("resize_event", resizes.append)
+
+    with session_context(widget_session):
+        as_widget(figure)
+
+    assert resizes == []
+    assert figure.dpi == 100
+
+
+def test_figure_stays_live_when_ipympl_is_pyplots_backend() -> None:
+    # With ipympl as pyplot's backend, pyplot's figure manager owns the very
+    # canvas that gets displayed, and plt.close() would close that widget
+    script = """
+import asyncio
+
+import matplotlib.pyplot as plt
+from shiny import App, ui
+from shiny._connection import MockConnection
+from shiny.session import session_context
+from shinywidgets import as_widget
+
+asyncio.set_event_loop(asyncio.new_event_loop())
+session = App(ui.page_fluid(), lambda input, output, session: None)._create_session(
+    MockConnection()
+)
+with session_context(session):
+    plt.switch_backend("module://ipympl.backend_nbagg")
+    figure = plt.figure()
+    canvas = figure.canvas
+    assert as_widget(figure) is canvas
+
+assert not plt.fignum_exists(figure.number)
+assert canvas.comm is not None, "canvas was closed"
+assert canvas.manager is not None
+"""
+    env = {**os.environ, "MPLBACKEND": "agg"}
+    subprocess.run([sys.executable, "-c", script], check=True, env=env)
 
 
 def test_existing_canvas_is_reused_with_its_settings(widget_session: Session) -> None:
