@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from jupyter_bokeh import BokehModel
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
     from maplibre.ipywidget import MapWidget
+    from maplibre.map import Map as MaplibreMap
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
@@ -33,6 +34,8 @@ if TYPE_CHECKING:
 # The bound is a string so it stays a lazy forward reference at runtime (the
 # alias it points to references plotly, an optional dependency).
 PlotlyValueT = TypeVar("PlotlyValueT", bound="PlotlyValue")
+# MapWidget subclasses maplibre.Map, so this bound covers both.
+MaplibreValueT = TypeVar("MaplibreValueT", bound="MaplibreMap")
 
 __all__ = (
     "render_widget",
@@ -219,7 +222,7 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         return super()._as_widget(cast(ValueT, m))
 
 
-class render_maplibre(render_widget_base[ValueT, MapWidget]):
+class render_maplibre(render_widget_base[MaplibreValueT, MapWidget]):
     """
     Reactively render a [maplibre](https://eoda-dev.github.io/py-maplibregl/) map as a
     Shiny output.
