@@ -7,6 +7,7 @@ from shiny.pytest import create_app_fixture
 from tests.playwright.conftest import assert_no_unexpected_errors, collect_errors
 
 local_app_plain = create_app_fixture(Path(__file__).parent / "app_plain.py")
+local_app_formatted = create_app_fixture(Path(__file__).parent / "app_formatted.py")
 
 
 def test_explicit_scroll_y_is_respected_with_scroll_x(page: Page, local_app) -> None:
@@ -77,3 +78,25 @@ def test_app_without_itables_leaves_dollar_alone(page: Page, local_app_plain) ->
         return { accessor: !!(d && (d.get || d.set)) };
     }""")
     assert descriptor == {"accessor": False}
+
+
+def test_dollar_keeps_datatables_helpers_for_js_options(
+    page: Page, local_app_formatted
+) -> None:
+    # itables evaluates JavascriptCode options against the global `$`, so the page
+    # jQuery must expose the DataTables plugin that came with itables' own jQuery
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app_formatted.url)
+
+    cells = page.locator("#formatted tbody tr td:nth-child(2)")
+    expect(cells.first).to_have_text("$1,234.50", timeout=30000)
+    expect(cells.nth(1)).to_have_text("$6.25")
+    assert page.evaluate("() => window.$ === window.jQuery")
+    assert (
+        page.evaluate(
+            "() => $('#formatted table.dataTable').DataTable().rows().count()"
+        )
+        == 2
+    )
+
+    assert_no_unexpected_errors(errors, failed_requests)

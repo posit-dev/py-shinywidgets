@@ -111,10 +111,24 @@ function protectPageJQuery(): void {
     enumerable: true,
     get: () => (hasOverride ? override : win.jQuery),
     set: (value: unknown) => {
+      // itables evaluates JavascriptCode options against the global `$` (e.g., its
+      // documented `$.fn.dataTable.render.number(...)`), so lend the refused jQuery's
+      // DataTables plugin to the page jQuery
+      if (isJQuery(value) && value !== win.jQuery) {
+        lendDataTables(value as JQueryLike, win.jQuery as JQueryLike | undefined);
+      }
       hasOverride = !isJQuery(value);
       override = hasOverride ? value : undefined;
     },
   });
+}
+
+type JQueryLike = { fn: { dataTable?: unknown; DataTable?: unknown } };
+
+function lendDataTables(from: JQueryLike, to: JQueryLike | undefined): void {
+  if (!to || !from.fn.dataTable || to.fn.dataTable) return;
+  to.fn.dataTable = from.fn.dataTable;
+  to.fn.DataTable = from.fn.DataTable;
 }
 
 function isJQuery(value: unknown): boolean {
