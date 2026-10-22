@@ -225,11 +225,21 @@ class ShinyComm:
     def handle_msg(self, msg: Dict[str, object]) -> None:
         if self._msg_callback is not None:
             self._parent_header = msg.get("header")
-            token = handling_client_msg.set(True)
+            scope = ClientMsgScope()
+            token = handling_client_msg.set(scope)
+            # Logger filters only see records that pass the level check, so
+            # when the root logger is at ERROR the WARNING records ipywidgets
+            # logs for callback exceptions never reach ClientMsgErrorFilter.
+            # Lower the source logger's level for the duration of the dispatch.
+            prev_level = traitlets_logger.level
+            if traitlets_logger.getEffectiveLevel() > logging.WARNING:
+                traitlets_logger.setLevel(logging.WARNING)
             try:
                 self._msg_callback(msg)
             finally:
                 self._parent_header = None
+                traitlets_logger.setLevel(prev_level)
+                scope.active = False
                 handling_client_msg.reset(token)
 
     def handle_close(self, msg: Dict[str, object]) -> None:
@@ -266,8 +276,24 @@ class OrphanedShinyComm:
 
 logger = logging.getLogger("shinywidgets")
 
-handling_client_msg: ContextVar[bool] = ContextVar(
-    "shinywidgets_handling_client_msg", default=False
+traitlets_logger = logging.getLogger("traitlets")
+
+
+class ClientMsgScope:
+    """
+    Tracks whether dispatch of a client message is still in progress.
+    `asyncio.create_task()` and `loop.call_soon()` copy the current context,
+    so resetting a ContextVar[bool] when dispatch ends would leave deferred
+    work rerouting (and dropping) `traitlets` records for the rest of its
+    life. Copied contexts share this object, so deactivating it stops
+    rerouting in deferred work too.
+    """
+
+    active = True
+
+
+handling_client_msg: ContextVar[Optional[ClientMsgScope]] = ContextVar(
+    "shinywidgets_handling_client_msg", default=None
 )
 
 
@@ -283,10 +309,11 @@ class ClientMsgErrorFilter(logging.Filter):
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if not handling_client_msg.get() or record.levelno < logging.WARNING:
+        scope = handling_client_msg.get()
+        if scope is None or not scope.active or record.levelno < logging.WARNING:
             return True
         logger.error(record.getMessage(), exc_info=record.exc_info)
         return False
 
 
-logging.getLogger("traitlets").addFilter(ClientMsgErrorFilter())
+traitlets_logger.addFilter(ClientMsgErrorFilter())

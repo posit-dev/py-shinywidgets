@@ -90,3 +90,60 @@ def test_traitlets_logging_outside_browser_messages_is_untouched(
 
     [record] = caplog.records
     assert record.name == "traitlets"
+
+
+def test_callback_error_is_logged_when_root_logger_is_at_error(
+    widget_session: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Logger filters only run after the level check, so with the root logger
+    # at ERROR the WARNING record would never reach the rerouting filter.
+    def boom(change: object) -> None:
+        raise RuntimeError("observer failed")
+
+    with session_context(widget_session):
+        slider = IntSlider(value=1)
+        slider.observe(boom, names="value")
+        comm = open_comm(slider)
+        with caplog.at_level(logging.ERROR):
+            comm.handle_msg(
+                client_msg(
+                    comm.comm_id,
+                    {"method": "update", "state": {"value": 5}, "buffer_paths": []},
+                )
+            )
+
+    [record] = caplog.records
+    assert record.name == "shinywidgets"
+    assert record.levelno == logging.ERROR
+    assert record.exc_info is not None
+    assert isinstance(record.exc_info[1], RuntimeError)
+
+
+def test_deferred_work_after_dispatch_keeps_traitlets_logging(
+    widget_session: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    # asyncio tasks copy the current context, so a task scheduled by a widget
+    # callback inherits the dispatch context. Once dispatch ends, its
+    # traitlets logging must go back to normal.
+    async def deferred() -> None:
+        logging.getLogger("traitlets").warning("deferred warning")
+
+    def schedule(change: object) -> None:
+        asyncio.get_event_loop().create_task(deferred())
+
+    with session_context(widget_session):
+        slider = IntSlider(value=1)
+        slider.observe(schedule, names="value")
+        comm = open_comm(slider)
+        with caplog.at_level(logging.WARNING):
+            comm.handle_msg(
+                client_msg(
+                    comm.comm_id,
+                    {"method": "update", "state": {"value": 5}, "buffer_paths": []},
+                )
+            )
+            asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.1))
+
+    [record] = caplog.records
+    assert record.name == "traitlets"
+    assert record.levelno == logging.WARNING
