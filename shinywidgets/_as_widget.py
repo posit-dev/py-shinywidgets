@@ -181,6 +181,14 @@ def perspective_widget(data: object) -> "PerspectiveWidget":
         raise ImportError(
             "Install the perspective-python package to use perspective with shinywidgets (pip install perspective-python)."
         )
+    from perspective import Server, Table
+
+    if not isinstance(data, Table):
+        # PerspectiveWidget(data) would host the table on perspective.GLOBAL_SERVER,
+        # and the browser can open any table on its widget's server, so every
+        # session's viewer could read and write it. A server per widget keeps
+        # sessions' data apart.
+        data = Server().new_local_client().table(data)
 
     return PerspectiveWidget(data)
 

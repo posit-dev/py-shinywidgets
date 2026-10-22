@@ -359,6 +359,14 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
     the data, prefer updating the existing viewer in place (`.widget.update()` or
     `.widget.replace()`), or return a `perspective.Table` that you manage yourself.
 
+    A viewer's browser can list, read, and write every table on its widget's
+    Perspective server. A DataFrame gets a server of its own, so other sessions
+    can't reach its data. Tables made with ``perspective.table()`` (and widgets made
+    with ``PerspectiveWidget(df)``) live on Perspective's process-wide server,
+    which every session's viewer can reach, so only use them for data that every
+    user may see and edit. For per-user data, create the table on a private server
+    instead: ``perspective.Server().new_local_client().table(df)``.
+
     Parameters
     ----------
     width

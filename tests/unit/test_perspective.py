@@ -47,6 +47,26 @@ def test_render_perspective_accepts_dataframe(widget_session) -> None:
     assert {"a", "b"} <= set(r.widget.table.columns())
 
 
+def test_render_perspective_dataframes_are_private_to_their_widget(
+    widget_session,
+) -> None:
+    # The browser reaches tables through the widget's client (its ProxySession),
+    # so a DataFrame's table must not land on perspective's process-global server,
+    # where every other session's viewer could list, read, and write it
+    a, b = rw.render_perspective(), rw.render_perspective()
+    with session_context(widget_session):
+        render(a, pd.DataFrame({"secret": [1, 2]}))
+        render(b, pd.DataFrame({"other": [3]}))
+
+    assert isinstance(a.widget, PerspectiveWidget)
+    assert isinstance(b.widget, PerspectiveWidget)
+    a_name, b_name = a.widget.table.get_name(), b.widget.table.get_name()
+    global_names = perspective.GLOBAL_CLIENT.get_hosted_table_names()
+    assert a_name not in global_names and b_name not in global_names
+    assert a.widget.client.get_hosted_table_names() == [a_name]
+    assert b.widget.client.get_hosted_table_names() == [b_name]
+
+
 def test_render_perspective_accepts_polars_dataframe(widget_session) -> None:
     pl = pytest.importorskip("polars")
     r = rw.render_perspective()

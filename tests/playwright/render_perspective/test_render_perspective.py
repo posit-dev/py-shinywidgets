@@ -94,3 +94,43 @@ def test_perspective_rerender_lifecycle(page: Page, local_app) -> None:
     expect(viewer).to_have_count(1)
 
     assert_no_unexpected_errors(errors, failed_requests)
+
+
+# The tables a viewer's browser-side client can list, plus the viewer's own table
+HOSTED_TABLES_JS = """async (el) => {
+  const table = await el.getTable();
+  const client = await table.get_client();
+  return { own: await table.get_name(), hosted: await client.get_hosted_table_names() };
+}"""
+
+
+def test_perspective_dataframe_tables_are_private_to_each_session(
+    page: Page, local_app
+) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    viewer = page.locator(VIEWER)
+    expect(viewer.locator("td", has_text="row-0").first).to_be_visible(timeout=60000)
+    first = viewer.evaluate(HOSTED_TABLES_JS)
+
+    # A second visitor, in their own browser context (so their own session)
+    assert page.context.browser is not None
+    other_context = page.context.browser.new_context()
+    try:
+        other = other_context.new_page()
+        other.goto(local_app.url)
+        other_viewer = other.locator(VIEWER)
+        expect(other_viewer.locator("td", has_text="row-0").first).to_be_visible(
+            timeout=60000
+        )
+        second = other_viewer.evaluate(HOSTED_TABLES_JS)
+    finally:
+        other_context.close()
+
+    # The browser can open (read and write) any table its client lists, so
+    # neither the other session's tables nor the page's other viewer's table
+    # may be listed
+    assert first["hosted"] == [first["own"]]
+    assert second["hosted"] == [second["own"]]
+
+    assert_no_unexpected_errors(errors, failed_requests)
