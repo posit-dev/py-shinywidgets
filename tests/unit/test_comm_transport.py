@@ -252,3 +252,73 @@ def test_messages_go_to_the_session_that_opened_the_comm():
 
     assert len(owner._flushed_handlers) == 1
     assert owner._flush_handlers == []
+
+
+def test_messages_sent_while_handling_a_client_msg_carry_its_header():
+    """
+    The browser drops stale `echo_update`s by matching `parent_header.msg_id`
+    against the id of its latest send; without a parent_header every echo is
+    applied, so an older value can overwrite a newer one.
+    """
+    import shinywidgets._comm as comm
+
+    session = FakeSession()
+    mgr = comm.ShinyCommManager()
+    c = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
+    c.on_msg(lambda msg: c.send(data={"method": "echo_update"}))
+    session._flush_handlers.clear()
+
+    header = {"msg_id": "c1:7"}
+    c.handle_msg({"header": header, "content": {"comm_id": "c1", "data": {}}})
+    c.send(data={"method": "update"})
+
+    echo, later = (
+        json.loads(closure_map(fn)["msg_txt"]) for fn in session._flushed_handlers
+    )
+    assert echo["parent_header"] == header
+    assert "parent_header" not in later
+
+
+def test_widget_echo_update_carries_the_client_msg_id(
+    widget_session, monkeypatch: pytest.MonkeyPatch
+):
+    import asyncio
+
+    from ipywidgets import IntSlider
+    from shiny import reactive
+    from shiny.session import session_context
+    from shinywidgets._comm import ShinyComm
+
+    sent: list[Dict[str, Any]] = []
+
+    async def record(msg_type: str, msg_txt: str) -> None:
+        sent.append({"type": msg_type, **json.loads(msg_txt)})
+
+    monkeypatch.setattr(widget_session, "send_custom_message", record)
+    loop = asyncio.get_event_loop()
+
+    with session_context(widget_session):
+        slider = IntSlider(value=1)
+        loop.run_until_complete(reactive.flush())
+        assert isinstance(slider.comm, ShinyComm)
+        slider.comm.handle_msg(
+            {
+                "header": {"msg_id": "browser-msg-1"},
+                "content": {
+                    "comm_id": slider.comm.comm_id,
+                    "data": {
+                        "method": "update",
+                        "state": {"value": 5},
+                        "buffer_paths": [],
+                    },
+                },
+                "buffers": [],
+            }
+        )
+        loop.run_until_complete(widget_session._flushed_callbacks.invoke())
+
+    [echo] = [m for m in sent if m["content"]["data"].get("method") == "echo_update"]
+    assert echo["content"]["data"]["state"] == {"value": 5}
+    assert echo["parent_header"] == {"msg_id": "browser-msg-1"}

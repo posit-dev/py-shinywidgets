@@ -47,6 +47,10 @@ class ShinyComm:
     _close_callback: Optional[MsgCallback]
     _closed: bool = False
     _closed_data: Dict[str, object] = {}
+    # The header of the client message being handled, if any. ipywidgets answers
+    # a client update with an `echo_update`, and the browser only drops stale
+    # echoes if they name the update they answer in `parent_header.msg_id`.
+    _parent_header: Optional[object] = None
 
     def __init__(
         self,
@@ -157,7 +161,7 @@ class ShinyComm:
                     ) from e
 
         # Construct the message payload
-        msg = dict(
+        msg: Dict[str, object] = dict(
             content=dict(data=data, comm_id=self.comm_id, **keys),
             metadata=metadata,
             # Since Shiny doesn't currently have support for sending binary data, we base64 encode
@@ -171,6 +175,8 @@ class ShinyComm:
             # I don't think we need this info, but I could be wrong
             parent={},  # self.kernel.get_parent("shell")
         )
+        if self._parent_header is not None:
+            msg["parent_header"] = self._parent_header
 
         session = self.session
         msg_txt = json_packer(msg)
@@ -216,7 +222,11 @@ class ShinyComm:
 
     def handle_msg(self, msg: Dict[str, object]) -> None:
         if self._msg_callback is not None:
-            self._msg_callback(msg)
+            self._parent_header = msg.get("header")
+            try:
+                self._msg_callback(msg)
+            finally:
+                self._parent_header = None
 
     def handle_close(self, msg: Dict[str, object]) -> None:
         if self._close_callback is not None:
