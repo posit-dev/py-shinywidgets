@@ -61,9 +61,10 @@ def test_plotnine_fills_and_relayouts(page: Page, local_app) -> None:
         boxes = page.evaluate(BOXES_JS, "#plot")
         w, h = round(boxes["canvas"][0]), round(boxes["canvas"][1])
 
-        # Python-side: the figure was resized to the canvas size (ipympl sends
-        # the resize to Python asynchronously, so poll), and plotnine re-laid
-        # it out so no text (legend, axis labels, title) is clipped
+        # Python-side: the figure was resized to the canvas size and redrawn
+        # (ipympl sends the resize to Python, and the redraw request after it,
+        # asynchronously, so poll), and plotnine re-laid it out so no text
+        # (legend, axis labels, title) is clipped
         report = check_layout_until_size(page, w, h)
         assert "clipped=[]" in report, f"{report} at viewport {viewport}"
         texts = re.search(r"texts=(\d+)", report)
@@ -83,10 +84,11 @@ def check_layout_until_size(page: Page, w: int, h: int) -> str:
         report = layout.inner_text()
         size = re.search(r"size=(\d+)x(\d+)", report)
         assert size is not None
-        if abs(int(size[1]) - w) <= 2 and abs(int(size[2]) - h) <= 2:
+        resized = abs(int(size[1]) - w) <= 2 and abs(int(size[2]) - h) <= 2
+        if resized and "stale=False" in report:
             return report
         page.wait_for_timeout(250)
-    raise AssertionError(f"figure never matched the {w}x{h} canvas: {report}")
+    raise AssertionError(f"figure never redrawn at the {w}x{h} canvas: {report}")
 
 
 def test_plotnine_explicit_height_respected(page: Page, local_app) -> None:
