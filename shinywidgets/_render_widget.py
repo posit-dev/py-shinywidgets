@@ -147,11 +147,14 @@ class render_keplergl(render_widget_base[ValueT, KeplerGl]):
 
     The decorated function may return either a `pandas.DataFrame` or
     `geopandas.GeoDataFrame` (which is coerced to a `keplergl.KeplerGl` widget with
-    the data added as a single dataset; requires ``pip install 'keplergl>=0.4.0rc4'``)
-    or a `keplergl.KeplerGl` widget. In a filling layout, the map is resized to fit its
-    container, unless the `KeplerGl` widget was given an explicit ``height``. An
-    explicit ``height`` on the output (see ``height`` below) takes precedence over the
-    widget's own.
+    the data added as a single dataset named ``"data"``, the ``dataId`` to use in a
+    kepler.gl ``config``; requires ``pip install 'keplergl>=0.4.0rc4'``) or a
+    `keplergl.KeplerGl` widget. In a filling layout, the map is resized to fit its
+    container, unless the `KeplerGl` widget was given a ``height`` other than
+    kepler.gl's default (400). An explicit ``height`` on the output (see ``height``
+    below) takes precedence over the widget's own. While the output sizes the map,
+    the browser sets the widget's ``height`` to the size it measures, so change the
+    output's size rather than setting the widget's ``height`` from Python.
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
