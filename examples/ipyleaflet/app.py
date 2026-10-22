@@ -31,6 +31,7 @@ with ui.card(fill=False):
     def map_bounds():
         b = reactive_read(lmap.widget, "bounds")
         req(b)
-        lat = [round(x) for x in [b[0][0], b[0][1]]]
-        lon = [round(x) for x in [b[1][0], b[1][1]]]
-        return f"The map bounds is currently {lat} / {lon}"
+        # bounds is ((south, west), (north, east))
+        lat = [round(x) for x in [b[0][0], b[1][0]]]
+        lon = [round(x) for x in [b[0][1], b[1][1]]]
+        return f"The map bounds is currently lat {lat} / lon {lon}"
