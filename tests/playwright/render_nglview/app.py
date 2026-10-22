@@ -22,6 +22,7 @@ app_ui = ui.page_fluid(
         class_="d-flex flex-column html-fill-container",
     ),
     output_widget("fixed", height="250px"),
+    output_widget("own_height_view"),
     ui.output_text("picked_atom"),
 )
 
@@ -50,6 +51,12 @@ def server(input, output, session):
     @render_nglview
     def fixed():
         return nglview.show_text(TINY_PDB, ext="pdb")
+
+    @render_nglview
+    def own_height_view():
+        widget = nglview.show_text(TINY_PDB, ext="pdb")
+        widget.layout.height = "250px"
+        return widget
 
     @render.text
     def picked_atom():

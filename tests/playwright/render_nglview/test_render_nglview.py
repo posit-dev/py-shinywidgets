@@ -109,6 +109,32 @@ def test_nglview_respects_explicit_height(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_nglview_with_own_height_tracks_output_width(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.set_viewport_size({"width": 900, "height": 900})
+    page.goto(local_app.url)
+    expect(page.locator("#own_height_view canvas")).to_have_count(1, timeout=30000)
+    page.wait_for_function(CANVAS_FILLS_OUTPUT_JS, arg="own_height_view", timeout=30000)
+    wide = sizes(page, "own_height_view")
+    assert wide["canvas"][1] == 250
+
+    # The widget's own height isn't the output's, but its width still is
+    page.set_viewport_size({"width": 600, "height": 900})
+    page.wait_for_function(
+        f"""(w) => {{
+          const s = ({SIZES_JS})('own_height_view');
+          return s.out[0] < w && Math.abs(s.canvas[0] - s.out[0]) <= 1;
+        }}""",
+        arg=wide["out"][0] - 100,
+        timeout=10000,
+    )
+    narrow = sizes(page, "own_height_view")
+    assert narrow["canvas"][1] == 250
+    assert narrow["out"][1] == 250
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_nglview_rerender_with_own_height_stops_filling(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)

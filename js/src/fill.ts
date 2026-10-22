@@ -90,14 +90,12 @@ const quakBehavior: WidgetBehavior = {
 };
 
 // nglview sizes its stage with fixed inline pixels (300px tall by default) and
-// never re-measures its parent, so drive the stage size from the output
-// whenever the output has a size of its own (a filling layout or an explicit
-// output_widget(height=)).
+// never re-measures its parent, so drive the stage size from the output: both
+// dimensions when the output has a height of its own (a filling layout or an
+// explicit output_widget(height=)), otherwise just the width.
 const nglviewBehavior: WidgetBehavior = {
   setupFill: ({ el, view }) => setupNglviewAutoSize(el, view),
-  setupFixedSize: ({ el, view }) => {
-    if (el.style.height) return setupNglviewAutoSize(el, view);
-  },
+  setupFixedSize: ({ el, view }) => setupNglviewAutoSize(el, view, !!el.style.height),
 };
 
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
