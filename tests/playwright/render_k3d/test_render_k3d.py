@@ -107,6 +107,13 @@ def test_k3d_respects_explicit_heights(page: Page, local_app) -> None:
     )
     assert canvas_size(page, "#sized_output")[1] == 250
 
+    # widget.layout = Layout(height="300px"): the scene is sized to the widget,
+    # rather than drawn at 512px and clipped
+    expect(page.locator("#sized_layout canvas")).to_have_js_property(
+        "clientHeight", 300, timeout=30000
+    )
+    assert canvas_size(page, "#sized_layout")[1] == 300
+
     assert_no_unexpected_errors(errors, failed_requests)
 
 

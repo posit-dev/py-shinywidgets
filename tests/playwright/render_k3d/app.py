@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipywidgets as widgets
 import k3d
 import numpy as np
 from shiny import App, reactive, render, ui
@@ -12,6 +13,7 @@ app_ui = ui.page_fluid(
     ui.card(output_widget("fill_plot"), id="fill_card", height="420px"),
     output_widget("fixed_plot"),
     output_widget("sized_output", height="250px"),
+    output_widget("sized_layout"),
 )
 
 
@@ -47,6 +49,12 @@ def server(input, output, session):
     @render_k3d
     def sized_output():
         return make_plot()
+
+    @render_k3d
+    def sized_layout():
+        plot = make_plot()
+        plot.layout = widgets.Layout(height="300px")
+        return plot
 
     @render.text
     def camera():
