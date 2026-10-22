@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from altair import JupyterChart
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from jupyter_bokeh import BokehModel
-    from lonboard import Map as LonboardMap
+    from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
     from maplibre.ipywidget import MapWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
@@ -181,7 +181,7 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
             return super()._as_widget(value)
 
         try:
-            import lonboard
+            import lonboard  # pyright: ignore[reportMissingImports]
         except ImportError:
             raise ImportError(
                 "Install the lonboard package to use render_lonboard with shinywidgets (pip install lonboard)."

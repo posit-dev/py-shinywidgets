@@ -291,7 +291,7 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 
 
 def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
-    from lonboard import Map
+    from lonboard import Map  # pyright: ignore[reportMissingImports]
 
     if not isinstance(widget, Map):
         return fill
@@ -307,7 +307,9 @@ def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # user-specified height, on the other hand, gets overridden by that
     # min-height, so size the widget container to the map rather than to its
     # parent.
-    if widget.height not in (widget.trait_defaults("height"), "100%"):
+    # pyright can't narrow via isinstance() when lonboard isn't installed
+    # (e.g., Python 3.15)
+    if widget.height not in (widget.trait_defaults("height"), "100%"):  # pyright: ignore[reportAttributeAccessIssue]
         fill = False
         if widget.layout.height == "100%":
             widget.layout.height = "auto"

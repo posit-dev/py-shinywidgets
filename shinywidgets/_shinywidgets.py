@@ -278,14 +278,17 @@ def own_lonboard_controls(w: Widget) -> None:
     every Map, so they can't belong to this session. This runs before the Map's
     initial state is serialized, so the browser never sees the shared ones.
     """
-    from lonboard import Map
+    from lonboard import Map  # pyright: ignore[reportMissingImports]
 
     if not isinstance(w, Map):
         return
+    # pyright can't narrow via isinstance() when lonboard isn't installed
+    # (e.g., Python 3.15)
     shared = Map.class_traits()["controls"].default()
-    if any(c in shared for c in w.controls):
-        w.controls = tuple(
-            copy_lonboard_control(c) if c in shared else c for c in w.controls
+    if any(c in shared for c in w.controls):  # pyright: ignore[reportAttributeAccessIssue]
+        w.controls = tuple(  # pyright: ignore[reportAttributeAccessIssue]
+            copy_lonboard_control(c) if c in shared else c
+            for c in w.controls  # pyright: ignore[reportAttributeAccessIssue]
         )
 
 
