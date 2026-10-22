@@ -290,11 +290,14 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
             if sizing and chart is not None:
                 # Reassigning `.chart` makes JupyterChart rebuild `.selections` and
                 # `.params`, orphaning observers the user attached before returning
-                # it, so patch the (vega-lite) spec instead. With VegaFusion, the
-                # spec is a pre-transformed vega spec (or pending), so it can't be
-                # patched like this.
-                if alt.data_transformers.active != "vegafusion":
-                    jchart.spec = {**cast("dict[str, object]", jchart.spec), **sizing}
+                # it, so patch the (vega-lite) spec instead. Check the spec itself
+                # (not the active transformer): a chart assigned under the
+                # vegafusion transformer has `.spec` set to None until the browser
+                # reports its timezone, and a pre-transformed vega spec afterwards,
+                # neither of which can be patched like this.
+                spec = cast("dict[str, object] | None", jchart.spec)
+                if isinstance(spec, dict) and "vega-lite" in str(spec.get("$schema")):
+                    jchart.spec = {**spec, **sizing}
                 else:
                     jchart.chart = chart.properties(**sizing)
 

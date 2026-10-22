@@ -156,6 +156,32 @@ def test_altair_preserves_selection_and_param_observers(monkeypatch) -> None:
     assert seen == ["brush", "size"]
 
 
+def test_altair_vegafusion_pending_spec_falls_back_to_chart(monkeypatch) -> None:
+    # A JupyterChart constructed inside `with alt.data_transformers.enable(
+    # "vegafusion"):` keeps `.spec` as None until the browser reports its timezone.
+    # Layout defaults run after that context exits, so the active transformer is no
+    # longer "vegafusion" -- the decision to patch `.spec` must be based on the
+    # spec itself, or unpacking None raises TypeError.
+    alt = pytest.importorskip("altair")
+
+    monkeypatch.setattr(rwb, "widget_pkg", lambda _widget: "altair")
+
+    chart = (
+        alt.Chart(alt.Data(values=[{"x": 1, "y": 2}]))
+        .mark_point()
+        .encode(x="x:Q", y="y:Q")
+    )
+    with alt.data_transformers.enable("vegafusion"):
+        w = alt.JupyterChart(chart)
+    assert w.spec is None
+
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is True
+
+    assert w.chart.width == "container"
+    assert w.chart.height == "container"
+
+
 def test_altair_concat_chart_emits_warning(monkeypatch) -> None:
     alt = pytest.importorskip("altair")
 
