@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Optional, cast
 
 from htmltools import HTMLDependency
 from ipywidgets.widgets.widget import Widget
+from shiny.reactive import isolate
 from shiny.session import get_current_session
 
 from ._dependencies import widget_pkg
@@ -179,8 +180,9 @@ def as_widget_maplibre(x: object) -> Optional[Widget]:
 def as_widget_mpl(x: object) -> Widget:
     from matplotlib.figure import Figure, SubFigure
 
-    # The renderer imports this module, so defer this circular import.
+    # The renderer imports this module, so defer these circular imports.
     from ._render_widget_base import is_closed_widget
+    from ._shinywidgets import close_widget
 
     # Several higher-level APIs return something that holds the figure: an Axes
     # (e.g., pandas.DataFrame.plot()), an ipympl Canvas, or a seaborn grid
@@ -221,6 +223,21 @@ def as_widget_mpl(x: object) -> Widget:
         canvas = Canvas(x)
     if canvas.manager is None:
         FigureManager(canvas, getattr(x, "number", id(x)))
+
+    # Draw the image the frontend first paints now, rather than when the comm
+    # opens (see init_shiny_widget()), so that a draw-time error (e.g., invalid
+    # mathtext) fails this render instead of the comm-open effect, which would
+    # end the whole session. Isolated since drawing fires the user's callbacks
+    # (e.g., draw_event, or xlim_changed from autoscaling), and what they read
+    # shouldn't become dependencies of the render.
+    if not canvas._data_url:
+        try:
+            with isolate():
+                canvas._repr_mimebundle_()
+        except Exception:
+            # Its comm hasn't opened yet, and opening it would fail the same way
+            close_widget(canvas)
+            raise
 
     return canvas
 

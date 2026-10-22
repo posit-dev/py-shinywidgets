@@ -91,6 +91,10 @@ def _fake_ipympl_canvas(monkeypatch: pytest.MonkeyPatch):
             captured["figure"] = figure
             self.manager: object | None = None
             self.comm = None
+            self._data_url = ""
+
+        def _repr_mimebundle_(self, **kwargs: object) -> None:
+            self._data_url = "data:image/png;base64,"
 
     class FigureManager:
         def __init__(self, canvas, num):

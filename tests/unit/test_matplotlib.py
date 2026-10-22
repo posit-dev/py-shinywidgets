@@ -266,8 +266,9 @@ def test_coercion_undoes_previous_canvas_pixel_ratio(widget_session: Session) ->
     assert figure.dpi == 200
 
 
+@pytest.mark.parametrize("coerced", [True, False])
 def test_open_sends_initial_image(
-    widget_session: Session, monkeypatch: pytest.MonkeyPatch
+    coerced: bool, widget_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The frontend's first paint comes from _data_url, which ipympl only sets
     # in its display hook
@@ -281,7 +282,9 @@ def test_open_sends_initial_image(
     monkeypatch.setattr(widget_session, "send_custom_message", send_custom_message)
     assert isinstance(widget_session, AppSession)
     with session_context(widget_session):
-        canvas = as_widget(Figure())
+        canvas_type = type(cast("Canvas", as_widget(Figure())))
+        # e.g., a Canvas placed directly in a container widget
+        canvas = as_widget(Figure()) if coerced else canvas_type(Figure())
         asyncio.get_event_loop().run_until_complete(reactive.flush())
         asyncio.get_event_loop().run_until_complete(
             widget_session._flush_callbacks.invoke()
@@ -293,6 +296,44 @@ def test_open_sends_initial_image(
         if msg["content"]["comm_id"] == canvas.model_id
     )
     assert state["_data_url"].startswith("data:image/png;base64,")
+
+
+def test_draw_error_raised_at_coercion(widget_session: Session) -> None:
+    # Raised by the render (an output error) rather than by the deferred comm
+    # open (an effect error, which ends the session)
+    figure = Figure()
+    figure.subplots().set_title(r"$\badcommand{x}$")
+
+    with session_context(widget_session):
+        with pytest.raises(ValueError, match="badcommand"):
+            as_widget(figure)
+        # The failed canvas never opens (opening would draw it again)
+        asyncio.get_event_loop().run_until_complete(reactive.flush())
+
+    assert isinstance(widget_session, AppSession)
+    assert not widget_session._has_run_session_ended_tasks
+
+
+def test_first_draw_callbacks_dont_invalidate_the_render(
+    widget_session: Session,
+) -> None:
+    # The first draw happens inside the render, and fires callbacks (here,
+    # xlim_changed from autoscaling). One that both reads and sets a reactive
+    # value mustn't make the render depend on it, or it would re-render forever.
+    count = reactive.value(0)
+    figure = Figure()
+    axes = figure.subplots()
+    axes.plot([0, 1])
+    axes.callbacks.connect("xlim_changed", lambda _: count.set(count.get() + 1))
+
+    with session_context(widget_session):
+        context = Context()
+        with context(), WidgetRenderContext():
+            as_widget(figure)
+
+    with reactive.isolate():
+        assert count.get() > 0
+    assert not context._invalidated
 
 
 def test_coercion_preserves_pyplot_backend() -> None:
