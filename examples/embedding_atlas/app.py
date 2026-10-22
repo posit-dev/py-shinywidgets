@@ -1,3 +1,4 @@
+import duckdb
 import numpy as np
 import pandas as pd
 from embedding_atlas.widget import EmbeddingAtlasWidget
@@ -49,7 +50,15 @@ app_ui = ui.page_fillable(
 def server(input, output, session):
     @render_embedding_atlas
     def atlas():
-        return EmbeddingAtlasWidget(docs, x="x", y="y", text="text")
+        # The explorer runs its queries by sending SQL from the browser to this
+        # connection, so any visitor can run any SQL on it. Lock it down once the
+        # widget has loaded its data, so that SQL can't read or write server files.
+        # (Use a new connection per widget: two widgets can't share one.)
+        con = duckdb.connect()
+        widget = EmbeddingAtlasWidget(docs, x="x", y="y", text="text", connection=con)
+        con.execute("SET enable_external_access = false")
+        con.execute("SET lock_configuration = true")
+        return widget
 
     # The widget syncs the filter the user builds in the browser (a SQL predicate)
     # back to Python, where selection() applies it to the data. `_predicate` is

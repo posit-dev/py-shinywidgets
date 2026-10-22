@@ -1,5 +1,6 @@
 shiny
 shinywidgets
 embedding-atlas>=0.26
+duckdb
 pandas
 numpy

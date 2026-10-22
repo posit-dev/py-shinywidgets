@@ -163,6 +163,27 @@ class render_embedding_atlas(render_widget_base[ValueT, EmbeddingAtlasWidget]):
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ----
+    **Security**: the explorer runs its queries by sending SQL from the browser to
+    the widget's DuckDB connection, and any visitor can send arbitrary SQL,
+    including SQL that reads or writes files on the server. In deployed apps,
+    construct the widget on a new connection (connections can't be shared between
+    widgets) and lock it down afterwards, so that only the data you gave the widget
+    is reachable:
+
+    ```python
+    con = duckdb.connect()
+    widget = EmbeddingAtlasWidget(df, x="x", y="y", connection=con)
+    con.execute("SET enable_external_access = false")
+    con.execute("SET lock_configuration = true")
+    return widget
+    ```
+
+    Disabling external access when connecting instead breaks the widget, which
+    needs it while loading the data frame. A visitor can still send expensive
+    queries, which block the Python process while they run.
+
     Parameters
     ----------
     width

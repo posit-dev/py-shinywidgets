@@ -150,3 +150,61 @@ def test_embedding_atlas_rerender_lifecycle(page: Page, local_app) -> None:
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
     assert_no_unexpected_errors(unexpected_errors(errors), failed_requests)
+
+
+# Send SQL the way the explorer does (a custom message on its model) and resolve
+# with the Python side's reply. The reply is intercepted before it reaches the
+# explorer's own listener, which throws on a request it didn't make.
+BROWSER_SQL_JS = """async ([type, sql]) => {
+  const models = await Promise.all(Object.values(window.widgetManager._models));
+  const model = models.find(
+    (m) => (m.get('_anywidget_id') || '').endsWith('EmbeddingAtlasWidget')
+  );
+  const uuid = 'browser-sql-probe';
+  return await new Promise((resolve) => {
+    const trigger = model.trigger;
+    model.trigger = function (name, ...args) {
+      if (name === 'msg:custom' && args[0].uuid === uuid) {
+        model.trigger = trigger;
+        resolve(args[0]);
+        return this;
+      }
+      return trigger.apply(this, [name, ...args]);
+    };
+    model.send({ type, sql, uuid });
+  });
+}"""
+
+
+def test_embedding_atlas_browser_sql_cannot_touch_server_files(
+    page: Page, local_app, tmp_path
+) -> None:
+    page.route("**/output.js", expose_manager)
+    page.goto(local_app.url)
+    expect(page.locator("#atlas").get_by_text("item 0", exact=True)).to_be_visible(
+        timeout=30000
+    )
+
+    # Any visitor can send the explorer's SQL messages; with the connection
+    # locked down (as the docs recommend), they can't write or read files
+    target = tmp_path / "written-by-browser.csv"
+    reply = page.evaluate(
+        BROWSER_SQL_JS, ["exec", f"COPY (SELECT 1 AS x) TO '{target}'"]
+    )
+    assert "Permission Error" in reply.get("error", "")
+    assert not target.exists()
+
+    secret = tmp_path / "secret.csv"
+    secret.write_text("x\nserver-only\n")
+    reply = page.evaluate(BROWSER_SQL_JS, ["json", f"SELECT * FROM '{secret}'"])
+    assert "Permission Error" in reply.get("error", "")
+
+    # ... nor undo the lockdown
+    reply = page.evaluate(BROWSER_SQL_JS, ["exec", "SET enable_external_access = true"])
+    assert "error" in reply
+
+    # The explorer's own queries keep working
+    reply = page.evaluate(
+        BROWSER_SQL_JS, ["json", "SELECT count(*) AS n FROM embedding_atlas"]
+    )
+    assert reply["result"] == [{"n": len(docs)}]

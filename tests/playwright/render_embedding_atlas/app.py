@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import duckdb
 import numpy as np
 import pandas as pd
 from embedding_atlas.widget import EmbeddingAtlasWidget
@@ -44,7 +45,12 @@ def server(input, output, session):
     @render_embedding_atlas
     def atlas():
         counter.get()
-        return EmbeddingAtlasWidget(docs, x="x", y="y", text="text")
+        # The recommended lockdown (see the render_embedding_atlas docstring)
+        con = duckdb.connect()
+        widget = EmbeddingAtlasWidget(docs, x="x", y="y", text="text", connection=con)
+        con.execute("SET enable_external_access = false")
+        con.execute("SET lock_configuration = true")
+        return widget
 
     @render.text
     def selection_size():
