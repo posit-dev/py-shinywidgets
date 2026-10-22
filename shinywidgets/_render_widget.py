@@ -156,10 +156,13 @@ class render_ipysigma(render_widget_base[ValueT, Sigma]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `Sigma` instance. Use `.widget` to programmatically update the rendered graph
-    in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state (e.g., ``reactive_read(sigma.widget,
-    "selected_node")``) with :func:`~shinywidgets.reactive_read`.
+    `Sigma` instance. Use `.widget` to reactively read the user's interactions with
+    :func:`~shinywidgets.reactive_read` (e.g., ``reactive_read(sigma.widget,
+    "selected_node")``; also ``"selected_edge"``, ``"camera_state"`` and
+    ``"layout"``). Note that ipysigma only reads its options when the graph is
+    first drawn, so setting traits on `.widget` afterwards does not update the
+    browser. To change what's shown, re-render, passing any state you want to keep
+    (e.g., ``layout=``, ``camera_state=``) to the new `Sigma`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
