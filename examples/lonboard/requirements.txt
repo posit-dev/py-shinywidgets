@@ -1,0 +1,7 @@
+shiny
+shinywidgets
+lonboard
+geopandas
+numpy
+pandas
+pyarrow
