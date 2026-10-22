@@ -33,7 +33,7 @@ pip install -e ".[dev]"
 Common Python workflows:
 
 ```sh
-make py-check
+make check
 make test-playwright
-make py-build
+make build
 ```

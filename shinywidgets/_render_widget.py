@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from altair import JupyterChart
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from jupyter_bokeh import BokehModel
-    from lonboard import Map as LonboardMap
+    from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
     from maplibre.ipywidget import MapWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
@@ -181,7 +181,7 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
             return super()._as_widget(value)
 
         try:
-            import lonboard
+            import lonboard  # pyright: ignore[reportMissingImports]
         except ImportError:
             raise ImportError(
                 "Install the lonboard package to use render_lonboard with shinywidgets (pip install lonboard)."
@@ -204,13 +204,20 @@ class render_maplibre(render_widget_base[ValueT, MapWidget]):
 
     The decorated function may return either a `maplibre.Map` (which is coerced to a
     `maplibre.ipywidget.MapWidget`; requires ``pip install 'maplibre[anywidget]'``)
-    or a `maplibre.ipywidget.MapWidget` widget.
+    or a `maplibre.ipywidget.MapWidget` widget. In a filling layout, the map fills
+    its container unless the `MapWidget` has an explicit ``height``.
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `MapWidget` instance. Use `.widget` to programmatically update the rendered map
-    in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    `MapWidget` instance. To update the rendered map in place, call methods on
+    `.widget` (e.g., `set_paint_property()`, `set_filter()`, `set_data()`,
+    `fit_bounds()`, or `add_call()` for any MapLibre GL JS map method). These are sent
+    to the browser as commands, so assigning traits such as `map_options` after
+    rendering has no effect. To reactively read map state, use
+    :func:`~shinywidgets.reactive_read` with `view_state` (center, zoom, bounds,
+    bearing, and pitch), `clicked` (the longitude and latitude of the last click), or
+    the MapboxDraw ``draw_*`` traits. Feature-level click and hover events aren't
+    synced.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
