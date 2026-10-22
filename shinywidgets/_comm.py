@@ -1,4 +1,5 @@
 import logging
+import threading
 from base64 import b64encode
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -227,18 +228,12 @@ class ShinyComm:
             self._parent_header = msg.get("header")
             scope = ClientMsgScope()
             token = handling_client_msg.set(scope)
-            # Logger filters only see records that pass the level check, so
-            # when the root logger is at ERROR the WARNING records ipywidgets
-            # logs for callback exceptions never reach ClientMsgErrorFilter.
-            # Lower the source logger's level for the duration of the dispatch.
-            prev_level = traitlets_logger.level
-            if traitlets_logger.getEffectiveLevel() > logging.WARNING:
-                traitlets_logger.setLevel(logging.WARNING)
+            traitlets_dispatch_level.lower()
             try:
                 self._msg_callback(msg)
             finally:
                 self._parent_header = None
-                traitlets_logger.setLevel(prev_level)
+                traitlets_dispatch_level.restore()
                 scope.active = False
                 handling_client_msg.reset(token)
 
@@ -297,6 +292,43 @@ handling_client_msg: ContextVar[Optional[ClientMsgScope]] = ContextVar(
 )
 
 
+class TraitletsDispatchLevel:
+    """
+    Temporarily lowers `traitlets_logger`'s level to WARNING while client
+    messages are dispatched. Logger filters only see records that pass the
+    level check, so when the effective level is higher (e.g. the root logger
+    at ERROR) the WARNING records ipywidgets logs for callback exceptions
+    would never reach ClientMsgErrorFilter. The level is process-wide, so the
+    filter uses `prev_effective_level` to keep honoring the original
+    threshold for records logged outside the dispatch. Counted so overlapping
+    dispatches don't restore the level early.
+    """
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.count = 0
+        self.prev_level = logging.NOTSET
+        self.prev_effective_level = logging.NOTSET
+
+    def lower(self) -> None:
+        with self.lock:
+            if self.count == 0:
+                self.prev_level = traitlets_logger.level
+                self.prev_effective_level = traitlets_logger.getEffectiveLevel()
+                if self.prev_effective_level > logging.WARNING:
+                    traitlets_logger.setLevel(logging.WARNING)
+            self.count += 1
+
+    def restore(self) -> None:
+        with self.lock:
+            self.count -= 1
+            if self.count == 0:
+                traitlets_logger.setLevel(self.prev_level)
+
+
+traitlets_dispatch_level = TraitletsDispatchLevel()
+
+
 class ClientMsgErrorFilter(logging.Filter):
     """
     Outside IPython, ipywidgets catches exceptions raised by widget callbacks
@@ -310,10 +342,20 @@ class ClientMsgErrorFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         scope = handling_client_msg.get()
-        if scope is None or not scope.active or record.levelno < logging.WARNING:
-            return True
-        logger.error(record.getMessage(), exc_info=record.exc_info)
-        return False
+        if scope is not None and scope.active and record.levelno >= logging.WARNING:
+            logger.error(record.getMessage(), exc_info=record.exc_info)
+            return False
+        with traitlets_dispatch_level.lock:
+            lowered = (
+                traitlets_dispatch_level.count > 0
+                and traitlets_dispatch_level.prev_effective_level > logging.WARNING
+            )
+            if lowered:
+                # The level was lowered to admit callback records, so records
+                # from outside the dispatch must still honor the threshold
+                # that applied before the dispatch.
+                return record.levelno >= traitlets_dispatch_level.prev_effective_level
+        return True
 
 
 traitlets_logger.addFilter(ClientMsgErrorFilter())

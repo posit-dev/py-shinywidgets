@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict
+import threading
+from typing import Any, Dict, List
 
 import pytest
 from ipywidgets import Button, IntSlider
@@ -117,6 +118,61 @@ def test_callback_error_is_logged_when_root_logger_is_at_error(
     assert record.levelno == logging.ERROR
     assert record.exc_info is not None
     assert isinstance(record.exc_info[1], RuntimeError)
+
+
+def test_unrelated_thread_logging_stays_suppressed_during_dispatch(
+    widget_session: Session,
+) -> None:
+    # Lowering the traitlets level during dispatch is process-wide, so
+    # warnings logged by threads outside the dispatch must keep honoring the
+    # threshold that applied before the dispatch (here, a root logger at
+    # ERROR). caplog can't observe this (its handler level is raised too), so
+    # attach a level-NOTSET handler directly.
+    records: List[logging.LogRecord] = []
+
+    class ListHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    in_dispatch = threading.Event()
+    logged = threading.Event()
+
+    def wait(change: object) -> None:
+        in_dispatch.set()
+        assert logged.wait(10)
+
+    def worker() -> None:
+        assert in_dispatch.wait(10)
+        logging.getLogger("traitlets").warning("unrelated warning")
+        logging.getLogger("traitlets").error("unrelated error")
+        logged.set()
+
+    root = logging.getLogger()
+    prev_level = root.level
+    handler = ListHandler()
+    root.addHandler(handler)
+    root.setLevel(logging.ERROR)
+    try:
+        with session_context(widget_session):
+            slider = IntSlider(value=1)
+            slider.observe(wait, names="value")
+            comm = open_comm(slider)
+            thread = threading.Thread(target=worker)
+            thread.start()
+            comm.handle_msg(
+                client_msg(
+                    comm.comm_id,
+                    {"method": "update", "state": {"value": 5}, "buffer_paths": []},
+                )
+            )
+            thread.join(10)
+    finally:
+        root.removeHandler(handler)
+        root.setLevel(prev_level)
+
+    # The WARNING stays suppressed (as before/after dispatch); the ERROR
+    # passes, just as it would without a dispatch in progress.
+    assert [(r.name, r.levelno) for r in records] == [("traitlets", logging.ERROR)]
 
 
 def test_deferred_work_after_dispatch_keeps_traitlets_logging(
