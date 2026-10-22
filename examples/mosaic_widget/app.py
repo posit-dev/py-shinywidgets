@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from mosaic_widget import MosaicWidget
-from shiny import App, render, ui
+from shiny import App, reactive, render, ui
 from shinywidgets import output_widget, reactive_read, render_mosaic_widget
 
 rng = np.random.default_rng(1)
@@ -35,6 +35,8 @@ spec = {
                 },
                 {"select": "intervalXY", "as": "$brush"},
             ],
+            "xDomain": "Fixed",
+            "yDomain": "Fixed",
             "width": 600,
             "height": 300,
         },
@@ -50,6 +52,7 @@ spec = {
                 },
                 {"select": "intervalX", "as": "$brush"},
             ],
+            "xDomain": "Fixed",
             "width": 600,
             "height": 150,
         },
@@ -78,22 +81,29 @@ def server(input, output, session):
     def dashboard():
         return MosaicWidget(spec, data={"penguins": penguins})
 
-    def selected() -> pd.DataFrame:
+    @reactive.calc
+    def selected():
         # The widget's `params` trait changes whenever a brush changes
         reactive_read(dashboard.widget, "params")
-        return dashboard.widget.data().df()
+        # A lazy DuckDB relation: aggregate it in DuckDB rather than pulling every
+        # selected row into pandas
+        return dashboard.widget.data()
 
     @render.text
     def n_selected():
-        return f"{len(selected())} of {len(penguins)} penguins selected"
+        (n,) = selected().aggregate("count(*)").fetchall()[0]
+        return f"{n} of {len(penguins)} penguins selected"
 
     @render.data_frame
     def summary():
         return render.DataGrid(
             selected()
-            .groupby("species", as_index=False)
-            .agg(n=("species", "size"), mean_mass=("body_mass", "mean"))
-            .round(0)
+            .aggregate(
+                "species, count(*) AS n, round(avg(body_mass)) AS mean_mass",
+                "species",
+            )
+            .order("species")
+            .df()
         )
 
 
