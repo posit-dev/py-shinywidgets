@@ -356,8 +356,11 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
     ---
     Perspective keeps every table it hosts in memory for the life of the process, so a
     table created from a DataFrame is not freed when the output re-renders. To change
-    the data, prefer updating the existing viewer in place (`.widget.update()` or
-    `.widget.replace()`), or return a `perspective.Table` that you manage yourself.
+    the data, prefer updating the existing viewer in place: `.widget.update(df)`
+    appends rows (or upserts them, for a table with an ``index``), and
+    `.widget.clear()` followed by `.widget.update(df)` swaps them out.
+    (`.widget.replace()` also swaps rows, but as of perspective-python 5.6 it only
+    accepts records, a dict of columns, or Arrow IPC bytes, not a DataFrame.)
 
     A viewer's browser can list, read, and write every table on its widget's
     Perspective server. A DataFrame gets a server of its own, so other sessions
