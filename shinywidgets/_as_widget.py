@@ -312,6 +312,11 @@ def as_widget_plotnine(x: object) -> Widget:
     # plotnine closes its pyplot figure after drawing, which frees the figure
     # number for reuse, so the header's "Figure <number>" label is meaningless
     canvas.header_visible = False
+    # The footer (the cursor-coordinates readout) appears on first hover, after
+    # the figure was fitted to its container, so it pushes the bottom of the plot
+    # out of view. Its readout is also unhelpful for plotnine: its fixed tick
+    # formatter shows scientific notation, in transformed (e.g., log) units.
+    canvas.footer_visible = False
     return canvas
 
 

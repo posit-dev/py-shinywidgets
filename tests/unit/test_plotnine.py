@@ -73,11 +73,12 @@ def test_users_composition_is_not_mutated(widget_session: Session) -> None:
     assert len(second.figure.axes) == 2
 
 
-def test_header_hidden(widget_session: Session) -> None:
+def test_header_and_footer_hidden(widget_session: Session) -> None:
     with session_context(widget_session):
         canvas = cast("Canvas", as_widget(scatter()))
 
     assert canvas.header_visible is False
+    assert canvas.footer_visible is False
 
 
 def test_no_pyplot_figures_leak_across_renders(widget_session: Session) -> None:

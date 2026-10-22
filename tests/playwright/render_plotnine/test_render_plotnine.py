@@ -91,6 +91,28 @@ def check_layout_until_size(page: Page, w: int, h: int) -> str:
     raise AssertionError(f"figure never redrawn at the {w}x{h} canvas: {report}")
 
 
+def test_plotnine_hover_does_not_clip_plot(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    page.wait_for_function(FILLS_JS, arg="#plot", timeout=30000)
+
+    # ipympl's footer (the cursor-coordinates readout) is empty until the first
+    # hover; if it then took up space, it'd push the bottom of the plot (the
+    # x-axis title) out of the output
+    canvas = page.locator("#plot .jupyter-matplotlib-canvas-div canvas").last
+    box = canvas.bounding_box()
+    assert box is not None
+    page.mouse.move(box["x"] + box["width"] * 0.4, box["y"] + box["height"] * 0.5)
+    page.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.5)
+    page.wait_for_timeout(1000)
+
+    boxes = page.evaluate(BOXES_JS, "#plot")
+    assert boxes["footer"] == 0, boxes
+    assert abs(boxes["canvas"][1] - boxes["output"][1]) <= 2, boxes
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_plotnine_explicit_height_respected(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
