@@ -305,6 +305,11 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
 
     const setupSize = fill ? behavior?.setupFill : behavior?.setupFixedSize;
     if (setupSize) {
+      // No timeout fallback here: running size setup before the
+      // implementation exists is worse than waiting -- e.g. quak's setupFill
+      // early-returns when its .quak element is absent, and (with the
+      // observer already disconnected) a late implementation would never
+      // get its fill setup. The reveal wait below gets the fallback instead.
       this._onImplementation(lmWidget, () => {
         // Don't set up fill/size behavior if this view has since been replaced
         if (this._views.get(el) !== view) return;
@@ -332,7 +337,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
         ctx.dispatchResize();
         ctx.reveal();
       }
-    });
+    }, 1000);
   }
   _nextRenderToken(el: HTMLElement): number {
     const trackedEl = el as HTMLElement & { __shinywidgetsRenderToken?: number };
@@ -343,7 +348,12 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
   _isCurrentRenderToken(el: HTMLElement, token: number): boolean {
     return (el as HTMLElement & { __shinywidgetsRenderToken?: number }).__shinywidgetsRenderToken === token;
   }
-  _onImplementation(lmWidget: HTMLElement, callback: () => void): void {
+  // timeoutMs: when given, run the callback anyway after that long even if
+  // the implementation never renders -- appropriate only for callbacks whose
+  // work is harmless when the implementation is still absent (i.e., resize
+  // and reveal, which keep the output from staying hidden forever when a
+  // widget renders nothing at all, such as an empty HTML value).
+  _onImplementation(lmWidget: HTMLElement, callback: () => void, timeoutMs?: number): void {
     if (this._hasImplementation(lmWidget)) {
       callback();
       return;
@@ -365,11 +375,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     });
     mo.observe(lmWidget, {childList: true});
 
-    // A widget whose implementation renders nothing at all (e.g., an empty
-    // HTML value) would otherwise never satisfy _hasImplementation(), and --
-    // since callers rely on this to resize and reveal the output -- would
-    // stay invisible forever. Fall back to running anyway after a beat.
-    const timer = setTimeout(finish, 1000);
+    const timer = timeoutMs === undefined ? undefined : setTimeout(finish, timeoutMs);
   }
   _doResize(): void {
     // Trigger resize event to force layout (setTimeout() is needed for altair)
@@ -384,7 +390,16 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // empty and display:none if the widget has no description -- as the
     // first child, ahead of the widget's actual implementation.
     for (const impl of Array.from(lmWidget.children)) {
-      if (impl.children.length > 0 || (impl as HTMLElement).shadowRoot?.children.length) {
+      const implEl = impl as HTMLElement;
+      if (impl.children.length > 0 || implEl.shadowRoot?.children.length) {
+        return true;
+      }
+      // A rendered implementation can also be a bare text node (e.g.,
+      // HTML("foo") sets text inside .widget-html-content) or a leaf control
+      // (e.g., a <button> holding only text). The description <label> is
+      // excluded: it isn't the implementation, and it can carry text while
+      // the actual content is still pending.
+      if (!implEl.classList.contains('widget-label') && (implEl.textContent?.trim() ?? '') !== '') {
         return true;
       }
     }
