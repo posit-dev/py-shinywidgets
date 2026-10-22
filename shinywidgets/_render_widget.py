@@ -16,7 +16,9 @@ if TYPE_CHECKING:
     from pydeck.widget import DeckGLWidget
     from pygwalker.api.anywidget import _WalkerWidget as WalkerWidget
 else:
-    JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = LonboardMap = WalkerWidget = object
+    JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
+        LonboardMap
+    ) = WalkerWidget = object
 
 from ._bokeh import bokeh_dependency
 from ._dependencies import widget_pkg
