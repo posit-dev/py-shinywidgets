@@ -151,6 +151,18 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
     in place (trait changes on the widget are synced to the browser), or to
     reactively read widget state with :func:`~shinywidgets.reactive_read`.
 
+    When using `bqplot.pyplot`, start the render function with
+    ``fig = bplt.figure(...)`` and return ``fig``. pyplot's "current figure" is global
+    to the Python process, so plotting without ``bplt.figure()`` (or with
+    ``bplt.figure(key=...)``) reuses one figure across renders, outputs and sessions,
+    which fails after the first re-render.
+
+    The PanZoom and Reset buttons of a figure's built-in toolbar don't work in Shiny
+    (they create widgets from the browser, which shinywidgets doesn't support); pass
+    ``display_toolbar=False`` to the figure to hide the toolbar, and set
+    ``fig.interaction = bqplot.interacts.PanZoom(...)`` from Python to enable panning
+    and zooming.
+
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Parameters
