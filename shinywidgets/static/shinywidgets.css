@@ -70,6 +70,43 @@
 }
 
 /*
+* A lonboard map's root is styled `min-height: 100%; height: 500px` (its default
+* height), so it grows to fill a definite-height container but overflows (and gets
+* clipped by) one shorter than 500px. Clamping to the container fixes the latter,
+* while a container with no definite height leaves the map at 500px (a percentage
+* max-height doesn't apply there). See lonboard_layout_defaults().
+*/
+.shiny-ipywidget-output .lonboard {
+  max-height: 100%;
+}
+
+/*
+* lonboard shifts its map up 5px (presumably to offset notebook output padding),
+* which here just clips the top of the map and misaligns its bottom edge.
+*/
+.shiny-ipywidget-output > .lm-Widget > [data-overlay-container]:has(> .lonboard) {
+  margin-top: 0;
+}
+
+/*
+* A maplibre MapWidget's root is styled `height: <height>` (400px by default), which
+* crops the map in a shorter output and leaves a gap in a taller one. Size it to the
+* widget container instead, which is sized to the output (or, with an explicit
+* MapWidget height, to that height; see maplibre_layout_defaults()). An output with
+* no definite height leaves the map at its own height (a percentage height doesn't
+* apply there). Only direct children are targeted, so maplibre maps inside other
+* widgets (e.g., lonboard) are left alone.
+*/
+.shiny-ipywidget-output > .lm-Widget:has(> .maplibregl-map) {
+  height: 100%;
+}
+
+.shiny-ipywidget-output > .lm-Widget > .maplibregl-map {
+  min-height: 100%;
+  max-height: 100%;
+}
+
+/*
 * Our fill.css ends up overriding this rule from bqplot...
 * https://github.com/bqplot/bqplot/blob/c186fcd/js/less/bqplot.less#L170
 */
