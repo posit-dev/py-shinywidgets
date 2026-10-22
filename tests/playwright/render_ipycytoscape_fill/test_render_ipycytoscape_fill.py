@@ -81,3 +81,19 @@ def test_cytoscape_respects_explicit_widget_height(page: Page, local_app) -> Non
     assert s["canvas"]["height"] == 300
 
     assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_cytoscape_keeps_default_height_for_intrinsic_output_height(
+    page: Page, local_app
+) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+
+    # output_widget(height="auto") has no definite height to fill, so the graph
+    # keeps ipycytoscape's 400px default rather than collapsing to 0px
+    s = sizes(page, "intrinsic_output_height")
+    assert s["out"]["height"] == 400
+    assert s["widget"]["height"] == 400
+    assert s["canvas"]["height"] == 400
+
+    assert_no_unexpected_errors(errors, failed_requests)

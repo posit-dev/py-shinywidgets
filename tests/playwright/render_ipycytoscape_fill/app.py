@@ -13,6 +13,7 @@ app_ui = ui.page_fluid(
     ),
     output_widget("explicit_output_height", height="250px"),
     output_widget("explicit_widget_height"),
+    output_widget("intrinsic_output_height", height="auto"),
 )
 
 
@@ -35,6 +36,10 @@ def server(input, output, session):
         widget.graph.add_graph_from_networkx(make_graph())
         widget.layout.height = "300px"
         return widget
+
+    @render_ipycytoscape
+    def intrinsic_output_height():
+        return make_graph()
 
 
 app = App(app_ui, server)
