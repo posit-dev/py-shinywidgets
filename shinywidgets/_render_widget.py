@@ -148,12 +148,19 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `CytoscapeWidget` instance. Use `.widget` to programmatically update the rendered
-    graph in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state with :func:`~shinywidgets.reactive_read`. Cytoscape
-    reports user interaction through callbacks registered with `.widget.on()` rather
-    than traits, so to react to clicks, have a callback set a
-    :class:`~shiny.reactive.value`.
+    `CytoscapeWidget` instance. Use `.widget` to update the graph in place (e.g.,
+    `.widget.set_style()`, `.widget.set_layout()`, or setting `classes` on the nodes
+    in `.widget.graph.nodes`) without re-rendering.
+
+    To react to user interaction, register callbacks with `CytoscapeWidget.on()`
+    inside the render function, before returning the widget, and have them set a
+    :class:`~shiny.reactive.value`. (ipycytoscape drops some callbacks registered
+    after the graph is displayed, e.g. from an effect: only the first event type
+    per element type is wired up.) Node selection is also synced to each node's
+    `selected` trait, readable with :func:`~shinywidgets.reactive_read`, but
+    ipycytoscape makes nodes unselectable by default: create the widget with
+    `auto_unselectify=False` and set `selectable = True` on each node (plus
+    `box_selection_enabled=True` for shift-drag selection).
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 

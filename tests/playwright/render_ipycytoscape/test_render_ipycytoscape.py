@@ -36,6 +36,23 @@ def test_cytoscape_node_click_roundtrips_to_python(page: Page, local_app) -> Non
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_cytoscape_callbacks_for_several_events_all_fire(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+
+    expect(page.locator("#hovered")).to_have_text("none", timeout=30000)
+    page.wait_for_function(CANVAS_HAS_PIXELS_JS, arg="#graph", timeout=30000)
+
+    # A second event type on the same element type must fire too (ipycytoscape
+    # drops it when it's registered after the graph is displayed)
+    page.locator("#graph").hover()
+    expect(page.locator("#hovered")).to_have_text("solo", timeout=10000)
+    page.locator("#graph").click()
+    expect(page.locator("#clicked")).to_have_text("solo", timeout=10000)
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_cytoscape_rerender_lifecycle(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.route("**/output.js", expose_manager)
