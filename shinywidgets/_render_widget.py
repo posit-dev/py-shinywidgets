@@ -296,7 +296,20 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
 
     The decorated function may return either a holoviews/hvplot/geoviews object (which
     is rendered through panel; requires ``pip install panel``) or the underlying
-    `jupyter_bokeh.BokehModel` widget.
+    `jupyter_bokeh.BokehModel` widget. geoviews 1.15 requires ``cartopy<0.26``.
+
+    Add ``.opts(responsive=True)`` to make a plot fill the output's container
+    (otherwise it keeps holoviews' fixed default size). If you also give the output a
+    fixed height, set ``fillable=True`` too (e.g.,
+    ``output_widget("map", height="400px", fillable=True)``); otherwise a responsive
+    plot collapses to a thin strip.
+
+    Linked streams (e.g., ``holoviews.streams.Tap`` or ``BoundsXY``) run their
+    callbacks outside Shiny's reactive cycle: with shiny < 1.9, the updates they
+    trigger only reach the browser after the next unrelated input. And because
+    ``.opts()`` styles shared objects such as ``gv.tile_sources.OSM`` or
+    ``gv.feature.coastline`` in place, use ``.opts(..., clone=True)`` on them, or
+    one session's styling will show up in every session.
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
