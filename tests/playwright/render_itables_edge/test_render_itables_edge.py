@@ -8,6 +8,7 @@ from tests.playwright.conftest import assert_no_unexpected_errors, collect_error
 
 local_app_plain = create_app_fixture(Path(__file__).parent / "app_plain.py")
 local_app_formatted = create_app_fixture(Path(__file__).parent / "app_formatted.py")
+local_app_dark = create_app_fixture(Path(__file__).parent / "app_dark.py")
 
 
 def test_explicit_scroll_y_is_respected_with_scroll_x(page: Page, local_app) -> None:
@@ -100,3 +101,22 @@ def test_dollar_keeps_datatables_helpers_for_js_options(
     )
 
     assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_table_follows_bootstrap_dark_mode(page: Page, local_app_dark) -> None:
+    # itables doesn't recognize Bootstrap's `data-bs-theme`, so without help its
+    # white background sits under the page's light dark-mode text
+    page.goto(local_app_dark.url)
+    expect(page.locator("#table tbody tr").first).to_be_visible(timeout=30000)
+    page.wait_for_function(
+        "() => document.documentElement.getAttribute('data-bs-theme') === 'dark'"
+    )
+
+    colors = page.evaluate("""() => {
+        const style = getComputedStyle(document.querySelector('#table .dt-container'));
+        return {
+            background: style.backgroundColor,
+            body: getComputedStyle(document.body).backgroundColor,
+        };
+    }""")
+    assert colors["background"] == colors["body"], colors

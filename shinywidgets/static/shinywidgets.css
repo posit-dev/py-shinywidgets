@@ -134,3 +134,15 @@
   max-height: none !important;
   height: auto !important;
 }
+
+/*
+* itables only switches to its dark palette for `.dark`/`data-theme` markers, not
+* Bootstrap's `data-bs-theme`, which leaves the page's light dark-mode text on a white
+* table.
+*/
+:root[data-bs-theme=dark] .itables_anywidget {
+  --dt-html-background: var(--bs-body-bg);
+  --dt-row-stripe: 255, 255, 255;
+  --dt-row-hover: 255, 255, 255;
+  --dt-column-ordering: 255, 255, 255;
+}
