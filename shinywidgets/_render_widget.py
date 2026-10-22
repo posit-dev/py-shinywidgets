@@ -267,6 +267,10 @@ class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
     widget are synced to the browser), or to reactively read map state (e.g., `zoom`,
     `center`, `bounds`) with :func:`~shinywidgets.reactive_read`.
 
+    In a filling layout, the map fills its container unless it has its own height
+    (e.g., ``Layout(height="300px")``). Some subclasses set one by default: leafmap's
+    `Map` is 600px tall unless created with ``height="100%"``.
+
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Parameters
