@@ -471,6 +471,13 @@ def test_as_widget_mpl_non_pyplot_figure_retirement_is_noop(
         context.invalidate()
 
 
+@pytest.fixture
+def pydeck_08(monkeypatch: pytest.MonkeyPatch) -> None:
+    pydeck = pytest.importorskip("pydeck")
+    monkeypatch.setattr(pydeck, "__version__", "0.8.0")
+
+
+@pytest.mark.usefixtures("pydeck_08")
 def test_as_widget_pydeck_missing_show_errors() -> None:
     class NoShow:
         __module__ = "pydeck.mod"
@@ -479,20 +486,19 @@ def test_as_widget_pydeck_missing_show_errors() -> None:
         as_widget_pydeck(NoShow())
 
 
-def test_as_widget_pydeck_show_returning_non_widget_explains() -> None:
+@pytest.mark.usefixtures("pydeck_08")
+def test_as_widget_pydeck_show_returning_non_widget_errors() -> None:
     class Deck:
         __module__ = "pydeck.mod"
 
         def show(self):
             return "not-a-widget"
 
-    with pytest.raises(TypeError) as excinfo:
+    with pytest.raises(TypeError, match=r"Deck\.show\(\) to return an ipywidget"):
         as_widget_pydeck(Deck())
-    msg = str(excinfo.value)
-    assert "pydeck v0.9 removed ipywidgets support" in msg
-    assert "@render.ui" in msg
 
 
+@pytest.mark.usefixtures("pydeck_08")
 def test_as_widget_pydeck_show_returning_widget_succeeds() -> None:
     class Deck:
         __module__ = "pydeck.mod"

@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * shinywidgets now requires ipywidgets 8.1 or newer, and the bundled JavaScript widget manager (`@jupyter-widgets/html-manager`) was upgraded from 0.20 to 1.0. Together these fix a wide range of long-standing issues with ipywidgets 8 (see the bug fixes below). (#237, #259)
 
+### Deprecated
+
+* `@render_pydeck` is deprecated. pydeck v0.9 (April 2024) removed its Jupyter widget, so `@render_pydeck` (and `@render_widget` with a `pydeck.Deck`) can't render a map with any pydeck release that works with ipywidgets 8. It now emits a `DeprecationWarning`, and returning a `Deck` raises a `TypeError` that explains the alternatives up front (previously the advice was wrong, and with pandas 3 a cryptic `vars()` error from pydeck hid it). To keep using pydeck layers reactively, pass `pydeck.Layer` objects to a maplibre map's `add_deck_layers()` and render it with `@render_maplibre` (see `examples/pydeck/app.py`). For large data, consider `@render_lonboard`. For a static map, use shiny's `@render.ui` and return `deck.show()`. (#187)
+
 ### New features
 
 * Added several new `@render_*` decorators that bring more visualization and widget ecosystems into shinywidgets:
@@ -44,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * Re-rendering stays fast with many concurrent sessions or large widgets (e.g., large GeoJSON payloads or Altair specs). (#261)
   * Fixed additional cleanup edge cases involving widgets closed before opening, background tasks, and cross-session references. (#258, #261)
 * Returning an unsupported builtin value (e.g., a string, number, or dict) from a `@render_widget` function now raises the intended "Don't know how to coerce ..." `TypeError` instead of a confusing `AttributeError: ... has no attribute '__module__'`. (#287)
+* With shinywidgets imported, constructing a `pydeck.Deck` (pydeck v0.9 or newer) no longer raises "shinywidgets requires that all ipywidgets be constructed within an active Shiny session" outside a session (e.g., a module-level `Deck` in a core app), and no longer leaks unused widget comms (and browser console errors) inside a session (e.g., a static `deck.show()` map in `@render.ui`).
 * Fixed an issue where an ipyleaflet map with many markers could turn gray and show no markers when re-rendered. (#215, #237)
 * Fixed an issue where fonts used by widget CSS, such as FontAwesome icons, failed to load (404). (#237)
 * Fixed an issue where an Altair chart in an output with an explicit height (e.g., `output_widget("plot", height="300px")`) collapsed to a sliver instead of filling that height.

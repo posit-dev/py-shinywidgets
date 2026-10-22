@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, cast
 
 from htmltools import Tag
@@ -21,7 +22,9 @@ else:
     )
     LonboardMap = object
 
-from ._as_widget import as_widget_panel
+from shiny.render.renderer import ValueFn
+
+from ._as_widget import PYDECK_NO_WIDGET_MESSAGE, as_widget_panel, pydeck_has_widget
 from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
@@ -568,19 +571,35 @@ def _split_config(value: object) -> tuple[object, Optional[Dict[str, Any]]]:
 
 class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
     """
-    Reactively render a [pydeck](https://pydeck.gl) map as a Shiny output.
+    Deprecated: use pydeck layers with :class:`~shinywidgets.render_maplibre`
+    instead.
 
-    The decorated function may return either a `pydeck.Deck` (which is coerced to a
-    `pydeck.widget.DeckGLWidget`) or a `pydeck.widget.DeckGLWidget` widget (requires
-    pydeck <= 0.8, since pydeck v0.9 removed ipywidgets support).
+    pydeck v0.9 removed its Jupyter widget (`Deck.show()` now returns static HTML and
+    `Deck.update()` raises), so no ipywidgets bridge, shinywidgets included, can
+    render a live `pydeck.Deck`. With pydeck v0.9 or newer, this decorator raises a
+    `TypeError` explaining the alternatives below. (pydeck v0.8's widget requires
+    ipywidgets < 8, while shinywidgets requires ipywidgets >= 8.1.)
 
-    The decorated function also gains two read-only attributes: `.value`, the value
-    most recently returned by the render function, and `.widget`, the rendered
-    `DeckGLWidget` instance. Use `.widget` to programmatically update the rendered
-    map in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    Alternatives:
 
-    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+    * **Reactive maps from pydeck layers:** pass `pydeck.Layer` objects to a
+      [maplibre](https://eoda-dev.github.io/py-maplibregl/) map's
+      `add_deck_layers()` and render it with
+      :class:`~shinywidgets.render_maplibre` (requires ``pip install
+      'maplibre[anywidget]'``). Restyle the rendered map in place with
+      `.widget.set_deck_layers()` (the camera stays where the user left it), and
+      read its state (e.g., ``"view_state"``, ``"clicked"``) with
+      :func:`~shinywidgets.reactive_read`.
+    * **Large data:** [lonboard](https://developmentseed.org/lonboard/) and
+      :class:`~shinywidgets.render_lonboard` send binary data once and restyle
+      layers without re-sending it.
+    * **Static maps:** use shiny's ``@render.ui`` and return ``deck.show()`` (a
+      500px-tall iframe), or, to fill the container,
+      ``ui.tags.iframe(srcdoc=deck.to_html(as_string=True),
+      style="border:0;width:100%;height:100%;flex:1 1 auto")``. Every change
+      re-sends the whole page and resets the camera, and there are no events back to
+      Python. (Don't return ``deck.to_html()``: without a filename, it returns
+      ``None``.)
 
     Parameters
     ----------
@@ -597,4 +616,68 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    import pydeck as pdk
+    from maplibre import Map, MapOptions
+    from maplibre.basemaps import Carto
+    from shiny import reactive
+    from shiny.express import input, ui
+    from shinywidgets import render_maplibre
+
+    ui.input_slider("radius", "Hexagon radius (m)", 1000, 10000, 4000, step=500)
+
+    POINTS = [[-0.13, 51.51], [-0.12, 51.50], [-2.24, 53.48]]  # [lng, lat]
+
+
+    @render_maplibre
+    def deck():
+        m = Map(MapOptions(style=Carto.DARK_MATTER, center=(-1.9, 52.25), zoom=6))
+        # Filled (and restyled in place, without re-rendering the map) below
+        m.add_deck_layers([])
+        return m
+
+
+    @reactive.effect
+    def _():
+        deck.widget.set_deck_layers([layer()])
+
+
+    def layer():
+        return pdk.Layer(
+            "HexagonLayer",
+            POINTS,
+            id="hex",
+            get_position="-",
+            radius=input.radius(),
+            extruded=True,
+        )
+    ```
     """
+
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[ValueT]] = None,
+        *,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+    ):
+        warnings.warn(
+            "render_pydeck is deprecated: pydeck v0.9 removed its Jupyter widget, so "
+            "it can't render maps. Pass pydeck.Layer objects to a maplibre Map's "
+            "add_deck_layers() and use @render_maplibre instead (see "
+            "help(shinywidgets.render_pydeck) for other alternatives).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(_fn, width=width, height=height, fill=fill, fillable=fillable)
+
+    def _as_widget(self, value: ValueT) -> DeckGLWidget:
+        # A DeckGLWidget (which as_widget() passes through) can't render either
+        if not pydeck_has_widget():
+            raise TypeError(PYDECK_NO_WIDGET_MESSAGE)
+        return super()._as_widget(value)
