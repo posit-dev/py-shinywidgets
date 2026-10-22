@@ -146,16 +146,24 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
     `jscatter.widget.JupyterScatter` widget; requires ``pip install jupyter-scatter``)
     or a `JupyterScatter` widget. The plot is resized to fit its output, whether the
     output fills its layout or has an explicit ``height`` (see below), unless the plot
-    has a height of its own (e.g., from `Scatter.height()`).
+    has a height of its own (e.g., from `Scatter.height()`; jupyter-scatter's default of
+    240 doesn't count).
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
     `JupyterScatter` instance. Use `.widget` to programmatically update the rendered
     plot in place (trait changes on the widget are synced to the browser), or to
     reactively read widget state (e.g., the selected points via ``"selection"``) with
-    :func:`~shinywidgets.reactive_read`.
+    :func:`~shinywidgets.reactive_read`. The selection is an array of row *positions*
+    (use ``df.iloc[...]``), not index labels.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Large selections**: selecting more than about 3 million points sends the
+    server a message larger than the default 16 MiB websocket limit, which
+    disconnects the session. Raise the limit with ``shiny run --ws-max-size``.
 
     Parameters
     ----------
