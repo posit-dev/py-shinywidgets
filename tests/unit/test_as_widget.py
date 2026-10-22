@@ -386,6 +386,40 @@ def test_as_widget_maplibre_real_map_widget(monkeypatch: pytest.MonkeyPatch) -> 
     assert res._message_queue == m.to_dict()["calls"]
 
 
+def test_as_widget_maplibre_does_not_share_state_with_map(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A module-level Map is coerced once per session/render, so widget calls
+    # (queued until the browser renders the map) must not leak back into it.
+    pytest.importorskip("maplibre")
+    pytest.importorskip("anywidget")
+
+    import shinywidgets._shinywidgets as sw
+
+    monkeypatch.setattr(sw, "get_current_session", lambda: StubSession())
+
+    from maplibre import Map
+    from maplibre.ipywidget import MapWidget
+
+    m = Map()
+    m.add_source(
+        "src",
+        {"type": "geojson", "data": {"type": "FeatureCollection", "features": []}},
+    )
+    calls_before = list(m._message_queue)
+    options_before = dict(m.map_options)
+
+    res = as_widget(m)
+    assert isinstance(res, MapWidget)
+    assert res._message_queue is not m._message_queue
+    assert res.map_options is not m.map_options
+
+    res.add_call("flyTo", {"zoom": 3})
+    res.map_options["zoom"] = 3
+    assert m._message_queue == calls_before
+    assert m.map_options == options_before
+
+
 def test_as_widget_mpl_real_ipympl_canvas(monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("matplotlib")
     pytest.importorskip("ipympl")
