@@ -156,7 +156,9 @@ def jupyter_extension_destination(w: Widget) -> str:
 
 
 def widget_pkg(w: object) -> str:
-    return w.__module__.split(".")[0]
+    # Instances of builtins (e.g., "x", {}) have no __module__ attribute
+    module: str = getattr(w, "__module__", None) or type(w).__module__
+    return module.split(".")[0]
 
 
 def parse_version(v: str) -> str:

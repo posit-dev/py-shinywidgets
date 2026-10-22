@@ -58,6 +58,11 @@ def test_render_embedding_atlas_respects_widget_layout_height(widget_session) ->
     assert res["fill"] is False
 
 
+def test_render_lonboard_is_render_widget_base() -> None:
+    renderer = rw.render_lonboard()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_maplibre_is_render_widget_base() -> None:
     renderer = rw.render_maplibre()
     assert isinstance(renderer, rwb.render_widget_base)
@@ -84,8 +89,9 @@ def test_render_plotly_accepts_figure_config_tuple(widget_session) -> None:
     assert res is not None
     assert isinstance(r.widget, go.FigureWidget)
     assert r.widget._config["displayModeBar"] is False  # type: ignore
-    # the user's config is merged over plotly's (and shinywidgets') defaults
-    assert "plotlyServerURL" in r.widget._config  # type: ignore
+    # the user's config is merged over shinywidgets' (and plotly's) defaults
+    # (plotly's own default config varies by version, so check ours instead)
+    assert r.widget._config["responsive"] is True  # type: ignore
 
 
 def test_render_plotly_accepts_figurewidget_config_tuple(widget_session) -> None:
