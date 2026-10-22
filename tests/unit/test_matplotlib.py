@@ -16,12 +16,15 @@ from matplotlib.backend_bases import Event, ResizeEvent
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure, SubFigure
 from mpl_toolkits.mplot3d import Axes3D
-from shiny import Session, reactive
+from shiny import App, Session, reactive, ui
+from shiny._connection import MockConnection
 from shiny.reactive import Context
 from shiny.session import session_context
 from shiny.session._session import AppSession
 from shinywidgets import as_widget, session_lifetime
-from shinywidgets._render_widget_base import WidgetRenderContext
+from shinywidgets._render_widget_base import WidgetRenderContext, is_closed_widget
+
+from tests.unit.conftest import widget_test_server
 
 if TYPE_CHECKING:
     from ipympl.backend_nbagg import Canvas
@@ -338,6 +341,31 @@ def test_mutation_after_coercion_is_drawn_again(widget_session: Session) -> None
 
     assert isinstance(widget_session, AppSession)
     assert not widget_session._has_run_session_ended_tasks
+
+
+def test_foreign_canvas_rejected_before_draw(widget_session: Session) -> None:
+    # A module-level cached figure returned from another session's render is
+    # rejected by the renderer -- but coercion draws a reused canvas first,
+    # which would update (or, on a draw error, close) the owner's live canvas.
+    # The rejection must happen before that draw.
+    other = App(ui.page_fluid(), widget_test_server)._create_session(MockConnection())
+    try:
+        with session_context(other):
+            figure = Figure()
+            axes = figure.subplots()
+            axes.plot([0, 1])
+            canvas = cast("Canvas", as_widget(figure))
+        image = canvas._data_url
+
+        with session_context(widget_session):
+            axes.set_title("changed")
+            with pytest.raises(RuntimeError, match="another Shiny session"):
+                as_widget(figure)
+
+        assert canvas._data_url == image
+        assert not is_closed_widget(canvas)
+    finally:
+        asyncio.get_event_loop().run_until_complete(other.close())
 
 
 def test_first_draw_callbacks_dont_invalidate_the_render(

@@ -182,7 +182,7 @@ def as_widget_mpl(x: object) -> Widget:
 
     # The renderer imports this module, so defer these circular imports.
     from ._render_widget_base import is_closed_widget
-    from ._shinywidgets import close_widget
+    from ._shinywidgets import close_widget, foreign_or_closed_widget
 
     # Several higher-level APIs return something that holds the figure: an Axes
     # (e.g., pandas.DataFrame.plot()), an ipympl Canvas, or a seaborn grid
@@ -234,6 +234,17 @@ def as_widget_mpl(x: object) -> Widget:
     # shouldn't become dependencies of the render. A cached image describes the
     # figure only if it hasn't changed since the image was drawn.
     if not canvas._data_url or x.stale:
+        # Drawing updates state synced to the browser (and a failure closes the
+        # canvas), so a reused canvas that's live in another session must be
+        # rejected before the draw, not after it by the renderer.
+        session = get_current_session()
+        if session is not None and not session.is_stub_session():
+            bad = foreign_or_closed_widget(canvas, session.root_scope())
+            if bad is not None:
+                raise RuntimeError(
+                    f"{type(bad).__name__} belongs to another Shiny session, so it "
+                    "can't be displayed here. Construct widgets per session."
+                )
         try:
             with isolate():
                 canvas._repr_mimebundle_()
