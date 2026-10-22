@@ -141,8 +141,9 @@ class render_k3d(render_widget_base[ValueT, K3dPlot]):
     """
     Reactively render a [k3d](https://k3d-jupyter.org) 3D plot as a Shiny output.
 
-    The decorated function should return a `k3d.plot.Plot` (i.e., the result of
-    `k3d.plot()` with objects added to it; requires ``pip install k3d``). By default,
+    The decorated function should return a `k3d.Plot` (i.e., the result of
+    `k3d.plot()` with objects added to it; requires ``pip install k3d``), or a bare
+    k3d object such as `k3d.points(...)`, which is placed on a new plot. By default,
     the plot fills its container; pass `height` to `k3d.plot()` to use a fixed pixel
     height instead (a `height` of 512, the k3d default, is treated as unspecified).
 
@@ -170,6 +171,26 @@ class render_k3d(render_widget_base[ValueT, K3dPlot]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     """
+
+    def _as_widget(self, value: ValueT) -> K3dPlot:
+        try:
+            # Import the factory from its own module: `k3d.plot` is also the name of
+            # the submodule defining Plot, which is what type checkers resolve
+            from k3d.factory.plot import plot as new_plot
+            from k3d.objects import Drawable
+        except ImportError:
+            raise ImportError(
+                "Install the k3d package to use render_k3d with shinywidgets (pip install k3d)."
+            )
+
+        # A drawable is a model-only widget that draws nothing by itself, so (like
+        # its Jupyter display does) put it on a new plot
+        if isinstance(value, Drawable):
+            plot = new_plot()
+            plot += value
+            # k3d annotates `+=` as returning its PlotObjectsMixin, but it returns self
+            return cast(K3dPlot, plot)
+        return cast(K3dPlot, super()._as_widget(value))
 
 
 class render_maplibre(render_widget_base[ValueT, MapWidget]):
