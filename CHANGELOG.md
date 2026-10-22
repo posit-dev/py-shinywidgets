@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Substantially overhauled widget cleanup and lifecycle management. Re-rendering, replacing, hiding/showing, or removing widget outputs no longer leaks widgets, views, or event listeners on the server or in the browser (#246, #258, #260, #261, #262, #263), and many related failure modes are fixed:
   * pythreejs widgets no longer cause Shiny sessions to hang indefinitely with ipywidgets 8. (#244)
   * Every re-render of an output no longer leaks a few helper models for the rest of the session. (#258)
+  * Re-rendered widgets (and the data they hold, e.g. figure images or DataFrames) are now freed right away instead of staying in server memory until the session ends. (#303)
   * Re-showing a widget output hidden by `@render.ui` (or removed with `remove_ui()` and re-inserted) no longer hangs for 30 seconds when the widget changed while hidden. (#260)
   * Re-rendering an ipyleaflet map no longer throws uncaught page errors or leaks the old map's listeners and child views. (#260)
   * Re-rendering a widget constructed with an explicit `model_id` no longer leaves the output blank. (#263)
