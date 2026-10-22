@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 env:
-  UV_VERSION: "0.9.x"
+  UV_VERSION: "0.13.x"
   PYTHON_VERSION: "3.12"
 
 jobs:
@@ -34,13 +34,13 @@ jobs:
         run: uv sync --python ${{ env.PYTHON_VERSION }} --all-groups
 
       - name: Check formatting
-        run: make py-check-format
+        run: make check-format
 
       - name: Check types
-        run: make py-check-types
+        run: make check-types
 
       - name: Run tests
-        run: make py-check-tests
+        run: make check-tests
 
       - name: Build package
         run: uv build

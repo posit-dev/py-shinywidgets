@@ -1,4 +1,4 @@
-.PHONY: help clean clean-build clean-pyc clean-test py-setup py-check-format py-check-types py-check-tests py-check py-check-tox py-build py-format py-coverage py-check-build test test-unit test-playwright test-playwright-coverage test-all-local coverage coverage-ci coverage-combine coverage-html dist install pyright check
+.PHONY: help clean clean-build clean-pyc clean-test setup check-format check-types check-tests check check-tox build format coverage check-build test test-unit test-playwright test-playwright-coverage test-all-local coverage-ci coverage-combine coverage-html dist install pyright
 
 .DEFAULT_GOAL := help
 
@@ -40,45 +40,45 @@ clean-test: ## remove test and coverage artifacts
 	rm -rf .tox/ .pytest_cache/ htmlcov/
 	rm -f .coverage .coverage.* coverage.xml
 
-py-setup: ## [py] sync the development environment with uv
+setup: ## sync the development environment with uv
 	uv sync --all-groups
 
-py-check-format: ## [py] run Ruff lint and format checks
+check-format: ## run Ruff lint and format checks
 	uv run ruff check $(PYTHON_PATHS) --config pyproject.toml
 	uv run ruff format --check $(PYTHON_PATHS) --config pyproject.toml
 
-py-check-types: ## [py] run pyright type checks
+check-types: ## run pyright type checks
 	uv run pyright $(PYRIGHT_PATHS)
 
-py-check-tests: ## [py] run pytest checks
+check-tests: ## run pytest checks
 	$(PYTEST_UNIT)
 
-py-check: ## [py] run format, type, and test checks
-	$(MAKE) py-check-format
-	$(MAKE) py-check-types
-	$(MAKE) py-check-tests
+check: ## run format, type, and test checks
+	$(MAKE) check-format
+	$(MAKE) check-types
+	$(MAKE) check-tests
 
-py-check-tox: ## [py] run test and type checks across supported Python versions
+check-tox: ## run test and type checks across supported Python versions
 	uv run tox run-parallel
 
-py-build: ## [py] build the source and wheel distributions
+build: ## build the source and wheel distributions
 	uv build
 
-py-format: ## [py] apply Ruff fixes and formatting
+format: ## apply Ruff fixes and formatting
 	uv run ruff check --fix $(PYTHON_PATHS) --config pyproject.toml
 	uv run ruff format $(PYTHON_PATHS) --config pyproject.toml
 
-py-coverage: ## [py] run the test suite under coverage
+coverage: ## run the test suite under coverage
 	rm -f .coverage .coverage.*
 	uv run coverage run --rcfile "$(REPO_ROOT)/.coveragerc" -m pytest -c "$(REPO_ROOT)/pytest.ini" --confcutdir "$(REPO_ROOT)"
 	uv run coverage combine --rcfile "$(REPO_ROOT)/.coveragerc"
 	uv run coverage report
 
-py-check-build: ## [py] verify package build metadata is importable
+check-build: ## verify package build metadata is importable
 	uv build
 	uv run python -c "import shinywidgets; print(shinywidgets.__version__)"
 
-test: py-check-tests ## run pytest quickly with the default environment
+test: check-tests ## run pytest quickly with the default environment
 
 test-unit: ## run unit tests only (explicit config/cutoff)
 	$(PYTEST_UNIT)
@@ -91,9 +91,7 @@ test-all-local: ## run unit tests then Playwright tests (requires browsers insta
 	$(MAKE) test-unit
 	$(MAKE) test-playwright
 
-coverage: py-coverage ## run coverage checks
-
-dist: py-build ## build source and wheel distributions
+dist: build ## build source and wheel distributions
 coverage-combine: ## combine parallel coverage data files into a single .coverage
 	uv run coverage combine --rcfile "$(REPO_ROOT)/.coveragerc"
 
@@ -114,10 +112,8 @@ coverage-html: ## generate HTML coverage output
 	$(MAKE) coverage-combine
 	uv run coverage html --rcfile "$(REPO_ROOT)/.coveragerc"
 
-install: py-build ## install the built wheel into the uv environment
+install: build ## install the built wheel into the uv environment
 	uv run pip uninstall -y shinywidgets || true
 	uv run pip install dist/shinywidgets*.whl
 
-pyright: py-check-types ## run pyright type checks
-
-check: py-check ## run the full Python quality check suite
+pyright: check-types ## run pyright type checks
