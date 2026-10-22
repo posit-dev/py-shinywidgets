@@ -130,3 +130,43 @@ def test_altair_concat_chart_emits_warning(monkeypatch) -> None:
 
     with pytest.warns(UserWarning, match="layout_column_wrap"):
         rwb.set_layout_defaults(w)
+
+
+@pytest.mark.parametrize(
+    ("sizing_mode", "expected_fill"),
+    [
+        ("stretch_both", True),
+        ("stretch_height", True),
+        ("scale_both", True),
+        ("scale_height", True),
+        (None, False),
+        ("fixed", False),
+        ("stretch_width", False),
+        ("scale_width", False),
+    ],
+)
+def test_bokeh_fills_only_when_root_stretches_vertically(
+    sizing_mode: str | None, expected_fill: bool
+) -> None:
+    pytest.importorskip("jupyter_bokeh")
+    from bokeh.plotting import figure
+    from jupyter_bokeh import BokehModel
+
+    w = BokehModel(figure(height=200, sizing_mode=sizing_mode))
+
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is expected_fill
+
+
+def test_bokeh_fill_respects_upstream_decision() -> None:
+    pytest.importorskip("jupyter_bokeh")
+    import ipywidgets as widgets
+    from bokeh.plotting import figure
+    from jupyter_bokeh import BokehModel
+
+    w = BokehModel(
+        figure(sizing_mode="stretch_both"), layout=widgets.Layout(height="200px")
+    )
+
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is False

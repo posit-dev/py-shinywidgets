@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed an issue where an ipyleaflet map with many markers could turn gray and show no markers when re-rendered. (#215, #237)
 * Fixed an issue where fonts used by widget CSS, such as FontAwesome icons, failed to load (404). (#237)
 * Fixed an issue where an output that once rendered a filling widget kept stretching later widgets to fill it, even ones given their own height (e.g., `layout.height="200px"`). (#300)
+* Fixed several sizing issues with bokeh-based outputs (`@render_bokeh`, `@render_panel`, and `@render_holoviews`):
+  * A bokeh `figure` given an explicit `width`, `height`, `sizing_mode`, or `aspect_ratio` now keeps that size, instead of always being stretched to fill its output.
+  * A plot that stretches to fill (e.g., a default `figure`, or a HoloViews plot with `responsive=True`) no longer collapses to a sliver inside an output with an explicit height (e.g., `output_widget(height="300px")`).
+  * Content with a size of its own (e.g., a fixed-size figure, a HoloViews plot without `responsive=True`, or a panel `Markdown` pane) no longer reserves empty space below it in non-filling layouts.
 
 ## [0.8.2] - 2026-10-15
 
