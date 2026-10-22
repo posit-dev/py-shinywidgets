@@ -125,6 +125,28 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ---
+    **Selections and params**: name your selections and params (e.g.,
+    ``alt.selection_interval(name="brush")``), then read them with
+    ``reactive_read(chart.widget.selections, "brush").value``, or observe them on a
+    `JupyterChart` you build yourself (``jchart.selections.observe(fn, ["brush"])``).
+    Selections can't be set from Python, but params can: setting
+    ``chart.widget.params.<name> = value`` updates the chart in place without
+    re-sending its data. To throttle how often selections update Python while
+    dragging, return ``alt.JupyterChart(chart, debounce_wait=150)``. Prefer params
+    (or a re-render) over replacing ``chart.widget.chart``, which re-sends the data,
+    drops the container sizing described below, and replaces
+    ``chart.widget.selections`` and ``chart.widget.params``.
+
+    **Sizing**: a chart without an explicit width or height is sized to fill its
+    output (``"container"``). Concatenated, faceted, and repeated charts keep their
+    natural size.
+
+    **Offline use**: `JupyterChart` loads its JavaScript from a CDN; call
+    ``alt.JupyterChart.enable_offline()`` (requires ``vl-convert-python``) for apps
+    that run without internet access.
+
     Parameters
     ----------
     width
