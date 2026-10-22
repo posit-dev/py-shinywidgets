@@ -30,12 +30,19 @@ export function setupMplAutoResize(
   let lastWidth = -1;
   let lastHeight = -1;
 
+  // The widget's header ("Figure 1") and footer (the cursor readout), and the
+  // canvas's own margins, take up vertical space that isn't available to the
+  // figure itself
+  const header = lmWidget.querySelector('.jupyter-matplotlib-header') as HTMLElement | null;
+  const footer = lmWidget.querySelector('.jupyter-matplotlib-footer') as HTMLElement | null;
+  const canvasDiv = lmWidget.querySelector('.jupyter-matplotlib-canvas-div') as HTMLElement | null;
+
   const resizeToFit = () => {
-    // The widget's header ("Figure 1") and footer take up vertical space that
-    // isn't available to the figure itself
-    const header = lmWidget.querySelector('.jupyter-matplotlib-header') as HTMLElement | null;
-    const footer = lmWidget.querySelector('.jupyter-matplotlib-footer') as HTMLElement | null;
-    const chrome = (header?.offsetHeight ?? 0) + (footer?.offsetHeight ?? 0);
+    let chrome = (header?.offsetHeight ?? 0) + (footer?.offsetHeight ?? 0);
+    if (canvasDiv) {
+      const style = getComputedStyle(canvasDiv);
+      chrome += parseFloat(style.marginTop) + parseFloat(style.marginBottom);
+    }
     const w = el.clientWidth;
     const h = el.clientHeight - chrome;
     if (w === lastWidth && h === lastHeight) return;
@@ -50,8 +57,13 @@ export function setupMplAutoResize(
 
   const observer = new ResizeObserver(() => resizeToFit());
   // Observe the output container (not the widget) so the canvas's own size
-  // changes don't create a feedback loop
+  // changes don't create a feedback loop. Also observe the header and footer,
+  // whose heights change after the first paint: the footer stays empty until
+  // the pointer first moves over the figure, and either can be hidden later
+  // (header_visible/footer_visible).
   observer.observe(el);
+  if (header) observer.observe(header);
+  if (footer) observer.observe(footer);
   resizeToFit();
 
   return () => observer.disconnect();
