@@ -13,7 +13,7 @@ cars = pd.DataFrame(
     }
 )
 cars["mpg"] = (45 - 6 * cars["weight"] + rng.normal(0, 2.5, 300)).round(1)
-cars["hp"] = (40 * cars["weight"] + rng.normal(0, 25, 300)).round()
+cars["hp"] = (40 * cars["weight"] + rng.normal(0, 25, 300)).round().astype(int)
 
 app_ui = ui.page_fillable(
     ui.layout_columns(
