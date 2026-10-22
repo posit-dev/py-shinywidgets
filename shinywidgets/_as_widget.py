@@ -149,7 +149,7 @@ def as_widget_lonboard(x: object) -> Widget:
     return x
 
 
-def as_widget_maplibre(x: object) -> Optional[Widget]:
+def as_widget_maplibre(x: object) -> Widget:
     # maplibre is guaranteed to be installed here since this function is only
     # called when x comes from the maplibre package
     from maplibre.map import Map
@@ -169,12 +169,14 @@ def as_widget_maplibre(x: object) -> Optional[Widget]:
     # MapWidget.__init__() expects MapOptions (not the dict that Map stores), and
     # provides no way to pass queued calls, so transfer the state after
     # construction. Map.to_dict() returns exactly the state the frontend needs
-    # (map options plus the queued JS calls that get replayed on render).
-    state = x.to_dict()  # type: ignore
+    # (map options plus the queued JS calls that get replayed on render). Copy
+    # it, since to_dict() returns x's own containers, and a module-level Map
+    # would otherwise collect every session's widget calls.
+    state = x.to_dict()
     res = MapWidget()
-    res.map_options = state["mapOptions"]
-    res._message_queue = state["calls"]
-    return res  # type: ignore
+    res.map_options = dict(state["mapOptions"])
+    res._message_queue = list(state["calls"])
+    return res
 
 
 def as_widget_mpl(x: object) -> Widget:
