@@ -16,6 +16,7 @@ app_ui = ui.page_fluid(
     ui.output_text("selections"),
     output_widget("grid_fixed", height="250px"),
     output_widget("grid_widget_height"),
+    output_widget("grid_auto", height="auto"),
 )
 
 
@@ -47,6 +48,10 @@ def server(input, output, session):
     @render_ipydatagrid
     def grid_widget_height():
         return DataGrid(df, layout={"height": "300px"})
+
+    @render_ipydatagrid
+    def grid_auto():
+        return df
 
 
 app = App(app_ui, server)

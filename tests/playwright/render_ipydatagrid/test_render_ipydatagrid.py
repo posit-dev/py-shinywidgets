@@ -80,6 +80,11 @@ def test_ipydatagrid_respects_explicit_height(page: Page, local_app) -> None:
         abs(page.evaluate(BOX_HEIGHT_JS, "#grid_widget_height .lm-DataGrid") - 300) <= 1
     )
 
+    # output_widget(height="auto") isn't a definite height, so the grid keeps
+    # ipydatagrid's own (500px) height rather than taking 100% of it
+    expect(page.locator("#grid_auto .lm-DataGrid")).to_have_count(1)
+    assert abs(page.evaluate(BOX_HEIGHT_JS, "#grid_auto .lm-DataGrid") - 500) <= 1
+
     assert_no_unexpected_errors(errors, failed_requests)
 
 
@@ -122,10 +127,11 @@ def test_ipydatagrid_rerender_lifecycle(page: Page, local_app) -> None:
         expect(page.locator("#selections")).to_have_text("[]")
 
     # Views of the replaced grids must be disposed (no accumulation): only the
-    # three grids on the page (grid, grid_fixed, grid_widget_height) are live
+    # four grids on the page (grid, grid_fixed, grid_widget_height, grid_auto) are
+    # live
     grid_models = [m for m in client_models(page) if m["name"] == "DataGridModel"]
-    assert sum(m["views"] for m in grid_models) == 3
-    expect(page.locator(".lm-DataGrid")).to_have_count(3)
+    assert sum(m["views"] for m in grid_models) == 4
+    expect(page.locator(".lm-DataGrid")).to_have_count(4)
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)

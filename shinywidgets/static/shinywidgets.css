@@ -53,9 +53,16 @@
 * ipydatagrid's stylesheet gives the grid a fixed 500px height, so in an output with
 * an explicit height fit the grid to that height instead of letting it overflow (and
 * be clipped by) the output. The selector matches the inline `height:` style that
-* output_widget(height=) emits (keep in sync with _output_widget.py).
+* output_widget(height=) emits (keep in sync with _output_widget.py). Intrinsic
+* heights (`auto`, `fit-content`, ...; the browser may reserialize the style with a
+* space after the colon) aren't definite, so 100% of them would collapse the grid.
 */
-.shiny-ipywidget-output[style*="height:"] > .datagrid-container {
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="-content"]
+  )
+  > .datagrid-container {
   height: 100%;
 }
 
