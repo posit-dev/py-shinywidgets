@@ -191,12 +191,18 @@
 }
 
 /*
-* ipyleaflet hard-codes `height: 400px` on the map container, which ignores an
-* output's explicit height (it overflows or underfills it). A Layout(height=...)
-* on the map is an inline style, so it still takes precedence over this. The attribute
-* selector matches the inline style output_widget(height=) emits (keep in sync with
-* _output_widget.py).
+* ipyleaflet hard-codes `height: 400px` (and `flex: 1 1 auto`) on the map container,
+* which ignores an output's explicit height (it overflows or underfills it). Laying the
+* output out as a flex column lets the map grow or shrink to a definite output height,
+* while an output without one (e.g., `height="auto"`) still gets the 400px default.
+* Filling outputs are already flex containers.
 */
-.shiny-ipywidget-output[style*="height:"] > .jupyter-widgets.leaflet-widgets {
-  height: 100%;
+.shiny-ipywidget-output:not(.html-fill-container):has(> .jupyter-widgets.leaflet-widgets) {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A Layout(height=...) on the map (an inline style) takes precedence */
+.shiny-ipywidget-output:not(.html-fill-container) > .jupyter-widgets.leaflet-widgets[style*="height"] {
+  flex: none;
 }

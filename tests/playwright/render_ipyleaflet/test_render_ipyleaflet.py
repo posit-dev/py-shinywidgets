@@ -88,6 +88,27 @@ def test_render_ipyleaflet_respects_explicit_height(page: Page, local_app) -> No
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_render_ipyleaflet_keeps_default_height_for_intrinsic_output_height(
+    page: Page, local_app
+) -> None:
+    # `height: auto` is not a definite height, so the map must not take 100% of it
+    # (that would collapse it to 0px); it keeps ipyleaflet's default instead
+    page.goto(local_app.url)
+    expect(page.locator("#map_auto_height .leaflet-container")).to_have_count(
+        1, timeout=30000
+    )
+    assert abs(box(page, "#map_auto_height .leaflet-container")["height"] - 400) <= EPS
+
+
+def test_render_ipyleaflet_layout_height_wins_over_output_height(
+    page: Page, local_app
+) -> None:
+    page.goto(local_app.url)
+    sel = "#map_layout_in_output_height .leaflet-container"
+    expect(page.locator(sel)).to_have_count(1, timeout=30000)
+    assert abs(box(page, sel)["height"] - 250) <= EPS
+
+
 def test_render_ipyleaflet_zoom_roundtrips_to_python(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
@@ -109,13 +130,13 @@ def test_render_ipyleaflet_rerender_lifecycle(page: Page, local_app) -> None:
 
     def live_map_views() -> int:
         # Maps whose model is retired on rerender are closed, so only the live
-        # ones (5 outputs) should still hold a view
+        # ones (7 outputs) should still hold a view
         return sum(
             m["views"] for m in client_models(page) if m["name"] == "LeafletMapModel"
         )
 
     initial = live_map_views()
-    assert initial == 5
+    assert initial == 7
 
     for i in range(1, 4):
         page.click("#rerender")
