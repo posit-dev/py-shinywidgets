@@ -14,6 +14,7 @@ app_ui = ui.page_fluid(
     ui.card(output_widget("fills"), id="fill_card", height="400px"),
     ui.card(output_widget("fixed_output", height="350px"), id="fixed_card"),
     ui.card(output_widget("fixed_widget"), id="widget_card", height="500px"),
+    ui.card(output_widget("not_fillable", fillable=False), id="not_fillable_card"),
 )
 
 
@@ -50,6 +51,10 @@ def server(input, output, session):
     def fixed_widget():
         input.rerender_last()
         return Sigma(nx.karate_club_graph(), height=300)
+
+    @render_ipysigma
+    def not_fillable():
+        return nx.karate_club_graph()
 
 
 app = App(app_ui, server)

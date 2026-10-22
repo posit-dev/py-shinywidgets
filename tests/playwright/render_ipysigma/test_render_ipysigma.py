@@ -95,6 +95,24 @@ def test_ipysigma_respects_explicit_heights(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_ipysigma_not_fillable_output_keeps_default_height(
+    page: Page, local_app
+) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.set_viewport_size({"width": 1000, "height": 2400})
+    page.goto(local_app.url)
+    wait_for_graph(page, "#not_fillable")
+
+    # output_widget(fillable=False) has no definite height for the graph to fill,
+    # so it falls back to sigma's default 500px instead of collapsing
+    assert abs(box(page, "#not_fillable")["height"] - 500) <= TOLERANCE
+    graph = box(page, "#not_fillable canvas.sigma-nodes")
+    assert abs(graph["height"] - 500) <= BORDER_TOLERANCE, graph
+    assert count_node_pixels(page, "#not_fillable") > 100
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_ipysigma_selected_node_roundtrips_to_python(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
@@ -126,12 +144,12 @@ def test_ipysigma_rerender_releases_old_views(page: Page, local_app) -> None:
         wait_for_graph(page, "#fills")
 
     expect(page.locator("#fills .ipysigma-widget")).to_have_count(1)
-    # 3 outputs, each with exactly one live Sigma view; none left from the
+    # 4 outputs, each with exactly one live Sigma view; none left from the
     # three re-rendered ones
     live_views = sum(
         m["views"] for m in client_models(page) if m["name"] == "SigmaModel"
     )
-    assert live_views == 3, client_models(page)
+    assert live_views == 4, client_models(page)
 
     assert not any("widget is not attached" in e.lower() for e in errors)
     assert_no_unexpected_errors(errors, failed_requests)
@@ -153,11 +171,11 @@ LOST_CONTEXTS_JS = """(sel) => {
 def test_ipysigma_rerender_keeps_other_graphs_drawn(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
-    for output in ("#fills", "#fixed_output", "#fixed_widget"):
+    for output in ("#fills", "#fixed_output", "#fixed_widget", "#not_fillable"):
         wait_for_graph(page, output)
 
-    # Re-render the newest graph, so leaked contexts would evict the older,
-    # still-live ones
+    # Re-render a graph that isn't the oldest: the browser evicts the oldest
+    # contexts first, so leaked ones would blank the older, still-live graphs
     for i in range(1, 5):
         old = page.locator("#fixed_widget .ipysigma-widget").element_handle()
         page.click("#rerender_last")
@@ -165,7 +183,7 @@ def test_ipysigma_rerender_keeps_other_graphs_drawn(page: Page, local_app) -> No
         page.wait_for_function("(el) => !el.isConnected", arg=old)
         wait_for_graph(page, "#fixed_widget")
 
-    for output in ("#fills", "#fixed_output", "#fixed_widget"):
+    for output in ("#fills", "#fixed_output", "#fixed_widget", "#not_fillable"):
         assert page.evaluate(LOST_CONTEXTS_JS, output) == 0, output
 
     assert_no_unexpected_errors(errors, failed_requests)
