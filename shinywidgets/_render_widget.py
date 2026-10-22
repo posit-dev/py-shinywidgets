@@ -217,15 +217,26 @@ class render_nglview(render_widget_base[ValueT, NGLWidget]):
     structure viewer as a Shiny output.
 
     The decorated function should return an `nglview.NGLWidget` (e.g., from
-    `nglview.show_file()` or `nglview.show_pdbid()`; requires ``pip install nglview``).
+    `nglview.show_file()`, `nglview.show_text()`, or `nglview.show_url()`; requires
+    ``pip install nglview``).
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
     `NGLWidget` instance. Use `.widget` to programmatically update the rendered viewer
     in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    reactively read widget state with :func:`~shinywidgets.reactive_read` (e.g., the
+    picked atom via ``"picked"``).
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Shiny version**: nglview sends the changes its methods make (e.g.,
+    `add_representation()`, `center()`, `clear_representations()`) from a
+    background thread, which Shiny before 1.9 doesn't send to the browser until
+    the next input arrives. So with older Shiny, those changes can be delayed,
+    and calling them in the render function can leave the viewer blank when it
+    first loads.
 
     Parameters
     ----------
