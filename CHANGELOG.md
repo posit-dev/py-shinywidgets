@@ -34,10 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug fixes
 
+* Widgets that update their own state from the browser several times in a row no longer have newer values rolled back by stale echoes from Python. This fixes, for example, kepler.gl maps rendering blank or with duplicated layers. (#309)
+* Exceptions raised in widget callbacks triggered from the browser (e.g., an `on_click` handler, a trait observer, or a plotly click callback) are now logged to the server console (via the `shinywidgets` logger) instead of silently disappearing. (#304)
 * Fixed numerous issues with widgets nested inside other widgets and widget outputs inserted dynamically (e.g., `output_widget()` inside `@render.ui`). With ipywidgets 8, these either didn't render at all (e.g., an `HTML` child with a `style`, or a Plotly `FigureWidget`, inside an ipyleaflet popup) or rendered while logging errors like `Class HTMLStyleModel not found` (e.g., ipyleaflet popups, `WidgetControl` children, and leafmap legends). (#75, #101, #137, #157, #194, #237)
 * Substantially overhauled widget cleanup and lifecycle management. Re-rendering, replacing, hiding/showing, or removing widget outputs no longer leaks widgets, views, or event listeners on the server or in the browser (#246, #258, #260, #261, #262, #263), and many related failure modes are fixed:
   * pythreejs widgets no longer cause Shiny sessions to hang indefinitely with ipywidgets 8. (#244)
   * Every re-render of an output no longer leaks a few helper models for the rest of the session. (#258)
+  * Re-rendered widgets (and the data they hold, e.g. figure images or DataFrames) are now freed right away instead of staying in server memory until the session ends. (#303)
   * Re-showing a widget output hidden by `@render.ui` (or removed with `remove_ui()` and re-inserted) no longer hangs for 30 seconds when the widget changed while hidden. (#260)
   * Re-rendering an ipyleaflet map no longer throws uncaught page errors or leaks the old map's listeners and child views. (#260)
   * Re-rendering a widget constructed with an explicit `model_id` no longer leaves the output blank. (#263)
@@ -48,6 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * With shinywidgets imported, constructing a `pydeck.Deck` (pydeck v0.9 or newer) no longer raises "shinywidgets requires that all ipywidgets be constructed within an active Shiny session" outside a session (e.g., a module-level `Deck` in a core app), and no longer leaks unused widget comms (and browser console errors) inside a session (e.g., a static `deck.show()` map in `@render.ui`).
 * Fixed an issue where an ipyleaflet map with many markers could turn gray and show no markers when re-rendered. (#215, #237)
 * Fixed an issue where fonts used by widget CSS, such as FontAwesome icons, failed to load (404). (#237)
+* Fixed an issue where an output that once rendered a filling widget kept stretching later widgets to fill it, even ones given their own height (e.g., `layout.height="200px"`). (#300)
+* Fixed a regression (introduced alongside the busy-indicator fix in 0.8.2, #243) where re-rendering a widget output could show a brief flash of the previous (stale) content: Shiny stops showing the recalculating spinner, and un-hides the old content, as soon as the new value arrives -- before shinywidgets has had a chance to build and attach the new view. The output now stays hidden across that gap and reveals only once the new view has actually rendered, so widgets whose view takes noticeable time to construct (e.g., Bokeh, HoloViews/datashader, ipyleaflet, lonboard) no longer pop back to the old content before swapping to the new one. (#318)
 
 ## [0.8.2] - 2026-10-15
 
