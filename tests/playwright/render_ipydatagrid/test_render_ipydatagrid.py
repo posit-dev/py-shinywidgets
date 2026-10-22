@@ -94,7 +94,7 @@ def test_ipydatagrid_selection_roundtrips_to_python(page: Page, local_app) -> No
     assert box is not None
 
     # Cells are drawn on a canvas, so click by coordinate: past the row-header
-    # column (64px) and the column header (~24px), each row is 20px tall
+    # column (64px) and the column header (20px), each row is 20px tall
     page.mouse.click(box["x"] + 100, box["y"] + 70)
     expect(page.locator("#selections")).to_have_text(
         "[{'r1': 2, 'r2': 2, 'c1': 0, 'c2': 0}]", timeout=10000
