@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from base64 import b64decode
 from contextlib import contextmanager
 from typing import (
@@ -60,7 +61,7 @@ __all__ = (
 def init_shiny_widget(w: Widget):
     session = get_current_session()
     if session is None:
-        if importing_nglview():
+        if importing_nglview() or importing_lonboard():
             return
         raise RuntimeError(
             "shinywidgets requires that all ipywidgets be constructed within an active Shiny session"
@@ -182,6 +183,8 @@ def init_shiny_widget(w: Widget):
             # widget-creation loop (e.g. pythreejs, #244).
             if any(widget_pkg(cls) in ("plotly", "ipympl") for cls in type(w).__mro__):
                 w._repr_mimebundle_()
+            if any(widget_pkg(cls) == "lonboard" for cls in type(w).__mro__):
+                own_lonboard_controls(w)
 
             # Now, get the state
             state, buffer_paths, buffers = _remove_buffers(w.get_state())
@@ -246,6 +249,44 @@ def init_shiny_widget(w: Widget):
 
 # TODO: can we restore the widget constructor in a sensible way?
 Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
+
+
+def importing_lonboard() -> bool:
+    """
+    Is lonboard's `Map` class body executing (i.e., is lonboard mid-import)?
+
+    That class body constructs `Map`'s default controls (and their sub-widgets)
+    outside any session. They're shared by every `Map`, so they can't belong to a
+    session anyway: `own_lonboard_controls()` swaps them for per-session copies
+    before display.
+    """
+    lonboard = sys.modules.get("lonboard")
+    # lonboard.Map is only bound once its class body has finished executing
+    return lonboard is not None and not hasattr(lonboard, "Map")
+
+
+def own_lonboard_controls(w: Widget) -> None:
+    """
+    Give a lonboard `Map` its own copies of `Map`'s shared default controls.
+
+    Those controls are constructed once (when lonboard is imported) and shared by
+    every Map, so they can't belong to this session. This runs before the Map's
+    initial state is serialized, so the browser never sees the shared ones.
+    """
+    from lonboard import Map
+
+    if not isinstance(w, Map):
+        return
+    shared = Map.class_traits()["controls"].default()
+    if any(c in shared for c in w.controls):
+        w.controls = tuple(
+            copy_lonboard_control(c) if c in shared else c for c in w.controls
+        )
+
+
+def copy_lonboard_control(control: Widget) -> Widget:
+    names = [k for k in control.trait_names(sync=True) if not k.startswith("_")]
+    return type(control)(**{k: getattr(control, k) for k in names})
 
 
 @contextmanager
