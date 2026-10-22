@@ -474,11 +474,13 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `quak.Widget` instance. Use `.widget` to programmatically update the rendered
-    table in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state with :func:`~shinywidgets.reactive_read` (e.g.,
-    `reactive_read(table.widget, "sql")` is the SQL query for the table's current
-    sort and filter state).
+    `quak.Widget` instance. Use `.widget` to reactively read the table's state with
+    :func:`~shinywidgets.reactive_read`: `reactive_read(table.widget, "sql")` is the
+    SQL query for the table's current sort and filter state, and
+    `table.widget.data()` runs it, returning a DuckDB relation of the matching rows.
+    The query is an empty string while the table starts up (so guard with
+    ``req(reactive_read(table.widget, "sql"))``), and it's read-only: setting it from
+    Python doesn't change the table.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
