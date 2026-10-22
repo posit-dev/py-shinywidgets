@@ -319,7 +319,7 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 
 
 def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
-    from lonboard import Map
+    from lonboard import Map  # pyright: ignore[reportMissingImports]
 
     if not isinstance(widget, Map):
         return fill
@@ -335,10 +335,31 @@ def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # user-specified height, on the other hand, gets overridden by that
     # min-height, so size the widget container to the map rather than to its
     # parent.
-    if widget.height not in (widget.trait_defaults("height"), "100%"):
+    # pyright can't narrow via isinstance() when lonboard isn't installed
+    # (e.g., Python 3.15)
+    if widget.height not in (widget.trait_defaults("height"), "100%"):  # pyright: ignore[reportAttributeAccessIssue]
         fill = False
         if widget.layout.height == "100%":
             widget.layout.height = "auto"
+
+    return fill
+
+
+def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from maplibre.ipywidget import MapWidget
+
+    if not isinstance(widget, MapWidget):
+        return fill
+
+    # The map's root element is styled `height: <height>` (shinywidgets.css
+    # sizes it to the widget container instead), so a user-specified height has
+    # to go on the container. The default (MapWidget.__init__()'s 400) can't be
+    # told apart from an explicit 400, so treat it as unset, as with a
+    # percentage (which is relative to the container anyway).
+    if widget.height != "400px" and not str(widget.height).endswith("%"):
+        fill = False
+        if widget.layout.height in (None, "auto"):
+            widget.layout.height = widget.height
 
     return fill
 
@@ -357,6 +378,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "altair": _altair_layout_defaults,
     "jscatter": jscatter_layout_defaults,
     "lonboard": lonboard_layout_defaults,
+    "maplibre": maplibre_layout_defaults,
 }
 
 

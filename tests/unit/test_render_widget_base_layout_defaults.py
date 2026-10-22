@@ -182,3 +182,40 @@ def test_jscatter_explicit_height_stays_fixed_when_displayed_again() -> None:
     scatter.height(500)
     assert rwb.set_layout_defaults(scatter.widget)[1] is False
     assert rwb.set_layout_defaults(scatter.widget)[1] is False
+
+
+def test_maplibre_default_height_fills() -> None:
+    pytest.importorskip("maplibre")
+    pytest.importorskip("anywidget")
+    from maplibre.ipywidget import MapWidget
+
+    for height in (400, "400px", "50%"):
+        w = MapWidget(height=height)
+        _, fill = rwb.set_layout_defaults(w)
+        assert fill is True
+        assert w.layout.height is None
+
+
+def test_maplibre_explicit_height_sizes_widget_container() -> None:
+    pytest.importorskip("maplibre")
+    pytest.importorskip("anywidget")
+    from maplibre.ipywidget import MapWidget
+
+    # shinywidgets.css sizes the map to its widget container, so the map's
+    # height has to be applied there
+    w = MapWidget(height=200)
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is False
+    assert w.layout.height == "200px"
+
+
+def test_maplibre_explicit_layout_height_is_kept() -> None:
+    pytest.importorskip("maplibre")
+    pytest.importorskip("anywidget")
+    import ipywidgets as widgets
+    from maplibre.ipywidget import MapWidget
+
+    w = MapWidget(height=200, layout=widgets.Layout(height="300px"))
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is False
+    assert w.layout.height == "300px"
