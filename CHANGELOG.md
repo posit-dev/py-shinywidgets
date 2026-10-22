@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed an issue where fonts used by widget CSS, such as FontAwesome icons, failed to load (404). (#237)
 * Fixed an issue where an Altair chart in an output with an explicit height (e.g., `output_widget("plot", height="300px")`) collapsed to a sliver instead of filling that height.
 * Fixed an issue where observers registered on an `altair.JupyterChart`'s `selections` or `params` before returning it from `@render_altair` (e.g., `jchart.selections.observe(fn, ["brush"])`, as documented by Altair) never fired.
+* Fixed an issue where an output that once rendered a filling widget kept stretching later widgets to fill it, even ones given their own height (e.g., `layout.height="200px"`). (#300)
 
 ## [0.8.2] - 2026-10-15
 
