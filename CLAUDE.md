@@ -17,9 +17,9 @@ cd js && yarn install && yarn watch
 
 ## Common Commands
 
-- **Type checking**: `make pyright` (or `make py-check-types`)
-- **Linting/formatting check**: `make py-check-format`
-- **Auto-format**: `make py-format`
+- **Type checking**: `make pyright` (or `make check-types`)
+- **Linting/formatting check**: `make check-format`
+- **Auto-format**: `make format`
 - **Full quality check**: `make check` (format + types + unit tests)
 - **Unit tests**: `make test` (or `make test-unit`)
 - **Run a single test**: `uv run pytest tests/unit/test_foo.py::test_name`

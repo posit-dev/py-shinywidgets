@@ -17,7 +17,7 @@ from typing import (
     cast,
 )
 from uuid import uuid4
-from weakref import WeakSet
+from weakref import WeakSet, ref
 
 import ipywidgets
 
@@ -162,6 +162,11 @@ def init_shiny_widget(w: Widget):
         else None
     )
 
+    # Shiny keeps every Effect (destroyed or not) registered with session.on_ended
+    # until the session ends, so the effect below must not hold the widget strongly:
+    # that would keep every re-rendered widget alive for the rest of the session.
+    w_ref = ref(w)
+
     # Schedule the opening of the comm to happen sometime after this init function.
     # This is important for widgets like plotly that do additional initialization that
     # is required to get a valid widget state.
@@ -170,9 +175,10 @@ def init_shiny_widget(w: Widget):
 
         _open_shiny_comm.destroy()
 
+        w = w_ref()
         # Closed before it was opened (explicitly, or because its render was
         # invalidated): leave it closed rather than reopening it.
-        if WIDGET_INSTANCE_MAP.get(id) is not w:
+        if w is None or WIDGET_INSTANCE_MAP.get(id) is not w:
             return
 
         with WidgetRenderContext.resumed(render_ctx):
@@ -273,14 +279,17 @@ def own_lonboard_controls(w: Widget) -> None:
     every Map, so they can't belong to this session. This runs before the Map's
     initial state is serialized, so the browser never sees the shared ones.
     """
-    from lonboard import Map
+    from lonboard import Map  # pyright: ignore[reportMissingImports]
 
     if not isinstance(w, Map):
         return
+    # pyright can't narrow via isinstance() when lonboard isn't installed
+    # (e.g., Python 3.15)
     shared = Map.class_traits()["controls"].default()
-    if any(c in shared for c in w.controls):
-        w.controls = tuple(
-            copy_lonboard_control(c) if c in shared else c for c in w.controls
+    if any(c in shared for c in w.controls):  # pyright: ignore[reportAttributeAccessIssue]
+        w.controls = tuple(  # pyright: ignore[reportAttributeAccessIssue]
+            copy_lonboard_control(c) if c in shared else c
+            for c in w.controls  # pyright: ignore[reportAttributeAccessIssue]
         )
 
 
