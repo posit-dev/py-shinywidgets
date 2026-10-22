@@ -407,13 +407,33 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     exactly what the render function returned (a figure or the `(figure, config)`
     tuple), and `.widget`, which is always the coerced `FigureWidget` (with `config`
     merged into its ``_config`` trait). Use `.widget` to programmatically update the
-    rendered figure in place (trait changes on the widget are synced to the browser),
-    or to reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    rendered figure in place (trait changes on the widget are synced to the browser).
+    When the render function returns a `go.Figure`, `.value` is that figure, not the
+    displayed one, so modifying it has no effect.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Note
     ---
+    **Events**: to respond to user interaction, return a `go.FigureWidget` and
+    register plotly callbacks on it (e.g., ``fig.data[0].on_click(fn)``,
+    ``fig.data[0].on_selection(fn)``, or ``fig.layout.xaxis.on_change(fn,
+    "range")``), typically setting a `reactive.value` inside the callback.
+    Callbacks registered on a `go.Figure` don't carry over when it's coerced to a
+    `FigureWidget`, so they never fire.
+
+    **Updating in place**: re-rendering rebuilds the figure, resetting zoom and
+    selection. To change a displayed figure instead, read inputs under
+    `reactive.isolate()` in the render function and modify `.widget` in a
+    `reactive.effect` (use ``with .widget.batch_update():`` for many changes, or
+    ``.widget.batch_animate()`` for animated transitions).
+
+    **Sizing**: a figure with an explicit ``layout.height`` keeps that height
+    instead of filling its container. For a plot that fills a fixed height, use
+    ``output_widget("id", height="450px", fillable=True)``: without
+    ``fillable=True``, the plot renders at plotly's default height (360px)
+    regardless of the output's height.
+
     **Typing**: no return-type annotation is needed -- the renderer's value
     type is statically bounded, so type checkers flag unsupported return
     values at decoration time, and the output's `.value` attribute is
