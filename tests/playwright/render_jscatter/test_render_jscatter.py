@@ -148,6 +148,63 @@ def test_jscatter_fits_explicit_output_height(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_jscatter_fills_again_after_its_fullscreen_button(
+    page: Page, local_app
+) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.set_viewport_size({"width": 1000, "height": 1000})
+    page.goto(local_app.url)
+    expect(page.locator("#fill_scatter canvas").first).to_be_visible(timeout=30000)
+    wait_until_plot_fills_output(page, "fill_scatter")
+
+    page.click("#fill_scatter button[title='Full Screen']")
+    page.wait_for_function("() => document.fullscreenElement !== null")
+    # Let jupyter-scatter (and the fill observer) react to the fullscreen size
+    page.wait_for_timeout(500)
+    page.evaluate("() => document.exitFullscreen()")
+    page.wait_for_function("() => document.fullscreenElement === null")
+
+    # On exit, jupyter-scatter resizes its drawing surface to the `height` trait,
+    # so a height fitted to the fullscreen layout would leave the canvas stuck
+    # at the wrong size. The canvas should be back to following the plot
+    # (which is 20px of axes padding taller).
+    page.wait_for_function(
+        """(id) => {
+          const out = document.querySelector('#' + id);
+          const canvas = out.querySelector('canvas');
+          const plot = canvas.parentElement.parentElement;
+          const h = (x) => x.getBoundingClientRect().height;
+          return Math.abs(h(plot) - out.clientHeight) <= 1 &&
+            Math.abs(h(canvas) + 20 - h(plot)) <= 1;
+        }""",
+        arg="fill_scatter",
+        timeout=10000,
+    )
+
+    # ... and keeps following its output after that
+    before = page.evaluate(HEIGHTS_JS, "fill_scatter")
+    page.set_viewport_size({"width": 1000, "height": 800})
+    page.wait_for_function(
+        """([id, before]) => {
+          const out = document.querySelector('#' + id);
+          const canvas = out.querySelector('canvas');
+          const plot = canvas.parentElement.parentElement;
+          const h = (x) => x.getBoundingClientRect().height;
+          return out.clientHeight < before - 100 &&
+            Math.abs(h(plot) - out.clientHeight) <= 1 &&
+            Math.abs(h(canvas) + 20 - h(plot)) <= 1;
+        }""",
+        arg=["fill_scatter", before["output"]],
+        timeout=10000,
+    )
+
+    # jupyter-scatter (1.0.1) itself throws this on entering fullscreen
+    upstream = "useScatterView must be used within a Toolbar"
+    assert_no_unexpected_errors(
+        [err for err in errors if upstream not in err], failed_requests
+    )
+
+
 def test_jscatter_selection_roundtrips_to_python(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.set_viewport_size({"width": 1000, "height": 1000})

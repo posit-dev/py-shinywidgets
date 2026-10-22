@@ -2,8 +2,11 @@ import type { WidgetModel } from '@jupyter-widgets/base';
 
 // The regl-scatterplot instance jupyter-scatter attaches to its plot container
 interface ScatterplotApi {
+  get(property: 'height'): number | 'auto';
   set(options: { height: number | 'auto' }): unknown;
 }
+
+type PlotContainer = HTMLElement & { api?: ScatterplotApi };
 
 // jupyter-scatter's default `height` (JSCATTER_DEFAULT_HEIGHT in
 // _render_widget_base.py). Any other value was chosen by the user, unless the
@@ -56,7 +59,7 @@ export function setupJscatterAutoHeight(
   // The element jupyter-scatter sizes: the regl canvas sits in a wrapper, which
   // sits in this container. N.B. the container is taller than the `height`
   // trait by the axes' padding.
-  const findPlotContainer = () =>
+  const findPlotContainer = (): PlotContainer | null =>
     lmWidget.querySelector('canvas')?.parentElement?.parentElement ?? null;
 
   function fitHeight(): void {
@@ -66,8 +69,14 @@ export function setupJscatterAutoHeight(
     // runs after the view is destroyed (it throws "The instance was already
     // destroyed"). This only reduces the odds of that race; it can't rule it out.
     if (el.classList.contains('recalculating')) return;
+    // jupyter-scatter's own fullscreen mode sizes the plot to the screen, so
+    // fitting it to the output meanwhile would set the wrong height
+    const fullscreen = document.fullscreenElement;
+    if (fullscreen && lmWidget.contains(fullscreen)) return;
     const plot = findPlotContainer();
     if (!plot) return;
+    // Exiting fullscreen pins the drawing surface to the `height` trait again
+    if (plot.api && plot.api.get('height') !== 'auto') plot.api.set({ height: 'auto' });
     const padding = plot.offsetHeight - model.get('height');
     const height = Math.floor(el.clientHeight - padding);
     if (height < 1 || height === model.get('height')) return;
@@ -79,7 +88,7 @@ export function setupJscatterAutoHeight(
   // changes) on the next animation frame after rendering
   const start = () => {
     if (disposed) return;
-    const plot = findPlotContainer() as (HTMLElement & { api?: ScatterplotApi }) | null;
+    const plot = findPlotContainer();
     if (!plot?.api) {
       frame = requestAnimationFrame(start);
       return;
