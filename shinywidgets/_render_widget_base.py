@@ -232,10 +232,12 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
             fill = False
 
     # Package-specific adjustments (mirrors AS_WIDGET_MAP in _as_widget.py):
-    # each handler may mutate the widget and/or tighten `fill` to False
-    defaults = _LAYOUT_DEFAULTS.get(widget_pkg(widget))
-    if defaults is not None:
-        fill = defaults(widget, fill)
+    # each handler may mutate the widget and/or revise `fill`
+    for cls in type(widget).__mro__:
+        defaults = _LAYOUT_DEFAULTS.get(widget_pkg(cls))
+        if defaults is not None:
+            fill = defaults(widget, fill)
+            break
 
     return (widget, fill)
 
@@ -322,11 +324,57 @@ def itables_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from lonboard import Map  # pyright: ignore[reportMissingImports]
+
+    if not isinstance(widget, Map):
+        return fill
+
+    # Map.__init__() sets layout.height to "100%" itself (deferring to the map's
+    # own `height`), which the generic check above mistakes for a user-specified
+    # height
+    fill = widget.layout.height in (None, "auto", "100%")
+
+    # The map's root element is styled `min-height: 100%; height: <height>`, so
+    # with lonboard's default height it already grows to fill a definite-height
+    # container (and shinywidgets.css clamps it so it can't overflow one). A
+    # user-specified height, on the other hand, gets overridden by that
+    # min-height, so size the widget container to the map rather than to its
+    # parent.
+    # pyright can't narrow via isinstance() when lonboard isn't installed
+    # (e.g., Python 3.15)
+    if widget.height not in (widget.trait_defaults("height"), "100%"):  # pyright: ignore[reportAttributeAccessIssue]
+        fill = False
+        if widget.layout.height == "100%":
+            widget.layout.height = "auto"
+
+    return fill
+
+
+def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from maplibre.ipywidget import MapWidget
+
+    if not isinstance(widget, MapWidget):
+        return fill
+
+    # The map's root element is styled `height: <height>` (shinywidgets.css
+    # sizes it to the widget container instead), so a user-specified height has
+    # to go on the container. The default (MapWidget.__init__()'s 400) can't be
+    # told apart from an explicit 400, so treat it as unset, as with a
+    # percentage (which is relative to the container anyway).
+    if widget.height != "400px" and not str(widget.height).endswith("%"):
+        fill = False
+        if widget.layout.height in (None, "auto"):
+            widget.layout.height = widget.height
+
+    return fill
+
+
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
 # (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
 # in js/src/fill.ts). A handler receives the widget and the current fill
 # decision, applies package-specific mutations, and returns the (possibly
-# tightened) fill decision.
+# revised) fill decision.
 #
 # N.B. bokeh is intentionally absent: its sizing_mode hack lives in
 # as_widget_bokeh() because applying it here doesn't work (see the TODO
@@ -335,6 +383,8 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
     "itables": itables_layout_defaults,
+    "lonboard": lonboard_layout_defaults,
+    "maplibre": maplibre_layout_defaults,
 }
 
 

@@ -16,6 +16,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
 ]
 dependencies = [
   "anywidget",
@@ -43,6 +44,9 @@ test = [
   "itables[widget]",
   "matplotlib",
   "jupyter_bokeh",
+  # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
+  # Python 3.15+ yet, so lonboard can't be installed there
+  "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
   "panel",
   "perspective-python>=3.0",
@@ -66,6 +70,7 @@ dev = [
   "itables[widget]",
   "matplotlib",
   "jupyter_bokeh",
+  "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
   "panel",
   "perspective-python>=3.0",
@@ -92,6 +97,9 @@ test = [
   "itables[widget]",
   "matplotlib",
   "jupyter_bokeh",
+  # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
+  # Python 3.15+ yet, so lonboard can't be installed there
+  "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
   "panel",
   "perspective-python>=3.0",
@@ -184,7 +192,7 @@ exclude_lines = [
 [tool.tox]
 legacy_tox_ini = """
 [tox]
-env_list = type-py3{10,11,12,13,14}, py3{10,11,12,13,14}
+env_list = type-py3{10,11,12,13,14,15}, py3{10,11,12,13,14,15}
 isolated_build = True
 
 [testenv]

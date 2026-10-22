@@ -8,7 +8,6 @@ on:
       - "tests/**/*"
       - "Makefile"
       - "pyproject.toml"
-      - "uv.lock"
       - ".github/workflows/py-check.yaml"
   pull_request:
     paths:
@@ -16,7 +15,6 @@ on:
       - "tests/**/*"
       - "Makefile"
       - "pyproject.toml"
-      - "uv.lock"
       - ".github/workflows/py-check.yaml"
   workflow_dispatch:
 
@@ -24,7 +22,7 @@ permissions:
   contents: read
 
 env:
-  UV_VERSION: "0.9.x"
+  UV_VERSION: "0.13.x"
 
 jobs:
   py-test:
@@ -32,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
 
     steps:
       - uses: actions/checkout@v4
@@ -51,10 +49,10 @@ jobs:
         run: uv sync --python ${{ matrix.python-version }} --all-groups
 
       - name: Check formatting
-        run: make py-check-format
+        run: make check-format
 
       - name: Check types
-        run: make py-check-types
+        run: make check-types
 
       - name: Run unit tests (coverage)
         if: matrix.python-version == '3.12'
@@ -62,7 +60,7 @@ jobs:
 
       - name: Run unit tests
         if: matrix.python-version != '3.12'
-        run: make py-check-tests
+        run: make check-tests
 
       - name: Upload coverage artifact
         if: matrix.python-version == '3.12'
