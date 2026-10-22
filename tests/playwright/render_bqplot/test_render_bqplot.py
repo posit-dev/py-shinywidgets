@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from playwright.sync_api import Page, expect
+from shiny.pytest import create_app_fixture
 from tests.playwright.conftest import (
     assert_no_unexpected_errors,
     collect_errors,
@@ -46,6 +49,8 @@ HEIGHT_JS = """(sel) => {
 }"""
 
 LIVE_VIEWS_JS = "() => window.widgetManager._liveViews.size"
+
+local_app_tooltip = create_app_fixture(Path(__file__).parent / "app_tooltip.py")
 
 
 def test_bqplot_renders_with_theme_colors(page: Page, local_app) -> None:
@@ -148,4 +153,30 @@ def test_bqplot_rerender_lifecycle(page: Page, local_app) -> None:
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_bqplot_tooltip_follows_theme(page: Page, local_app_tooltip) -> None:
+    # bqplot appends tooltips to <body>, outside the figure, so the theme variables
+    # must reach them there too (otherwise the tooltip has no background or border)
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app_tooltip.url)
+    expect(page.locator("#fig .dot")).to_have_count(3, timeout=30000)
+
+    page.locator("#fig .dot").nth(1).hover()
+    tooltip = page.locator("body > .bqplot_tooltip_div .bqplot_mark_tooltip").first
+    expect(tooltip).to_be_visible()
+    style_js = (
+        "el => { const s = getComputedStyle(el); "
+        "return { bg: s.backgroundColor, border: s.borderTopStyle }; }"
+    )
+    body_bg_js = "getComputedStyle(document.body).backgroundColor"
+    light = tooltip.evaluate(style_js)
+    assert light == {"bg": page.evaluate(body_bg_js), "border": "solid"}, light
+
+    page.evaluate("document.documentElement.setAttribute('data-bs-theme', 'dark')")
+    dark = tooltip.evaluate(style_js)
+    assert dark == {"bg": page.evaluate(body_bg_js), "border": "solid"}, dark
+    assert dark["bg"] != light["bg"]
+
     assert_no_unexpected_errors(errors, failed_requests)

@@ -80,9 +80,11 @@
 /*
 * bqplot's stylesheet reads JupyterLab theme variables, which don't exist outside
 * of JupyterLab (leaving, for example, the plot area filled black). Derive them from
-* Bootstrap so figures follow Shiny's light/dark theme.
+* Bootstrap so figures follow Shiny's light/dark theme. Tooltips are appended to
+* <body>, outside of the figure, so they need the variables too.
 */
-.bqplot {
+.bqplot,
+.bqplot_tooltip_div {
   --jp-layout-color0: var(--bs-body-bg, white);
   --jp-layout-color1: var(--bs-body-bg, white);
   --jp-layout-color2: color-mix(in srgb, var(--bs-body-color, black) 12%, transparent);
