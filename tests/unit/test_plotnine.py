@@ -122,6 +122,21 @@ def test_no_pyplot_figures_leak_across_renders(widget_session: Session) -> None:
     assert set(plt.get_fignums()) == before
 
 
+def test_live_figure_is_not_registered_with_pyplot(widget_session: Session) -> None:
+    # pyplot's current figure is process-wide, so a rendered figure left in its
+    # registry could be drawn on by implicit pyplot calls from other outputs or
+    # sessions (plt.gca(), seaborn, ...); plotnine closes it as soon as it's drawn
+    before = set(plt.get_fignums())
+    with session_context(widget_session):
+        context = Context()
+        with context(), WidgetRenderContext():
+            canvas = cast("Canvas", as_widget(scatter() | scatter()))
+            assert set(plt.get_fignums()) == before
+            current = plt.gcf()
+            assert current is not canvas.figure
+            plt.close(current)
+
+
 def test_rejects_non_plot() -> None:
     with pytest.raises(TypeError, match="plotnine"):
         as_widget_plotnine(geom_point())
