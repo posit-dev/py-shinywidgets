@@ -470,20 +470,26 @@ class render_pygwalker(render_widget_base[ValueT, WalkerWidget]):
     The decorated function may return either a pandas `DataFrame` (which is coerced to
     a PyGWalker widget; requires ``pip install pygwalker``) or a widget created by
     `pygwalker.api.anywidget.walk()` (use this to pass options like ``theme_key``).
-    Note that, by default, PyGWalker sends anonymous usage events from the Python
-    process and checks for updates; call
-    ``pygwalker.GlobalVarManager.set_privacy("offline")`` to disable both.
+    Don't use the top-level `pygwalker.walk()`: outside of Jupyter, it starts a
+    blocking web server instead of returning a widget.
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    PyGWalker widget. Use `.widget` to programmatically update the rendered app in
-    place (trait changes on the widget are synced to the browser), or to reactively
-    read widget state with :func:`~shinywidgets.reactive_read`.
+    PyGWalker widget. The widget has no traits that track the explorer's state, so
+    there's nothing to :func:`~shinywidgets.reactive_read`, and changing the explorer
+    means re-rendering it. Each render sends PyGWalker's JavaScript (about 10 MB) to
+    the browser, so avoid unnecessary re-renders.
 
-    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output. Outside of
+    filling layouts, give it a height (e.g., ``"800px"``) that fits PyGWalker's UI.
 
     Note
     ----
+    **Privacy**: by default, PyGWalker sends usage events and checks for updates,
+    from both the Python process and each visitor's browser. Call
+    ``pygwalker.GlobalVarManager.set_privacy("offline")`` (before rendering) to
+    disable both.
+
     **Security**: PyGWalker computes charts by running SQL that the browser sends on
     DuckDB's process-wide default connection, and any visitor can send arbitrary SQL,
     including SQL that reads or writes files on the server. In deployed apps, lock
