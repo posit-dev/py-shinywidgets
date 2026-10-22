@@ -18,7 +18,10 @@ cars["hp"] = (40 * cars["weight"] + rng.normal(0, 25, 500)).round()
 app_ui = ui.page_fillable(
     ui.layout_columns(
         ui.card(
-            ui.card_header("Click or drag to select rows; click a header to sort"),
+            ui.card_header(
+                "Click or drag to select rows; sort or filter from a column header's "
+                "menu icon"
+            ),
             output_widget("grid"),
             full_screen=True,
         ),
