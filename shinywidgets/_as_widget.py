@@ -145,7 +145,7 @@ def as_widget_holoviews(x: object) -> Optional[Widget]:
 def as_widget_lonboard(x: object) -> Widget:
     # lonboard is guaranteed to be installed here since this function is only
     # called when x comes from the lonboard package
-    from lonboard import BaseLayer, Map
+    from lonboard import BaseLayer, Map  # pyright: ignore[reportMissingImports]
 
     if isinstance(x, BaseLayer):
         x = Map(x)
