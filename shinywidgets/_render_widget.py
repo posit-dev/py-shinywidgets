@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from importlib.metadata import version as package_version
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, cast
 
@@ -7,6 +8,7 @@ from htmltools import Tag
 from packaging.version import Version
 
 if TYPE_CHECKING:
+    import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
     from ipympl.backend_nbagg import Canvas as MplCanvas
@@ -21,7 +23,6 @@ else:
     ) = object
 
 from ._bokeh import bokeh_dependency
-from ._dependencies import widget_pkg
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
 if TYPE_CHECKING:
@@ -180,8 +181,12 @@ class render_keplergl(render_widget_base[ValueT, KeplerGl]):
     def _as_widget(self, value: ValueT) -> KeplerGl:
         # A DataFrame is generic (several renderers accept one), so it's only
         # coerced here rather than via AS_WIDGET_MAP
-        if widget_pkg(type(value)) in ("pandas", "geopandas"):
-            return dataframe_to_keplergl(value)
+        # (Only import pandas, an optional dependency, if it's already in use)
+        if "pandas" in sys.modules:
+            import pandas as pd
+
+            if isinstance(value, pd.DataFrame):
+                return dataframe_to_keplergl(value)
         return super()._as_widget(value)
 
 
@@ -509,7 +514,7 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
     """
 
 
-def dataframe_to_keplergl(df: object) -> "KeplerGl":
+def dataframe_to_keplergl(df: pd.DataFrame) -> KeplerGl:
     # keplergl 0.3.x imports pkg_resources, which setuptools >= 81 no longer ships
     hint = "pip install 'keplergl>=0.4.0rc4'"
     try:
@@ -530,4 +535,13 @@ def dataframe_to_keplergl(df: object) -> "KeplerGl":
             f"is installed ({hint})."
         )
 
-    return KeplerGl(data={"data": df})
+    import pandas as pd
+
+    # Arrow would send an index other than a RangeIndex as an extra column,
+    # which kepler.gl shows as a field (keplergl's JSON serialization drops it)
+    if not isinstance(df.index, pd.RangeIndex):
+        df = df.reset_index(drop=True)
+
+    # Unlike keplergl's default JSON serialization, Arrow keeps missing values
+    # (NaN isn't valid JSON) and is more compact
+    return KeplerGl(data={"data": df}, use_arrow=True)

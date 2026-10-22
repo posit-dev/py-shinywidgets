@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import base64
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+import pyarrow as pa
 import pytest
 import shinywidgets._render_widget as rw
 from shiny import Session
 from shiny.session import session_context
 from shinywidgets._render_widget_base import set_layout_defaults
+from shinywidgets._serialization import json_packer
 
 keplergl = pytest.importorskip("keplergl")
 gpd = pytest.importorskip("geopandas")
@@ -33,6 +37,31 @@ def test_dataframe_becomes_keplergl_widget(widget_session: Session) -> None:
     assert isinstance(widget, keplergl.KeplerGl)
     assert list(widget.data) == ["data"]
     assert widget.data["data"] is df
+
+
+def test_dataframe_with_missing_values_serializes(widget_session: Session) -> None:
+    # Shiny's JSON doesn't allow NaN, and failing to serialize the widget's
+    # state when it's sent to the browser would end the session
+    df = pd.DataFrame({"lat": [37.7, np.nan], "lon": [-122.4, -122.3]})
+    widget = as_widget(widget_session, df)
+    with session_context(widget_session):
+        json_packer(widget.get_state())
+
+
+def test_dataframe_index_is_not_sent_as_a_column(widget_session: Session) -> None:
+    # As with keplergl's JSON serialization, a DataFrame's index (e.g., what's
+    # left of it after filtering rows) shouldn't show up in kepler.gl as a field
+    df = points().set_axis([3, 7])
+    widget = as_widget(widget_session, df)
+    with session_context(widget_session):
+        sent = widget.get_state()["data"]["data"]
+    table = pa.ipc.open_stream(base64.b64decode(sent["data"])).read_all()
+    assert table.column_names == list(df.columns)
+
+
+def test_series_is_not_coerced(widget_session: Session) -> None:
+    with pytest.raises(TypeError, match="ipywidget"):
+        as_widget(widget_session, points()["lat"])
 
 
 def test_geodataframe_becomes_keplergl_widget(widget_session: Session) -> None:

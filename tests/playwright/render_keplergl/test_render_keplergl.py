@@ -101,6 +101,21 @@ def test_keplergl_config_roundtrips_to_python(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_keplergl_renders_dataframe_with_missing_values(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+
+    # A NaN in the returned DataFrame must not end the session, and kepler
+    # still creates layers for the data
+    expect(page.locator("#missing_values_layers")).to_have_text(
+        re.compile(r"layers: [1-9]"), timeout=LOAD_TIMEOUT
+    )
+    page.click("#rerender")
+    expect(page.locator("#render_count")).to_have_text("1")
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_keplergl_rerender_lifecycle(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.route("**/output.js", expose_manager)
