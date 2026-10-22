@@ -22,6 +22,7 @@ from shiny.reactive import Context
 from shiny.session import session_context
 from shiny.session._session import AppSession
 from shinywidgets import as_widget, session_lifetime
+from shinywidgets._comm import ShinyComm
 from shinywidgets._render_widget_base import WidgetRenderContext, is_closed_widget
 
 from tests.unit.conftest import widget_test_server
@@ -315,6 +316,27 @@ def test_draw_error_raised_at_coercion(widget_session: Session) -> None:
 
     assert isinstance(widget_session, AppSession)
     assert not widget_session._has_run_session_ended_tasks
+
+
+def test_draw_error_on_live_canvas_leaves_it_open(widget_session: Session) -> None:
+    # A reused canvas may already be displayed by another output in the same
+    # session (its comm is open). A failed redraw must propagate to this render
+    # without closing the canvas out from under the other output.
+    figure = Figure()
+    axes = figure.subplots()
+    axes.plot([0, 1])
+
+    with session_context(widget_session):
+        canvas = cast("Canvas", as_widget(figure))
+        asyncio.get_event_loop().run_until_complete(reactive.flush())
+        assert isinstance(canvas.comm, ShinyComm)
+
+        axes.set_title(r"$\badcommand{x}$")
+        with pytest.raises(ValueError, match="badcommand"):
+            as_widget(figure)
+
+    assert isinstance(canvas.comm, ShinyComm)
+    assert not is_closed_widget(canvas)
 
 
 def test_mutation_after_coercion_is_drawn_again(widget_session: Session) -> None:

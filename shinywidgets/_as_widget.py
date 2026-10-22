@@ -10,6 +10,7 @@ from ipywidgets.widgets.widget import Widget
 from shiny.reactive import isolate
 from shiny.session import get_current_session
 
+from ._comm import ShinyComm
 from ._dependencies import widget_pkg
 
 if TYPE_CHECKING:
@@ -251,8 +252,12 @@ def as_widget_mpl(x: object) -> Widget:
             with isolate():
                 canvas._repr_mimebundle_()
         except Exception:
-            # Its comm hasn't opened yet, and opening it would fail the same way
-            close_widget(canvas)
+            # Close only a canvas whose comm hasn't opened yet (opening it would
+            # fail the same way, inside an effect, ending the session). A live
+            # canvas may be displayed by other outputs in this session, so just
+            # propagate the error to this render.
+            if not isinstance(canvas.comm, ShinyComm):
+                close_widget(canvas)
             raise
 
     return canvas
