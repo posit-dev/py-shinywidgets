@@ -221,9 +221,11 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
 
     # Package-specific adjustments (mirrors AS_WIDGET_MAP in _as_widget.py):
     # each handler may mutate the widget and/or revise `fill`
-    defaults = _LAYOUT_DEFAULTS.get(widget_pkg(widget))
-    if defaults is not None:
-        fill = defaults(widget, fill)
+    for cls in type(widget).__mro__:
+        defaults = _LAYOUT_DEFAULTS.get(widget_pkg(cls))
+        if defaults is not None:
+            fill = defaults(widget, fill)
+            break
 
     return (widget, fill)
 

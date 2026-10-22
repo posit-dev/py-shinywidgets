@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import subprocess
 import sys
 
@@ -13,6 +14,7 @@ from lonboard.controls import FullscreenControl
 from shiny import Session, reactive
 from shiny.reactive import Context
 from shiny.session import session_context
+from shiny.session._session import AppSession
 from shinywidgets import as_widget, render_lonboard, session_lifetime
 from shinywidgets._render_widget_base import WidgetRenderContext, set_layout_defaults
 from shinywidgets._shinywidgets import foreign_or_closed_widget
@@ -21,6 +23,38 @@ from shinywidgets._shinywidgets import foreign_or_closed_widget
 def points_table(n: int = 5) -> Table:
     coords = (np.linspace(-10, 10, n), np.linspace(-5, 5, n))
     return Table.from_arrays([gr.points(coords, crs="EPSG:4326")], names=["geometry"])
+
+
+class CustomMap(Map):
+    pass
+
+
+class CustomLayer(ScatterplotLayer):
+    pass
+
+
+@pytest.fixture
+def comm_opens(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> dict[str, dict[str, object]]:
+    """Initial widget states sent to the browser, keyed by model id."""
+    opens: dict[str, dict[str, object]] = {}
+
+    async def send_custom_message(type: str, message: object) -> None:
+        if type == "shinywidgets_comm_open":
+            assert isinstance(message, str)
+            content = json.loads(message)["content"]
+            opens[content["comm_id"]] = content["data"]["state"]
+
+    monkeypatch.setattr(widget_session, "send_custom_message", send_custom_message)
+    return opens
+
+
+def flush(session: Session) -> None:
+    assert isinstance(session, AppSession)
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(reactive.flush())
+    loop.run_until_complete(session._flush_callbacks.invoke())
 
 
 def render(value: object, session: Session) -> render_lonboard[object]:
@@ -56,20 +90,43 @@ def test_as_widget_wraps_layer_in_map(widget_session: Session) -> None:
     assert res.layers == (layer,)
 
 
-def test_as_widget_replaces_shared_default_controls(widget_session: Session) -> None:
+def test_as_widget_wraps_layer_subclass_in_map(widget_session: Session) -> None:
+    with session_context(widget_session):
+        layer = CustomLayer(table=points_table())
+        res = as_widget(layer)
+    assert isinstance(res, Map)
+    assert res.layers == (layer,)
+
+
+@pytest.mark.parametrize("map_class", [Map, CustomMap])
+def test_open_replaces_shared_default_controls(
+    widget_session: Session,
+    comm_opens: dict[str, dict[str, object]],
+    map_class: type[Map],
+) -> None:
     # Map's default controls are constructed once, when lonboard is imported
     # (outside any session), and shared by every Map
     shared = Map.class_traits()["controls"].default()
     assert shared
     with session_context(widget_session):
-        m = Map(ScatterplotLayer(table=points_table()))
-        assert m.controls == tuple(shared)
-        res = as_widget(m)
+        # Not constructed during a render, so its comm opens (and its state is
+        # sent) before any render passes it to as_widget()
+        m = map_class(ScatterplotLayer(table=points_table()))
+        flush(widget_session)
 
-    assert res is m
     assert [type(c) for c in m.controls] == [type(c) for c in shared]
     assert not any(c in shared for c in m.controls)
     assert foreign_or_closed_widget(m, widget_session.root_scope()) is None
+    # The browser has every control the Map's initial state references
+    assert comm_opens[m.model_id]["controls"] == [
+        f"IPY_MODEL_{c.model_id}" for c in m.controls
+    ]
+    assert all(c.model_id in comm_opens for c in m.controls)
+
+    controls = m.controls
+    r = render(m, widget_session)
+    assert r.widget is m
+    assert m.controls == controls
 
 
 def test_session_lifetime_map_keeps_its_controls(widget_session: Session) -> None:
@@ -87,7 +144,7 @@ def test_session_lifetime_map_keeps_its_controls(widget_session: Session) -> Non
     assert foreign_or_closed_widget(m, widget_session.root_scope()) is None
 
 
-def test_as_widget_copies_keep_shared_control_settings(
+def test_control_copies_keep_shared_control_settings(
     widget_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     shared = Map.class_traits()["controls"].default()
@@ -96,7 +153,7 @@ def test_as_widget_copies_keep_shared_control_settings(
     monkeypatch.setattr(scale, "unit", "imperial")
     with session_context(widget_session):
         m = Map(ScatterplotLayer(table=points_table()))
-        as_widget(m)
+        flush(widget_session)
     assert m.controls[2] is not scale
     assert m.controls[2].unit == "imperial"
 
@@ -127,7 +184,7 @@ with session_context(session):
     loop.run_until_complete(reactive.flush())
     with Context()(), WidgetRenderContext():
         m = as_widget(lonboard.Map([]))
-    m.controls  # materialize the trait so the ownership check walks it
+    loop.run_until_complete(reactive.flush())
     assert foreign_or_closed_widget(m, session.root_scope()) is None
 """
     proc = subprocess.run(
@@ -136,11 +193,11 @@ with session_context(session):
     assert proc.returncode == 0, proc.stderr
 
 
-def test_as_widget_keeps_user_controls(widget_session: Session) -> None:
+def test_open_keeps_user_controls(widget_session: Session) -> None:
     with session_context(widget_session):
         control = FullscreenControl()
         m = Map(ScatterplotLayer(table=points_table()), controls=[control])
-        as_widget(m)
+        flush(widget_session)
     assert m.controls == (control,)
 
 
@@ -174,9 +231,10 @@ def test_render_lonboard_missing_lonboard_errors(
         render(points_table(), widget_session)
 
 
-def test_default_height_fills(widget_session: Session) -> None:
+@pytest.mark.parametrize("map_class", [Map, CustomMap])
+def test_default_height_fills(widget_session: Session, map_class: type[Map]) -> None:
     with session_context(widget_session):
-        m = Map(ScatterplotLayer(table=points_table()))
+        m = map_class(ScatterplotLayer(table=points_table()))
     _, fill = set_layout_defaults(m)
     assert fill is True
     # lonboard's default height is kept: it's the map's size when there's no

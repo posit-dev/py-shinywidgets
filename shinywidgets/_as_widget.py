@@ -63,9 +63,8 @@ def as_widget(x: object) -> Widget:
         # A Canvas may still need its FigureManager and pyplot cleanup
         if is_ipympl_canvas(x):
             return as_widget_mpl(x)
-        # A lonboard layer needs a Map to display, and a Map may need its
-        # default controls replaced
-        if widget_pkg(x) == "lonboard":
+        # A lonboard layer needs a Map to display
+        if any(widget_pkg(cls) == "lonboard" for cls in type(x).__mro__):
             return as_widget_lonboard(x)
         return x
 
@@ -146,25 +145,10 @@ def as_widget_lonboard(x: object) -> Widget:
     if isinstance(x, BaseLayer):
         x = Map(x)
 
-    if isinstance(x, Map):
-        # Map's default controls are constructed once (when lonboard is imported)
-        # and shared by every Map, so they can't belong to this session. Give
-        # this Map its own copies.
-        shared = Map.class_traits()["controls"].default()
-        if any(c in shared for c in x.controls):
-            x.controls = tuple(
-                copy_lonboard_control(c) if c in shared else c for c in x.controls
-            )
-
     if not isinstance(x, Widget):
         raise TypeError(f"Don't know how to coerce {x} into a lonboard Map object.")
 
     return x
-
-
-def copy_lonboard_control(control: Widget) -> Widget:
-    names = [k for k in control.trait_names(sync=True) if not k.startswith("_")]
-    return type(control)(**{k: getattr(control, k) for k in names})
 
 
 def as_widget_maplibre(x: object) -> Optional[Widget]:
