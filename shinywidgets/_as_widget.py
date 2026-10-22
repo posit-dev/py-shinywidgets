@@ -78,6 +78,11 @@ def as_widget(x: object) -> Widget:
         widget_pkg(base) == "matplotlib" for base in type(x).__mro__
     ):
         _as_widget = as_widget_mpl
+    # e.g., a pn.viewable.Viewer or pn.custom.JSComponent subclass defined in the app
+    if _as_widget is None and any(
+        widget_pkg(base) == "panel" for base in type(x).__mro__
+    ):
+        _as_widget = as_widget_panel
     if _as_widget is None:
         msg = f"Don't know how to coerce {x} into a ipywidget.Widget object."
         if callable(getattr(x, "_repr_html_", None)):
