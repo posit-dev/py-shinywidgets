@@ -16,9 +16,9 @@ if TYPE_CHECKING:
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = CytoscapeWidget = MplCanvas = BokehModel = MapWidget = FigureWidget = (
-        DeckGLWidget
-    ) = LonboardMap = object
+    JupyterChart = CytoscapeWidget = MplCanvas = BokehModel = MapWidget = (
+        FigureWidget
+    ) = DeckGLWidget = LonboardMap = object
 
 from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
