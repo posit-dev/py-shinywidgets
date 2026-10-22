@@ -314,6 +314,32 @@ def test_draw_error_raised_at_coercion(widget_session: Session) -> None:
     assert not widget_session._has_run_session_ended_tasks
 
 
+def test_mutation_after_coercion_is_drawn_again(widget_session: Session) -> None:
+    # A canvas can be coerced (drawing its first image) and then have its
+    # figure changed before it's returned. The cached image is stale then, so
+    # the second coercion draws again -- refreshing the image and raising a
+    # draw-time error in the new content at the render.
+    figure = Figure()
+    axes = figure.subplots()
+    axes.plot([0, 1])
+
+    with session_context(widget_session):
+        canvas = cast("Canvas", as_widget(figure))
+        assert canvas._data_url
+
+        axes.set_title("after coercion")
+        canvas2 = cast("Canvas", as_widget(figure))
+        assert canvas2 is canvas
+
+        axes.set_title(r"$\badcommand{x}$")
+        with pytest.raises(ValueError, match="badcommand"):
+            as_widget(figure)
+        asyncio.get_event_loop().run_until_complete(reactive.flush())
+
+    assert isinstance(widget_session, AppSession)
+    assert not widget_session._has_run_session_ended_tasks
+
+
 def test_first_draw_callbacks_dont_invalidate_the_render(
     widget_session: Session,
 ) -> None:

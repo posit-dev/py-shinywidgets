@@ -206,8 +206,10 @@ def as_widget_mpl(x: object) -> Widget:
         )
 
     # Before the ipympl canvas is attached: leaving pyplot may replace the
-    # figure's canvas.
-    leave_pyplot(x, keep_canvas=isinstance(x.canvas, Canvas))
+    # figure's canvas. Isolated since destroying a GUI-backend manager fires
+    # close_event, running the user's callbacks (see the draw below).
+    with isolate():
+        leave_pyplot(x, keep_canvas=isinstance(x.canvas, Canvas))
 
     # Canvas(figure=x) alone isn't enough -- ipympl's browser message handling
     # goes through canvas.manager (e.g., a resize message calls
@@ -229,8 +231,9 @@ def as_widget_mpl(x: object) -> Widget:
     # mathtext) fails this render instead of the comm-open effect, which would
     # end the whole session. Isolated since drawing fires the user's callbacks
     # (e.g., draw_event, or xlim_changed from autoscaling), and what they read
-    # shouldn't become dependencies of the render.
-    if not canvas._data_url:
+    # shouldn't become dependencies of the render. A cached image describes the
+    # figure only if it hasn't changed since the image was drawn.
+    if not canvas._data_url or x.stale:
         try:
             with isolate():
                 canvas._repr_mimebundle_()
