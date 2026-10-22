@@ -390,10 +390,7 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
     Create streams and ``link_selections`` instances per session (e.g., in the
     server function, or anywhere in a Shiny Express app), not at the top level of a
     Shiny Core app, where every visitor would share them (and see each other's
-    selections). Also note that with shiny 1.8.0 or earlier, changes caused by
-    streams and ``link_selections`` (e.g., cross-highlighting, or Shiny outputs that
-    depend on a selection) don't reach the browser until the next message from it
-    (e.g., the next user interaction).
+    selections).
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
