@@ -418,14 +418,31 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
     [hvPlot](https://hvplot.holoviz.org) object as a Shiny output.
 
     The decorated function may return either a holoviews/hvplot object (which is
-    rendered through panel; requires ``pip install panel``) or the underlying
-    `jupyter_bokeh.BokehModel` widget.
+    rendered through panel; requires ``pip install panel jupyter_bokeh``) or the
+    underlying `jupyter_bokeh.BokehModel` widget. If you call ``.opts()`` without
+    importing hvplot, call ``hv.extension("bokeh")`` first.
 
-    The decorated function also gains two read-only attributes: `.value`, the value
-    most recently returned by the render function, and `.widget`, the rendered
-    `BokehModel` instance. Use `.widget` to programmatically update the rendered
-    output in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    HoloViews and hvPlot plots have a fixed size by default (and get clipped by a
+    smaller container). To make a plot fill its output, pass ``responsive=True``
+    (e.g., ``df.hvplot.line(..., responsive=True)`` or ``.opts(responsive=True)``),
+    optionally with a fixed ``height``.
+
+    The decorated function also gains two read-only attributes: `.value`, the
+    holoviews/hvplot object most recently returned by the render function, and
+    `.widget`, the rendered `BokehModel` instance. HoloViews' own Python-side
+    interactivity (e.g., widgets for a ``HoloMap`` or ``DynamicMap``, streams such as
+    ``Selection1D`` or ``BoundsXY``, and ``hv.link_selections``) works without a Bokeh
+    server. To react to it in Shiny, set a `reactive.value` from a stream subscriber
+    or a ``.param.watch()`` callback (e.g., ``links.param.watch(lambda e:
+    selection.set(e.new), "selection_expr")``) instead of using
+    :func:`~shinywidgets.reactive_read`. To update a plot without re-rendering, drive
+    a ``DynamicMap`` with a stream (e.g., call ``stream.event(...)`` or
+    ``pipe.send(...)`` in a `reactive.effect`).
+
+    Create streams and ``link_selections`` instances per session (e.g., in the
+    server function, or anywhere in a Shiny Express app), not at the top level of a
+    Shiny Core app, where every visitor would share them (and see each other's
+    selections).
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
