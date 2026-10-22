@@ -142,7 +142,7 @@ class render_itables(render_widget_base[ValueT, ITable]):
     """
     Reactively render a [pandas](https://pandas.pydata.org) or
     [polars](https://pola.rs) data frame as an interactive
-    [itables](https://mwouts.github.io/itables/) (DataTables) Shiny output.
+    [itables](https://itables.org) (DataTables) Shiny output.
 
     The decorated function may return either a data frame (which is coerced to an
     `itables.widget.ITable`) or an `itables.widget.ITable` widget, which is how to
@@ -155,6 +155,18 @@ class render_itables(render_widget_base[ValueT, ITable]):
     in place (trait changes on the widget are synced to the browser), or to
     reactively read widget state (e.g., `selected_rows`) with
     :func:`~shinywidgets.reactive_read`.
+
+    In a filling layout, the table fills its container and scrolls its rows; give it
+    roughly 350px or more of height, since smaller containers leave no room for rows
+    below DataTables' controls. Some itables defaults worth knowing about:
+
+    * Columns sort when their arrow icon is clicked (header text is selectable); pass
+      ``text_in_header_can_be_selected=False`` to sort on any header click.
+    * Data frames larger than itables' ``maxBytes`` (64KB by default) are downsampled;
+      pass ``maxBytes=0`` to send all rows.
+    * `selected_rows` holds row positions in the current data frame.
+      ``ITable.update(df)`` keeps those positions as-is, and drops options such as
+      ``columnDefs`` and ``buttons`` unless they are passed again.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
