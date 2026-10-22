@@ -1,0 +1,92 @@
+"""
+Exceptions raised by widget callbacks while handling a browser message are
+caught by ipywidgets and logged to the `traitlets` logger, whose only handler is
+a NullHandler, so outside of IPython they would vanish. shinywidgets re-routes
+them to its own logger so they show up in the server's console.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Any, Dict
+
+import pytest
+from ipywidgets import Button, IntSlider
+from shiny import Session, reactive
+from shiny.session import session_context
+from shinywidgets._comm import ShinyComm
+
+
+def flush() -> None:
+    asyncio.get_event_loop().run_until_complete(reactive.flush())
+
+
+def client_msg(comm_id: str, data: Dict[str, Any]) -> Dict[str, object]:
+    return {"content": {"comm_id": comm_id, "data": data}, "buffers": []}
+
+
+def open_comm(widget: Any) -> ShinyComm:
+    flush()
+    assert isinstance(widget.comm, ShinyComm)
+    return widget.comm
+
+
+def test_observer_error_from_browser_update_is_logged(
+    widget_session: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    def boom(change: object) -> None:
+        raise RuntimeError("observer failed")
+
+    with session_context(widget_session):
+        slider = IntSlider(value=1)
+        slider.observe(boom, names="value")
+        comm = open_comm(slider)
+        with caplog.at_level(logging.WARNING):
+            comm.handle_msg(
+                client_msg(
+                    comm.comm_id,
+                    {"method": "update", "state": {"value": 5}, "buffer_paths": []},
+                )
+            )
+
+    [record] = caplog.records
+    assert record.name == "shinywidgets"
+    assert record.levelno == logging.ERROR
+    assert record.exc_info is not None
+    assert isinstance(record.exc_info[1], RuntimeError)
+    assert "observer failed" in caplog.text
+
+
+def test_callback_dispatcher_error_from_browser_event_is_logged(
+    widget_session: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    def boom(button: Button) -> None:
+        raise ValueError("click handler failed")
+
+    with session_context(widget_session):
+        button = Button()
+        button.on_click(boom)
+        comm = open_comm(button)
+        with caplog.at_level(logging.WARNING):
+            comm.handle_msg(
+                client_msg(
+                    comm.comm_id,
+                    {"method": "custom", "content": {"event": "click"}},
+                )
+            )
+
+    [record] = caplog.records
+    assert record.name == "shinywidgets"
+    assert record.exc_info is not None
+    assert isinstance(record.exc_info[1], ValueError)
+
+
+def test_traitlets_logging_outside_browser_messages_is_untouched(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING):
+        logging.getLogger("traitlets").warning("unrelated")
+
+    [record] = caplog.records
+    assert record.name == "traitlets"

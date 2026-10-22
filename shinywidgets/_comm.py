@@ -1,4 +1,6 @@
+import logging
 from base64 import b64encode
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
@@ -216,7 +218,11 @@ class ShinyComm:
 
     def handle_msg(self, msg: Dict[str, object]) -> None:
         if self._msg_callback is not None:
-            self._msg_callback(msg)
+            token = handling_client_msg.set(True)
+            try:
+                self._msg_callback(msg)
+            finally:
+                handling_client_msg.reset(token)
 
     def handle_close(self, msg: Dict[str, object]) -> None:
         if self._close_callback is not None:
@@ -248,3 +254,31 @@ class OrphanedShinyComm:
 
     def on_msg(self, callback: MsgCallback) -> None:
         pass
+
+
+logger = logging.getLogger("shinywidgets")
+
+handling_client_msg: ContextVar[bool] = ContextVar(
+    "shinywidgets_handling_client_msg", default=False
+)
+
+
+class ClientMsgErrorFilter(logging.Filter):
+    """
+    Outside IPython, ipywidgets catches exceptions raised by widget callbacks
+    (observers, on_click handlers, ...) and logs them to the `traitlets` logger,
+    whose only handler is a NullHandler. That NullHandler also stops Python's
+    last-resort stderr handler from running, so under a Shiny server they vanish.
+    While handling a browser message, move such records to the `shinywidgets`
+    logger (dropping the original, so a configured root handler doesn't show
+    them twice). Everywhere else, e.g. in Jupyter, `traitlets` logging is untouched.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not handling_client_msg.get() or record.levelno < logging.WARNING:
+            return True
+        logger.error(record.getMessage(), exc_info=record.exc_info)
+        return False
+
+
+logging.getLogger("traitlets").addFilter(ClientMsgErrorFilter())
