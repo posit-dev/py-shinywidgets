@@ -14,6 +14,11 @@ def test_render_keplergl_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_lonboard_is_render_widget_base() -> None:
+    renderer = rw.render_lonboard()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_maplibre_is_render_widget_base() -> None:
     renderer = rw.render_maplibre()
     assert isinstance(renderer, rwb.render_widget_base)
