@@ -232,6 +232,12 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
     in place (trait changes on the widget are synced to the browser), or to
     reactively read widget state with :func:`~shinywidgets.reactive_read`.
 
+    Note that plotnine computes axis breaks when it draws, so zooming in (e.g., with
+    the toolbar) keeps the original ticks, and a close zoom can show none. For
+    zoom-aware ticks, set a matplotlib locator and formatter on the axes of
+    `.widget.figure` (e.g., `matplotlib.ticker.MaxNLocator` and `ScalarFormatter`, or
+    `matplotlib.dates.AutoDateLocator` for dates) in an effect that reads `.widget`.
+
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Parameters
