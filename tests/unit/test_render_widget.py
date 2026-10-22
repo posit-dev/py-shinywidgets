@@ -45,6 +45,27 @@ def test_render_ipydatagrid_coerces_dataframe(widget_session) -> None:
     assert r.value is df
 
 
+def test_render_ipydatagrid_coerces_dataframe_subclass(widget_session) -> None:
+    # e.g., geopandas.GeoDataFrame, which DataGrid accepts like any DataFrame
+    pytest.importorskip("ipydatagrid")
+    import pandas as pd
+    from ipydatagrid import DataGrid
+
+    class SubFrame(pd.DataFrame):
+        pass
+
+    r = rw.render_ipydatagrid()
+
+    @r
+    def _():  # noqa: ANN202
+        return SubFrame({"a": [1, 2]})
+
+    with session_context(widget_session):
+        assert asyncio.run(r._render()) is not None
+    assert isinstance(r.widget, DataGrid)
+    assert r.widget.data["a"].tolist() == [1, 2]
+
+
 def test_render_ipydatagrid_passes_datagrid_through(widget_session) -> None:
     pytest.importorskip("ipydatagrid")
     import pandas as pd

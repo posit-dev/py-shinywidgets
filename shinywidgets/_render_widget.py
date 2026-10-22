@@ -371,9 +371,18 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
     # A DataFrame is a generic type (several renderers accept one), so it isn't
     # registered with as_widget()
     def _as_widget(self, value: ValueT) -> DataGrid:
-        if widget_pkg(type(value)) == "pandas" and type(value).__name__ == "DataFrame":
+        if is_pandas_dataframe(value):
             return dataframe_to_datagrid(cast("pd.DataFrame", value))
         return super()._as_widget(value)
+
+
+def is_pandas_dataframe(value: object) -> bool:
+    # Checked by name (pandas is optional) and through the MRO, so subclasses such
+    # as geopandas.GeoDataFrame count
+    return any(
+        widget_pkg(cls) == "pandas" and cls.__name__ == "DataFrame"
+        for cls in type(value).__mro__
+    )
 
 
 def dataframe_to_datagrid(df: pd.DataFrame) -> DataGrid:
