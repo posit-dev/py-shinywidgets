@@ -1,5 +1,6 @@
 shiny
 shinywidgets
 pygwalker
+duckdb
 numpy
 pandas

@@ -1,11 +1,21 @@
+import duckdb
 import numpy as np
 import pandas as pd
 import pygwalker
 from shiny import App, ui
 from shinywidgets import output_widget, render_pygwalker
 
-# PyGWalker otherwise sends anonymous usage events and checks for updates
+# PyGWalker otherwise sends usage events and checks for updates, from both the
+# Python process and each visitor's browser
 pygwalker.GlobalVarManager.set_privacy("offline")
+
+# PyGWalker computes charts by running SQL that the browser sends on DuckDB's
+# default connection, so any visitor could otherwise read and write files on the
+# server. Lock that connection down (TimeZone first: PyGWalker sets it per query,
+# and can't once the configuration is locked).
+duckdb.execute("SET TimeZone = 'UTC'")
+duckdb.execute("SET enable_external_access = false")
+duckdb.execute("SET lock_configuration = true")
 
 rng = np.random.default_rng(1)
 

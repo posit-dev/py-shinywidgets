@@ -159,3 +159,59 @@ def test_pygwalker_rerender_lifecycle(page: Page, local_app) -> None:
     assert not any("widget is not attached" in e.lower() for e in errors)
     assert not any("no comm channel" in e.lower() for e in errors)
     assert_no_unexpected_errors(errors, failed_requests)
+
+
+# Send a request the way PyGWalker's UI does (a pyg_request message on the
+# widget's model) and resolve with Python's reply. The reply is intercepted
+# before it reaches PyGWalker's own listener, which didn't make the request.
+PYG_REQUEST_JS = """async ([action, data]) => {
+  const models = await Promise.all(Object.values(window.widgetManager._models));
+  const model = models.find((m) => m.get('props'));
+  const rid = 'pyg-request-probe-' + Math.random();
+  return await new Promise((resolve) => {
+    const trigger = model.trigger;
+    model.trigger = function (name, ...args) {
+      if (name === 'msg:custom' && args[0].type === 'pyg_response') {
+        const msg = JSON.parse(args[0].data);
+        if (msg.rid === rid) {
+          model.trigger = trigger;
+          resolve(msg.data);
+          return this;
+        }
+      }
+      return trigger.apply(this, [name, ...args]);
+    };
+    model.send({ type: 'pyg_request', msg: { action, rid, data } });
+  });
+}"""
+
+
+def test_pygwalker_browser_sql_cannot_touch_server_files(
+    page: Page, local_app, tmp_path
+) -> None:
+    page.route("**/output.js", expose_manager)
+    goto_ready(page, local_app)
+
+    def run_sql(sql: str) -> dict:
+        return page.evaluate(PYG_REQUEST_JS, ["get_datas", {"sql": sql}])
+
+    # Any visitor can send PyGWalker's SQL requests; with DuckDB locked down
+    # (as the docs recommend), they can't read or write server files
+    secret = tmp_path / "secret.csv"
+    secret.write_text("x\nserver-only\n")
+    reply = run_sql(f"SELECT * FROM read_csv('{secret}')")
+    assert reply["code"] != 0
+    assert "server-only" not in str(reply)
+
+    target = tmp_path / "written-by-browser.csv"
+    run_sql(f"COPY (SELECT 1 AS x) TO '{target}'")
+    assert not target.exists()
+
+    # ... nor undo the lockdown
+    assert run_sql("SET enable_external_access = true")["code"] != 0
+
+    # PyGWalker's own queries keep working
+    reply = run_sql('SELECT SUM("population") AS total FROM "pygwalker_mid_table"')
+    assert reply["code"] == 0
+    # (the app's populations are 1000 + 17 * i for i in range(30))
+    assert reply["data"]["datas"] == [{"total": sum(1000 + 17 * i for i in range(30))}]

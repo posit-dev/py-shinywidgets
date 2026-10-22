@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import duckdb
 import pandas as pd
 import pygwalker
 from pygwalker.api.anywidget import walk
@@ -8,6 +9,11 @@ from shinywidgets import output_widget, render_pygwalker
 
 # Keep the Python process from phoning home (update check, usage events)
 pygwalker.GlobalVarManager.set_privacy("offline")
+
+# The recommended DuckDB lockdown (see the render_pygwalker docstring)
+duckdb.execute("SET TimeZone = 'UTC'")
+duckdb.execute("SET enable_external_access = false")
+duckdb.execute("SET lock_configuration = true")
 
 df = pd.DataFrame(
     {

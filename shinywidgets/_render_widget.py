@@ -482,6 +482,26 @@ class render_pygwalker(render_widget_base[ValueT, WalkerWidget]):
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ----
+    **Security**: PyGWalker computes charts by running SQL that the browser sends on
+    DuckDB's process-wide default connection, and any visitor can send arbitrary SQL,
+    including SQL that reads or writes files on the server. In deployed apps, lock
+    that connection down when the app starts (this also applies to any other code in
+    the process that uses ``duckdb.sql()`` and friends without a connection):
+
+    ```python
+    import duckdb
+
+    # Set first: PyGWalker sets it per query, which a locked configuration refuses
+    duckdb.execute("SET TimeZone = 'UTC'")
+    duckdb.execute("SET enable_external_access = false")
+    duckdb.execute("SET lock_configuration = true")
+    ```
+
+    Even then, the explorer is best suited to trusted users: a visitor can still send
+    expensive queries, which block the Python process while they run.
+
     Parameters
     ----------
     width
