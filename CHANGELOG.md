@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug fixes
 
+* Widgets that update their own state from the browser several times in a row no longer have newer values rolled back by stale echoes from Python. This fixes, for example, kepler.gl maps rendering blank or with duplicated layers. (#309)
 * Fixed numerous issues with widgets nested inside other widgets and widget outputs inserted dynamically (e.g., `output_widget()` inside `@render.ui`). With ipywidgets 8, these either didn't render at all (e.g., an `HTML` child with a `style`, or a Plotly `FigureWidget`, inside an ipyleaflet popup) or rendered while logging errors like `Class HTMLStyleModel not found` (e.g., ipyleaflet popups, `WidgetControl` children, and leafmap legends). (#75, #101, #137, #157, #194, #237)
 * Substantially overhauled widget cleanup and lifecycle management. Re-rendering, replacing, hiding/showing, or removing widget outputs no longer leaks widgets, views, or event listeners on the server or in the browser (#246, #258, #260, #261, #262, #263), and many related failure modes are fixed:
   * pythreejs widgets no longer cause Shiny sessions to hang indefinitely with ipywidgets 8. (#244)
@@ -44,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Returning an unsupported builtin value (e.g., a string, number, or dict) from a `@render_widget` function now raises the intended "Don't know how to coerce ..." `TypeError` instead of a confusing `AttributeError: ... has no attribute '__module__'`. (#287)
 * Fixed an issue where an ipyleaflet map with many markers could turn gray and show no markers when re-rendered. (#215, #237)
 * Fixed an issue where fonts used by widget CSS, such as FontAwesome icons, failed to load (404). (#237)
+* Fixed an issue where an output that once rendered a filling widget kept stretching later widgets to fill it, even ones given their own height (e.g., `layout.height="200px"`). (#300)
 
 ## [0.8.2] - 2026-10-15
 

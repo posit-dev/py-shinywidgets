@@ -41,6 +41,10 @@ export interface WidgetBehavior {
   // inside a fill container. May return a cleanup function, which the output
   // binding calls when the view is removed.
   setupFill?(ctx: BehaviorContext): void | (() => void);
+  // Like setupFill(), but runs when the output isn't filling its container
+  // (e.g., it has an explicit height, or the widget opted out of filling), for
+  // widgets that need help respecting the size they're given.
+  setupFixedSize?(ctx: BehaviorContext): void | (() => void);
   // Custom post-display behavior (runs once the widget's implementation has
   // rendered). Defaults to dispatchResize().
   onDisplayed?(ctx: PostDisplayContext): void;
