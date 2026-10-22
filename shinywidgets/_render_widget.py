@@ -232,6 +232,25 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ----
+    Mosaic runs its queries server-side, in the DuckDB connection the widget holds,
+    so which connection that is decides what each Shiny session can see. DataFrames
+    passed as ``data=`` are registered in a fresh in-memory connection per widget,
+    which keeps sessions isolated. A shared ``con=``, or a ``duckdb`` relation in
+    ``data=`` (which mosaic-widget registers on DuckDB's process-wide
+    ``duckdb.default_connection()``), is shared by every session: one session's
+    registered table replaces another's under the same name, and Mosaic's
+    pre-aggregated ``mosaic.preagg_*`` tables are reused across sessions whose
+    queries match. Only share a connection for data that is the same for every
+    user.
+
+    Each re-render creates a new `MosaicWidget` and DuckDB connection, which
+    anywidget currently keeps alive for the life of the server process, and loads
+    another copy of the widget's JavaScript into the page. To restyle a dashboard,
+    prefer assigning a new spec to ``.widget.spec`` in place (this resets the
+    current selections).
+
     Parameters
     ----------
     width
