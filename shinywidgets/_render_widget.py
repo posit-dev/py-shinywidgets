@@ -349,6 +349,20 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
     reactively read widget state (e.g., `selections`) with
     :func:`~shinywidgets.reactive_read`.
 
+    Some ipydatagrid behaviors worth knowing about:
+
+    * A returned DataFrame uses ipydatagrid's default ``selection_mode="none"``, so
+      `selections` stays empty; return ``DataGrid(df, selection_mode="row")`` (or
+      ``"cell"``/``"column"``) to let users select.
+    * `selections` index the grid as displayed (after any sort or filter), so map
+      them through ``.widget.get_visible_data()``.
+    * ``DataGrid.select()``, ``DataGrid.clear_selection()`` and cell edits modify the
+      widget's state in place, which doesn't trigger
+      :func:`~shinywidgets.reactive_read`. Assign a new list to ``.widget.selections``
+      instead, and use ``.widget.on_cell_change()`` to react to edits.
+    * Cell renderers and scales are widgets too, so create them inside the render
+      function rather than at import time.
+
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Parameters
