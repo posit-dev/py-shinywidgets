@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from ipysigma import Sigma
     from jupyter_bokeh import BokehModel
+    from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
     from maplibre.ipywidget import MapWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
@@ -18,6 +19,7 @@ else:
     JupyterChart = MplCanvas = Sigma = BokehModel = MapWidget = FigureWidget = (
         DeckGLWidget
     ) = object
+    LonboardMap = object
 
 from ._as_widget import networkx_to_sigma
 from ._bokeh import bokeh_dependency
@@ -40,6 +42,7 @@ __all__ = (
     "render_bokeh",
     "render_holoviews",
     "render_ipysigma",
+    "render_lonboard",
     "render_maplibre",
     "render_matplotlib",
     "render_panel",
@@ -189,6 +192,64 @@ class render_ipysigma(render_widget_base[ValueT, Sigma]):
         return networkx_to_sigma(value)
 
 
+class render_lonboard(render_widget_base[ValueT, LonboardMap]):
+    """
+    Reactively render a [lonboard](https://developmentseed.org/lonboard/) map as a
+    Shiny output.
+
+    The decorated function may return a `lonboard.Map` widget, a lonboard layer (or a
+    list of layers), which is placed on a `Map`, or any data that `lonboard.viz()`
+    accepts (e.g., a GeoPandas `GeoDataFrame` or a GeoArrow-compatible Arrow table),
+    which is converted to a `Map` via `lonboard.viz()` (requires ``pip install
+    lonboard``). In a filling layout, the map fills its container unless the `Map`
+    has an explicit ``height``.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered `Map`
+    instance. Use `.widget` to programmatically update the rendered map in place
+    (trait changes on the widget are synced to the browser), or to reactively read
+    widget state with :func:`~shinywidgets.reactive_read`.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    def _as_widget(self, value: ValueT) -> LonboardMap:
+        if isinstance(value, Widget):
+            return super()._as_widget(value)
+
+        try:
+            import lonboard  # pyright: ignore[reportMissingImports]
+        except ImportError:
+            raise ImportError(
+                "Install the lonboard package to use render_lonboard with shinywidgets (pip install lonboard)."
+            )
+
+        # viz() handles lists of data, but not lists of layers
+        if isinstance(value, (list, tuple)) and all(
+            isinstance(x, lonboard.BaseLayer) for x in value
+        ):
+            m = lonboard.Map(value)
+        else:
+            m = lonboard.viz(value)
+        return super()._as_widget(cast(ValueT, m))
+
+
 class render_maplibre(render_widget_base[ValueT, MapWidget]):
     """
     Reactively render a [maplibre](https://eoda-dev.github.io/py-maplibregl/) map as a
@@ -196,13 +257,20 @@ class render_maplibre(render_widget_base[ValueT, MapWidget]):
 
     The decorated function may return either a `maplibre.Map` (which is coerced to a
     `maplibre.ipywidget.MapWidget`; requires ``pip install 'maplibre[anywidget]'``)
-    or a `maplibre.ipywidget.MapWidget` widget.
+    or a `maplibre.ipywidget.MapWidget` widget. In a filling layout, the map fills
+    its container unless the `MapWidget` has an explicit ``height``.
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `MapWidget` instance. Use `.widget` to programmatically update the rendered map
-    in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    `MapWidget` instance. To update the rendered map in place, call methods on
+    `.widget` (e.g., `set_paint_property()`, `set_filter()`, `set_data()`,
+    `fit_bounds()`, or `add_call()` for any MapLibre GL JS map method). These are sent
+    to the browser as commands, so assigning traits such as `map_options` after
+    rendering has no effect. To reactively read map state, use
+    :func:`~shinywidgets.reactive_read` with `view_state` (center, zoom, bounds,
+    bearing, and pitch), `clicked` (the longitude and latitude of the last click), or
+    the MapboxDraw ``draw_*`` traits. Feature-level click and hover events aren't
+    synced.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 

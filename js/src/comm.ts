@@ -9,6 +9,7 @@ export class ShinyComm {
   // It seems like we'll want one comm per model
   comm_id: string;
   throttler: Throttler;
+  private msgCount = 0;
   constructor(model_id: string) {
     this.comm_id = model_id;
     // TODO: make this configurable (see comments in send() below)?
@@ -29,12 +30,16 @@ export class ShinyComm {
     metadata?: any,
     buffers?: ArrayBuffer[] | ArrayBufferView[]
   ): string {
+    // The model remembers the returned id for the attributes it just sent, and
+    // ignores Python's echo_updates until one names this id in its
+    // parent_header (which Python copies from this header), so stale echoes
+    // can't overwrite newer browser-side values.
+    const msg_id = `${this.comm_id}-${++this.msgCount}`;
     const msg = {
       content: {comm_id: this.comm_id, data: data},
       metadata: metadata,
       buffers: base64EncodeBuffers(buffers || []),
-      // this doesn't seem relevant to the widget?
-      header: {}
+      header: {msg_id: msg_id}
     };
 
     const msg_txt = JSON.stringify(msg);
@@ -76,7 +81,7 @@ export class ShinyComm {
       }, 0);
     }
 
-    return this.comm_id;
+    return msg_id;
   }
 
   open(

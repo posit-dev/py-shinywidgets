@@ -238,6 +238,13 @@ interface WidgetOutputValue {
   widget_pkg: string;
 }
 
+// Elements that render meaningful content without element children or text
+// (e.g. an Image widget's <img>, a direct <canvas>, an empty <button>).
+const RENDERABLE_LEAF_TAGS = new Set([
+  'AUDIO', 'BUTTON', 'CANVAS', 'EMBED', 'IFRAME', 'IMG', 'INPUT', 'OBJECT',
+  'PICTURE', 'SELECT', 'SVG', 'TEXTAREA', 'VIDEO',
+]);
+
 // Ideally we'd extend Shiny's HTMLOutputBinding, but the implementation isn't exported
 class IPyWidgetOutput extends Shiny.OutputBinding {
   private _views = new WeakMap<HTMLElement, DOMWidgetView>();
@@ -274,12 +281,19 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
 
     // Package-specific fill/resize behavior (see js/src/fill.ts)
     const behavior = WIDGET_BEHAVIORS[data.widget_pkg];
-    el.style.visibility = behavior?.hideUntilSettled ? hiddenVisibility : revealVisibility;
+
+    // Shiny removes the output's `.recalculating` class (which is what hides
+    // stale content via CSS, see shinywidgets.css) synchronously, before this
+    // function runs -- i.e. before `create_view()`/`display_view()` below have
+    // produced anything to show. Hide here too, so the previous render's
+    // content never becomes visible again in that gap; `reveal()` undoes this
+    // once the new view has actually rendered (see `_onImplementation` below).
+    el.style.visibility = hiddenVisibility;
 
     // Only forward the potential to fill if `output_widget(fillable=True)`
     // _and_ the widget instance wants to fill
     const fill = data.fill && el.classList.contains("html-fill-container");
-    if (fill) el.classList.add("forward-fill-potential");
+    el.classList.toggle("forward-fill-potential", fill);
 
     // At this time point, we should've already handled an 'open' message, and so
     // the model should be ready to use
@@ -301,12 +315,17 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;
 
-    const setupFill = fill ? behavior?.setupFill : undefined;
-    if (setupFill) {
+    const setupSize = fill ? behavior?.setupFill : behavior?.setupFixedSize;
+    if (setupSize) {
+      // No timeout fallback here: running size setup before the
+      // implementation exists is worse than waiting -- e.g. quak's setupFill
+      // early-returns when its .quak element is absent, and (with the
+      // observer already disconnected) a late implementation would never
+      // get its fill setup. The reveal wait below gets the fallback instead.
       this._onImplementation(lmWidget, () => {
-        // Don't set up fill behavior if this view has since been replaced
+        // Don't set up fill/size behavior if this view has since been replaced
         if (this._views.get(el) !== view) return;
-        const cleanup = setupFill({ el, lmWidget, view, model });
+        const cleanup = setupSize({ el, lmWidget, view, model });
         if (cleanup) view.once("remove", cleanup);
       });
     }
@@ -328,8 +347,9 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
         behavior.onDisplayed(ctx);
       } else {
         ctx.dispatchResize();
+        ctx.reveal();
       }
-    });
+    }, 1000);
   }
   _nextRenderToken(el: HTMLElement): number {
     const trackedEl = el as HTMLElement & { __shinywidgetsRenderToken?: number };
@@ -340,22 +360,38 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
   _isCurrentRenderToken(el: HTMLElement, token: number): boolean {
     return (el as HTMLElement & { __shinywidgetsRenderToken?: number }).__shinywidgetsRenderToken === token;
   }
-  _onImplementation(lmWidget: HTMLElement, callback: () => void): void {
+  // timeoutMs: when given, run the callback anyway after that long even if
+  // the implementation never renders -- appropriate only for callbacks whose
+  // work is harmless when the implementation is still absent (i.e., resize
+  // and reveal, which keep the output from staying hidden forever when a
+  // widget renders nothing at all, such as an empty HTML value).
+  _onImplementation(lmWidget: HTMLElement, callback: () => void, timeoutMs?: number): void {
     if (this._hasImplementation(lmWidget)) {
       callback();
       return;
     }
 
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      mo.disconnect();
+      clearTimeout(timer);
+      callback();
+    };
+
     // Some widget implementation (e.g., ipyleaflet, pydeck) won't actually
     // have rendered to the DOM at this point, so wait until they do
     const mo = new MutationObserver((_mutations) => {
-      if (this._hasImplementation(lmWidget)) {
-        mo.disconnect();
-        callback();
-      }
+      if (this._hasImplementation(lmWidget)) finish();
     });
+    // Watch the whole subtree, including text changes: an already-attached
+    // but empty container can receive its content later without any mutation
+    // to lmWidget's direct child list, and that content is what the
+    // readiness predicate checks.
+    mo.observe(lmWidget, {childList: true, subtree: true, characterData: true});
 
-    mo.observe(lmWidget, {childList: true});
+    const timer = timeoutMs === undefined ? undefined : setTimeout(finish, timeoutMs);
   }
   _doResize(): void {
     // Trigger resize event to force layout (setTimeout() is needed for altair)
@@ -365,8 +401,51 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     }, 0);
   }
   _hasImplementation(lmWidget: HTMLElement): boolean {
-    const impl = lmWidget.children[0];
-    return impl && (impl.children.length > 0 || impl.shadowRoot?.children.length > 0);
+    // The view's root can itself be the implementation: an ipywidgets
+    // Button's root IS a <button> (holding its description as text) and an
+    // Image widget's root is an <img>. Deliberately not
+    // lmWidget.children.length > 0: a pending container child (attached
+    // before its real content, e.g. quak's wrapper ahead of .quak) must not
+    // count as rendered.
+    if (
+      RENDERABLE_LEAF_TAGS.has(lmWidget.tagName) ||
+      (lmWidget.shadowRoot?.children.length ?? 0) > 0 ||
+      this._hasDirectText(lmWidget)
+    ) {
+      return true;
+    }
+    // Not just lmWidget.children[0]: DescriptionView (the base of most
+    // ipywidgets controls, e.g. HTML, sliders) always inserts a <label> --
+    // empty and display:none if the widget has no description -- as the
+    // first child, ahead of the widget's actual implementation.
+    for (const impl of Array.from(lmWidget.children)) {
+      const implEl = impl as HTMLElement;
+      if (impl.children.length > 0 || implEl.shadowRoot?.children.length) {
+        return true;
+      }
+      if (RENDERABLE_LEAF_TAGS.has(implEl.tagName)) {
+        return true;
+      }
+      // A rendered implementation can also be a bare text node (e.g.,
+      // HTML("foo") sets text inside .widget-html-content) or a leaf control
+      // (e.g., a <button> holding only text). The description <label> is
+      // excluded: it isn't the implementation, and it can carry text while
+      // the actual content is still pending.
+      if (!implEl.classList.contains('widget-label') && (implEl.textContent?.trim() ?? '') !== '') {
+        return true;
+      }
+    }
+    return false;
+  }
+  // Direct text nodes only: textContent would also pick up a description
+  // <label> descendant whose content is still pending.
+  private _hasDirectText(el: HTMLElement): boolean {
+    for (const node of Array.from(el.childNodes)) {
+      if (node.nodeType === Node.TEXT_NODE && (node.textContent?.trim() ?? '') !== '') {
+        return true;
+      }
+    }
+    return false;
   }
   _removeView(el: HTMLElement): void {
     const view = this._views.get(el);
