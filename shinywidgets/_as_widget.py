@@ -307,7 +307,9 @@ def as_widget_plotnine(x: object) -> Widget:
 
     # draw() attaches the figure to the plot (and a later draw() reuses it), so
     # draw a copy, like plotnine's own save() and show() do
-    figure = cast("PlotnineDrawable", deepcopy(x)).draw()
+    plot = deepcopy(x)
+    forget_drawn_figure(plot)
+    figure = cast("PlotnineDrawable", plot).draw()
     canvas = cast("Canvas", as_widget_mpl(figure, context="plotnine"))
     # plotnine closes its pyplot figure after drawing, which frees the figure
     # number for reuse, so the header's "Figure <number>" label is meaningless
@@ -318,6 +320,21 @@ def as_widget_plotnine(x: object) -> Widget:
     # formatter shows scientific notation, in transformed (e.g., log) units.
     canvas.footer_visible = False
     return canvas
+
+
+def forget_drawn_figure(plot: object) -> None:
+    """
+    Drop the figure (and its axes) an earlier draw() attached to a plotnine plot.
+
+    ggplot's deepcopy keeps them (e.g., when the user called draw() on the plot
+    being copied), and draw() reuses them, so every copy would otherwise draw onto
+    (and share a canvas with) that one figure. A composition's figure and axes
+    live on the composition and on each of its plots.
+    """
+    for name in ("figure", "axs"):
+        vars(plot).pop(name, None)
+    for item in getattr(plot, "items", ()):
+        forget_drawn_figure(item)
 
 
 def as_widget_pydeck(x: object) -> Optional[Widget]:

@@ -61,6 +61,33 @@ def test_users_plot_is_not_mutated(widget_session: Session) -> None:
     assert len(second.figure.axes) == 1
 
 
+def test_already_drawn_plot_gets_its_own_figure(widget_session: Session) -> None:
+    plot = scatter()
+    with session_context(widget_session):
+        drawn = plot.draw()
+        first = cast("Canvas", as_widget(plot))
+        second = cast("Canvas", as_widget(plot + theme(figure_size=(4, 2))))
+
+    # ggplot's deepcopy keeps the figure a draw() attached, so copies of a drawn
+    # plot would all draw onto (and share a canvas with) that one figure
+    assert len({id(drawn), id(first.figure), id(second.figure)}) == 3
+    assert len(first.figure.axes) == len(second.figure.axes) == 1
+    assert plot.figure is drawn
+
+
+def test_already_drawn_composition_gets_its_own_figure(
+    widget_session: Session,
+) -> None:
+    composition = (scatter() | scatter()) / scatter()
+    with session_context(widget_session):
+        drawn = composition.draw()
+        canvas = cast("Canvas", as_widget(composition))
+
+    assert canvas.figure is not drawn
+    assert len(canvas.figure.axes) == len(drawn.axes) == 3
+    assert composition.figure is drawn
+
+
 def test_users_composition_is_not_mutated(widget_session: Session) -> None:
     left, right = scatter(), scatter()
     composition = left | right
