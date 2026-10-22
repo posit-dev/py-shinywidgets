@@ -323,10 +323,13 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
     ``.param.watch()``, and ``on_click()``) run in the Shiny server, without a Panel
     server.
 
-    The decorated function also gains two read-only attributes: `.value`, the live
-    panel object most recently returned by the render function, and `.widget`, the
-    rendered `BokehModel` instance. To update the output without re-rendering, modify
-    `.value` in place (e.g., ``table.value.value = df``). Panel parameters are not
+    The decorated function also gains two read-only attributes: `.value`, the object
+    most recently returned by the render function, and `.widget`, the rendered
+    `BokehModel` instance. `.value` is the return value exactly as returned -- to get
+    a Panel object with a parameter interface, return a pane or widget explicitly
+    rather than a raw value like a DataFrame. To update the output without
+    re-rendering, modify `.value` in place (e.g., ``table.value.value = df``).
+    Panel parameters are not
     widget traits, so instead of :func:`~shinywidgets.reactive_read`, use
     ``.param.watch()`` to react to them (e.g., ``slider.param.watch(lambda e:
     val.set(e.new), "value")``, where ``val`` is a `reactive.value`).
