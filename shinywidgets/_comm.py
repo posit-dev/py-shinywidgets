@@ -228,12 +228,12 @@ class ShinyComm:
             self._parent_header = msg.get("header")
             scope = ClientMsgScope()
             token = handling_client_msg.set(scope)
-            traitlets_dispatch_level.lower()
+            traitlets_level_patch.patch()
             try:
                 self._msg_callback(msg)
             finally:
                 self._parent_header = None
-                traitlets_dispatch_level.restore()
+                traitlets_level_patch.restore()
                 scope.active = False
                 handling_client_msg.reset(token)
 
@@ -292,41 +292,47 @@ handling_client_msg: ContextVar[Optional[ClientMsgScope]] = ContextVar(
 )
 
 
-class TraitletsDispatchLevel:
+def traitlets_is_enabled_for(level: int) -> bool:
+    scope = handling_client_msg.get()
+    if scope is not None and scope.active and level >= logging.WARNING:
+        # Admit the WARNING records ipywidgets logs for callback exceptions
+        # even when the configured level would suppress them (e.g. the root
+        # logger at ERROR); ClientMsgErrorFilter reroutes them.
+        return True
+    return logging.Logger.isEnabledFor(traitlets_logger, level)
+
+
+class TraitletsLevelPatch:
     """
-    Temporarily lowers `traitlets_logger`'s level to WARNING while client
-    messages are dispatched. Logger filters only see records that pass the
-    level check, so when the effective level is higher (e.g. the root logger
-    at ERROR) the WARNING records ipywidgets logs for callback exceptions
-    would never reach ClientMsgErrorFilter. The level is process-wide, so the
-    filter uses `prev_effective_level` to keep honoring the original
-    threshold for records logged outside the dispatch. Counted so overlapping
-    dispatches don't restore the level early.
+    While a client message is dispatched, patches `traitlets_logger`'s level
+    check so ipywidgets' callback-exception records reach ClientMsgErrorFilter
+    regardless of the configured level (logger filters only see records that
+    pass the level check). Unlike lowering the logger's level, the patched
+    check consults the caller's dispatch scope, so records logged outside the
+    dispatch -- from other threads, deferred tasks, or descendant loggers
+    (whose records bypass this logger's filters) -- keep their configured
+    threshold. Counted so overlapping dispatches don't restore the check early.
     """
 
     def __init__(self) -> None:
         self.lock = threading.Lock()
         self.count = 0
-        self.prev_level = logging.NOTSET
-        self.prev_effective_level = logging.NOTSET
 
-    def lower(self) -> None:
+    def patch(self) -> None:
         with self.lock:
             if self.count == 0:
-                self.prev_level = traitlets_logger.level
-                self.prev_effective_level = traitlets_logger.getEffectiveLevel()
-                if self.prev_effective_level > logging.WARNING:
-                    traitlets_logger.setLevel(logging.WARNING)
+                # setattr/delattr since pyright forbids method assignment
+                setattr(traitlets_logger, "isEnabledFor", traitlets_is_enabled_for)
             self.count += 1
 
     def restore(self) -> None:
         with self.lock:
             self.count -= 1
             if self.count == 0:
-                traitlets_logger.setLevel(self.prev_level)
+                delattr(traitlets_logger, "isEnabledFor")
 
 
-traitlets_dispatch_level = TraitletsDispatchLevel()
+traitlets_level_patch = TraitletsLevelPatch()
 
 
 class ClientMsgErrorFilter(logging.Filter):
@@ -342,20 +348,10 @@ class ClientMsgErrorFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         scope = handling_client_msg.get()
-        if scope is not None and scope.active and record.levelno >= logging.WARNING:
-            logger.error(record.getMessage(), exc_info=record.exc_info)
-            return False
-        with traitlets_dispatch_level.lock:
-            lowered = (
-                traitlets_dispatch_level.count > 0
-                and traitlets_dispatch_level.prev_effective_level > logging.WARNING
-            )
-            if lowered:
-                # The level was lowered to admit callback records, so records
-                # from outside the dispatch must still honor the threshold
-                # that applied before the dispatch.
-                return record.levelno >= traitlets_dispatch_level.prev_effective_level
-        return True
+        if scope is None or not scope.active or record.levelno < logging.WARNING:
+            return True
+        logger.error(record.getMessage(), exc_info=record.exc_info)
+        return False
 
 
 traitlets_logger.addFilter(ClientMsgErrorFilter())

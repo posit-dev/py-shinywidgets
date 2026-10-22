@@ -120,14 +120,14 @@ def test_callback_error_is_logged_when_root_logger_is_at_error(
     assert isinstance(record.exc_info[1], RuntimeError)
 
 
-def test_unrelated_thread_logging_stays_suppressed_during_dispatch(
+def test_logging_outside_the_dispatch_is_untouched_during_dispatch(
     widget_session: Session,
 ) -> None:
-    # Lowering the traitlets level during dispatch is process-wide, so
-    # warnings logged by threads outside the dispatch must keep honoring the
-    # threshold that applied before the dispatch (here, a root logger at
-    # ERROR). caplog can't observe this (its handler level is raised too), so
-    # attach a level-NOTSET handler directly.
+    # Admitting callback records during dispatch must not change the
+    # threshold for records logged outside it: other threads, and descendant
+    # loggers (whose records bypass the traitlets logger's filters). Here the
+    # root logger is at ERROR. caplog can't observe this (its handler level
+    # is raised too), so attach a level-NOTSET handler directly.
     records: List[logging.LogRecord] = []
 
     class ListHandler(logging.Handler):
@@ -145,6 +145,8 @@ def test_unrelated_thread_logging_stays_suppressed_during_dispatch(
         assert in_dispatch.wait(10)
         logging.getLogger("traitlets").warning("unrelated warning")
         logging.getLogger("traitlets").error("unrelated error")
+        logging.getLogger("traitlets.worker").warning("descendant warning")
+        logging.getLogger("traitlets.worker").error("descendant error")
         logged.set()
 
     root = logging.getLogger()
@@ -170,9 +172,12 @@ def test_unrelated_thread_logging_stays_suppressed_during_dispatch(
         root.removeHandler(handler)
         root.setLevel(prev_level)
 
-    # The WARNING stays suppressed (as before/after dispatch); the ERROR
-    # passes, just as it would without a dispatch in progress.
-    assert [(r.name, r.levelno) for r in records] == [("traitlets", logging.ERROR)]
+    # The WARNINGs stay suppressed (as before/after dispatch); the ERRORs
+    # pass, just as they would without a dispatch in progress.
+    assert [(r.name, r.levelno) for r in records] == [
+        ("traitlets", logging.ERROR),
+        ("traitlets.worker", logging.ERROR),
+    ]
 
 
 def test_deferred_work_after_dispatch_keeps_traitlets_logging(
