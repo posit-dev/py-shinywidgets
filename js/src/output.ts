@@ -269,7 +269,14 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
 
     // Package-specific fill/resize behavior (see js/src/fill.ts)
     const behavior = WIDGET_BEHAVIORS[data.widget_pkg];
-    el.style.visibility = behavior?.hideUntilSettled ? hiddenVisibility : revealVisibility;
+
+    // Shiny removes the output's `.recalculating` class (which is what hides
+    // stale content via CSS, see shinywidgets.css) synchronously, before this
+    // function runs -- i.e. before `create_view()`/`display_view()` below have
+    // produced anything to show. Hide here too, so the previous render's
+    // content never becomes visible again in that gap; `reveal()` undoes this
+    // once the new view has actually rendered (see `_onImplementation` below).
+    el.style.visibility = hiddenVisibility;
 
     // Only forward the potential to fill if `output_widget(fillable=True)`
     // _and_ the widget instance wants to fill
@@ -323,6 +330,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
         behavior.onDisplayed(ctx);
       } else {
         ctx.dispatchResize();
+        ctx.reveal();
       }
     });
   }
@@ -341,16 +349,27 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       return;
     }
 
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      mo.disconnect();
+      clearTimeout(timer);
+      callback();
+    };
+
     // Some widget implementation (e.g., ipyleaflet, pydeck) won't actually
     // have rendered to the DOM at this point, so wait until they do
     const mo = new MutationObserver((_mutations) => {
-      if (this._hasImplementation(lmWidget)) {
-        mo.disconnect();
-        callback();
-      }
+      if (this._hasImplementation(lmWidget)) finish();
     });
-
     mo.observe(lmWidget, {childList: true});
+
+    // A widget whose implementation renders nothing at all (e.g., an empty
+    // HTML value) would otherwise never satisfy _hasImplementation(), and --
+    // since callers rely on this to resize and reveal the output -- would
+    // stay invisible forever. Fall back to running anyway after a beat.
+    const timer = setTimeout(finish, 1000);
   }
   _doResize(): void {
     // Trigger resize event to force layout (setTimeout() is needed for altair)
@@ -360,8 +379,16 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     }, 0);
   }
   _hasImplementation(lmWidget: HTMLElement): boolean {
-    const impl = lmWidget.children[0];
-    return impl && (impl.children.length > 0 || impl.shadowRoot?.children.length > 0);
+    // Not just lmWidget.children[0]: DescriptionView (the base of most
+    // ipywidgets controls, e.g. HTML, sliders) always inserts a <label> --
+    // empty and display:none if the widget has no description -- as the
+    // first child, ahead of the widget's actual implementation.
+    for (const impl of Array.from(lmWidget.children)) {
+      if (impl.children.length > 0 || (impl as HTMLElement).shadowRoot?.children.length) {
+        return true;
+      }
+    }
+    return false;
   }
   _removeView(el: HTMLElement): void {
     const view = this._views.get(el);
