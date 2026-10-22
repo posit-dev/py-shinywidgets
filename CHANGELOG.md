@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### New features
 
 * Added several new `@render_*` decorators that bring more visualization and widget ecosystems into shinywidgets:
-  * `@render_panel` for [panel](https://panel.holoviz.org) widgets and layouts (e.g., `pn.widgets.Tabulator`). All required JS/CSS assets are served automatically. (#82, #88, #253)
+  * `@render_panel` for [panel](https://panel.holoviz.org) widgets and layouts (e.g., `pn.widgets.Tabulator`). Like Panel itself, it renders anything `pn.panel()` accepts (e.g., a `pn.viewable.Viewer` or `pn.custom.JSComponent` subclass, a string, a DataFrame, or a figure). All required JS/CSS assets are served automatically. (#82, #88, #253)
   * `@render_holoviews` for [HoloViews](https://holoviews.org) and [hvPlot](https://hvplot.holoviz.org) objects. (#87, #250, #253)
   * `@render_lonboard` for [lonboard](https://developmentseed.org/lonboard/) maps (requires `pip install lonboard`). Return a `Map`, one or more layers, or any data `lonboard.viz()` accepts (e.g., a GeoPandas `GeoDataFrame` or a GeoArrow table). Maps fill their container unless given an explicit `height`, and `reactive_read()` gives you access to map state (e.g., `view_state`, or a layer's `selected_index`). (#278)
   * `@render_maplibre` for [maplibre](https://eoda-dev.github.io/py-maplibregl/) maps (requires `pip install 'maplibre[anywidget]'`). While maplibre ships its own native Shiny bindings, the widget route gives you `reactive_read()` access to map state (e.g., `view_state`, `clicked`).

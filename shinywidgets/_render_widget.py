@@ -20,6 +20,7 @@ else:
     )
     LonboardMap = object
 
+from ._as_widget import as_widget_panel
 from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
@@ -348,6 +349,14 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
         res = super().auto_output_ui()
         res.children.append(bokeh_dependency())
         return res
+
+    def _as_widget(self, value: ValueT) -> BokehModel:
+        if isinstance(value, Widget):
+            return super()._as_widget(value)
+        # Like Panel itself, render anything pn.panel() accepts (e.g., a string or
+        # DataFrame), and render figures as Panel panes rather than through
+        # their own package's widget (e.g., a plotly FigureWidget)
+        return cast(BokehModel, as_widget_panel(value))
 
 
 class render_holoviews(render_widget_base[ValueT, BokehModel]):
