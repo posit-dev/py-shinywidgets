@@ -280,11 +280,25 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
     widget, or a `jupyter_bokeh.BokehModel` widget (requires ``pip install
     jupyter_bokeh``).
 
-    The decorated function also gains two read-only attributes: `.value`, the value
-    most recently returned by the render function, and `.widget`, the rendered
-    `BokehModel` instance. Use `.widget` to programmatically update the rendered
-    plot in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    A `figure` fills its output by default (i.e., it gets
+    ``sizing_mode="stretch_both"``), unless you give it a ``width``, ``height``,
+    ``sizing_mode``, or ``aspect_ratio``, in which case bokeh's own sizing applies.
+    Other models (e.g., a `column` or `row` layout) fill only if their
+    ``sizing_mode`` stretches vertically (e.g., ``sizing_mode="stretch_both"`` on the
+    layout and its children).
+
+    The decorated function also gains two read-only attributes: `.value`, the bokeh
+    object most recently returned by the render function, and `.widget`, the rendered
+    `BokehModel` instance. Bokeh model properties are not widget traits, so instead
+    of :func:`~shinywidgets.reactive_read`, use bokeh's own callbacks to react to user
+    interaction (e.g., ``source.selected.on_change("indices", lambda attr, old, new:
+    selected.set(new))``, or ``fig.on_event(Tap, ...)``). These callbacks may set
+    `reactive.value`s. To update the plot without re-rendering, modify the bokeh
+    models in place (e.g., ``source.data = ...``). Plots that share a
+    `ColumnDataSource` (e.g., for linked selection) must be returned together, in
+    one layout, from a single render function. Create bokeh models per session
+    (e.g., inside the render function), not at the top level of a Shiny Core app,
+    where every visitor would share them.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 

@@ -18,11 +18,11 @@ def bokeh_dependency() -> HTMLDependency:
     """
     Create an HTML dependency on bokeh's JavaScript/CSS resources.
 
-    The `render_bokeh`, `render_panel`, and `render_holoviews` decorators include this
-    dependency automatically, so you only need to add it to the UI explicitly when
-    bokeh-based outputs are produced dynamically (for example, an
-    :func:`~shinywidgets.output_widget` rendered inside a ``@render.ui``, where the
-    decorator's own UI is never used).
+    You don't normally need to add this to the UI yourself: the dependency is sent
+    along with every bokeh-based widget (including those in outputs created
+    dynamically, e.g., an :func:`~shinywidgets.output_widget` rendered inside a
+    ``@render.ui``), and the `render_bokeh`, `render_panel`, and `render_holoviews`
+    decorators also include it in their UI.
 
     Returns
     -------
