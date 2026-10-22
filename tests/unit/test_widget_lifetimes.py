@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import gc
+import weakref
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
@@ -493,3 +495,43 @@ def test_stub_session_skips_cross_session_check() -> None:
             result = asyncio.run(renderer.render())
 
     assert result is not None
+
+
+def test_rerendered_widgets_are_freed_before_session_end(
+    widget_session: Session,
+) -> None:
+    """
+    Shiny keeps every Effect registered with `session.on_ended` until the
+    session ends, even after it is destroyed. The one-shot effect that opens a
+    widget's comm must therefore not hold the widget, or each re-render's
+    widget (and its data) stays in memory for the rest of the session.
+    """
+    renderer = render_widget_base()
+    refs: list[weakref.ref[HTML]] = []
+
+    @renderer
+    def _() -> HTML:
+        widget = HTML(value="x" * 1000)
+        refs.append(weakref.ref(widget))
+        return widget
+
+    def flush_session() -> None:
+        flush()
+        # A running app follows each reactive flush with a session flush, which
+        # sends (and drops) the comm messages queued with on_flush/on_flushed.
+        run(widget_session._flush_callbacks.invoke())
+        run(widget_session._flushed_callbacks.invoke())
+
+    with session_context(widget_session):
+        for _i in range(20):
+            context = Context()
+            with context():
+                run(renderer.render())
+            flush_session()
+            context.invalidate()
+            flush_session()
+
+    gc.collect()
+    assert len(refs) == 20
+    # The renderer itself still holds the latest widget (`renderer.widget`).
+    assert sum(ref() is not None for ref in refs[:-1]) == 0
