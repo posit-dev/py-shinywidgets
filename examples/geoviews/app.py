@@ -1,7 +1,7 @@
 import geoviews as gv
 import holoviews as hv
 import pandas as pd
-from shiny import App, ui
+from shiny import App, req, ui
 from shinywidgets import output_widget, render_holoviews
 
 hv.extension("bokeh")
@@ -31,12 +31,15 @@ app_ui = ui.page_sidebar(
         full_screen=True,
     ),
     title="geoviews with @render_holoviews",
+    fillable=True,
 )
 
 
 def server(input, output, session):
     @render_holoviews
     def map():
+        # With no points, geoviews zooms the map to a near-zero extent
+        req(input.regions())
         selected = cities[cities["region"].isin(input.regions())]
         points = gv.Points(
             selected, kdims=["lon", "lat"], vdims=["city", "population"]
