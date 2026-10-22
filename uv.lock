@@ -1673,15 +1673,15 @@ wheels = [
 
 [[package]]
 name = "jupyter-bokeh"
-version = "4.0.5"
+version = "4.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bokeh" },
     { name = "ipywidgets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b4/fd/8f0213c704bf36b5f523ae5bf7dc367f3687e75dcc2354084b75c05d2b53/jupyter_bokeh-4.0.5.tar.gz", hash = "sha256:a33d6ab85588f13640b30765fa15d1111b055cbe44f67a65ca57d3593af8245d", size = 149140, upload-time = "2024-06-03T06:33:33.488Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/78/6b/f87742c806e544cc338095ed146ad3818508ad763e8d387dbc582d12af85/jupyter_bokeh-4.1.0.tar.gz", hash = "sha256:fc0719c653920b5a1b2b42b2f4091c43fb1570880819058d820a2ab198cb93bf", size = 759161, upload-time = "2026-06-09T11:01:53.781Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/78/33b2294aad62e5f95b89a89379c5995c2bd978018387ef8bec79f6dc272c/jupyter_bokeh-4.0.5-py3-none-any.whl", hash = "sha256:1110076c14c779071cf492646a1a871aefa8a477261e4721327a666e65df1a2c", size = 148593, upload-time = "2024-06-03T06:33:35.82Z" },
+    { url = "https://files.pythonhosted.org/packages/5a/e8/aa3dbe6f34b76cffb416e571b27e7fff9412ace109d0ecedf373e2b7e0ee/jupyter_bokeh-4.1.0-py3-none-any.whl", hash = "sha256:f25abed6052de447b759eb80d09f6aea676ce031e077462cd978fa8e941850db", size = 1332993, upload-time = "2026-06-09T11:01:55.881Z" },
 ]
 
 [[package]]
@@ -3967,8 +3967,8 @@ requires-dist = [
     { name = "ipympl", marker = "extra == 'dev'" },
     { name = "ipympl", marker = "extra == 'test'" },
     { name = "ipywidgets", specifier = ">=8.1" },
-    { name = "jupyter-bokeh", marker = "extra == 'dev'" },
-    { name = "jupyter-bokeh", marker = "extra == 'test'" },
+    { name = "jupyter-bokeh", marker = "extra == 'dev'", specifier = ">=4.1" },
+    { name = "jupyter-bokeh", marker = "extra == 'test'", specifier = ">=4.1" },
     { name = "jupyter-core" },
     { name = "lonboard", marker = "extra == 'dev'" },
     { name = "lonboard", marker = "extra == 'test'" },
@@ -4009,7 +4009,7 @@ dev = [
     { name = "hvplot" },
     { name = "ipyleaflet", specifier = ">=0.20.0" },
     { name = "ipympl" },
-    { name = "jupyter-bokeh" },
+    { name = "jupyter-bokeh", specifier = ">=4.1" },
     { name = "lonboard" },
     { name = "maplibre", extras = ["anywidget"] },
     { name = "matplotlib" },
@@ -4032,7 +4032,7 @@ test = [
     { name = "hvplot" },
     { name = "ipyleaflet", specifier = ">=0.20.0" },
     { name = "ipympl" },
-    { name = "jupyter-bokeh" },
+    { name = "jupyter-bokeh", specifier = ">=4.1" },
     { name = "lonboard" },
     { name = "maplibre", extras = ["anywidget"] },
     { name = "matplotlib" },
