@@ -108,6 +108,12 @@ def test_as_widget_unknown_package_errors() -> None:
     assert "ipywidget.Widget" in msg
 
 
+@pytest.mark.parametrize("value", ["x", 1, 1.5, None, {}, [], (1, 2), object()])
+def test_as_widget_builtin_value_raises_helpful_type_error(value: object) -> None:
+    with pytest.raises(TypeError, match="Don't know how to coerce"):
+        as_widget(value)
+
+
 def test_as_widget_unknown_package_with_repr_html_hint() -> None:
     class Unknown:
         __module__ = "unknownpkg.mod"

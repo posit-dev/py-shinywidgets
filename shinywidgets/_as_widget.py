@@ -36,6 +36,7 @@ def as_widget(x: object) -> Widget:
     * bokeh model (e.g., `bokeh.plotting.figure`) -> `jupyter_bokeh.BokehModel`
     * holoviews/hvplot object -> bokeh model (via panel)
     * jupyter-scatter `Scatter` -> `jscatter.widget.JupyterScatter`
+    * lonboard layer -> `lonboard.Map`
     * maplibre `Map` -> `maplibre.ipywidget.MapWidget`
     * matplotlib `Figure` or `Axes` (or a seaborn figure-level grid) ->
       `ipympl.backend_nbagg.Canvas`
@@ -61,7 +62,12 @@ def as_widget(x: object) -> Widget:
     """
     if isinstance(x, Widget):
         # A Canvas may still need its FigureManager and pyplot cleanup
-        return as_widget_mpl(x) if is_ipympl_canvas(x) else x
+        if is_ipympl_canvas(x):
+            return as_widget_mpl(x)
+        # A lonboard layer needs a Map to display
+        if any(widget_pkg(cls) == "lonboard" for cls in type(x).__mro__):
+            return as_widget_lonboard(x)
+        return x
 
     pkg = widget_pkg(x)
 
@@ -142,6 +148,20 @@ def as_widget_jscatter(x: object) -> Optional[Widget]:
 
     # Scatter isn't a widget itself, but wraps (and lazily creates) one
     return x.widget
+
+
+def as_widget_lonboard(x: object) -> Widget:
+    # lonboard is guaranteed to be installed here since this function is only
+    # called when x comes from the lonboard package
+    from lonboard import BaseLayer, Map
+
+    if isinstance(x, BaseLayer):
+        x = Map(x)
+
+    if not isinstance(x, Widget):
+        raise TypeError(f"Don't know how to coerce {x} into a lonboard Map object.")
+
+    return x
 
 
 def as_widget_maplibre(x: object) -> Optional[Widget]:
@@ -332,6 +352,7 @@ AS_WIDGET_MAP = {
     "holoviews": as_widget_holoviews,
     "hvplot": as_widget_holoviews,
     "jscatter": as_widget_jscatter,
+    "lonboard": as_widget_lonboard,
     "maplibre": as_widget_maplibre,
     "matplotlib": as_widget_mpl,
     "panel": as_widget_panel,

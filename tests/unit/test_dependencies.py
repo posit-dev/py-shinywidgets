@@ -34,6 +34,19 @@ def test_widget_pkg_uses_first_module_component() -> None:
     assert widget_pkg(Dummy()) == "somepkg"
 
 
+def test_widget_pkg_accepts_classes_and_builtin_instances() -> None:
+    class Dummy:
+        pass
+
+    Dummy.__module__ = "somepkg.sub.mod"
+    assert widget_pkg(Dummy) == "somepkg"
+    assert widget_pkg(str) == "builtins"
+    assert widget_pkg("x") == "builtins"
+    assert widget_pkg({}) == "builtins"
+    assert widget_pkg(1) == "builtins"
+    assert widget_pkg(object()) == "builtins"
+
+
 def test_jupyter_extension_path_finds_index_js(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
