@@ -74,7 +74,7 @@ def server(input, output, session):
 
     @render.data_frame
     def selected():
-        return selection().drop(columns=["x", "y"]).head(100)
+        return selection().drop(columns=["x", "y", "__row_index__"]).head(100)
 
 
 app = App(app_ui, server)

@@ -153,13 +153,18 @@ class render_embedding_atlas(render_widget_base[ValueT, EmbeddingAtlasWidget]):
     Unlike the other decorators, a bare data frame isn't enough to build the widget, so
     construct it yourself, passing the data frame along with the columns that describe
     the embedding (e.g., ``EmbeddingAtlasWidget(df, x="x", y="y", text="text")``).
-    The embedding view itself requires a browser with WebGPU support.
+    The embedding (scatter) view itself requires a browser with WebGPU and its
+    ``shader-f16`` feature (e.g., recent Chrome, Edge, or Firefox); elsewhere, the
+    rest of the explorer still works. The explorer needs room: in a non-filling
+    layout, give the output a height of at least ``"600px"``.
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `EmbeddingAtlasWidget` instance. Use `.widget` to programmatically update the
-    rendered explorer in place (trait changes on the widget are synced to the browser),
-    or to reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    `EmbeddingAtlasWidget` instance. The filter a user builds in the browser is
+    synced to the widget's (upstream-internal) `_predicate` trait, so
+    ``reactive_read(my_atlas.widget, "_predicate")`` followed by
+    ``my_atlas.widget.selection()`` gives the selected rows reactively. The explorer
+    doesn't respond to trait changes made from Python; to change it, re-render.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
