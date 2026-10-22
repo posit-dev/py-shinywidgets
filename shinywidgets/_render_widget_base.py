@@ -15,7 +15,7 @@ from shiny.reactive._core import (
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
 from shiny.session import get_current_session
 
-from ._as_widget import as_widget
+from ._as_widget import as_widget, refresh_stale_mpl_canvases
 from ._comm import OrphanedShinyComm
 from ._dependencies import widget_pkg
 from ._output_widget import output_widget
@@ -129,6 +129,12 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
                     f"{type(bad).__name__} belongs to another Shiny session, so it "
                     "can't be displayed here. Construct widgets per session."
                 )
+
+        # A canvas nested in the returned widget may have been coerced (and
+        # drawn) earlier and then had its figure changed; refresh its initial
+        # image here, where a draw error is still this output's error. After
+        # the ownership check, since drawing updates browser-synced state.
+        refresh_stale_mpl_canvases(widget)
 
         widget, fill = set_layout_defaults(widget)
 

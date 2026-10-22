@@ -15,6 +15,7 @@ from ._dependencies import widget_pkg
 
 if TYPE_CHECKING:
     from bokeh.models import LayoutDOM
+    from ipympl.backend_nbagg import Canvas
     from jupyter_bokeh import BokehModel
     from matplotlib.figure import Figure
     from panel.viewable import Viewable
@@ -185,7 +186,7 @@ def as_widget_mpl(x: object) -> Widget:
 
     # The renderer imports this module, so defer these circular imports.
     from ._render_widget_base import is_closed_widget
-    from ._shinywidgets import close_widget, foreign_or_closed_widget
+    from ._shinywidgets import foreign_or_closed_widget
 
     # Several higher-level APIs return something that holds the figure: an Axes
     # (e.g., pandas.DataFrame.plot()), an ipympl Canvas, or a seaborn grid
@@ -229,17 +230,12 @@ def as_widget_mpl(x: object) -> Widget:
     if canvas.manager is None:
         FigureManager(canvas, getattr(x, "number", id(x)))
 
-    # Draw the image the frontend first paints now, rather than when the comm
-    # opens (see init_shiny_widget()), so that a draw-time error (e.g., invalid
-    # mathtext) fails this render instead of the comm-open effect, which would
-    # end the whole session. Isolated since drawing fires the user's callbacks
-    # (e.g., draw_event, or xlim_changed from autoscaling), and what they read
-    # shouldn't become dependencies of the render. A cached image describes the
-    # figure only if it hasn't changed since the image was drawn.
+    # A cached image describes the figure only if it hasn't changed since the
+    # image was drawn.
     if not canvas._data_url or x.stale:
-        # Drawing updates state synced to the browser (and a failure closes the
-        # canvas), so a reused canvas that's live in another session must be
-        # rejected before the draw, not after it by the renderer.
+        # Drawing updates state synced to the browser (and a failure may close
+        # the canvas), so a reused canvas that's live in another session must
+        # be rejected before the draw, not after it by the renderer.
         session = get_current_session()
         if session is not None and not session.is_stub_session():
             bad = foreign_or_closed_widget(canvas, session.root_scope())
@@ -248,19 +244,60 @@ def as_widget_mpl(x: object) -> Widget:
                     f"{type(bad).__name__} belongs to another Shiny session, so it "
                     "can't be displayed here. Construct widgets per session."
                 )
-        try:
-            with isolate():
-                canvas._repr_mimebundle_()
-        except Exception:
-            # Close only a canvas whose comm hasn't opened yet (opening it would
-            # fail the same way, inside an effect, ending the session). A live
-            # canvas may be displayed by other outputs in this session, so just
-            # propagate the error to this render.
-            if not isinstance(canvas.comm, ShinyComm):
-                close_widget(canvas)
-            raise
+        draw_initial_image(canvas)
 
     return canvas
+
+
+def draw_initial_image(canvas: "Canvas") -> None:
+    """
+    Draw the image the frontend first paints now, rather than when the comm
+    opens (see init_shiny_widget()), so that a draw-time error (e.g., invalid
+    mathtext) fails the render instead of the comm-open effect, which would
+    end the whole session.
+    """
+    # The renderer imports this module, so defer this circular import.
+    from ._shinywidgets import close_widget
+
+    try:
+        # Isolated since drawing fires the user's callbacks (e.g., draw_event,
+        # or xlim_changed from autoscaling), and what they read shouldn't
+        # become dependencies of the render.
+        with isolate():
+            canvas._repr_mimebundle_()
+    except Exception:
+        # Close only a canvas whose comm hasn't opened yet (opening it would
+        # fail the same way, inside an effect, ending the session). A live
+        # canvas may be displayed by other outputs in this session, so just
+        # propagate the error to this render.
+        if not isinstance(canvas.comm, ShinyComm):
+            close_widget(canvas)
+        raise
+
+
+def refresh_stale_mpl_canvases(widget: Widget) -> None:
+    """
+    Redraw ipympl canvases anywhere in `widget`'s tree whose image is stale.
+
+    as_widget() draws the canvas it coerces, but a canvas coerced earlier and
+    then returned nested in a container (e.g., VBox([canvas])) isn't coerced
+    again, so a change made to its figure after the coercion (or a canvas never
+    coerced at all) would otherwise reach the browser with an out-of-date (or
+    missing) initial image: the deferred comm open reuses the cached one.
+    Drawing here, during the render, also keeps a draw-time error this output's
+    error rather than a failure in the comm-open effect.
+
+    Must run after the renderer's ownership validation, since drawing updates
+    state synced to the browser.
+    """
+    from ._shinywidgets import walk_widget_tree
+
+    for w in walk_widget_tree([widget]):
+        if not is_ipympl_canvas(w):
+            continue
+        canvas = cast("Canvas", w)
+        if not canvas._data_url or canvas.figure.stale:
+            draw_initial_image(canvas)
 
 
 def is_ipympl_canvas(x: Widget) -> bool:

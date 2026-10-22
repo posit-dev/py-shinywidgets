@@ -365,6 +365,67 @@ def test_mutation_after_coercion_is_drawn_again(widget_session: Session) -> None
     assert not widget_session._has_run_session_ended_tasks
 
 
+def test_stale_canvas_nested_in_a_container_is_drawn_again(
+    widget_session: Session,
+) -> None:
+    # A canvas coerced before its figure is finished (e.g., as_widget() to
+    # configure it) and then returned nested in a container isn't coerced
+    # again, so its initial image must be refreshed during the render.
+    from ipywidgets import VBox
+    from shinywidgets._render_widget_base import render_widget_base
+
+    figure = Figure()
+    axes = figure.subplots()
+    axes.plot([0, 1])
+
+    renderer = render_widget_base()
+
+    @renderer
+    def _() -> VBox:
+        return VBox([canvas])
+
+    with session_context(widget_session):
+        canvas = cast("Canvas", as_widget(figure))
+        image = canvas._data_url
+
+        axes.set_title("after coercion")
+        with Context()():
+            asyncio.get_event_loop().run_until_complete(renderer.render())
+
+    assert canvas._data_url != image
+
+
+def test_draw_error_in_nested_canvas_raised_at_render(
+    widget_session: Session,
+) -> None:
+    # Same as above, but the nested canvas's new content fails to draw: the
+    # render must fail (an output error), not the deferred comm open (which
+    # would end the session).
+    from ipywidgets import VBox
+    from shinywidgets._render_widget_base import render_widget_base
+
+    figure = Figure()
+    axes = figure.subplots()
+    axes.plot([0, 1])
+
+    renderer = render_widget_base()
+
+    @renderer
+    def _() -> VBox:
+        return VBox([canvas])
+
+    with session_context(widget_session):
+        canvas = cast("Canvas", as_widget(figure))
+        axes.set_title(r"$\badcommand{x}$")
+        with Context()():
+            with pytest.raises(ValueError, match="badcommand"):
+                asyncio.get_event_loop().run_until_complete(renderer.render())
+        asyncio.get_event_loop().run_until_complete(reactive.flush())
+
+    assert isinstance(widget_session, AppSession)
+    assert not widget_session._has_run_session_ended_tasks
+
+
 def test_foreign_canvas_rejected_before_draw(widget_session: Session) -> None:
     # A module-level cached figure returned from another session's render is
     # rejected by the renderer -- but coercion draws a reused canvas first,
