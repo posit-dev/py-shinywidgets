@@ -34,9 +34,6 @@ export interface PostDisplayContext extends BehaviorContext {
 }
 
 export interface WidgetBehavior {
-  // Keep the output hidden until onDisplayed() reveals it (e.g., plotly
-  // settles its initial size before first paint to avoid flicker)
-  hideUntilSettled?: boolean;
   // Runs (once the widget's implementation has rendered) when the output is
   // inside a fill container. May return a cleanup function, which the output
   // binding calls when the view is removed.
@@ -57,10 +54,10 @@ const ipymplBehavior: WidgetBehavior = {
 };
 
 // Plotly FigureWidget may first render at its internal 360px fallback, then
-// resize after paint. Keep it hidden until a direct Plotly resize completes
-// so the first visible paint is already settled.
+// resize after paint. The output is already hidden at this point (every
+// render starts hidden, see renderValue()); keep it that way until a direct
+// Plotly resize completes, so the first visible paint is already settled.
 const plotlyBehavior: WidgetBehavior = {
-  hideUntilSettled: true,
   onDisplayed: (ctx) => {
     if (ctx.isStale()) return;
 
