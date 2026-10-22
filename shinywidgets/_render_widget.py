@@ -316,15 +316,33 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
     """
     Reactively render a [panel](https://panel.holoviz.org) object as a Shiny output.
 
-    The decorated function may return either a panel pane or viewable (which is
-    rendered through bokeh; requires ``pip install panel``) or the underlying
-    `jupyter_bokeh.BokehModel` widget.
+    The decorated function may return any object that ``pn.panel()`` accepts (e.g., a
+    pane, widget, layout, `pn.viewable.Viewer`, string, DataFrame, or figure), which
+    is rendered through bokeh (requires ``pip install panel jupyter_bokeh``), or the
+    underlying `jupyter_bokeh.BokehModel` widget. Panel callbacks (e.g., ``pn.bind()``,
+    ``.param.watch()``, and ``on_click()``) run in the Shiny server, without a Panel
+    server.
 
-    The decorated function also gains two read-only attributes: `.value`, the value
-    most recently returned by the render function, and `.widget`, the rendered
-    `BokehModel` instance. Use `.widget` to programmatically update the rendered
-    output in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    The decorated function also gains two read-only attributes: `.value`, the live
+    panel object most recently returned by the render function, and `.widget`, the
+    rendered `BokehModel` instance. To update the output without re-rendering, modify
+    `.value` in place (e.g., ``table.value.value = df``). Panel parameters are not
+    widget traits, so instead of :func:`~shinywidgets.reactive_read`, use
+    ``.param.watch()`` to react to them (e.g., ``slider.param.watch(lambda e:
+    val.set(e.new), "value")``, where ``val`` is a `reactive.value`).
+
+    Some other things to know:
+
+    * Set ``sizing_mode="stretch_both"`` on the panel object to fill the output.
+    * Call ``pn.extension()`` with the extensions you use (e.g.,
+      ``pn.extension("tabulator")``) at the top of the app, especially for
+      components that may first appear after the initial render (e.g., inside
+      ``pn.bind()``). Otherwise they render blank.
+    * Create panel objects per session (e.g., inside the render function), not at the
+      top level of a Shiny Core app, where every visitor would share them (and see
+      each other's changes).
+    * Panel templates are full pages, so they can't be rendered in an output; use
+      Shiny's page layouts instead.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
