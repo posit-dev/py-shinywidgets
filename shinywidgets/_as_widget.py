@@ -8,6 +8,7 @@ from weakref import WeakSet
 
 from htmltools import HTMLDependency
 from ipywidgets.widgets.widget import Widget
+from packaging.version import Version
 from shiny.session import get_current_session
 
 from ._dependencies import widget_pkg
@@ -407,3 +408,16 @@ def panel_to_widget(x: object, *, context: str, missing_panel_message: str) -> W
 
     widget.observe(on_comm_change, names="comm")
     return widget
+
+
+def pydeck_has_widget() -> bool:
+    """
+    Does the installed pydeck provide an ipywidget?
+
+    pydeck v0.9 removed it (https://github.com/visgl/deck.gl/pull/8854): `Deck.show()`
+    returns static HTML, `Deck.update()` raises, and `DeckGLWidget` survives only
+    as an unused class that pydeck still constructs (several per `Deck`).
+    """
+    import pydeck
+
+    return Version(pydeck.__version__) < Version("0.9")
