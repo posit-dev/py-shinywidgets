@@ -113,6 +113,12 @@ def test_bqplot_respects_explicit_heights(page: Page, local_app) -> None:
     on_layout = page.evaluate(HEIGHT_JS, "#fig_layout")
     assert on_layout["fig"] == 300
 
+    # An intrinsic output height isn't definite, so the figure keeps bqplot's own
+    # (480px) height rather than taking 100% of it
+    expect(page.locator("#fig_auto .bqplot svg").first).to_be_visible()
+    on_auto = page.evaluate(HEIGHT_JS, "#fig_auto")
+    assert on_auto["fig"] == 480
+
     assert_no_unexpected_errors(errors, failed_requests)
 
 

@@ -107,9 +107,16 @@
 * bqplot gives figures a fixed 480px height, so an explicit output_widget(height=)
 * would clip the figure rather than size it. The attribute selector matches the
 * inline style output_widget(height=) emits (see _output_widget.py), so keep the two
-* in sync.
+* in sync. Intrinsic heights (`auto`, `fit-content`, ...; the browser may reserialize
+* the style with a space after the colon) aren't definite, so 100% of them would
+* collapse the figure.
 */
-.shiny-ipywidget-output[style*="height:"] > .bqplot {
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="-content"]
+  )
+  > .bqplot {
   height: 100%;
 }
 

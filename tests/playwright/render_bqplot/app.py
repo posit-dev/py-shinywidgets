@@ -16,6 +16,7 @@ app_ui = ui.page_fluid(
     ),
     output_widget("fig_height", height="250px"),
     output_widget("fig_layout"),
+    output_widget("fig_auto", height="auto"),
 )
 
 
@@ -67,6 +68,16 @@ def server(input, output, session):
                 bqplot.Axis(scale=y_sc, orientation="vertical"),
             ],
             layout={"height": "300px"},
+        )
+
+    @render_bqplot
+    def fig_auto():
+        x_sc, y_sc = bqplot.LinearScale(), bqplot.LinearScale()
+        return bqplot.Figure(
+            title="intrinsic height on output_widget()",
+            marks=[
+                bqplot.Lines(x=[1, 2, 3], y=[1, 2, 3], scales={"x": x_sc, "y": y_sc})
+            ],
         )
 
     @render.text
