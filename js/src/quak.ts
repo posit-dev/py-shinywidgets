@@ -1,3 +1,7 @@
+// quak's scroll listener loads rows within 1.5 pages (of its default 11.5
+// rows, 22px each) of the bottom
+const QUAK_LOAD_DISTANCE = 1.5 * 11.5 * 22;
+
 /**
  * quak renders into a shadow root, so it can't be styled from Python/CSS, and
  * it caps its scrolling table at a fixed ~11 rows (an inline max-height).
@@ -5,7 +9,7 @@
  * explicit height on output_widget() or the widget), lift that cap and let the
  * table flex within the container instead.
  *
- * Returns a cleanup function that detaches the observer.
+ * Returns a cleanup function that detaches the observer and listener.
  */
 export function setupQuakFit(el: HTMLElement, lmWidget: HTMLElement, fill: boolean): () => void {
   const noop = () => {};
@@ -27,6 +31,18 @@ export function setupQuakFit(el: HTMLElement, lmWidget: HTMLElement, fill: boole
   Object.assign(quak.style, { display: 'flex', flexDirection: 'column', height: '100%', minHeight: '0', boxSizing: 'border-box' });
   Object.assign(scroller.style, { maxHeight: 'none', flex: '0 1 auto', minHeight: '0' });
 
+  // quak's own scroll listener only loads rows within QUAK_LOAD_DISTANCE of
+  // the bottom, which a taller scroll area never gets to. So also load them
+  // within a screenful of the bottom, but not when quak's listener does too:
+  // concurrent loads garble the rows.
+  const onScroll = () => {
+    const remaining = scroller.scrollHeight - scroller.scrollTop;
+    if (remaining >= QUAK_LOAD_DISTANCE && remaining < 2 * scroller.clientHeight) {
+      requestMoreRows(scroller);
+    }
+  };
+  scroller.addEventListener('scroll', onScroll);
+
   const observer = new ResizeObserver(() => {
     // A hidden output (e.g., an inactive tab) has no height; don't load rows for it
     if (scroller.clientHeight > 0 && scroller.scrollHeight <= scroller.clientHeight) {
@@ -37,7 +53,10 @@ export function setupQuakFit(el: HTMLElement, lmWidget: HTMLElement, fill: boole
   observer.observe(scroller);
   observer.observe(table);
 
-  return () => observer.disconnect();
+  return () => {
+    observer.disconnect();
+    scroller.removeEventListener('scroll', onScroll);
+  };
 }
 
 /**

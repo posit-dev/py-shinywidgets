@@ -98,6 +98,37 @@ def test_quak_fills_container(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_quak_tall_table_loads_rows_on_scroll(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.set_viewport_size({"width": 1000, "height": 1200})
+    page.goto(local_app.url)
+    wait_for_rows(page, "tall")
+
+    initial = measure(page, "tall")
+    # quak's own scroll listener only loads rows within ~380px of the bottom,
+    # which a scroll area this tall never gets to
+    assert initial["scrollerClient"] > 400, initial
+
+    page.locator("#tall .quak .table-container").hover()
+    # Scroll past quak's 100-row query batches, where concurrent loads would
+    # show up as missing or repeated rows
+    rows = initial["rows"]
+    while rows < 250:
+        page.mouse.wheel(0, 5000)
+        page.wait_for_function(
+            f"(rows) => ({MEASURE_JS})('tall').rows > rows",
+            arg=rows,
+            timeout=10000,
+        )
+        rows = measure(page, "tall")["rows"]
+
+    # The rows loaded so far are the table's first rows, in order
+    ids = page.locator("#tall .quak tbody tr td:nth-child(2)").all_inner_texts()
+    assert ids == [str(i) for i in range(rows)], ids
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_quak_respects_explicit_height(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.set_viewport_size({"width": 1000, "height": 1200})
