@@ -40,7 +40,7 @@ from ._bokeh import bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
 from ._dependencies import require_dependency, widget_pkg
-from ._nglview import stop_nglview_threads
+from ._nglview import importing_nglview, stop_nglview_threads
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -60,6 +60,8 @@ __all__ = (
 def init_shiny_widget(w: Widget):
     session = get_current_session()
     if session is None:
+        if importing_nglview():
+            return
         raise RuntimeError(
             "shinywidgets requires that all ipywidgets be constructed within an active Shiny session"
         )

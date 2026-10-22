@@ -1,5 +1,3 @@
-# nglview creates a widget when it's imported, which shinywidgets only allows
-# inside a session. Importing nglview before shinywidgets avoids that.
 import nglview
 from shiny import App, render, ui
 from shinywidgets import output_widget, reactive_read, render_nglview

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
+import subprocess
+import sys
 import threading
 from types import ModuleType
 
@@ -9,7 +12,6 @@ import shinywidgets
 import shinywidgets._render_widget as rw
 from ipywidgets import Widget
 from shiny import Session
-from shiny.express._stub_session import ExpressStubSession
 from shiny.reactive import Context
 from shiny.session import session_context
 from shinywidgets._render_widget_base import WidgetRenderContext
@@ -23,12 +25,20 @@ TINY_PDB = (
 
 @pytest.fixture(scope="module")
 def nglview() -> ModuleType:
-    # nglview constructs a (global) widget when it's first imported, which
-    # shinywidgets only tolerates inside a session.
-    with session_context(ExpressStubSession()):
-        nglview = pytest.importorskip("nglview")
+    return pytest.importorskip("nglview")
 
-    return nglview
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("nglview") is None, reason="nglview not installed"
+)
+def test_nglview_can_be_imported_after_shinywidgets() -> None:
+    # nglview constructs a (global) widget at import time, outside any session
+    result = subprocess.run(
+        [sys.executable, "-c", "import shinywidgets; import nglview"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_render_nglview_is_exported() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import threading
 
 from ipywidgets import Widget
@@ -23,6 +24,19 @@ def stop_nglview_threads(w: Widget) -> None:
             # The thread runs queued callbacks in order, so it exits (silently:
             # threads swallow SystemExit) once it has sent anything pending
             t.q.append(exit_thread)
+
+
+def importing_nglview() -> bool:
+    """
+    Is nglview constructing its global `ColormakerRegistry` widget (i.e., is
+    nglview mid-import)?
+
+    That widget is constructed outside any session, and it can't belong to one
+    anyway: it's shared process-wide, and only a notebook ever displays it.
+    """
+    color = sys.modules.get("nglview.color")
+    # The module binds ColormakerRegistry once the widget's construction returns
+    return color is not None and not hasattr(color, "ColormakerRegistry")
 
 
 def exit_thread(view: Widget) -> None:
