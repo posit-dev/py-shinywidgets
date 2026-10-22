@@ -23,6 +23,16 @@
 }
 
 /*
+* An explicit output height (e.g., output_widget(height="300px")) makes the output
+* non-fillable, so nothing stretches the widget to it. A chart without its own
+* height gets `height: "container"` (see set_layout_defaults()), which vega-embed
+* marks with .fit-y, and would otherwise collapse to ~0px.
+*/
+.shiny-ipywidget-output > .vega-embed.fit-y {
+  height: 100%;
+}
+
+/*
 * The .forward-fill-potential class gets added after the widget gets displayed (since we
 * don't know if it's going to fill until then). Also note that we intentionally do this
 * instead of adding html-fill-container/html-fill-item classes to these elements since

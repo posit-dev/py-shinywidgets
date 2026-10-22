@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Returning an unsupported builtin value (e.g., a string, number, or dict) from a `@render_widget` function now raises the intended "Don't know how to coerce ..." `TypeError` instead of a confusing `AttributeError: ... has no attribute '__module__'`. (#287)
 * Fixed an issue where an ipyleaflet map with many markers could turn gray and show no markers when re-rendered. (#215, #237)
 * Fixed an issue where fonts used by widget CSS, such as FontAwesome icons, failed to load (404). (#237)
+* Fixed an issue where an Altair chart in an output with an explicit height (e.g., `output_widget("plot", height="300px")`) collapsed to a sliver instead of filling that height.
 * Fixed an issue where observers registered on an `altair.JupyterChart`'s `selections` or `params` before returning it from `@render_altair` (e.g., `jchart.selections.observe(fn, ["brush"])`, as documented by Altair) never fired.
 
 ## [0.8.2] - 2026-10-15
