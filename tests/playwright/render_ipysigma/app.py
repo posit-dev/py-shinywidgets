@@ -7,7 +7,9 @@ from shinywidgets import output_widget, reactive_read, render_ipysigma
 
 app_ui = ui.page_fluid(
     ui.input_action_button("rerender", "Rerender"),
+    ui.input_action_button("rerender_last", "Rerender last graph"),
     ui.output_text("render_count"),
+    ui.output_text("render_last_count"),
     ui.output_text("selected"),
     ui.card(output_widget("fills"), id="fill_card", height="400px"),
     ui.card(output_widget("fixed_output", height="350px"), id="fixed_card"),
@@ -27,6 +29,10 @@ def server(input, output, session):
     def render_count():
         return str(counter.get())
 
+    @render.text
+    def render_last_count():
+        return str(input.rerender_last())
+
     @render_ipysigma
     def fills():
         counter.get()
@@ -42,6 +48,7 @@ def server(input, output, session):
 
     @render_ipysigma
     def fixed_widget():
+        input.rerender_last()
         return Sigma(nx.karate_club_graph(), height=300)
 
 

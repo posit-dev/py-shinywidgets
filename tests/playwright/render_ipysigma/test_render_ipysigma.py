@@ -135,3 +135,37 @@ def test_ipysigma_rerender_releases_old_views(page: Page, local_app) -> None:
 
     assert not any("widget is not attached" in e.lower() for e in errors)
     assert_no_unexpected_errors(errors, failed_requests)
+
+
+# Sigma draws each view with 3 WebGL contexts. Chrome caps live contexts per page
+# (about 16) and evicts the oldest when that's exceeded, so contexts a removed view
+# didn't release would eventually blank the other (older) graphs on the page.
+LOST_CONTEXTS_JS = """(sel) => {
+  let lost = 0;
+  for (const c of document.querySelectorAll(`${sel} canvas`)) {
+    const gl = c.getContext('webgl2') ?? c.getContext('webgl');
+    if (gl?.isContextLost()) lost++;
+  }
+  return lost;
+}"""
+
+
+def test_ipysigma_rerender_keeps_other_graphs_drawn(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    for output in ("#fills", "#fixed_output", "#fixed_widget"):
+        wait_for_graph(page, output)
+
+    # Re-render the newest graph, so leaked contexts would evict the older,
+    # still-live ones
+    for i in range(1, 5):
+        old = page.locator("#fixed_widget .ipysigma-widget").element_handle()
+        page.click("#rerender_last")
+        expect(page.locator("#render_last_count")).to_have_text(str(i))
+        page.wait_for_function("(el) => !el.isConnected", arg=old)
+        wait_for_graph(page, "#fixed_widget")
+
+    for output in ("#fills", "#fixed_output", "#fixed_widget"):
+        assert page.evaluate(LOST_CONTEXTS_JS, output) == 0, output
+
+    assert_no_unexpected_errors(errors, failed_requests)

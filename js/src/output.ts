@@ -2,7 +2,7 @@ import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
 import { WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
 import { jsonParse } from './utils';
-import { disposeNative, finishDetach, hasAncestor, ignoreLayoutTrait, patchMplCanvasRemove, viewParent } from './views';
+import { disposeNative, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
@@ -209,7 +209,7 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
 
   return requireLoader(moduleName, moduleVersion).then((widgetModule) => {
     if (moduleName === 'ipysigma') {
-      ignoreLayoutTrait(widgetModule);
+      patchSigmaView(widgetModule);
     }
     return widgetModule;
   }).finally(() => {

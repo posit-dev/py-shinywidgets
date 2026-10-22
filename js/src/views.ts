@@ -138,15 +138,40 @@ function disposeLeafletMap(view: WidgetView): void {
   });
 }
 
-// ipysigma reuses the `layout` trait (normally an ipywidgets Layout model) for its
-// node positions, so a plain object reaches DOMWidgetView.setLayout(), which tries to
-// create a child view for it and rejects. The view never has a Layout to apply, so
-// make setLayout() a no-op. This patches the module in the loader (unlike the
-// create_view-time patches above) because setLayout() runs as soon as the view is
-// displayed, before any create_view() callback could intervene. `widgetModule` is the
-// module's untyped export object.
-export function ignoreLayoutTrait(widgetModule: { SigmaView?: { prototype: object } }): void {
-  if (widgetModule.SigmaView) {
-    Object.assign(widgetModule.SigmaView.prototype, { setLayout: () => {} });
+// Patches for ipysigma's SigmaView. These patch the module in the loader (unlike
+// the create_view-time patches above) because setLayout() runs as soon as the view
+// is displayed, before any create_view() callback could intervene. `widgetModule`
+// is the module's untyped export object.
+//
+// - ipysigma reuses the `layout` trait (normally an ipywidgets Layout model) for
+//   its node positions, so a plain object reaches DOMWidgetView.setLayout(), which
+//   tries to create a child view for it and rejects. The view never has a Layout
+//   to apply, so make setLayout() a no-op.
+// - sigma's kill() drops its canvases but not their WebGL contexts, which keep
+//   counting against the browser's per-page cap (~16) until GC. Past the cap the
+//   browser evicts the oldest contexts, so re-rendering one graph a few times
+//   blanks the other graphs on the page. Release them before the view goes.
+interface SigmaViewPrototype {
+  el: HTMLElement;
+  remove(): void;
+}
+
+export function patchSigmaView(widgetModule: { SigmaView?: { prototype: SigmaViewPrototype } }): void {
+  const proto = widgetModule.SigmaView?.prototype;
+  if (!proto) {
+    return;
   }
+  const nativeRemove = proto.remove;
+  Object.assign(proto, {
+    setLayout: () => {},
+    remove(this: SigmaViewPrototype) {
+      // getContext() returns the canvas' existing context (or null for sigma's 2D
+      // canvases), so this never creates one
+      for (const canvas of this.el.querySelectorAll('canvas')) {
+        const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
+        gl?.getExtension('WEBGL_lose_context')?.loseContext();
+      }
+      return nativeRemove.call(this);
+    },
+  });
 }
