@@ -36,8 +36,8 @@ from shiny.reactive._core import (
 )
 from shiny.session import get_current_session, require_active_session, session_context
 
-from ._as_widget import as_widget
-from ._bokeh import bokeh_dependency, bokeh_extension_assets, guard_widget_close
+from ._as_widget import as_widget, pydeck_has_widget
+from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
 from ._dependencies import require_dependency, widget_pkg
@@ -59,6 +59,9 @@ __all__ = (
 # the widget.
 # --------------------------------------------------------------------------------------------
 def init_shiny_widget(w: Widget):
+    if is_unused_pydeck_widget(w):
+        retire_unused_widget(w)
+        return
     session = get_current_session()
     if session is None:
         if importing_nglview() or importing_lonboard():
@@ -134,7 +137,7 @@ def init_shiny_widget(w: Widget):
     widget_deps: List[Optional[HTMLDependency]] = [widget_dep]
     open_keys: Dict[str, object] = {}
     if getattr(w, "_model_module", None) == "@bokeh/jupyter_bokeh":
-        widget_deps.append(bokeh_dependency())
+        widget_deps.append(_bokeh_dependency())
         ext = bokeh_extension_assets(w, session)
         widget_deps.extend(ext.deps)
         if ext.module_urls or ext.module_exports:
@@ -269,6 +272,22 @@ def importing_lonboard() -> bool:
     lonboard = sys.modules.get("lonboard")
     # lonboard.Map is only bound once its class body has finished executing
     return lonboard is not None and not hasattr(lonboard, "Map")
+
+
+def is_unused_pydeck_widget(w: Widget) -> bool:
+    """
+    Is `w` one of the `DeckGLWidget`s that pydeck >= 0.9 constructs (e.g., to probe
+    for Jupyter support) but can never display?
+    """
+    return widget_pkg(w) == "pydeck" and not pydeck_has_widget()
+
+
+def retire_unused_widget(w: Widget) -> None:
+    # An inert comm stops Widget.open() from serializing the widget (which would
+    # construct a default Layout widget that also needs a session)
+    w.comm = OrphanedShinyComm(uuid4().hex)
+    # Assigning a comm registers the widget instance; nothing will ever close it
+    del WIDGET_INSTANCE_MAP[w.model_id]
 
 
 def own_lonboard_controls(w: Widget) -> None:

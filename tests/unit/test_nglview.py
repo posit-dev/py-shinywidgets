@@ -58,7 +58,7 @@ def test_render_nglview_renders_widget_that_fills(
     with session_context(widget_session):
         res = asyncio.run(r._render())
 
-    assert res is not None
+    assert isinstance(res, dict)
     assert res["widget_pkg"] == "nglview"
     assert res["fill"] is True
     assert isinstance(r.widget, nglview.NGLWidget)
