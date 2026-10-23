@@ -351,10 +351,10 @@ def as_widget_pyvista(x: object) -> Widget:
 
     try:
         from trame_pyvista.jupyter import show_trame
-    except ImportError:
+    except ImportError as e:
         raise ImportError(
             "Install pyvista's jupyter extra to use pyvista with shinywidgets (pip install 'pyvista[jupyter]')."
-        )
+        ) from e
 
     # jupyter_backend='html' exports the scene to a self-contained,
     # client-side vtk.js view. pyvista's other interactive backends ('trame',
