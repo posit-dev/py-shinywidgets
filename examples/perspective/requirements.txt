@@ -1,5 +1,4 @@
 shiny
-shinywidgets
-perspective-python
+shinywidgets[perspective]
 pandas
 pyarrow

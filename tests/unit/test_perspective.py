@@ -117,7 +117,9 @@ def test_render_perspective_dataframe_requires_perspective_widget(
     monkeypatch.setitem(sys.modules, "perspective.widget", None)
     r = rw.render_perspective()
     with session_context(widget_session):
-        with pytest.raises(ImportError, match=r"pip install perspective-python"):
+        with pytest.raises(
+            ImportError, match=r"pip install 'shinywidgets\[perspective\]'"
+        ):
             render(r, pd.DataFrame({"a": [1]}))
 
 

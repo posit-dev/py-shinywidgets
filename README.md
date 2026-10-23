@@ -12,6 +12,25 @@ See the [Jupyter Widgets](https://shiny.posit.co/py/docs/jupyter-widgets.html) a
 pip install shinywidgets
 ```
 
+The `@render_*` decorators for third-party widget packages (e.g.,
+`@render_plotly`, `@render_bokeh`) require those packages, which aren't
+installed by default. Each decorator has a matching *extra* that installs
+everything it needs:
+
+| Decorator | Install command |
+| --- | --- |
+| `@render_altair` | `pip install 'shinywidgets[altair]'` |
+| `@render_bokeh` | `pip install 'shinywidgets[bokeh]'` |
+| `@render_holoviews` | `pip install 'shinywidgets[holoviews]'` |
+| `@render_ipydatagrid` | `pip install 'shinywidgets[ipydatagrid]'` |
+| `@render_jscatter` | `pip install 'shinywidgets[jscatter]'` |
+| `@render_lonboard` | `pip install 'shinywidgets[lonboard]'` (Python < 3.15) |
+| `@render_maplibre` | `pip install 'shinywidgets[maplibre]'` |
+| `@render_matplotlib` | `pip install 'shinywidgets[matplotlib]'` |
+| `@render_panel` | `pip install 'shinywidgets[panel]'` |
+| `@render_perspective` | `pip install 'shinywidgets[perspective]'` |
+| `@render_plotly` | `pip install 'shinywidgets[plotly]'` |
+
 ## Development
 
 If you want to do development on `{shinywidgets}`, run:
