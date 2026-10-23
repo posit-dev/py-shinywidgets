@@ -45,6 +45,7 @@ bqplot = ["bqplot"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
+ipycytoscape = ["ipycytoscape"]
 ipydatagrid = ["ipydatagrid"]
 ipyleaflet = ["ipyleaflet>=0.20.0"]
 itables = ["itables[widget]"]
@@ -62,6 +63,7 @@ mosaic_widget = ["mosaic-widget"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
 plotly = ["plotly>=5.12.0"]
 plotnine = ["plotnine", "ipympl"]
+quak = ["quak"]
 test = [
   "altair",
   "bokeh",
@@ -76,6 +78,7 @@ test = [
   "hvplot",
   "ipyaladin",
   "ipycanvas",
+  "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -89,6 +92,7 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "networkx",
   "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
@@ -100,6 +104,7 @@ test = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "quak",
   "tox-uv>=1",
 ]
 dev = [
@@ -116,6 +121,7 @@ dev = [
   "hvplot",
   "ipyaladin",
   "ipycanvas",
+  "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -129,6 +135,7 @@ dev = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "networkx",
   "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
@@ -140,6 +147,7 @@ dev = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "quak",
   "ruff>=0.6.5",
   "tox-uv>=1",
 ]
@@ -159,6 +167,7 @@ test = [
   "hvplot",
   "ipyaladin",
   "ipycanvas",
+  "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -172,6 +181,7 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "networkx",
   "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
@@ -183,6 +193,7 @@ test = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "quak",
   "tox-uv>=1",
 ]
 dev = [
