@@ -36,6 +36,22 @@ Source = "https://github.com/rstudio/py-shinywidgets/"
 Issues = "https://github.com/rstudio/py-shinywidgets/issues"
 
 [project.optional-dependencies]
+# Per-renderer extras: each installs the packages needed to use the
+# corresponding render decorator (e.g., `pip install 'shinywidgets[plotly]'`).
+# anywidget is already a core dependency, so extras don't need to repeat it.
+altair = ["altair>=5.1"]
+bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
+holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
+ipydatagrid = ["ipydatagrid"]
+jscatter = ["jupyter-scatter"]
+# geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
+# Python 3.15+ yet, so lonboard can't be installed there
+lonboard = ["lonboard; python_version < '3.15'"]
+maplibre = ["maplibre[anywidget]"]
+matplotlib = ["matplotlib", "ipympl"]
+panel = ["panel", "jupyter_bokeh>=4.1"]
+plotly = ["plotly>=5.0.0"]
+pythreejs = ["pythreejs"]
 test = [
   "altair",
   "bokeh",
@@ -47,11 +63,13 @@ test = [
   "datashader",
   "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
   "ipympl",
   "matplotlib",
   "jupyter_bokeh>=4.1",
+  "jupyter-scatter",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
@@ -78,11 +96,13 @@ dev = [
   "datashader",
   "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
   "ipympl",
   "matplotlib",
   "jupyter_bokeh>=4.1",
+  "jupyter-scatter",
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
   "panel",
@@ -110,11 +130,13 @@ test = [
   "datashader",
   "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
   "ipympl",
   "matplotlib",
   "jupyter_bokeh>=4.1",
+  "jupyter-scatter",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",

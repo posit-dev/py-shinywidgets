@@ -1,4 +1,5 @@
 import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
+import { setupJscatterAutoHeight, setupJscatterFixedHeight } from './jscatter';
 import { setupMplAutoResize } from './mpl';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 
@@ -55,6 +56,13 @@ export interface WidgetBehavior {
 // figure size from the container's size (i.e., make fill actually work)
 const ipymplBehavior: WidgetBehavior = {
   setupFill: ({ el, lmWidget, model }) => setupMplAutoResize(el, lmWidget, model),
+};
+
+// jupyter-scatter plots have a fixed pixel height, so drive it from the
+// container's size (i.e., make fill and an explicit output height actually work)
+const jscatterBehavior: WidgetBehavior = {
+  setupFill: ({ el, lmWidget, model }) => setupJscatterAutoHeight(el, lmWidget, model),
+  setupFixedSize: ({ el, lmWidget, model }) => setupJscatterFixedHeight(el, lmWidget, model),
 };
 
 // Plotly FigureWidget may first render at its internal 360px fallback, then
@@ -167,6 +175,7 @@ const pythreejsBehavior: WidgetBehavior = {
 
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
+  jscatter: jscatterBehavior,
   plotly: plotlyBehavior,
   pythreejs: pythreejsBehavior,
   quak: quakBehavior,
