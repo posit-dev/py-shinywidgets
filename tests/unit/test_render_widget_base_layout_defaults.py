@@ -254,6 +254,8 @@ def test_jscatter_explicit_height_stays_fixed_when_displayed_again() -> None:
     scatter.height(500)
     assert rwb.set_layout_defaults(scatter.widget)[1] is False
     assert rwb.set_layout_defaults(scatter.widget)[1] is False
+
+
 def test_maplibre_default_height_fills() -> None:
     pytest.importorskip("maplibre")
     pytest.importorskip("anywidget")
