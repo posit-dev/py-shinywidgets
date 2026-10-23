@@ -381,8 +381,8 @@ PLOTLY_VERSION_MESSAGE = (
 
 def unsupported_plotly_version(w: Widget) -> Optional[Version]:
     """
-    The installed plotly version, if `w` is a plotly widget and that version
-    is too old to render (< 5.12, the first release whose FigureWidget
+    The plotly version, if `w` is a plotly widget and that version is too old
+    to render (< 5.12, the first release whose FigureWidget
     frontend supports ipywidgets 8); otherwise None.
     """
     if not any(widget_pkg(cls) == "plotly" for cls in type(w).__mro__):
@@ -394,10 +394,35 @@ def unsupported_plotly_version(w: Widget) -> Optional[Version]:
 
 
 def _plotly_version() -> Optional[Version]:
+    """
+    The version of the imported plotly, or of the installed one if that can't be
+    determined.
+
+    The imported module is the one that renders, and it isn't necessarily the
+    one whose metadata is installed (e.g., a source checkout on `PYTHONPATH`
+    shadowing an installed wheel).
+    """
+    versions: List[Optional[str]] = []
     try:
-        return Version(package_version("plotly"))
+        import plotly
+
+        versions.append(getattr(plotly, "__version__", None))
+    except Exception:
+        pass
+    try:
+        versions.append(package_version("plotly"))
     except PackageNotFoundError:
-        return None
+        pass
+
+    for version in versions:
+        if not version:
+            continue
+        try:
+            return Version(version)
+        except Exception:
+            continue
+
+    return None
 
 
 def retire_unused_widget(w: Widget) -> None:
