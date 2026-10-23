@@ -207,6 +207,11 @@ def test_render_matplotlib_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_mosaic_widget_is_render_widget_base() -> None:
+    renderer = rw.render_mosaic_widget()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_plotnine_is_render_widget_base() -> None:
     renderer = rw.render_plotnine()
     assert isinstance(renderer, rwb.render_widget_base)
@@ -290,6 +295,7 @@ def test_import_shinywidgets_without_optional_deps() -> None:
         "keplergl",
         "maplibre",
         "matplotlib",
+        "mosaic_widget",
         "panel",
         "plotly",
         "plotnine",
