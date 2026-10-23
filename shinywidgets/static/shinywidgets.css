@@ -222,6 +222,63 @@
 }
 
 /*
+* bqplot's stylesheet reads JupyterLab theme variables, which don't exist outside
+* of JupyterLab (leaving, for example, the plot area filled black). Derive them from
+* Bootstrap so figures follow Shiny's light/dark theme. Tooltips are appended to
+* <body>, outside of the figure, so they need the variables too.
+*/
+.bqplot,
+.bqplot_tooltip_div {
+  --jp-layout-color0: var(--bs-body-bg, white);
+  --jp-layout-color1: var(--bs-body-bg, white);
+  --jp-layout-color2: color-mix(in srgb, var(--bs-body-color, black) 12%, transparent);
+  --jp-content-font-color1: var(--bs-body-color, rgba(0, 0, 0, 0.87));
+  --jp-content-font-color2: color-mix(in srgb, var(--bs-body-color, black) 65%, transparent);
+  --jp-border-color0: var(--bs-border-color, #e0e0e0);
+  --jp-border-color1: var(--bs-border-color, #bdbdbd);
+  --jp-border-width: 1px;
+  /* bqplot resolves these at :root, where the variables above aren't visible */
+  --bq-content-font-color: var(--jp-content-font-color1);
+  --bq-content-scatter-font-color: var(--jp-content-font-color1);
+  --bq-background: var(--jp-layout-color0);
+  --bq-selector-fill: var(--jp-border-color1);
+  --bq-mark-tooltip-border: 2px solid var(--jp-border-color0);
+  --bq-mark-tooltip-background-color: var(--jp-layout-color0);
+  --bq-mark-tooltip-td-border: 1px solid var(--jp-border-color1);
+  /* bqplot also resolves these aliases at :root (through --bq-content-font-color),
+     so they must be re-declared here for the font color above to reach them */
+  --bq-default-stroke: var(--bq-content-font-color);
+  --bq-stick-stroke: var(--bq-content-font-color);
+  --bq-stick-fill: var(--bq-content-font-color);
+  --bq-sticktext-fill: var(--bq-content-font-color);
+  --bq-pie-polyline-stroke: var(--bq-content-font-color);
+}
+
+/*
+* bqplot gives figures a fixed 480px height, so an explicit output_widget(height=)
+* would clip the figure rather than size it. The attribute selector matches the
+* inline style output_widget(height=) emits (see _output_widget.py), so keep the two
+* in sync. Intrinsic heights (`auto`, `fit-content`, ...; the browser may reserialize
+* the style with a space after the colon) aren't definite, so 100% of them would
+* collapse the figure. The exclusions match `height:` declarations only, so that an
+* intrinsic `width:` (or a custom-property height like `var(--content-height)`) doesn't
+* disable explicit-height sizing.
+*/
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .bqplot {
+  height: 100%;
+}
+
+/*
 * For some reason ipyleaflet puts `flex: 1` on the .lm-Widget container
 * which breaks our filling layout setup.
 * This fixes it (by putting higher priority) on `flex: 0`.
