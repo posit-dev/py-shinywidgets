@@ -36,6 +36,10 @@ Source = "https://github.com/rstudio/py-shinywidgets/"
 Issues = "https://github.com/rstudio/py-shinywidgets/issues"
 
 [project.optional-dependencies]
+# An explicit pre-release specifier, so uv/pip accept it without --pre.
+# keplergl 0.3.x imports pkg_resources (removed in setuptools 82), so 0.4
+# (an anywidget rewrite) is the first version that imports there.
+keplergl = ["keplergl>=0.4.0rc4"]
 test = [
   "altair",
   "bokeh",

@@ -181,7 +181,7 @@ class render_keplergl(render_widget_base[ValueT, KeplerGl]):
     The decorated function may return either a `pandas.DataFrame` or
     `geopandas.GeoDataFrame` (which is coerced to a `keplergl.KeplerGl` widget with
     the data added as a single dataset named ``"data"``, the ``dataId`` to use in a
-    kepler.gl ``config``; requires ``pip install 'keplergl>=0.4.0rc4'``) or a
+    kepler.gl ``config``; requires ``pip install 'shinywidgets[keplergl]'``) or a
     `keplergl.KeplerGl` widget. In a filling layout, the map is resized to fit its
     container, unless the `KeplerGl` widget was given a ``height`` other than
     kepler.gl's default (400). An explicit ``height`` on the output (see ``height``
@@ -796,8 +796,8 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
 
 
 def dataframe_to_keplergl(df: pd.DataFrame) -> KeplerGl:
-    # keplergl 0.3.x imports pkg_resources, which setuptools >= 81 no longer ships
-    hint = "pip install 'keplergl>=0.4.0rc4'"
+    # keplergl 0.3.x imports pkg_resources, which setuptools >= 82 no longer ships
+    hint = "pip install 'shinywidgets[keplergl]'"
     try:
         from keplergl import KeplerGl
     except ModuleNotFoundError as e:

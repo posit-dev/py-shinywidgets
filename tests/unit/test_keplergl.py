@@ -93,14 +93,14 @@ def test_dataframe_without_keplergl_gives_install_hint(
     widget_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setitem(sys.modules, "keplergl", None)
-    with pytest.raises(ImportError, match=r"pip install 'keplergl>=0\.4\.0rc4'"):
+    with pytest.raises(ImportError, match=r"pip install 'shinywidgets\[keplergl\]'"):
         as_widget(widget_session, points())
 
 
 def test_keplergl_failing_on_pkg_resources_points_to_newer_release(
     widget_session: Session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # keplergl 0.3.x imports pkg_resources, which setuptools >= 81 no longer
+    # keplergl 0.3.x imports pkg_resources, which setuptools >= 82 no longer
     # ships; the fix is a newer keplergl, not (re)installing keplergl
     (tmp_path / "keplergl").mkdir()
     (tmp_path / "keplergl" / "__init__.py").write_text(

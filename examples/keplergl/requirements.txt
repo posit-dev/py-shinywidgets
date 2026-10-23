@@ -1,5 +1,4 @@
 shiny
-shinywidgets
-keplergl>=0.4.0rc4
+shinywidgets[keplergl]
 numpy
 pandas
