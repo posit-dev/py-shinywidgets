@@ -341,12 +341,46 @@ def ipyaladin_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # shinywidgets.css sizes to the widget container instead, so a user-specified
     # height has to go on the container. The default can't be told apart from an
     # explicit 400, so treat it as unset (as maplibre_layout_defaults() does).
-    if widget._height != 400:  # pyright: ignore[reportAttributeAccessIssue]
+    # -1, ipyaladin's sentinel for "100% of the container", isn't an explicit
+    # height either: filling is exactly what it asks for.
+    height = _aladin_height_intent(widget)
+    if height not in (400, -1):
         fill = False
         if widget.layout.height in (None, "auto"):
-            widget.layout.height = f"{widget._height}px"  # pyright: ignore[reportAttributeAccessIssue]
+            widget.layout.height = f"{height}px"
 
     return fill
+
+
+# Widget attribute recording the height the user asked an ipyaladin Aladin for
+_ALADIN_HEIGHT_INTENT = "_shinywidgets_height_intent"
+
+
+def _aladin_height_intent(widget: DOMWidget) -> int:
+    # widget._height isn't a pure record of intent: the view also reports its
+    # rendered height back on resize, so a filling widget kept alive across
+    # renders (e.g., with session_lifetime()) picks up its container's height,
+    # which a later render must not mistake for a user-specified height. Take
+    # the first render's value as the intent, then revise it only on Python-side
+    # changes (e.g., `widget.height = ...`).
+    intent = getattr(widget, _ALADIN_HEIGHT_INTENT, None)
+    if intent is not None:
+        return cast(int, intent)
+
+    intent = cast("int", widget._height)  # pyright: ignore[reportAttributeAccessIssue]
+    setattr(widget, _ALADIN_HEIGHT_INTENT, intent)
+
+    def _revise_intent(change: "dict[str, int]") -> None:
+        # Front-end state updates go through Widget.set_state(), which keeps the
+        # updated properties in _property_lock while notifications fire;
+        # Python-side assignments don't. If ipywidgets ever drops _property_lock,
+        # this degrades to treating resize feedback as intent (the behavior
+        # before the intent was tracked separately).
+        if not getattr(widget, "_property_lock", None):
+            setattr(widget, _ALADIN_HEIGHT_INTENT, change["new"])
+
+    widget.observe(_revise_intent, names="_height")
+    return intent
 
 
 def bokeh_layout_defaults(widget: DOMWidget, fill: bool) -> bool:

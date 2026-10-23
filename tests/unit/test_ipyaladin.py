@@ -43,3 +43,42 @@ def test_layout_height_disables_fill(widget_session: Session) -> None:
         w = aladin(widget_session, layout=Layout(height="250px"))
     _, fill = set_layout_defaults(w)
     assert fill is False
+
+
+def test_container_height_sentinel_fills(widget_session: Session) -> None:
+    # height=-1 is ipyaladin's sentinel for "100% of the container", i.e., a
+    # request to fill, not a fixed height (and "-1px" is invalid CSS)
+    w = aladin(widget_session, height=-1)
+    _, fill = set_layout_defaults(w)
+    assert fill is True
+    assert w.layout.height in (None, "auto")
+
+
+def test_resize_writeback_doesnt_disable_fill(widget_session: Session) -> None:
+    w = aladin(widget_session)
+    _, fill = set_layout_defaults(w)
+    assert fill is True
+
+    # The view reports its rendered height back on (container) resize (front-end
+    # updates arrive via Widget.set_state()). A later render of the same widget
+    # (e.g., one kept alive with session_lifetime()) must not mistake that
+    # feedback for a user-specified height.
+    w.set_state({"_height": 650})
+    _, fill = set_layout_defaults(w)
+    assert fill is True
+    assert w.layout.height in (None, "auto")
+
+
+def test_height_change_after_first_render_disables_fill(
+    widget_session: Session,
+) -> None:
+    w = aladin(widget_session)
+    _, fill = set_layout_defaults(w)
+    assert fill is True
+
+    # A Python-side height change is intentional, even after resize feedback
+    w.set_state({"_height": 650})
+    w.height = 300
+    _, fill = set_layout_defaults(w)
+    assert fill is False
+    assert w.layout.height == "300px"
