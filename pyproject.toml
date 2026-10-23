@@ -47,6 +47,7 @@ ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
 ipycytoscape = ["ipycytoscape"]
 ipydatagrid = ["ipydatagrid"]
+ipysigma = ["ipysigma"]
 itables = ["itables[widget]"]
 jscatter = ["jupyter-scatter"]
 # An explicit pre-release specifier, so uv/pip accept it without --pre.
@@ -80,6 +81,7 @@ test = [
   "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
+  "ipysigma",
   "holoviews",
   "ipympl",
   "itables[widget]",
@@ -123,6 +125,7 @@ dev = [
   "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
+  "ipysigma",
   "holoviews",
   "ipympl",
   "itables[widget]",
@@ -169,6 +172,7 @@ test = [
   "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
+  "ipysigma",
   "holoviews",
   "ipympl",
   "itables[widget]",

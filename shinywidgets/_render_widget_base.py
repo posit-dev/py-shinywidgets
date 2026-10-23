@@ -32,6 +32,7 @@ from ._output_widget import output_widget
 from ._widget_registry import WIDGET_INSTANCE_MAP
 
 if TYPE_CHECKING:
+    from ipysigma import Sigma
     from itables.widget import ITable
 
 __all__ = (
@@ -350,6 +351,19 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def ipysigma_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # Sigma always syncs a concrete CSS `height` (500px unless the user passes
+    # `height`/`raw_height`), and its `layout` trait is a node-position dict rather
+    # than an ipywidgets Layout, so the generic height check above can't see it.
+    # Only the untouched default (including one set via `Sigma.set_defaults()`) is
+    # treated as "unset".
+    sigma = cast("Sigma", widget)
+    if sigma.height == f"{type(sigma).default_height}px":
+        sigma.height = "100%"
+        return fill
+    return fill and sigma.height == "100%"
+
+
 def itables_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # DataTables only gets a scrollable body (which is what lets the table fill
     # its container instead of growing past it) when scrollY is set, so default it
@@ -550,6 +564,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "altair": _altair_layout_defaults,
     "ipyaladin": ipyaladin_layout_defaults,
     "ipycanvas": ipycanvas_layout_defaults,
+    "ipysigma": ipysigma_layout_defaults,
     "itables": itables_layout_defaults,
     "jscatter": jscatter_layout_defaults,
     "keplergl": keplergl_layout_defaults,
