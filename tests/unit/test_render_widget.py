@@ -9,6 +9,11 @@ from htmltools import HTMLDependency, div
 from shiny.session import session_context
 
 
+def test_render_bqplot_is_render_widget_base() -> None:
+    renderer = rw.render_bqplot()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_ipyaladin_is_render_widget_base() -> None:
     renderer = rw.render_ipyaladin()
     assert isinstance(renderer, rwb.render_widget_base)
@@ -236,6 +241,7 @@ def test_import_shinywidgets_without_optional_deps() -> None:
     pkgs = [
         "altair",
         "bokeh",
+        "bqplot",
         "holoviews",
         "hvplot",
         "ipycanvas",
