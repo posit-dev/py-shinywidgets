@@ -75,17 +75,20 @@ def as_widget(x: object) -> Widget:
     pkg = widget_pkg(x)
 
     _as_widget = AS_WIDGET_MAP.get(pkg, None)
-    if _as_widget is None and any(
-        widget_pkg(base) == "matplotlib" for base in type(x).__mro__
-    ):
-        _as_widget = as_widget_mpl
-    # e.g., a pn.viewable.Viewer or pn.custom.JSComponent subclass defined in the app
-    if _as_widget is None and any(
-        widget_pkg(base) == "panel" for base in type(x).__mro__
-    ):
-        _as_widget = as_widget_panel
+    # Subclasses defined in another package should route to the coercer for the
+    # base class's package: e.g., leafmap's backend Maps (whose instances report
+    # __module__ == "leafmap.*" but subclass ipyleaflet/pydeck/etc. classes), a
+    # pn.viewable.Viewer or pn.custom.JSComponent subclass defined in an app, or
+    # a seaborn figure-level grid.
     if _as_widget is None:
-        msg = f"Don't know how to coerce {x} into a ipywidget.Widget object."
+        for base in type(x).__mro__:
+            base_pkg = widget_pkg(base)
+            _as_widget = AS_WIDGET_MAP.get(base_pkg, None)
+            if _as_widget is not None:
+                pkg = base_pkg
+                break
+    if _as_widget is None:
+        msg = f"Don't know how to coerce {_short_repr(x)} into an ipywidget.Widget object."
         if callable(getattr(x, "_repr_html_", None)):
             msg += " Instead of using shinywidgets to render this object, try using shiny's @render.ui decorator "
             msg += " https://shiny.posit.co/py/api/ui.output_ui.html#shiny.ui.output_ui"
@@ -95,10 +98,20 @@ def as_widget(x: object) -> Widget:
 
     if not isinstance(res, Widget):
         raise TypeError(
-            f"Failed to coerce {x} (an object from package {pkg}) into a ipywidget.Widget object."
+            f"Failed to coerce {_short_repr(x)} (an object from package {pkg}) into an ipywidget.Widget object."
         )
 
     return res
+
+
+def _short_repr(x: object, limit: int = 300) -> str:
+    # Some objects repr() to something enormous (e.g., repr(pydeck.Deck) is the
+    # deck's entire JSON spec), which makes for a wall of text in error messages.
+    try:
+        r = repr(x)
+    except Exception:
+        r = object.__repr__(x)
+    return r if len(r) <= limit else r[:limit] + "..."
 
 
 def as_widget_altair(x: object) -> Optional[Widget]:
