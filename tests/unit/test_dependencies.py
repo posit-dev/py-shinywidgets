@@ -274,11 +274,99 @@ def test_require_dependency_prefers_env_data_dir_over_bundled(
 
     session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
     monkeypatch.setattr(deps, "ENV_JUPYTER_PATH", [str(tmp_path / "env")])
+    # The widget's package is installed in this environment, so the data dir
+    # copy is known to match the installed version
+    monkeypatch.setattr(deps, "widget_package_in_env", lambda w: True)
     monkeypatch.setitem(sys.modules, "fakepkg", mod)
 
     dep = require_dependency(w, session)
     assert dep is not None
     assert dep.source == {"subdir": str(env_dir)}
+
+
+def test_require_dependency_ignores_env_dir_for_packages_installed_elsewhere(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # If the widget's package isn't installed in this environment (e.g.,
+    # `pip install --user`, or a leftover from an older install), a copy in
+    # this environment's data dir may be stale, so the version-matched,
+    # package-bundled copy wins
+    class DummyWidget:
+        __module__ = "fakepkg.sub"
+
+    w = DummyWidget()
+    w._model_module = "some-widget-module"
+    w._model_module_version = "^1.2.3"
+
+    mod = make_nbextension_pkg(tmp_path)
+
+    env_dir = tmp_path / "env" / "nbextensions" / "some-widget-module"
+    env_dir.mkdir(parents=True)
+    (env_dir / "index.js").write_text("// stale", encoding="utf-8")
+
+    session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
+    monkeypatch.setattr(deps, "ENV_JUPYTER_PATH", [str(tmp_path / "env")])
+    monkeypatch.setattr(deps, "widget_package_in_env", lambda w: False)
+    monkeypatch.setitem(sys.modules, "fakepkg", mod)
+
+    dep = require_dependency(w, session)
+    assert dep is not None
+    assert dep.source == {"subdir": str(tmp_path / "fakepkg" / "nbextension")}
+
+
+def test_widget_package_in_env(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class DummyWidget:
+        __module__ = "fakepkg.sub"
+
+    mod = types.ModuleType("fakepkg")
+    monkeypatch.setitem(sys.modules, "fakepkg", mod)
+
+    # A package installed outside of this environment (e.g., user site)
+    mod.__file__ = str(tmp_path / "fakepkg" / "__init__.py")  # type: ignore[attr-defined]
+    monkeypatch.setattr(deps.sys, "prefix", "/usr/nonexistent-env")
+    assert deps.widget_package_in_env(DummyWidget()) is False  # type: ignore[arg-type]
+
+    # The same package, installed in this environment
+    monkeypatch.setattr(deps.sys, "prefix", str(tmp_path))
+    assert deps.widget_package_in_env(DummyWidget()) is True  # type: ignore[arg-type]
+
+    # A directory that merely shares the prefix as a string prefix is not
+    # inside the environment
+    sibling = tmp_path / "env-sibling"
+    sibling.mkdir()
+    mod.__file__ = str(sibling / "fakepkg" / "__init__.py")  # type: ignore[attr-defined]
+    monkeypatch.setattr(deps.sys, "prefix", str(tmp_path / "env"))
+    assert deps.widget_package_in_env(DummyWidget()) is False  # type: ignore[arg-type]
+
+    # Unknown packages keep the historical behavior
+    class Unknown:
+        __module__ = "not_an_importable_package_xyz.sub"
+
+    assert deps.widget_package_in_env(Unknown()) is True  # type: ignore[arg-type]
+
+
+def test_package_nbextension_path_resolves_base_class_package(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An app-defined subclass (e.g., a leafmap-style ipyleaflet.Map subclass)
+    # lives in another package, but it renders with the base class's extension
+    mod = make_nbextension_pkg(
+        tmp_path, name="base_widget_pkg", dest="some-widget-module"
+    )
+    monkeypatch.setitem(sys.modules, "base_widget_pkg", mod)
+
+    class BaseWidget:
+        __module__ = "base_widget_pkg.leaflet"
+
+    class AppWidget(BaseWidget):
+        __module__ = "app_pkg.maps"
+
+    w = AppWidget()
+    w._model_module = "some-widget-module"  # type: ignore[attr-defined]
+
+    assert package_nbextension_path(w, "some-widget-module") == str(  # type: ignore[arg-type]
+        tmp_path / "base_widget_pkg" / "nbextension"
+    )
 
 
 def test_require_dependency_extension_found_returns_dependency(
