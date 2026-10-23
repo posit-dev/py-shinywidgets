@@ -169,25 +169,41 @@ def test_as_widget_bokeh_import_error_path(monkeypatch: pytest.MonkeyPatch) -> N
         as_widget_bokeh(object())
 
 
-def test_as_widget_bokeh_success_with_fakes(monkeypatch: pytest.MonkeyPatch) -> None:
-    jb = ModuleType("jupyter_bokeh")
-    jb.BokehModel = lambda x: Widget.__new__(Widget)  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "jupyter_bokeh", jb)
+def test_as_widget_bokeh_stretches_unsized_figure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bokeh.plotting import figure
 
-    _inject_package(monkeypatch, "bokeh")
-    plotting = ModuleType("bokeh.plotting")
+    _fake_jupyter_bokeh(monkeypatch)
 
-    class FakeFigure:
-        def __init__(self):
-            self.sizing_mode = None
-
-    plotting.figure = FakeFigure  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "bokeh.plotting", plotting)
-
-    fig = FakeFigure()
+    fig = figure()
     res = as_widget_bokeh(fig)
     assert isinstance(res, Widget)
     assert fig.sizing_mode == "stretch_both"
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"height": 200},
+        {"width": 250},
+        {"width": 250, "height": 150, "sizing_mode": "fixed"},
+        {"height": 200, "sizing_mode": "stretch_width"},
+        {"aspect_ratio": 2},
+    ],
+)
+def test_as_widget_bokeh_respects_user_sizing(
+    monkeypatch: pytest.MonkeyPatch, kwargs: dict[str, object]
+) -> None:
+    from bokeh.plotting import figure
+
+    _fake_jupyter_bokeh(monkeypatch)
+
+    fig = figure(**kwargs)
+    as_widget_bokeh(fig)
+    assert fig.sizing_mode == kwargs.get("sizing_mode")
+    for name, value in kwargs.items():
+        assert getattr(fig, name) == value
 
 
 def test_as_widget_plotly_success_and_type_check_with_fakes(

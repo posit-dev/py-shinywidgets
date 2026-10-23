@@ -112,13 +112,15 @@ def as_widget_altair(x: object) -> Optional[Widget]:
 
 
 def as_widget_bokeh(x: object) -> Optional[Widget]:
-    # TODO: ideally we'd do this in set_layout_defaults() but doing
-    # `BokehModel(x)._model.sizing_mode = "stretch_both"`
-    # there, but that doesn't seem to work??
     from bokeh.plotting import figure
 
-    if isinstance(x, figure):
-        x.sizing_mode = "stretch_both"  # type: ignore
+    # Make a figure fill its output, unless the user sized it. This has to
+    # happen before BokehModel() snapshots the document: changes made after
+    # that are only sent as patches over the comm, which isn't open yet.
+    if isinstance(x, figure) and not BOKEH_SIZING_PROPS & set(
+        x.properties_with_values(include_defaults=False)
+    ):
+        x.sizing_mode = "stretch_both"
 
     return bokeh_model_class(context="bokeh")(cast("LayoutDOM", x))
 
@@ -370,6 +372,9 @@ AS_WIDGET_MAP = {
     "pydeck": as_widget_pydeck,
     "seaborn": as_widget_mpl,
 }
+
+
+BOKEH_SIZING_PROPS = {"width", "height", "sizing_mode", "aspect_ratio"}
 
 
 def bokeh_model_class(*, context: str) -> type["BokehModel"]:

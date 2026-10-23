@@ -106,6 +106,17 @@
 }
 
 /*
+* A stretching bokeh root (e.g., a figure with sizing_mode="stretch_both", or a
+* HoloViews plot with responsive=True) sizes itself to its container's height,
+* so in an output that isn't filling (e.g., output_widget(height="300px")) it
+* collapses to a sliver unless the container has a definite height. (BokehJS
+* renders the root inside a `display: contents` div.)
+*/
+.shiny-ipywidget-output:not(.forward-fill-potential) > .lm-Widget:has(> * > [class^="bk-"]) {
+  height: 100%;
+}
+
+/*
 * A maplibre MapWidget's root is styled `height: <height>` (400px by default), which
 * crops the map in a shorter output and leaves a gap in a taller one. Size it to the
 * widget container instead, which is sized to the output (or, with an explicit
