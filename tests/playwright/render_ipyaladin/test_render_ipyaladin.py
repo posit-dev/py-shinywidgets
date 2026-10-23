@@ -37,6 +37,14 @@ def assert_fills(page: Page, id: str) -> None:
 
 
 def check_errors(errors: list[str], failed_requests: list[str]) -> None:
+    # Tile/property fetches blocked by CORS (e.g. CDS's DSS2/color survey
+    # redirecting to irsa.ipac.caltech.edu, which sends no
+    # Access-Control-Allow-Origin) surface as "Access to fetch ..." console
+    # errors rather than failed requests; they're environmental and outside
+    # the widget's control, so tolerate them for the same hosts.
+    errors = [
+        e for e in errors if not any(host in e for host in ALLOWED_REQUEST_FAILURES)
+    ]
     assert_no_unexpected_errors(
         errors, failed_requests, allowed_404s=ALLOWED_REQUEST_FAILURES
     )
