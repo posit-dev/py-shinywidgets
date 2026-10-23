@@ -34,7 +34,7 @@ app_ui = ui.page_sidebar(
     ),
     ui.card(
         ui.card_header("Current view"),
-        ui.output_text_verbatim("view"),
+        ui.output_code("view"),
     ),
 )
 
@@ -43,8 +43,14 @@ def server(input, output, session):
     @render_ipyaladin
     def sky():
         # The Crab nebula (M1), in ICRS degrees (a name works too, but
-        # resolving it needs a round trip to CDS's Sesame service)
-        return Aladin(survey=input.survey(), fov=input.fov(), target=(83.63, 22.01))
+        # resolving it needs a round trip to CDS's Sesame service).
+        # Isolate the input reads: the effects below update survey/fov on the
+        # rendered viewer in place, so a reactive read here would tear down
+        # and rebuild the viewer on every input change
+        with reactive.isolate():
+            survey = input.survey()
+            fov = input.fov()
+        return Aladin(survey=survey, fov=fov, target=(83.63, 22.01))
 
     # Point the rendered viewer at the selected target. Resolving a name
     # (e.g., "Crab nebula") to coordinates queries Sesame, which needs the
@@ -68,7 +74,7 @@ def server(input, output, session):
         if w:
             w.survey = input.survey()
 
-    @render.text
+    @render.code
     def view():
         target, fov = reactive_read(sky.widget, ["_target", "_fov"])
         try:
