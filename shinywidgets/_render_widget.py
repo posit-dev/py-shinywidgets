@@ -64,6 +64,7 @@ __all__ = (
     "render_matplotlib",
     "render_panel",
     "render_plotly",
+    "render_plotnine",
     "render_pydeck",
 )
 
@@ -467,6 +468,55 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     `Canvas` instance. Use `.widget` to programmatically update the rendered figure
     in place (trait changes on the widget are synced to the browser), or to
     reactively read widget state with :func:`~shinywidgets.reactive_read`.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+
+class render_plotnine(render_widget_base[ValueT, MplCanvas]):
+    """
+    Reactively render a [plotnine](https://plotnine.org) plot as an interactive
+    [ipympl](https://matplotlib.org/ipympl/) Shiny output.
+
+    The decorated function may return a `plotnine.ggplot` or a plot composition (e.g.,
+    ``p1 | p2``), which is drawn to a matplotlib figure and coerced to an
+    `ipympl.backend_nbagg.Canvas` widget (requires ``pip install
+    'shinywidgets[plotnine]'``). The returned plot itself isn't modified (a copy is
+    drawn). In a filling layout, the
+    figure is resized to fit its container (overriding ``theme(figure_size=...)``),
+    and plotnine re-lays out the plot (e.g., legends and axis labels) at each size.
+    With an explicit ``height``, the figure isn't fitted to the output (it's drawn
+    at its ``figure_size``, and a larger figure is clipped), so set
+    ``theme(figure_size=...)`` to match. With ``fill=False`` (and no ``height``),
+    the figure's width still follows its container.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `Canvas` instance. Use `.widget` to programmatically update the rendered figure
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+
+    Note that plotnine computes axis breaks when it draws, so zooming in (e.g., with
+    the toolbar) keeps the original ticks, and a close zoom can show none. For
+    zoom-aware ticks, set a matplotlib locator and formatter on the axes of
+    `.widget.figure` (e.g., `matplotlib.ticker.MaxNLocator` and `ScalarFormatter`, or
+    `matplotlib.dates.AutoDateLocator` for dates) in an effect that reads `.widget`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
