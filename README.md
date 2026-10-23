@@ -37,6 +37,7 @@ everything it needs:
 | `@render_plotly` | `pip install 'shinywidgets[plotly]'` |
 | `@render_plotnine` | `pip install 'shinywidgets[plotnine]'` |
 | `@render_pyvista` | `pip install 'shinywidgets[pyvista]'` (Python < 3.15) |
+| `@render_quak` | `pip install 'shinywidgets[quak]'` |
 
 ## Development
 

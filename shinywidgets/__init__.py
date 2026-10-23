@@ -38,6 +38,7 @@ from ._render_widget import (
     render_plotnine,
     render_pydeck,
     render_pyvista,
+    render_quak,
     render_widget,
 )
 from ._shinywidgets import reactive_read, register_widget, session_lifetime
@@ -65,6 +66,7 @@ __all__ = (
     "render_plotnine",
     "render_pydeck",
     "render_pyvista",
+    "render_quak",
     # Reactive read second
     "reactive_read",
     # UI methods third

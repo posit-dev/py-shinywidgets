@@ -1,0 +1,4 @@
+shiny
+shinywidgets[quak]
+numpy
+pandas
