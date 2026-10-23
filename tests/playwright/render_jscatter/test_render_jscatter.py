@@ -44,13 +44,29 @@ COUNT_RESIZE_OBSERVERS_JS = """
 
 
 def wait_until_plot_fills_output(page: Page, id: str) -> None:
+    # The plot can match the output transiently while its axes padding is
+    # still settling (the padding appears a beat after the fit, then jscatter
+    # refits), so require the same matching heights to hold for 200ms
     page.wait_for_function(
         """(id) => {
           const out = document.querySelector('#' + id);
           const canvas = out && out.querySelector('canvas');
           if (!canvas) return false;
           const plot = canvas.parentElement.parentElement;
-          return Math.abs(plot.getBoundingClientRect().height - out.clientHeight) <= 1;
+          const cur = {
+            plot: plot.getBoundingClientRect().height,
+            output: out.clientHeight,
+          };
+          const prev = window.__fillStablePrev;
+          if (Math.abs(cur.plot - cur.output) > 1) {
+            window.__fillStablePrev = null;
+            return false;
+          }
+          if (!prev || prev.plot !== cur.plot || prev.output !== cur.output) {
+            window.__fillStablePrev = { ...cur, t: Date.now() };
+            return false;
+          }
+          return Date.now() - prev.t >= 200;
         }""",
         arg=id,
         timeout=30000,
