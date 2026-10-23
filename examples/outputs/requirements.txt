@@ -1,16 +1,11 @@
 shiny
-shinywidgets
+shinywidgets[altair,bokeh,maplibre,plotly]
 ipywidgets
 numpy
 pandas
 vega_datasets
-bokeh
-jupyter_bokeh
 ipyleaflet
 pydeck
-maplibre[anywidget]
-altair
-plotly
 bqplot
 ipychart
 ipywebrtc
