@@ -1,0 +1,4 @@
+shiny
+shinywidgets[keplergl]
+numpy
+pandas
