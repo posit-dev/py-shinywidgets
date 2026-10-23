@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Added per-renderer extras, so each `@render_*` decorator's widget dependencies can be installed in one command (e.g., `pip install 'shinywidgets[plotly]'` or `'shinywidgets[maplibre,bokeh]'`). See the README for the full list.
 
+### Bug fixes
+
+* Improved error messages when an object can't be rendered as a widget: subclasses defined in another package (e.g., `leafmap.deck.Map`, which subclasses pydeck's `Deck`) now route to the coercer for their base class's package, so they get that package's specific guidance instead of the generic "Don't know how to coerce" error. Error messages also no longer dump enormous object reprs (e.g., a pydeck `Deck`'s entire JSON spec) into the output.
+
 ### Deprecated
 
 * `bokeh_dependency()` is deprecated and will be removed in a future release. Bokeh's JavaScript/CSS assets are included automatically with every bokeh-based output (including dynamically created ones), so the call can simply be removed from your UI.
@@ -36,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * `@render_maplibre` for [maplibre](https://eoda-dev.github.io/py-maplibregl/) maps. Compared to maplibre's own Shiny bindings, maps fill their container (including `full_screen` cards) unless given an explicit height, any effect can update a map in place via `.widget` methods (e.g., `set_paint_property()`), and the same code runs in Jupyter. `reactive_read()` gives you access to map state (e.g., `view_state`, `clicked`).
   * `@render_matplotlib` for matplotlib figures -- covering anything that produces one (seaborn, `pandas.DataFrame.plot()`, scikit-learn displays, etc.) -- rendered as interactive [ipympl](https://matplotlib.org/ipympl/) widgets. Figures fill and resize with their container in filling layouts, and repeated re-renders don't leak pyplot figures.
   * `@render_ipydatagrid` for pandas DataFrames (or `ipydatagrid.DataGrid` widgets), rendered as interactive [ipydatagrid](https://github.com/bloomberg/ipydatagrid) data grids. Grids fill their container in filling layouts and fit an explicit `height`, and `reactive_read()` gives you access to grid state like `selections`. (#278)
+  * `@render_plotnine` for [plotnine](https://plotnine.org) plots and plot compositions (e.g., `p1 | p2`), rendered as interactive [ipympl](https://matplotlib.org/ipympl/) widgets. In filling layouts, plots fill their container and are re-laid out by plotnine (legend, labels, and all) as it resizes. With an explicit output `height`, the figure isn't fitted to it, so set `theme(figure_size=...)` to match (the default figure size gets clipped by smaller outputs). `@render_matplotlib` and `@render_widget` also accept plotnine plots. (#278)
 * Bokeh plots using [extension models](https://docs.bokeh.org/en/latest/docs/user_guide/advanced/extensions.html) now work out of the box -- their assets are served automatically. (#88, #256)
 * `@render_plotly` now accepts a Dash-style `(figure, config)` tuple return value, where `config` is a dict of [Plotly.js config options](https://plotly.com/javascript/configuration-options/) (e.g., `{"displayModeBar": False}`). The config is merged over plotly's defaults and takes precedence over shinywidgets' own defaults. (#173)
 * Added `session_lifetime()`, a context manager for constructing widgets that should outlive the current render (for example, one cached widget per dataset that is displayed again when the user switches back). Attempting to return a widget that was already closed by an earlier render now raises an error pointing to `session_lifetime()` instead of timing out in the browser. (#258)
