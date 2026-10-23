@@ -77,6 +77,13 @@ Handles dynamic loading of 3rd party widget JavaScript:
 - Handles package-specific layout APIs (plotly margins, altair container sizing)
 - Works with Shiny's fill layout system
 
+### Adding a new renderer
+
+When adding a `@render_*` decorator for a third-party widget package, add a matching extra to `[project.optional-dependencies]` in `pyproject.toml` (e.g., `plotly = ["plotly>=5.0.0"]`) containing everything the renderer needs, and:
+- Add a row to the README's extras table
+- Point the decorator's docstring and install-error messages at `pip install 'shinywidgets[<extra>]'`
+- Keep example-specific data packages in the example's own `requirements.txt` (which should use `shinywidgets[<extra>]`, not the raw widget package)
+
 ## Key Files
 
 - `shinywidgets/_shinywidgets.py` - Widget initialization, session management, `reactive_read()`
