@@ -30,11 +30,6 @@ everything it needs:
 | `@render_panel` | `pip install 'shinywidgets[panel]'` |
 | `@render_plotly` | `pip install 'shinywidgets[plotly]'` |
 
-Extras can be combined, e.g. `pip install 'shinywidgets[plotly,maplibre]'`.
-Widget packages without their own decorator (rendered via `@render_widget`,
-e.g., `ipyleaflet` or `perspective-python`) have no extra; install the
-package itself, e.g. `pip install ipyleaflet`.
-
 ## Development
 
 If you want to do development on `{shinywidgets}`, run:
