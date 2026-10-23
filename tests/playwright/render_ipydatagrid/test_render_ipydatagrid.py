@@ -74,6 +74,14 @@ def test_ipydatagrid_respects_explicit_height(page: Page, local_app) -> None:
     )
     assert abs(page.evaluate(BOX_HEIGHT_JS, "#grid_fixed") - 250) <= 1
 
+    # An intrinsic width (fit-content) must not disable the fixed-height fit:
+    # the grid still fills the explicit 250px height rather than keeping 500px
+    expect(page.locator("#grid_fit_content_width .lm-DataGrid")).to_have_count(1)
+    page.wait_for_function(
+        "() => Math.abs(document.querySelector('#grid_fit_content_width .lm-DataGrid')"
+        ".getBoundingClientRect().height - 250) <= 1"
+    )
+
     # DataGrid(layout={"height": "300px"}): the widget's height is used as-is
     assert abs(page.evaluate(BOX_HEIGHT_JS, "#grid_widget_height") - 300) <= 1
     assert (
@@ -127,11 +135,23 @@ def test_ipydatagrid_rerender_lifecycle(page: Page, local_app) -> None:
         expect(page.locator("#selections")).to_have_text("[]")
 
     # Views of the replaced grids must be disposed (no accumulation): only the
-    # four grids on the page (grid, grid_fixed, grid_widget_height, grid_auto) are
-    # live
+    # five grids on the page (grid, grid_fixed, grid_fit_content_width,
+    # grid_widget_height, grid_auto) are live. Disposal trails the re-render by
+    # a tick, so wait for the view count to settle before asserting.
+    page.wait_for_function(
+        """async () => {
+          const models = await Promise.all(
+            Object.values(window.widgetManager._models).map((p) => p.catch(() => null))
+          );
+          return models
+            .filter((m) => m && m.get('_model_name') === 'DataGridModel')
+            .reduce((n, m) => n + Object.keys(m.views || {}).length, 0) === 5;
+        }""",
+        timeout=10000,
+    )
     grid_models = [m for m in client_models(page) if m["name"] == "DataGridModel"]
-    assert sum(m["views"] for m in grid_models) == 4
-    expect(page.locator(".lm-DataGrid")).to_have_count(4)
+    assert sum(m["views"] for m in grid_models) == 5
+    expect(page.locator(".lm-DataGrid")).to_have_count(5)
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)

@@ -15,6 +15,7 @@ app_ui = ui.page_fluid(
     ui.card(output_widget("grid"), height="400px", id="fill_card"),
     ui.output_text("selections"),
     output_widget("grid_fixed", height="250px"),
+    output_widget("grid_fit_content_width", width="fit-content", height="250px"),
     output_widget("grid_widget_height"),
     output_widget("grid_auto", height="auto"),
 )
@@ -43,6 +44,10 @@ def server(input, output, session):
 
     @render_ipydatagrid
     def grid_fixed():
+        return df
+
+    @render_ipydatagrid
+    def grid_fit_content_width():
         return df
 
     @render_ipydatagrid
