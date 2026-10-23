@@ -1,6 +1,7 @@
 import asyncio
 import json
 import sys
+import warnings
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import List, cast
@@ -18,6 +19,7 @@ from shiny.session import session_context
 from shiny.session._utils import RenderedDeps
 from shinywidgets._as_widget import as_widget_panel
 from shinywidgets._bokeh import (
+    _bokeh_dependency,
     bokeh_dependency,
     bokeh_extension_assets,
     extension_urls_to_dependencies,
@@ -46,7 +48,8 @@ def _dep_heads(deps: List[HTMLDependency]) -> List[str]:
 
 
 def test_bokeh_dependency_serves_installed_core_scripts() -> None:
-    dep = bokeh_dependency()
+    with pytest.warns(DeprecationWarning, match="no longer needed"):
+        dep = bokeh_dependency()
     source = dep.source_path_map()["source"]
 
     assert source is not None
@@ -54,6 +57,15 @@ def test_bokeh_dependency_serves_installed_core_scripts() -> None:
     assert str(dep.version) == bokeh.__version__
     for script in dep.script:
         assert (Path(source) / script["src"]).is_file()
+
+
+def test_private_bokeh_dependency_does_not_warn() -> None:
+    # Internal callers (widget init, render_* decorator UIs) use the private
+    # variant so users aren't warned by shinywidgets' own machinery
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        dep = _bokeh_dependency()
+    assert dep.name == "bokeh"
 
 
 def test_no_extension_for_plain_bokeh():

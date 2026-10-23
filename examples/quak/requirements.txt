@@ -1,5 +1,4 @@
 shiny
-shinywidgets
-quak
+shinywidgets[quak]
 numpy
 pandas
