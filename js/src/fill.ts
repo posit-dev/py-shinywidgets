@@ -3,6 +3,7 @@ import { setupJscatterAutoHeight, setupJscatterFixedHeight } from './jscatter';
 import { setupKeplerAutoHeight } from './keplergl';
 import { setupMplAutoResize } from './mpl';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
+import { setupQuakFit } from './quak';
 
 /**
  * Per-package fill/resize behavior for widget outputs, keyed by `widget_pkg`
@@ -81,17 +82,9 @@ const plotlyBehavior: WidgetBehavior = {
   },
 };
 
-// In most cases, we can get widgets to fill through Python/CSS, but quak
-// doesn't have a Python API and uses shadow DOM, which can only be accessed
-// from JS
 const quakBehavior: WidgetBehavior = {
-  setupFill: ({ lmWidget }) => {
-    const impl = lmWidget.children[0] as HTMLElement | undefined;
-    const quakWidget = impl?.shadowRoot?.querySelector('.quak') as HTMLElement | null;
-    if (!impl || !quakWidget) return;
-    impl.classList.add('html-fill-container', 'html-fill-item');
-    quakWidget.style.maxHeight = 'unset';
-  },
+  setupFill: ({ el, lmWidget }) => setupQuakFit(el, lmWidget, true),
+  setupFixedSize: ({ el, lmWidget }) => setupQuakFit(el, lmWidget, false),
 };
 
 // kepler.gl's size comes from a pixel `height` trait, so it needs to be driven
