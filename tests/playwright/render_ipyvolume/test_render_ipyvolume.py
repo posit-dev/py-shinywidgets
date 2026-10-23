@@ -28,6 +28,20 @@ CANVAS_FILLS_OUTPUT_JS = """(id) => {
 }"""
 
 
+# True once the figure's canvas fills its explicitly sized widget view (the
+# view's Layout height, minus the figure's toolbar). Used when the view is
+# smaller than its (filling) output container.
+CANVAS_FILLS_VIEW_JS = """(id) => {
+  const out = document.querySelector(id);
+  const view = out && out.querySelector('.lm-Widget');
+  const canvas = out && out.querySelector('canvas');
+  if (!view || !canvas) return false;
+  const toolbar = view.firstElementChild;
+  const c = canvas.getBoundingClientRect();
+  return Math.abs(c.height - (view.clientHeight - toolbar.offsetHeight)) <= 1;
+}"""
+
+
 def canvas_size(page: Page, selector: str) -> tuple[float, float]:
     box = page.locator(selector).first.bounding_box()
     assert box is not None
@@ -99,6 +113,28 @@ def test_ipyvolume_respects_explicit_heights(page: Page, local_app) -> None:
     assert canvas_size(page, "#sized_output")[1] == 250
     page.wait_for_function(CANVAS_FILLS_OUTPUT_JS, arg="#sized_layout", timeout=30000)
     assert canvas_size(page, "#sized_layout")[1] == 300
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_ipyvolume_layout_height_inside_fillable_card(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    expect(page.locator(f"#sized_layout_card {CANVAS_CONTAINER}")).to_have_count(
+        1, timeout=30000
+    )
+
+    # The widget's Layout(height="300px") sizes the view to 300px, but the
+    # output stays a fill item in the card and is taller than that. The
+    # canvas must be sized to the widget view, not the output -- otherwise it
+    # overflows/is clipped by the 300px widget.
+    page.wait_for_function(
+        CANVAS_FILLS_VIEW_JS, arg="#sized_layout_card", timeout=30000
+    )
+    out_h = canvas_size(page, "#sized_layout_card")[1]
+    canvas_h = canvas_size(page, "#sized_layout_card canvas")[1]
+    assert out_h > 300
+    assert canvas_h < 300
 
     assert_no_unexpected_errors(errors, failed_requests)
 
