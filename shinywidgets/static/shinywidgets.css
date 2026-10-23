@@ -111,6 +111,35 @@
 }
 
 /*
+* An ipycanvas canvas has fixed pixel dimensions (its width/height traits are
+* drawing-buffer sizes), so the generic fill rules (`flex: 1 1 400px` and
+* `width: 100%` on the .lm-Widget view root, which for ipycanvas IS the
+* canvas element) would scale the bitmap (blurry). Instead, keep the canvas
+* at its natural size, centered in the container (margin: auto absorbs free
+* space on both axes), only shrinking (aspect preserved) when the container
+* is smaller. This applies on non-fill paths too: a user-set layout height
+* opts out of fill, but stretch would come from align-items: stretch instead
+* (defeated by the auto cross-axis margin), still squashing the bitmap. The
+* class is added by ipycanvas_layout_defaults() in _render_widget_base.py.
+*/
+.shiny-ipywidget-output > .lm-Widget.shinywidgets-ipycanvas {
+  flex: 0 0 auto !important;
+  width: auto;
+  margin: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/*
+* `margin: auto` centering needs a flex container; non-filling outputs aren't
+* one (on fill paths .html-fill-container already is, so leave those alone).
+*/
+.shiny-ipywidget-output:not(.html-fill-container):has(> .lm-Widget.shinywidgets-ipycanvas) {
+  display: flex;
+}
+
+/*
 * A lonboard map's root is styled `min-height: 100%; height: 500px` (its default
 * height), so it grows to fill a definite-height container but overflows (and gets
 * clipped by) one shorter than 500px. Clamping to the container fixes the latter,
