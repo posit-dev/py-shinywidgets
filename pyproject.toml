@@ -52,6 +52,7 @@ test = [
   "ipympl",
   "matplotlib",
   "jupyter_bokeh>=4.1",
+  "jupyter-scatter",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
@@ -82,6 +83,7 @@ dev = [
   "ipympl",
   "matplotlib",
   "jupyter_bokeh>=4.1",
+  "jupyter-scatter",
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
   "panel",
@@ -113,6 +115,7 @@ test = [
   "ipympl",
   "matplotlib",
   "jupyter_bokeh>=4.1",
+  "jupyter-scatter",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
