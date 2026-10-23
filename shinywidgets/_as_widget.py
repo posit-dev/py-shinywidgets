@@ -3,7 +3,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 from weakref import WeakSet
 
 from htmltools import HTMLDependency
@@ -339,10 +339,15 @@ def as_widget_pyvista(x: object) -> Widget:
             f"Don't know how to coerce {type(x).__name__} into an ipywidget (expected a pyvista.Plotter)."
         )
 
+    # On Python 3.15+ the pyvista import above is unresolvable (no vtk
+    # wheels) and isinstance() narrows to object, so access attributes through
+    # a cast instead of the narrowed type
+    plotter = cast(Any, x)
+
     # Coercion closes the plotter (below), so a cached/reused Plotter would
     # otherwise fail in trame_pyvista with a misleading "Do not call 'show()'"
     # RuntimeError
-    if x._closed:
+    if plotter._closed:
         raise ValueError(
             "This pyvista Plotter has already been closed (coercion closes the "
             "plotter after exporting the scene). Construct a fresh Plotter in "
@@ -374,7 +379,7 @@ def as_widget_pyvista(x: object) -> Widget:
     # The scene is fully serialized into the widget, so the plotter's
     # (offscreen) GL resources are no longer needed (mirrors Plotter.show()'s
     # auto_close)
-    x.close()
+    plotter.close()
 
     return widget
 
