@@ -1,6 +1,5 @@
 shiny
-shinywidgets
-pygwalker
+shinywidgets[pygwalker]
 duckdb
 numpy
 pandas

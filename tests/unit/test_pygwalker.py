@@ -107,7 +107,7 @@ def test_missing_pygwalker_gives_install_hint(
         return pd.DataFrame({"a": [1]})
 
     with session_context(widget_session):
-        with pytest.raises(ImportError, match=r"pip install pygwalker"):
+        with pytest.raises(ImportError, match=r"pip install 'shinywidgets\[pygwalker\]'"):
             asyncio.run(r._render())
 
 
