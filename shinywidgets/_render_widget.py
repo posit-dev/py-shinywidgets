@@ -20,9 +20,9 @@ if TYPE_CHECKING:
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = DataGrid = JupyterScatter = MplCanvas = BokehModel = (
-        MapWidget
-    ) = FigureWidget = DeckGLWidget = object
+    JupyterChart = DataGrid = JupyterScatter = MplCanvas = BokehModel = MapWidget = (
+        FigureWidget
+    ) = DeckGLWidget = object
     LonboardMap = object
 
 from shiny.render.renderer import ValueFn
