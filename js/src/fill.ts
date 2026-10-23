@@ -1,5 +1,6 @@
 import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
 import { setupJscatterAutoHeight, setupJscatterFixedHeight } from './jscatter';
+import { setupKeplerAutoHeight } from './keplergl';
 import { setupMplAutoResize } from './mpl';
 import { setupNglviewAutoSize } from './nglview';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
@@ -94,6 +95,16 @@ const quakBehavior: WidgetBehavior = {
   },
 };
 
+// kepler.gl's size comes from a pixel `height` trait, so it needs to be driven
+// from the container whenever the container's height is defined by the app
+// (a filling layout, or an explicit output_widget(height=)).
+const keplerglBehavior: WidgetBehavior = {
+  setupFill: ({ el, model }) => setupKeplerAutoHeight(el, model),
+  setupFixedSize: ({ el, model }) => {
+    if (el.style.height) return setupKeplerAutoHeight(el, model);
+  },
+};
+
 // nglview sizes its stage with fixed inline pixels (300px tall by default) and
 // never re-measures its parent, so drive the stage size from the output: both
 // dimensions when the output has a height of its own (a filling layout or an
@@ -106,6 +117,7 @@ const nglviewBehavior: WidgetBehavior = {
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
   jscatter: jscatterBehavior,
+  keplergl: keplerglBehavior,
   nglview: nglviewBehavior,
   plotly: plotlyBehavior,
   quak: quakBehavior,
