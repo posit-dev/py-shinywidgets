@@ -1,4 +1,3 @@
 shiny
-shinywidgets
-ipycanvas
+shinywidgets[ipycanvas]
 numpy

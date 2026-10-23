@@ -1,7 +1,5 @@
 shiny
-shinywidgets
-ipywidgets
+shinywidgets[plotly]
 numpy
 pandas
-plotly
 scikit-learn
