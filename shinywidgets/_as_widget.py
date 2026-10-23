@@ -35,7 +35,7 @@ def as_widget(x: object) -> Widget:
 
     * altair `Chart` -> `altair.JupyterChart`
     * bokeh model (e.g., `bokeh.plotting.figure`) -> `jupyter_bokeh.BokehModel`
-    * holoviews/hvplot object -> bokeh model (via panel)
+    * holoviews/hvplot/geoviews object -> bokeh model (via panel)
     * jupyter-scatter `Scatter` -> `jscatter.widget.JupyterScatter`
     * lonboard layer -> `lonboard.Map`
     * maplibre `Map` -> `maplibre.ipywidget.MapWidget`
@@ -113,13 +113,15 @@ def as_widget_altair(x: object) -> Optional[Widget]:
 
 
 def as_widget_bokeh(x: object) -> Optional[Widget]:
-    # TODO: ideally we'd do this in set_layout_defaults() but doing
-    # `BokehModel(x)._model.sizing_mode = "stretch_both"`
-    # there, but that doesn't seem to work??
     from bokeh.plotting import figure
 
-    if isinstance(x, figure):
-        x.sizing_mode = "stretch_both"  # type: ignore
+    # Make a figure fill its output, unless the user sized it. This has to
+    # happen before BokehModel() snapshots the document: changes made after
+    # that are only sent as patches over the comm, which isn't open yet.
+    if isinstance(x, figure) and not BOKEH_SIZING_PROPS & set(
+        x.properties_with_values(include_defaults=False)
+    ):
+        x.sizing_mode = "stretch_both"
 
     return bokeh_model_class(context="bokeh")(cast("LayoutDOM", x))
 
@@ -138,10 +140,10 @@ def as_widget_panel(x: object) -> Optional[Widget]:
 def as_widget_holoviews(x: object) -> Optional[Widget]:
     return panel_to_widget(
         x,
-        context="holoviews/hvplot",
+        context="holoviews/hvplot/geoviews",
         missing_panel_message=(
-            "Rendering holoviews/hvplot objects requires the panel package "
-            "(hvplot renders through panel). Install it with: pip install panel"
+            "Rendering holoviews/hvplot/geoviews objects requires the panel package "
+            "(they render through panel). Install it with: pip install panel"
         ),
     )
 
@@ -373,6 +375,7 @@ PYDECK_NO_WIDGET_MESSAGE = (
 AS_WIDGET_MAP = {
     "altair": as_widget_altair,
     "bokeh": as_widget_bokeh,
+    "geoviews": as_widget_holoviews,
     "holoviews": as_widget_holoviews,
     "hvplot": as_widget_holoviews,
     "jscatter": as_widget_jscatter,
@@ -384,6 +387,9 @@ AS_WIDGET_MAP = {
     "pydeck": as_widget_pydeck,
     "seaborn": as_widget_mpl,
 }
+
+
+BOKEH_SIZING_PROPS = {"width", "height", "sizing_mode", "aspect_ratio"}
 
 
 def bokeh_model_class(*, context: str) -> type["BokehModel"]:

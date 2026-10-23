@@ -7,10 +7,6 @@ from tests.playwright.conftest import (
     collect_errors,
 )
 
-# jupyter_bokeh's frontend first tries to load its extension JS from a path
-# that 404s (also on pre-existing bokeh apps) before falling back to the CDN.
-BOKEH_404 = "@bokeh/jupyter_bokeh.js"
-
 # Every output in the app (covers holoviews elements, overlays, layouts,
 # .opts(), DynamicMap, and hvPlot from pandas, with and without grouping)
 ALL_OUTPUTS = (
@@ -39,7 +35,22 @@ def test_holoviews_actually_draws_pixels(page: Page, local_app) -> None:
     for selector in ALL_OUTPUTS:
         assert_draws_pixels(page, selector)
 
-    assert_no_unexpected_errors(errors, failed_requests, allowed_404s=(BOKEH_404,))
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_holoviews_renders_without_internet(page: Page, local_app) -> None:
+    # jupyter_bokeh>=4.1 ships its widget JS as an nbextension, so it's served
+    # by the app rather than fetched from a CDN
+    page.route(
+        lambda url: not url.startswith(local_app.url), lambda route: route.abort()
+    )
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+
+    for selector in ALL_OUTPUTS:
+        assert_draws_pixels(page, selector)
+
+    assert_no_unexpected_errors(errors, failed_requests)
 
 
 def test_holoviews_opts_are_applied(page: Page, local_app) -> None:
@@ -79,7 +90,7 @@ def test_holoviews_opts_are_applied(page: Page, local_app) -> None:
     )
     assert has_red
 
-    assert_no_unexpected_errors(errors, failed_requests, allowed_404s=(BOKEH_404,))
+    assert_no_unexpected_errors(errors, failed_requests)
 
 
 def test_holoviews_dynamicmap_widget_roundtrip(page: Page, local_app) -> None:
@@ -130,7 +141,7 @@ def test_holoviews_dynamicmap_widget_roundtrip(page: Page, local_app) -> None:
         timeout=10000,
     )
 
-    assert_no_unexpected_errors(errors, failed_requests, allowed_404s=(BOKEH_404,))
+    assert_no_unexpected_errors(errors, failed_requests)
 
 
 def test_holoviews_rerender_lifecycle(page: Page, local_app) -> None:
@@ -155,4 +166,4 @@ def test_holoviews_rerender_lifecycle(page: Page, local_app) -> None:
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
-    assert_no_unexpected_errors(errors, failed_requests, allowed_404s=(BOKEH_404,))
+    assert_no_unexpected_errors(errors, failed_requests)

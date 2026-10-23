@@ -40,13 +40,18 @@ test = [
   "altair",
   "bokeh",
   "coverage>=7",
+  # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
+  # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
+  # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
+  "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyleaflet>=0.20.0",
   "holoviews",
   "ipympl",
   "matplotlib",
-  "jupyter_bokeh",
+  "jupyter_bokeh>=4.1",
   "jupyter-scatter",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
@@ -66,13 +71,18 @@ dev = [
   "altair",
   "bokeh",
   "coverage>=7",
+  # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
+  # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
+  # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
+  "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyleaflet>=0.20.0",
   "holoviews",
   "ipympl",
   "matplotlib",
-  "jupyter_bokeh",
+  "jupyter_bokeh>=4.1",
   "jupyter-scatter",
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
@@ -93,13 +103,18 @@ test = [
   "altair",
   "bokeh",
   "coverage>=7",
+  # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
+  # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
+  # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
+  "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyleaflet>=0.20.0",
   "holoviews",
   "ipympl",
   "matplotlib",
-  "jupyter_bokeh",
+  "jupyter_bokeh>=4.1",
   "jupyter-scatter",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
