@@ -126,6 +126,11 @@ def test_render_maplibre_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_jscatter_is_render_widget_base() -> None:
+    renderer = rw.render_jscatter()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_matplotlib_is_render_widget_base() -> None:
     renderer = rw.render_matplotlib()
     assert isinstance(renderer, rwb.render_widget_base)
@@ -201,6 +206,7 @@ def test_import_shinywidgets_without_optional_deps() -> None:
         "bokeh",
         "holoviews",
         "hvplot",
+        "jscatter",
         "jupyter_bokeh",
         "ipydatagrid",
         "ipympl",

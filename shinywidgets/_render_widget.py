@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from altair import JupyterChart
     from ipydatagrid import DataGrid
     from ipympl.backend_nbagg import Canvas as MplCanvas
+    from jscatter.widget import JupyterScatter
     from jupyter_bokeh import BokehModel
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
     from maplibre.ipywidget import MapWidget
@@ -19,9 +20,9 @@ if TYPE_CHECKING:
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = DataGrid = MplCanvas = BokehModel = MapWidget = FigureWidget = (
-        DeckGLWidget
-    ) = object
+    JupyterChart = DataGrid = JupyterScatter = MplCanvas = BokehModel = (
+        MapWidget
+    ) = FigureWidget = DeckGLWidget = object
     LonboardMap = object
 
 from shiny.render.renderer import ValueFn
@@ -50,6 +51,7 @@ __all__ = (
     "render_bokeh",
     "render_holoviews",
     "render_ipydatagrid",
+    "render_jscatter",
     "render_lonboard",
     "render_maplibre",
     "render_matplotlib",
@@ -153,6 +155,52 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     **Offline use**: `JupyterChart` loads its JavaScript from a CDN; call
     ``alt.JupyterChart.enable_offline()`` (requires ``vl-convert-python``) for apps
     that run without internet access.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+
+class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
+    """
+    Reactively render a [jupyter-scatter](https://jupyter-scatter.dev) scatter plot as a
+    Shiny output.
+
+    The decorated function may return a `jscatter.Scatter` (which is coerced to its
+    `jscatter.widget.JupyterScatter` widget; requires ``pip install jupyter-scatter``)
+    or a `JupyterScatter` widget. The plot is resized to fit its output, whether the
+    output fills its layout or has an explicit ``height`` (see below), unless the plot
+    has a height of its own (e.g., from `Scatter.height()`; jupyter-scatter's default of
+    240 doesn't count).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `JupyterScatter` instance. Use `.widget` to programmatically update the rendered
+    plot in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state (e.g., the selected points via ``"selection"``) with
+    :func:`~shinywidgets.reactive_read`. The selection is an array of row *positions*
+    (use ``df.iloc[...]``), not index labels.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Large selections**: selecting more than about 3 million points sends the
+    server a message larger than the default 16 MiB websocket limit, which
+    disconnects the session. Raise the limit with ``shiny run --ws-max-size``.
 
     Parameters
     ----------

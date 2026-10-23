@@ -36,6 +36,7 @@ def as_widget(x: object) -> Widget:
     * altair `Chart` -> `altair.JupyterChart`
     * bokeh model (e.g., `bokeh.plotting.figure`) -> `jupyter_bokeh.BokehModel`
     * holoviews/hvplot/geoviews object -> bokeh model (via panel)
+    * jupyter-scatter `Scatter` -> `jscatter.widget.JupyterScatter`
     * lonboard layer -> `lonboard.Map`
     * maplibre `Map` -> `maplibre.ipywidget.MapWidget`
     * matplotlib `Figure` or `Axes` (or a seaborn figure-level grid) ->
@@ -145,6 +146,18 @@ def as_widget_holoviews(x: object) -> Optional[Widget]:
             "(they render through panel). Install it with: pip install panel"
         ),
     )
+
+
+def as_widget_jscatter(x: object) -> Optional[Widget]:
+    # jscatter is guaranteed to be installed here since this function is only
+    # called when x comes from the jscatter package
+    from jscatter import Scatter
+
+    if not isinstance(x, Scatter):
+        raise TypeError(f"Don't know how to coerce {x} into a jscatter Scatter object.")
+
+    # Scatter isn't a widget itself, but wraps (and lazily creates) one
+    return x.widget
 
 
 def as_widget_lonboard(x: object) -> Widget:
@@ -365,6 +378,7 @@ AS_WIDGET_MAP = {
     "geoviews": as_widget_holoviews,
     "holoviews": as_widget_holoviews,
     "hvplot": as_widget_holoviews,
+    "jscatter": as_widget_jscatter,
     "lonboard": as_widget_lonboard,
     "maplibre": as_widget_maplibre,
     "matplotlib": as_widget_mpl,

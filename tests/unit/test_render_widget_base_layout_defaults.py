@@ -1,5 +1,10 @@
+from typing import TYPE_CHECKING
+
 import pytest
 import shinywidgets._render_widget_base as rwb
+
+if TYPE_CHECKING:
+    from jscatter import Scatter
 
 
 class StubSession:
@@ -216,6 +221,53 @@ def test_ipydatagrid_fills_unless_widget_height_is_set() -> None:
 
     _, fill = rwb.set_layout_defaults(DataGrid(df, layout={"height": "300px"}))
     assert fill is False
+
+
+def _jscatter_widget() -> "Scatter":
+    pytest.importorskip("jscatter")
+    pd = pytest.importorskip("pandas")
+    from jscatter import Scatter
+
+    df = pd.DataFrame({"x": [0.1, 0.5, 0.9], "y": [0.3, 0.6, 0.2]})
+    return Scatter(data=df, x="x", y="y")
+
+
+def test_jscatter_default_height_keeps_fill_true() -> None:
+    scatter = _jscatter_widget()
+    _, fill = rwb.set_layout_defaults(scatter.widget)
+    assert fill is True
+
+
+def test_jscatter_explicit_height_disables_fill() -> None:
+    scatter = _jscatter_widget()
+    scatter.height(500)
+    _, fill = rwb.set_layout_defaults(scatter.widget)
+    assert fill is False
+
+
+def test_jscatter_default_height_matches_package_default() -> None:
+    # The layout default compares against jscatter's own default height, so
+    # fail loudly if jscatter changes it
+    scatter = _jscatter_widget()
+    assert scatter.height() == rwb.JSCATTER_DEFAULT_HEIGHT
+
+
+def test_jscatter_keeps_filling_after_browser_syncs_height() -> None:
+    # In a filling layout the browser sets the widget's height from its
+    # container's size, so displaying the same widget again (e.g., a widget
+    # reused via session_lifetime()) must not mistake that for a user-set height
+    widget = _jscatter_widget().widget
+    assert rwb.set_layout_defaults(widget)[1] is True
+
+    widget.height = 691
+    assert rwb.set_layout_defaults(widget)[1] is True
+
+
+def test_jscatter_explicit_height_stays_fixed_when_displayed_again() -> None:
+    scatter = _jscatter_widget()
+    scatter.height(500)
+    assert rwb.set_layout_defaults(scatter.widget)[1] is False
+    assert rwb.set_layout_defaults(scatter.widget)[1] is False
 
 
 @pytest.mark.parametrize(
