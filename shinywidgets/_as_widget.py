@@ -339,6 +339,16 @@ def as_widget_pyvista(x: object) -> Widget:
             f"Don't know how to coerce {type(x).__name__} into an ipywidget (expected a pyvista.Plotter)."
         )
 
+    # Coercion closes the plotter (below), so a cached/reused Plotter would
+    # otherwise fail in trame_pyvista with a misleading "Do not call 'show()'"
+    # RuntimeError
+    if x._closed:
+        raise ValueError(
+            "This pyvista Plotter has already been closed (coercion closes the "
+            "plotter after exporting the scene). Construct a fresh Plotter in "
+            "the render function instead of caching and reusing one."
+        )
+
     try:
         from trame_pyvista.jupyter import show_trame
     except ImportError:

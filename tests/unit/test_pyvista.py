@@ -67,6 +67,16 @@ def test_as_widget_pyvista_error_names_type_not_repr() -> None:
     assert "\n" not in msg
 
 
+def test_as_widget_pyvista_rejects_closed_plotter(widget_session) -> None:
+    pl = make_plotter()
+    coerce_plotter(widget_session, pl)
+    # Coercion closed the plotter; reusing it should fail with a helpful
+    # message, not trame_pyvista's "Do not call 'show()' ..." RuntimeError
+    assert pl._closed
+    with pytest.raises(ValueError, match="fresh Plotter"):
+        as_widget_pyvista(pl)
+
+
 def test_pyvista_layout_defaults_fill(widget_session) -> None:
     w = coerce_plotter(widget_session, make_plotter())
     _, fill = set_layout_defaults(w)
