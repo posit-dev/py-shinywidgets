@@ -43,6 +43,7 @@ altair = ["altair>=5.1"]
 bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
+ipycanvas = ["ipycanvas"]
 ipycytoscape = ["ipycytoscape"]
 ipydatagrid = ["ipydatagrid"]
 itables = ["itables[widget]"]
@@ -71,6 +72,7 @@ test = [
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
+  "ipycanvas",
   "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
@@ -110,6 +112,7 @@ dev = [
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
+  "ipycanvas",
   "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
@@ -152,6 +155,7 @@ test = [
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
+  "ipycanvas",
   "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
