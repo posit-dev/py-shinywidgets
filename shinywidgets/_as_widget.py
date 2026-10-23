@@ -3,7 +3,8 @@ from __future__ import annotations
 import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Optional, cast
+from copy import deepcopy
+from typing import TYPE_CHECKING, Optional, Protocol, cast
 
 from htmltools import HTMLDependency
 from ipywidgets.widgets.widget import Widget
@@ -21,6 +22,10 @@ if TYPE_CHECKING:
     from matplotlib.figure import Figure
     from panel.viewable import Viewable
 
+    class PlotnineDrawable(Protocol):
+        def draw(self, *, show: bool = False) -> Figure: ...
+
+
 __all__ = ("as_widget",)
 
 
@@ -35,13 +40,15 @@ def as_widget(x: object) -> Widget:
 
     * altair `Chart` -> `altair.JupyterChart`
     * bokeh model (e.g., `bokeh.plotting.figure`) -> `jupyter_bokeh.BokehModel`
-    * holoviews/hvplot object -> bokeh model (via panel)
+    * holoviews/hvplot/geoviews object -> bokeh model (via panel)
+    * jupyter-scatter `Scatter` -> `jscatter.widget.JupyterScatter`
     * lonboard layer -> `lonboard.Map`
     * maplibre `Map` -> `maplibre.ipywidget.MapWidget`
     * matplotlib `Figure` or `Axes` (or a seaborn figure-level grid) ->
       `ipympl.backend_nbagg.Canvas`
     * panel pane/viewable -> bokeh model
     * plotly `Figure` -> `plotly.graph_objects.FigureWidget`
+    * plotnine `ggplot` (or plot composition) -> `ipympl.backend_nbagg.Canvas`
     * pydeck `Deck` -> `pydeck.widget.DeckGLWidget` (pydeck <= 0.8 only; pydeck
       v0.9 removed its widget, so this raises a `TypeError` that points to
       alternatives)
@@ -74,17 +81,20 @@ def as_widget(x: object) -> Widget:
     pkg = widget_pkg(x)
 
     _as_widget = AS_WIDGET_MAP.get(pkg, None)
-    if _as_widget is None and any(
-        widget_pkg(base) == "matplotlib" for base in type(x).__mro__
-    ):
-        _as_widget = as_widget_mpl
-    # e.g., a pn.viewable.Viewer or pn.custom.JSComponent subclass defined in the app
-    if _as_widget is None and any(
-        widget_pkg(base) == "panel" for base in type(x).__mro__
-    ):
-        _as_widget = as_widget_panel
+    # Subclasses defined in another package should route to the coercer for the
+    # base class's package: e.g., leafmap's backend Maps (whose instances report
+    # __module__ == "leafmap.*" but subclass ipyleaflet/pydeck/etc. classes), a
+    # pn.viewable.Viewer or pn.custom.JSComponent subclass defined in an app, or
+    # a seaborn figure-level grid.
     if _as_widget is None:
-        msg = f"Don't know how to coerce {x} into a ipywidget.Widget object."
+        for base in type(x).__mro__:
+            base_pkg = widget_pkg(base)
+            _as_widget = AS_WIDGET_MAP.get(base_pkg, None)
+            if _as_widget is not None:
+                pkg = base_pkg
+                break
+    if _as_widget is None:
+        msg = f"Don't know how to coerce {_short_repr(x)} into an ipywidget.Widget object."
         if callable(getattr(x, "_repr_html_", None)):
             msg += " Instead of using shinywidgets to render this object, try using shiny's @render.ui decorator "
             msg += " https://shiny.posit.co/py/api/ui.output_ui.html#shiny.ui.output_ui"
@@ -94,10 +104,20 @@ def as_widget(x: object) -> Widget:
 
     if not isinstance(res, Widget):
         raise TypeError(
-            f"Failed to coerce {x} (an object from package {pkg}) into a ipywidget.Widget object."
+            f"Failed to coerce {_short_repr(x)} (an object from package {pkg}) into an ipywidget.Widget object."
         )
 
     return res
+
+
+def _short_repr(x: object, limit: int = 300) -> str:
+    # Some objects repr() to something enormous (e.g., repr(pydeck.Deck) is the
+    # deck's entire JSON spec), which makes for a wall of text in error messages.
+    try:
+        r = repr(x)
+    except Exception:
+        r = object.__repr__(x)
+    return r if len(r) <= limit else r[:limit] + "..."
 
 
 def as_widget_altair(x: object) -> Optional[Widget]:
@@ -105,20 +125,22 @@ def as_widget_altair(x: object) -> Optional[Widget]:
         from altair import JupyterChart
     except ImportError:
         raise RuntimeError(
-            "Failed to import altair.JupyterChart (do you need to pip install -U altair?)"
+            "Failed to import altair.JupyterChart (do you need to pip install -U 'shinywidgets[altair]'?)"
         )
 
     return JupyterChart(x)  # type: ignore
 
 
 def as_widget_bokeh(x: object) -> Optional[Widget]:
-    # TODO: ideally we'd do this in set_layout_defaults() but doing
-    # `BokehModel(x)._model.sizing_mode = "stretch_both"`
-    # there, but that doesn't seem to work??
     from bokeh.plotting import figure
 
-    if isinstance(x, figure):
-        x.sizing_mode = "stretch_both"  # type: ignore
+    # Make a figure fill its output, unless the user sized it. This has to
+    # happen before BokehModel() snapshots the document: changes made after
+    # that are only sent as patches over the comm, which isn't open yet.
+    if isinstance(x, figure) and not BOKEH_SIZING_PROPS & set(
+        x.properties_with_values(include_defaults=False)
+    ):
+        x.sizing_mode = "stretch_both"
 
     return bokeh_model_class(context="bokeh")(cast("LayoutDOM", x))
 
@@ -129,7 +151,7 @@ def as_widget_panel(x: object) -> Optional[Widget]:
         context="panel",
         missing_panel_message=(
             "Install the panel package to use panel objects with shinywidgets: "
-            "pip install panel"
+            "pip install 'shinywidgets[panel]'"
         ),
     )
 
@@ -137,12 +159,24 @@ def as_widget_panel(x: object) -> Optional[Widget]:
 def as_widget_holoviews(x: object) -> Optional[Widget]:
     return panel_to_widget(
         x,
-        context="holoviews/hvplot",
+        context="holoviews/hvplot/geoviews",
         missing_panel_message=(
-            "Rendering holoviews/hvplot objects requires the panel package "
-            "(hvplot renders through panel). Install it with: pip install panel"
+            "Rendering holoviews/hvplot/geoviews objects requires the panel package "
+            "(they render through panel). Install it with: pip install 'shinywidgets[holoviews]'"
         ),
     )
+
+
+def as_widget_jscatter(x: object) -> Optional[Widget]:
+    # jscatter is guaranteed to be installed here since this function is only
+    # called when x comes from the jscatter package
+    from jscatter import Scatter
+
+    if not isinstance(x, Scatter):
+        raise TypeError(f"Don't know how to coerce {x} into a jscatter Scatter object.")
+
+    # Scatter isn't a widget itself, but wraps (and lazily creates) one
+    return x.widget
 
 
 def as_widget_lonboard(x: object) -> Widget:
@@ -173,7 +207,7 @@ def as_widget_maplibre(x: object) -> Widget:
         # maplibre.ipywidget requires anywidget, and unfortunately raises a
         # NameError (not ImportError) when it's missing
         raise ImportError(
-            "Install maplibre's anywidget extra to use maplibre with shinywidgets (pip install 'maplibre[anywidget]')."
+            "Install maplibre's anywidget extra to use maplibre with shinywidgets (pip install 'shinywidgets[maplibre]')."
         )
 
     # MapWidget.__init__() expects MapOptions (not the dict that Map stores), and
@@ -189,7 +223,7 @@ def as_widget_maplibre(x: object) -> Widget:
     return res
 
 
-def as_widget_mpl(x: object) -> Widget:
+def as_widget_mpl(x: object, *, context: str = "matplotlib") -> Widget:
     from matplotlib.figure import Figure, SubFigure
 
     # The renderer imports this module, so defer these circular imports.
@@ -214,7 +248,7 @@ def as_widget_mpl(x: object) -> Widget:
             from ipympl.backend_nbagg import Canvas, FigureManager
     except ImportError:
         raise ImportError(
-            "Install the ipympl package to use matplotlib with shinywidgets (pip install ipympl)."
+            f"Install the ipympl package to use {context} with shinywidgets (pip install 'shinywidgets[{context}]')."
         )
 
     # A GUI backend's canvas gets destroyed (its window closed) and replaced
@@ -435,6 +469,44 @@ def as_widget_plotly(x: object) -> Optional[Widget]:
     return go.FigureWidget(x.data, x.layout)  # type: ignore
 
 
+def as_widget_plotnine(x: object) -> Widget:
+    # Both ggplot and plot compositions (e.g., `p1 | p2`, plotnine >= 0.15)
+    # draw() to a matplotlib Figure
+    if not callable(getattr(x, "draw", None)):
+        raise TypeError(f"Don't know how to coerce {x} into a plotnine ggplot object.")
+
+    # draw() attaches the figure to the plot (and a later draw() reuses it), so
+    # draw a copy, like plotnine's own save() and show() do
+    plot = deepcopy(x)
+    forget_drawn_figure(plot)
+    figure = cast("PlotnineDrawable", plot).draw()
+    canvas = cast("Canvas", as_widget_mpl(figure, context="plotnine"))
+    # plotnine closes its pyplot figure after drawing, which frees the figure
+    # number for reuse, so the header's "Figure <number>" label is meaningless
+    canvas.header_visible = False
+    # The footer (the cursor-coordinates readout) appears on first hover, after
+    # the figure was fitted to its container, so it pushes the bottom of the plot
+    # out of view. Its readout is also unhelpful for plotnine: its fixed tick
+    # formatter shows scientific notation, in transformed (e.g., log) units.
+    canvas.footer_visible = False
+    return canvas
+
+
+def forget_drawn_figure(plot: object) -> None:
+    """
+    Drop the figure (and its axes) an earlier draw() attached to a plotnine plot.
+
+    ggplot's deepcopy keeps them (e.g., when the user called draw() on the plot
+    being copied), and draw() reuses them, so every copy would otherwise draw onto
+    (and share a canvas with) that one figure. A composition's figure and axes
+    live on the composition and on each of its plots.
+    """
+    for name in ("figure", "axs"):
+        vars(plot).pop(name, None)
+    for item in getattr(plot, "items", ()):
+        forget_drawn_figure(item)
+
+
 def as_widget_pydeck(x: object) -> Widget:
     # Check before calling show(): on pydeck >= 0.9 it serializes the whole deck
     # into HTML for nothing, and that can fail with a cryptic error of its own
@@ -461,7 +533,7 @@ PYDECK_NO_WIDGET_MESSAGE = (
     "pydeck v0.9 removed its Jupyter widget (Deck.show() now returns static HTML), "
     "so shinywidgets can't render pydeck maps. To use pydeck layers in a reactive "
     "map, pass pydeck.Layer objects to a maplibre Map's add_deck_layers() and render "
-    "it with @render_maplibre (pip install 'maplibre[anywidget]'). For large data, "
+    "it with @render_maplibre (pip install 'shinywidgets[maplibre]'). For large data, "
     "consider lonboard and @render_lonboard. For a static map, use shiny's @render.ui "
     "decorator and return deck.show() (or, to fill the container, "
     "ui.tags.iframe(srcdoc=deck.to_html(as_string=True), "
@@ -473,16 +545,22 @@ PYDECK_NO_WIDGET_MESSAGE = (
 AS_WIDGET_MAP = {
     "altair": as_widget_altair,
     "bokeh": as_widget_bokeh,
+    "geoviews": as_widget_holoviews,
     "holoviews": as_widget_holoviews,
     "hvplot": as_widget_holoviews,
+    "jscatter": as_widget_jscatter,
     "lonboard": as_widget_lonboard,
     "maplibre": as_widget_maplibre,
     "matplotlib": as_widget_mpl,
     "panel": as_widget_panel,
     "plotly": as_widget_plotly,
+    "plotnine": as_widget_plotnine,
     "pydeck": as_widget_pydeck,
     "seaborn": as_widget_mpl,
 }
+
+
+BOKEH_SIZING_PROPS = {"width", "height", "sizing_mode", "aspect_ratio"}
 
 
 def bokeh_model_class(*, context: str) -> type["BokehModel"]:

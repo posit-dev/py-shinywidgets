@@ -1,0 +1,4 @@
+shiny
+shinywidgets[ipydatagrid]
+numpy
+pandas

@@ -36,17 +36,47 @@ Source = "https://github.com/rstudio/py-shinywidgets/"
 Issues = "https://github.com/rstudio/py-shinywidgets/issues"
 
 [project.optional-dependencies]
+# Per-renderer extras: each installs the packages needed to use the
+# corresponding render decorator (e.g., `pip install 'shinywidgets[plotly]'`).
+# anywidget is already a core dependency, so extras don't need to repeat it.
+altair = ["altair>=5.1"]
+bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
+holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
+ipyaladin = ["ipyaladin"]
+ipydatagrid = ["ipydatagrid"]
+jscatter = ["jupyter-scatter"]
+# An explicit pre-release specifier, so uv/pip accept it without --pre.
+# keplergl 0.3.x imports pkg_resources (removed in setuptools 82), so 0.4
+# (an anywidget rewrite) is the first version that imports there.
+keplergl = ["keplergl>=0.4.0rc4"]
+# geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
+# Python 3.15+ yet, so lonboard can't be installed there
+lonboard = ["lonboard; python_version < '3.15'"]
+maplibre = ["maplibre[anywidget]"]
+matplotlib = ["matplotlib", "ipympl"]
+panel = ["panel", "jupyter_bokeh>=4.1"]
+plotly = ["plotly>=5.0.0"]
+plotnine = ["plotnine", "ipympl"]
 test = [
   "altair",
   "bokeh",
   "coverage>=7",
+  # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
+  # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
+  # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
+  "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipyaladin",
+  "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
   "ipympl",
   "matplotlib",
-  "jupyter_bokeh",
+  "jupyter_bokeh>=4.1",
+  "jupyter-scatter",
+  "keplergl>=0.4.0rc4",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
@@ -55,6 +85,7 @@ test = [
   "perspective-python>=3.0",
   "playwright>=1.40.0",
   "plotly>=5.0.0",
+  "plotnine",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
@@ -65,19 +96,31 @@ dev = [
   "altair",
   "bokeh",
   "coverage>=7",
+  # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
+  # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
+  # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
+  "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipyaladin",
+  "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
   "ipympl",
   "matplotlib",
-  "jupyter_bokeh",
+  "jupyter_bokeh>=4.1",
+  "jupyter-scatter",
+  "keplergl>=0.4.0rc4",
+  # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
+  # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
   "plotly>=5.0.0",
+  "plotnine",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
@@ -91,13 +134,22 @@ test = [
   "altair",
   "bokeh",
   "coverage>=7",
+  # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
+  # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
+  # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
+  "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipyaladin",
+  "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
   "ipympl",
   "matplotlib",
-  "jupyter_bokeh",
+  "jupyter_bokeh>=4.1",
+  "jupyter-scatter",
+  "keplergl>=0.4.0rc4",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
@@ -106,6 +158,7 @@ test = [
   "perspective-python>=3.0",
   "playwright>=1.40.0",
   "plotly>=5.0.0",
+  "plotnine",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",

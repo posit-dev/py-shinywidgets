@@ -1,4 +1,6 @@
 import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
+import { setupJscatterAutoHeight, setupJscatterFixedHeight } from './jscatter';
+import { setupKeplerAutoHeight } from './keplergl';
 import { setupMplAutoResize } from './mpl';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 
@@ -53,6 +55,13 @@ const ipymplBehavior: WidgetBehavior = {
   setupFill: ({ el, lmWidget, model }) => setupMplAutoResize(el, lmWidget, model),
 };
 
+// jupyter-scatter plots have a fixed pixel height, so drive it from the
+// container's size (i.e., make fill and an explicit output height actually work)
+const jscatterBehavior: WidgetBehavior = {
+  setupFill: ({ el, lmWidget, model }) => setupJscatterAutoHeight(el, lmWidget, model),
+  setupFixedSize: ({ el, lmWidget, model }) => setupJscatterFixedHeight(el, lmWidget, model),
+};
+
 // Plotly FigureWidget may first render at its internal 360px fallback, then
 // resize after paint. The output is already hidden at this point (every
 // render starts hidden, see renderValue()); keep it that way until a direct
@@ -85,8 +94,20 @@ const quakBehavior: WidgetBehavior = {
   },
 };
 
+// kepler.gl's size comes from a pixel `height` trait, so it needs to be driven
+// from the container whenever the container's height is defined by the app
+// (a filling layout, or an explicit output_widget(height=)).
+const keplerglBehavior: WidgetBehavior = {
+  setupFill: ({ el, model }) => setupKeplerAutoHeight(el, model),
+  setupFixedSize: ({ el, model }) => {
+    if (el.style.height) return setupKeplerAutoHeight(el, model);
+  },
+};
+
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
+  jscatter: jscatterBehavior,
+  keplergl: keplerglBehavior,
   plotly: plotlyBehavior,
   quak: quakBehavior,
 };

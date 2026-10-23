@@ -4,6 +4,7 @@ import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import Callable, Generic, Iterator, Optional, Tuple, TypeVar, cast
+from weakref import WeakSet
 
 from htmltools import Tag
 from ipywidgets.widgets import DOMWidget, Layout, Widget
@@ -268,6 +269,33 @@ def _plotly_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+JSCATTER_DEFAULT_HEIGHT = 240
+"""
+The pixel height jscatter gives a `Scatter` unless the user sets one
+"""
+
+FILLING_JSCATTERS: WeakSet[DOMWidget] = WeakSet()
+"""
+jscatter widgets that were displayed with fill (see jscatter_layout_defaults())
+"""
+
+
+def jscatter_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # jupyter-scatter always has a pixel height (there's no "auto"), so the only
+    # sign that the user chose one is a value other than jscatter's own default.
+    # In a filling layout, the browser drives the height from the container size
+    # (see jscatter in js/src/fill.ts) and syncs it to the widget, so a widget
+    # that filled once (e.g., displayed again via session_lifetime()) must keep
+    # filling rather than look like it has a user-chosen height.
+    if widget in FILLING_JSCATTERS:
+        return fill
+    if getattr(widget, "height", JSCATTER_DEFAULT_HEIGHT) != JSCATTER_DEFAULT_HEIGHT:
+        return False
+    if fill:
+        FILLING_JSCATTERS.add(widget)
+    return fill
+
+
 def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # altair, confusingly, isn't setup to fill it's Layout() container by default. I
     # can't imagine a situation where you'd actually want it to _not_ fill the parent
@@ -310,6 +338,25 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def keplergl_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # KeplerGl sizes itself from a pixel `height` trait (default 400), so the only
+    # way to tell the user asked for a specific height is that it isn't the default.
+    # The browser overwrites that trait with the size it measures, so decide once
+    # per instance (the first time it's seen) to keep re-displays filling.
+    from keplergl import KeplerGl
+
+    default_height = KeplerGl.class_traits()["height"].default_value
+    if widget in AUTO_SIZED_KEPLERGL_WIDGETS:
+        return fill
+    if isinstance(widget, KeplerGl) and widget.height != default_height:
+        return False
+    AUTO_SIZED_KEPLERGL_WIDGETS.add(widget)
+    return fill
+
+
+AUTO_SIZED_KEPLERGL_WIDGETS: WeakSet[Widget] = WeakSet()
+
+
 def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     from lonboard import Map  # pyright: ignore[reportMissingImports]
 
@@ -337,6 +384,77 @@ def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def ipyaladin_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from ipyaladin import Aladin
+
+    if not isinstance(widget, Aladin):
+        return fill
+
+    # The viewer's root is styled `height: <_height>px` (400 by default), which
+    # shinywidgets.css sizes to the widget container instead, so a user-specified
+    # height has to go on the container. The default can't be told apart from an
+    # explicit 400, so treat it as unset (as maplibre_layout_defaults() does).
+    # -1, ipyaladin's sentinel for "100% of the container", isn't an explicit
+    # height either: filling is exactly what it asks for.
+    height = _aladin_height_intent(widget)
+    if height not in (400, -1):
+        fill = False
+        if widget.layout.height in (None, "auto"):
+            widget.layout.height = f"{height}px"
+
+    return fill
+
+
+# Widget attribute recording the height the user asked an ipyaladin Aladin for
+_ALADIN_HEIGHT_INTENT = "_shinywidgets_height_intent"
+
+
+def _aladin_height_intent(widget: DOMWidget) -> int:
+    # widget._height isn't a pure record of intent: the view also reports its
+    # rendered height back on resize, so a filling widget kept alive across
+    # renders (e.g., with session_lifetime()) picks up its container's height,
+    # which a later render must not mistake for a user-specified height. Take
+    # the first render's value as the intent, then revise it only on Python-side
+    # changes (e.g., `widget.height = ...`).
+    intent = getattr(widget, _ALADIN_HEIGHT_INTENT, None)
+    if intent is not None:
+        return cast(int, intent)
+
+    intent = cast("int", widget._height)  # pyright: ignore[reportAttributeAccessIssue]
+    setattr(widget, _ALADIN_HEIGHT_INTENT, intent)
+
+    def _revise_intent(change: "dict[str, int]") -> None:
+        # Front-end state updates go through Widget.set_state(), which keeps the
+        # updated properties in _property_lock while notifications fire;
+        # Python-side assignments don't. If ipywidgets ever drops _property_lock,
+        # this degrades to treating resize feedback as intent (the behavior
+        # before the intent was tracked separately).
+        if not getattr(widget, "_property_lock", None):
+            setattr(widget, _ALADIN_HEIGHT_INTENT, change["new"])
+
+    widget.observe(_revise_intent, names="_height")
+    return intent
+
+
+def bokeh_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # Covers render_bokeh(), render_panel() and render_holoviews(): a bokeh root
+    # that doesn't stretch vertically has a height of its own, so filling would
+    # just reserve empty space below it. Panel propagates its sizing_mode (e.g.,
+    # from HoloViews' responsive=True) to the root.
+    from jupyter_bokeh import BokehModel
+
+    if not isinstance(widget, BokehModel):
+        return fill
+
+    sizing_mode = getattr(widget._model, "sizing_mode", None)
+    return fill and sizing_mode in (
+        "stretch_both",
+        "stretch_height",
+        "scale_both",
+        "scale_height",
+    )
+
+
 def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     from maplibre.ipywidget import MapWidget
 
@@ -362,13 +480,16 @@ def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 # decision, applies package-specific mutations, and returns the (possibly
 # revised) fill decision.
 #
-# N.B. bokeh is intentionally absent: its sizing_mode hack lives in
-# as_widget_bokeh() because applying it here doesn't work (see the TODO
-# there).
+# N.B. a bokeh figure's default sizing_mode is set in as_widget_bokeh() instead
+# (see the comment there for why it can't happen here).
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
+    "ipyaladin": ipyaladin_layout_defaults,
+    "jscatter": jscatter_layout_defaults,
+    "keplergl": keplergl_layout_defaults,
     "lonboard": lonboard_layout_defaults,
+    "jupyter_bokeh": bokeh_layout_defaults,
     "maplibre": maplibre_layout_defaults,
 }
 
