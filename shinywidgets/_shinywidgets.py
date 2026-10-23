@@ -191,10 +191,14 @@ def init_shiny_widget(w: Widget):
         with WidgetRenderContext.resumed(render_ctx):
             # Plotly's display hook snapshots the data and layout for get_state().
             # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
-            # ipympl's sets _data_url, the image the frontend first paints.
+            # ipympl's sets _data_url, the image the frontend first paints
+            # (as_widget() already drew it, unless the Canvas was never coerced).
             # Other display hooks can create preview widgets, causing an infinite
             # widget-creation loop (e.g. pythreejs, #244).
-            if any(widget_pkg(cls) in ("plotly", "ipympl") for cls in type(w).__mro__):
+            pkgs = {widget_pkg(cls) for cls in type(w).__mro__}
+            if "plotly" in pkgs or (
+                "ipympl" in pkgs and not getattr(w, "_data_url", "")
+            ):
                 w._repr_mimebundle_()
             if any(widget_pkg(cls) == "lonboard" for cls in type(w).__mro__):
                 own_lonboard_controls(w)

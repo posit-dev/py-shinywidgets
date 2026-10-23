@@ -523,15 +523,36 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     widget. Figures and axes are coerced to a `Canvas` (requires ``pip install
     'shinywidgets[matplotlib]'``),
     so this also works with libraries built on matplotlib (e.g., seaborn or
-    ``pandas.DataFrame.plot()``). Figures created through pyplot are closed (via
-    ``plt.close()``) when their widget is retired. In a filling layout, the figure is
-    resized to fit its container.
+    ``pandas.DataFrame.plot()``). In a filling layout, the figure is resized to fit its
+    container. With an explicit ``height``, the figure keeps its ``figsize`` unless the
+    output is also ``fillable=True``.
+
+    Unlike `@render.plot`, which draws a static image, the figure stays alive on the
+    server for as long as it is displayed, so it can respond to the user. Like
+    `@render.plot`, a figure created through pyplot is closed (as by ``plt.close()``)
+    once it's rendered. Still, prefer creating figures explicitly (e.g.,
+    ``Figure(layout="constrained")`` or ``plt.subplots()``) over pyplot's implicit
+    current figure or axes (``plt.plot()``, ``plt.gca()``, or seaborn functions without
+    ``ax=``), which are shared by every output and session in the process.
+
+    Create figures with a non-interactive backend: ``matplotlib.figure.Figure()``
+    directly, or pyplot under the ``agg`` backend (the default when no display is
+    available, as on a server; select it locally with ``matplotlib.use("agg")``
+    before creating figures). A figure created under a GUI backend (Qt, Tk, macOS,
+    ...) can still be rendered -- its window is destroyed and ipympl's canvas
+    replaces its own -- but that path depends on platform-specific behavior that
+    automated tests can't exercise, so it is supported on a best-effort basis and
+    warns at render time.
+
+    Browser interactions reach Python through matplotlib's own callbacks, e.g.,
+    ``fig.canvas.mpl_connect("button_press_event", f)`` or
+    ``ax.callbacks.connect("xlim_changed", f)`` (which fires on every zoom and pan). To
+    make other outputs respond, set a `reactive.value` from the callback.
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `Canvas` instance. Use `.widget` to programmatically update the rendered figure
-    in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    `Canvas` instance. To update the rendered figure without losing the user's zoom,
+    modify the artists of ``.widget.figure`` and call ``.widget.draw_idle()``.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -550,6 +571,40 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    from matplotlib.figure import Figure
+    from shiny import App, reactive, render, ui
+    from shinywidgets import output_widget, render_matplotlib
+
+    app_ui = ui.page_fluid(
+        ui.input_slider("n", "Points", 10, 100, 50),
+        output_widget("plot"),
+        ui.output_text("visible"),
+    )
+
+
+    def server(input, output, session):
+        xlim = reactive.value((0.0, 0.0))
+
+        @render_matplotlib
+        def plot():
+            fig = Figure(layout="constrained")
+            ax = fig.subplots()
+            ax.plot(range(input.n()))
+            ax.callbacks.connect("xlim_changed", lambda ax: xlim.set(ax.get_xlim()))
+            return fig
+
+        @render.text
+        def visible():
+            lo, hi = xlim()
+            return f"Showing x from {lo:.1f} to {hi:.1f}"
+
+
+    app = App(app_ui, server)
+    ```
     """
 
 
