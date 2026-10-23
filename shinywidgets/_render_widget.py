@@ -423,7 +423,16 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
     The decorated function may return either a holoviews/hvplot object (which is
     rendered through panel; requires ``pip install panel jupyter_bokeh``) or the
     underlying `jupyter_bokeh.BokehModel` widget. If you call ``.opts()`` without
-    importing hvplot, call ``hv.extension("bokeh")`` first.
+    importing hvplot, call ``hv.extension("bokeh")`` first. Plots rasterized with
+    [datashader](https://datashader.org) are supported too (e.g., hvPlot's
+    ``rasterize=True`` or holoviews' ``rasterize()`` operation; requires
+    ``pip install datashader``): they re-aggregate the data on the server for the
+    visible region whenever the user zooms or pans. Build such plots inside the
+    render function rather than once at module level: holoviews links every
+    display of the same object, so a shared plot would apply one user's zoom to
+    every session's plot. Also note that re-aggregation runs on the server's
+    event loop, so a slow aggregation delays every session served by that
+    process.
 
     HoloViews and hvPlot plots have a fixed size by default (and get clipped by a
     smaller container). To make a plot fill its output, pass ``responsive=True``
