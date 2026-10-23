@@ -9,6 +9,7 @@ from weakref import WeakSet
 
 from htmltools import HTMLDependency
 from ipywidgets.widgets.widget import Widget
+from packaging.version import Version
 from shiny.session import get_current_session
 
 from ._dependencies import widget_pkg
@@ -48,7 +49,9 @@ def as_widget(x: object) -> Widget:
     * panel pane/viewable -> bokeh model
     * plotly `Figure` -> `plotly.graph_objects.FigureWidget`
     * plotnine `ggplot` (or plot composition) -> `ipympl.backend_nbagg.Canvas`
-    * pydeck `Deck` -> `pydeck.widget.DeckGLWidget`
+    * pydeck `Deck` -> `pydeck.widget.DeckGLWidget` (pydeck <= 0.8 only; pydeck
+      v0.9 removed its widget, so this raises a `TypeError` that points to
+      alternatives)
 
     Parameters
     ----------
@@ -82,6 +85,11 @@ def as_widget(x: object) -> Widget:
         widget_pkg(base) == "matplotlib" for base in type(x).__mro__
     ):
         _as_widget = as_widget_mpl
+    # e.g., a pn.viewable.Viewer or pn.custom.JSComponent subclass defined in the app
+    if _as_widget is None and any(
+        widget_pkg(base) == "panel" for base in type(x).__mro__
+    ):
+        _as_widget = as_widget_panel
     if _as_widget is None:
         msg = f"Don't know how to coerce {x} into a ipywidget.Widget object."
         if callable(getattr(x, "_repr_html_", None)):
@@ -158,7 +166,7 @@ def as_widget_lonboard(x: object) -> Widget:
     return x
 
 
-def as_widget_maplibre(x: object) -> Optional[Widget]:
+def as_widget_maplibre(x: object) -> Widget:
     # maplibre is guaranteed to be installed here since this function is only
     # called when x comes from the maplibre package
     from maplibre.map import Map
@@ -178,12 +186,14 @@ def as_widget_maplibre(x: object) -> Optional[Widget]:
     # MapWidget.__init__() expects MapOptions (not the dict that Map stores), and
     # provides no way to pass queued calls, so transfer the state after
     # construction. Map.to_dict() returns exactly the state the frontend needs
-    # (map options plus the queued JS calls that get replayed on render).
-    state = x.to_dict()  # type: ignore
+    # (map options plus the queued JS calls that get replayed on render). Copy
+    # it, since to_dict() returns x's own containers, and a module-level Map
+    # would otherwise collect every session's widget calls.
+    state = x.to_dict()
     res = MapWidget()
-    res.map_options = state["mapOptions"]
-    res._message_queue = state["calls"]
-    return res  # type: ignore
+    res.map_options = dict(state["mapOptions"])
+    res._message_queue = list(state["calls"])
+    return res
 
 
 def as_widget_mpl(x: object, *, context: str = "matplotlib") -> Widget:
@@ -357,7 +367,13 @@ def forget_drawn_figure(plot: object) -> None:
         forget_drawn_figure(item)
 
 
-def as_widget_pydeck(x: object) -> Optional[Widget]:
+def as_widget_pydeck(x: object) -> Widget:
+    # Check before calling show(): on pydeck >= 0.9 it serializes the whole deck
+    # into HTML for nothing, and that can fail with a cryptic error of its own
+    # (pydeck <= 0.9.1 can't serialize pandas 3 DataFrames).
+    if not pydeck_has_widget():
+        raise TypeError(PYDECK_NO_WIDGET_MESSAGE)
+
     if not hasattr(x, "show"):
         raise TypeError(
             f"Don't know how to coerce {type(x)} (a pydeck object) into an ipywidget without a .show() method."
@@ -367,15 +383,23 @@ def as_widget_pydeck(x: object) -> Optional[Widget]:
 
     if not isinstance(res, Widget):
         raise TypeError(
-            "pydeck v0.9 removed ipywidgets support, thus it no longer works with "
-            "shinywidgets. Consider either downgrading to pydeck v0.8.0 or using shiny's "
-            "@render.ui decorator to display the map (and return Deck.to_html() in "
-            "that render function). Note that the latter strategy means you won't be "
-            "able to programmatically .update() the map or access user events."
-            "For more, see https://github.com/visgl/deck.gl/pull/8854"
+            f"Expected {type(x).__name__}.show() to return an ipywidget, but got {type(res)}."
         )
 
     return res
+
+
+PYDECK_NO_WIDGET_MESSAGE = (
+    "pydeck v0.9 removed its Jupyter widget (Deck.show() now returns static HTML), "
+    "so shinywidgets can't render pydeck maps. To use pydeck layers in a reactive "
+    "map, pass pydeck.Layer objects to a maplibre Map's add_deck_layers() and render "
+    "it with @render_maplibre (pip install 'maplibre[anywidget]'). For large data, "
+    "consider lonboard and @render_lonboard. For a static map, use shiny's @render.ui "
+    "decorator and return deck.show() (or, to fill the container, "
+    "ui.tags.iframe(srcdoc=deck.to_html(as_string=True), "
+    'style="border:0;width:100%;height:100%;flex:1 1 auto")). '
+    "For more, see https://github.com/visgl/deck.gl/issues/9064"
+)
 
 
 AS_WIDGET_MAP = {
@@ -453,3 +477,16 @@ def panel_to_widget(x: object, *, context: str, missing_panel_message: str) -> W
 
     widget.observe(on_comm_change, names="comm")
     return widget
+
+
+def pydeck_has_widget() -> bool:
+    """
+    Does the installed pydeck provide an ipywidget?
+
+    pydeck v0.9 removed it (https://github.com/visgl/deck.gl/pull/8854): `Deck.show()`
+    returns static HTML, `Deck.update()` raises, and `DeckGLWidget` survives only
+    as an unused class that pydeck still constructs (several per `Deck`).
+    """
+    import pydeck
+
+    return Version(pydeck.__version__) < Version("0.9")
