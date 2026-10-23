@@ -277,7 +277,8 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 
     # Since as_widget() has already happened, we only need to handle JupyterChart
     if isinstance(widget, alt.JupyterChart):
-        chart = cast(alt.JupyterChart, widget).chart  # type: ignore
+        jchart = cast(alt.JupyterChart, widget)
+        chart = cast("alt.typing.ChartType | None", jchart.chart)
         if isinstance(chart, alt.ConcatChart):
             # Throw warning to use ui.layout_column_wrap() instead
             warnings.warn(
@@ -287,11 +288,24 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
             )
         else:
             UndefinedType = alt.utils.schemapi.UndefinedType  # type: ignore
+            sizing: dict[str, str] = {}
             if hasattr(chart, "width") and isinstance(chart.width, UndefinedType):  # type: ignore[reportMissingTypeStubs]
-                chart = chart.properties(width="container")  # type: ignore
+                sizing["width"] = "container"
             if hasattr(chart, "height") and isinstance(chart.height, UndefinedType):  # type: ignore[reportMissingTypeStubs]
-                chart = chart.properties(height="container")  # type: ignore
-        widget.chart = chart
+                sizing["height"] = "container"
+            if sizing and chart is not None:
+                # Reassigning `.chart` makes JupyterChart rebuild `.selections` and
+                # `.params`, orphaning observers the user attached before returning
+                # it, so patch the (vega-lite) spec instead. Check the spec itself
+                # (not the active transformer): a chart assigned under the
+                # vegafusion transformer has `.spec` set to None until the browser
+                # reports its timezone, and a pre-transformed vega spec afterwards,
+                # neither of which can be patched like this.
+                spec = cast("dict[str, object] | None", jchart.spec)
+                if isinstance(spec, dict) and "vega-lite" in str(spec.get("$schema")):
+                    jchart.spec = {**spec, **sizing}
+                else:
+                    jchart.chart = chart.properties(**sizing)
 
     return fill
 
