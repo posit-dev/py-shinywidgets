@@ -100,14 +100,20 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output(id="pydeck")
     @render_widget
     def _():
+        # pydeck >= 0.9 has no ipywidget, so put pydeck layers on a maplibre map
+        import pandas as pd
         import pydeck as pdk
+        from maplibre import Map, MapOptions
+        from maplibre.basemaps import Carto
 
         UK_ACCIDENTS_DATA = "https://raw.githubusercontent.com/visgl/deck.gl-data/master/examples/3d-heatmap/heatmap-data.csv"
+        # maplibre's deck.gl bundle can't load CSV URLs, so send [lng, lat] pairs
+        points = pd.read_csv(UK_ACCIDENTS_DATA).dropna()[["lng", "lat"]]
 
         layer = pdk.Layer(
-            "HexagonLayer",  # `type` positional argument is here
-            UK_ACCIDENTS_DATA,
-            get_position=["lng", "lat"],
+            "HexagonLayer",
+            points.round(4).to_numpy().tolist(),
+            get_position="-",
             auto_highlight=True,
             elevation_scale=50,
             pickable=True,
@@ -116,19 +122,17 @@ def server(input: Inputs, output: Outputs, session: Session):
             coverage=1,
         )
 
-        # Set the viewport location
-        view_state = pdk.ViewState(
-            longitude=-1.415,
-            latitude=52.2323,
-            zoom=6,
-            min_zoom=5,
-            max_zoom=15,
-            pitch=40.5,
-            bearing=-27.36,
+        m = Map(
+            MapOptions(
+                style=Carto.DARK_MATTER,
+                center=(-1.415, 52.2323),
+                zoom=6,
+                pitch=40.5,
+                bearing=-27.36,
+            )
         )
-
-        # Combined all of it and render a viewport
-        return pdk.Deck(layers=[layer], initial_view_state=view_state)
+        m.add_deck_layers([layer])
+        return m
 
     @output(id="quak")
     @render_widget
