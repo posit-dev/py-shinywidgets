@@ -111,14 +111,19 @@ function protectPageJQuery(): void {
     enumerable: true,
     get: () => (hasOverride ? override : win.jQuery),
     set: (value: unknown) => {
-      // itables evaluates JavascriptCode options against the global `$` (e.g., its
-      // documented `$.fn.dataTable.render.number(...)`), so lend the refused jQuery's
-      // DataTables plugin to the page jQuery
-      if (isJQuery(value) && value !== win.jQuery) {
-        lendDataTables(value as JQueryLike, win.jQuery as JQueryLike | undefined);
+      if (isJQuery(value)) {
+        // itables evaluates JavascriptCode options against the global `$` (e.g., its
+        // documented `$.fn.dataTable.render.number(...)`), so lend the refused jQuery's
+        // DataTables plugin to the page jQuery
+        if (value !== win.jQuery) {
+          lendDataTables(value as JQueryLike, win.jQuery as JQueryLike | undefined);
+        }
+        // Refused: keep the current binding (a pre-existing non-jQuery `$`, e.g.,
+        // one established before itables loaded, survives the refused write)
+        return;
       }
-      hasOverride = !isJQuery(value);
-      override = hasOverride ? value : undefined;
+      hasOverride = true;
+      override = value;
     },
   });
 }

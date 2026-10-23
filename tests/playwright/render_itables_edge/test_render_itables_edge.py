@@ -71,6 +71,22 @@ def test_jquery_no_conflict_still_releases_dollar(page: Page, local_app) -> None
     assert released
 
 
+def test_non_jquery_dollar_survives_foreign_jquery_write(page: Page, local_app) -> None:
+    # A non-jQuery `$` (e.g., left by jQuery.noConflict() or another library) is
+    # kept by the guard; a later refused jQuery write must not clear it
+    page.goto(local_app.url)
+    expect(page.locator("#nested tbody tr").first).to_be_visible(timeout=30000)
+    page.wait_for_function("() => window.$ === window.jQuery")
+
+    page.evaluate("() => { window.$ = function customDollar() {}; }")
+    page.evaluate("""() => {
+        const foreign = function () {};
+        foreign.fn = { jquery: '9.9.9-foreign' };
+        window.$ = foreign;
+    }""")
+    assert page.evaluate("() => window.$.name") == "customDollar"
+
+
 def test_app_without_itables_leaves_dollar_alone(page: Page, local_app_plain) -> None:
     page.goto(local_app_plain.url)
     expect(page.locator("#plain .lm-Widget")).to_be_visible(timeout=30000)

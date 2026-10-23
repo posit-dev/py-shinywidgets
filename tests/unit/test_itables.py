@@ -165,6 +165,68 @@ def test_explicit_width_auto_style_is_respected(widget_session: Session) -> None
     assert r.widget._dt_args["scrollY"] == "100%"
 
 
+def test_default_style_is_full_width_with_scroll_x(widget_session: Session) -> None:
+    # itables rewrites the default margin:auto to margin:0 when scrollX is set; the
+    # width fix must still recognize that as the default style
+    pd = pytest.importorskip("pandas")
+    r = rw.render_itables()
+    r(lambda: ITable(pd.DataFrame({"a": [1]}), scrollX=True))
+    render(r, widget_session)
+    assert r.widget is not None
+    assert "width:100%" in r.widget.style
+    assert "margin:0" in r.widget.style
+
+
+def test_explicit_style_is_respected_with_scroll_x(widget_session: Session) -> None:
+    pd = pytest.importorskip("pandas")
+    r = rw.render_itables()
+    r(lambda: ITable(pd.DataFrame({"a": [1]}), scrollX=True, style="width:50%"))
+    render(r, widget_session)
+    assert r.widget is not None
+    assert r.widget.style == "width:50%"
+
+
+def test_update_scroll_height_drops_fill_marker(widget_session: Session) -> None:
+    pd = pytest.importorskip("pandas")
+    r = rw.render_itables()
+    r(lambda: pd.DataFrame({"a": [1]}))
+    render(r, widget_session)
+    assert r.widget is not None
+    assert FILL_CLASS in r.widget._dom_classes
+
+    r.widget.update(scrollY="150px")
+    assert r.widget._dt_args["scrollY"] == "150px"
+    assert FILL_CLASS not in r.widget._dom_classes
+
+
+def test_update_scroll_height_to_none_drops_fill_marker(
+    widget_session: Session,
+) -> None:
+    pd = pytest.importorskip("pandas")
+    r = rw.render_itables()
+    r(lambda: pd.DataFrame({"a": [1]}))
+    render(r, widget_session)
+    assert r.widget is not None
+
+    r.widget.update(scrollY=None)
+    assert "scrollY" not in r.widget._dt_args
+    assert FILL_CLASS not in r.widget._dom_classes
+
+
+def test_update_keeping_default_scroll_height_keeps_fill_marker(
+    widget_session: Session,
+) -> None:
+    pd = pytest.importorskip("pandas")
+    r = rw.render_itables()
+    r(lambda: pd.DataFrame({"a": [1]}))
+    render(r, widget_session)
+    assert r.widget is not None
+
+    r.widget.update(pd.DataFrame({"a": [1, 2]}))
+    assert r.widget._dt_args["scrollY"] == "100%"
+    assert FILL_CLASS in r.widget._dom_classes
+
+
 def test_layout_defaults_are_idempotent(widget_session: Session) -> None:
     pd = pytest.importorskip("pandas")
     with session_context(widget_session):

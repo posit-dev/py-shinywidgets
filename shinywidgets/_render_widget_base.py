@@ -331,9 +331,28 @@ def itables_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 
     table._dt_args = {**dt_args, "scrollY": "100%"}
     table.add_class("shinywidgets-itables-fill")
+
+    # An in-place `update(scrollY=...)` after rendering supersedes the scrollY
+    # defaulted above, so drop the marker class whose CSS forces the scroll body
+    # to fill its container (it would override the requested height). Anything
+    # but the defaulted "100%" counts as a user choice.
+    def sync_fill_marker(change: dict[str, object]) -> None:
+        new_args = cast("dict[str, object]", change["new"])
+        if new_args.get("scrollY") != "100%":
+            table.remove_class("shinywidgets-itables-fill")
+            table.unobserve(sync_fill_marker, "_dt_args")
+
+    table.observe(sync_fill_marker, "_dt_args")
+
     # itables' default `width:auto` leaves a scrolling table's header and body
-    # columns misaligned (a style the user chose is left alone)
-    if table._style == itables_options.style:
+    # columns misaligned (a style the user chose is left alone). With scrollX,
+    # itables rewrites the default margin:auto to margin:0 before we see it, so
+    # normalize the default before comparing.
+    # (itables_types declares options.style as a dict, but at runtime it is a str)
+    default_style = cast("str", itables_options.style)
+    if dt_args.get("scrollX"):
+        default_style = default_style.replace("margin:auto", "margin:0")
+    if table._style == default_style:
         table._style = table._style.replace("width:auto", "width:100%")
     return fill
 
