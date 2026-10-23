@@ -45,6 +45,23 @@ LIVE_COUNTS_JS = """() => ({
   observers: window.liveResizeObservers,
 })"""
 
+# True if the canvas (with its margins) ends above the footer, and the footer
+# ends within the output: i.e., nothing at the bottom of the figure (the
+# x-axis) is hidden behind the footer or clipped by the output.
+FIGURE_FITS_JS = """() => {
+  const out = document.querySelector('#mpl');
+  const canvas = out.querySelector('.jupyter-matplotlib-canvas-div');
+  const footer = out.querySelector('.jupyter-matplotlib-footer');
+  const canvasBottom =
+    canvas.getBoundingClientRect().bottom +
+    parseFloat(getComputedStyle(canvas).marginBottom);
+  const footerBox = footer.getBoundingClientRect();
+  return (
+    canvasBottom <= footerBox.top + 0.5 &&
+    footerBox.bottom <= out.getBoundingClientRect().bottom + 0.5
+  );
+}"""
+
 CANVAS_WIDTH_JS = """() => {
   const canvas = document.querySelector('#mpl .jupyter-matplotlib-canvas-div canvas');
   return canvas ? canvas.getBoundingClientRect().width : -1;
@@ -93,5 +110,24 @@ def test_matplotlib_rerender_releases_old_views(page: Page, local_app) -> None:
     # ipympl's canvas view must be fully removed on rerender, else its fill
     # ResizeObserver stays connected and keeps resizing the retired model
     assert page.evaluate(LIVE_COUNTS_JS) == initial
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_matplotlib_refits_when_footer_appears(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.set_viewport_size({"width": 900, "height": 700})
+    page.goto(local_app.url)
+
+    expect(page.locator("#mpl canvas").first).to_be_visible(timeout=30000)
+    page.wait_for_function(CANVAS_FILLS_JS, timeout=30000)
+    page.wait_for_function(FIGURE_FITS_JS, timeout=5000)
+
+    # ipympl's footer (the cursor readout) is empty until the pointer first
+    # moves over the figure. Once it shows, the canvas must shrink to make room
+    # for it rather than hide the bottom of the figure (the x-axis) behind it.
+    page.locator("#mpl .jupyter-matplotlib-canvas-div canvas").last.hover()
+    expect(page.locator("#mpl .jupyter-matplotlib-footer")).not_to_have_text("")
+    page.wait_for_function(FIGURE_FITS_JS, timeout=5000)
 
     assert_no_unexpected_errors(errors, failed_requests)
