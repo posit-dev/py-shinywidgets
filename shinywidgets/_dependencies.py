@@ -1,9 +1,12 @@
+import base64
+import hashlib
 import importlib
 import json
 import os
 import re
 import tempfile
 import warnings
+from importlib.metadata import FileHash, PackageNotFoundError, distribution
 from types import ModuleType
 from typing import List, Optional
 
@@ -14,7 +17,7 @@ from htmltools._core import (
 )
 from ipywidgets.widgets.domwidget import DOMWidget
 from ipywidgets.widgets.widget import Widget
-from jupyter_core.paths import ENV_JUPYTER_PATH, jupyter_path
+from jupyter_core.paths import jupyter_path
 from shiny import Session
 
 from . import __version__
@@ -79,13 +82,15 @@ def require_dependency(
     if module_name.startswith("@jupyter-widgets/"):
         return None
 
-    # Search version-matched sources first: the environment's data dir
-    # (where the widget wheel's data files install) and the nbextension
-    # bundled inside the widget package itself. Other data dirs (user and
-    # system-wide, e.g. /usr/local/share/jupyter) can hold stale copies from
-    # older installs, so they're only a fallback (a stale ipywidgets-7-era
-    # jupyterlab-plotly bundle in /usr/local/share/jupyter caused #332)
-    module_dir = jupyter_extension_path(module_name, ENV_JUPYTER_PATH)
+    # Prefer the extension that ships with the installed widget package over
+    # copies found in Jupyter data dirs, which can be stale leftovers from older
+    # installs (a stale ipywidgets-7-era jupyterlab-plotly bundle in
+    # /usr/local/share/jupyter caused #332). In order:
+    # 1. the data files the widget's own distribution installed (complete, and
+    #    from the same install as the package that's imported)
+    # 2. the nbextension bundled inside the package itself
+    # 3. any Jupyter data dir (environment, then user, then system-wide)
+    module_dir = distribution_nbextension_path(w, module_name)
     if module_dir is None:
         module_dir = package_nbextension_path(w, module_name)
     if module_dir is None:
@@ -205,24 +210,156 @@ def jupyter_extension_path(
     return None
 
 
+def frontend_packages(w: Widget, module_name: str) -> List[str]:
+    """
+    Python packages that could provide the widget's frontend extension.
+
+    That's the packages of the widget's own class and its base classes (an
+    app-defined subclass typically lives in another package than the widget it
+    extends), plus a package named after the extension itself (plotly widgets
+    request the "jupyterlab-plotly" module, whose extension ships in the
+    jupyterlab_plotly package).
+    """
+    return [
+        *(widget_pkg(cls) for cls in type(w).__mro__),
+        module_name.replace("-", "_"),
+    ]
+
+
+# Distributions don't change on disk while the process runs, so remember where
+# each one put its nbextensions (scanning a distribution's file list isn't free)
+_distribution_nbextension_dirs: dict[str, dict[str, str]] = {}
+
+
+def distribution_nbextension_paths(pkg: str) -> dict[str, str]:
+    """
+    Map of extension name -> nbextension dir, for the data files (e.g.
+    `share/jupyter/nbextensions/...`) that the installed `pkg` distribution put
+    on disk.
+
+    This is where the wheel that's actually installed put its extension, which
+    is version-matched by construction and, unlike the copy bundled inside the
+    package, complete: some packages only bundle part of the bundle's assets
+    (e.g., ipydatagrid's bundled copy has no SVG/PNG files, which its
+    index.js loads at runtime).
+    """
+    if pkg in _distribution_nbextension_dirs:
+        return _distribution_nbextension_dirs[pkg]
+
+    found: dict[str, str] = {}
+    try:
+        dist = distribution(pkg)
+    except PackageNotFoundError:
+        _distribution_nbextension_dirs[pkg] = found
+        return found
+
+    if not distribution_owns_package(dist, pkg):
+        # The imported package isn't the one this distribution installed (e.g.,
+        # a source checkout shadowing an installed wheel on sys.path), so its
+        # data files aren't the frontend for the package we're rendering with
+        _distribution_nbextension_dirs[pkg] = found
+        return found
+
+    for file in dist.files or []:
+        parts = file.parts
+        if parts[-1] != "index.js" or "nbextensions" not in parts:
+            # Only `index.js` is checked, since that's the file require.js loads
+            # (an alternate bundle like `index.min.js` isn't what gets served)
+            continue
+        nbextensions = len(parts) - 1 - parts[::-1].index("nbextensions")
+        if len(parts) <= nbextensions + 2:
+            continue
+        # Everything between "nbextensions" and "index.js" is the extension
+        # name, which can be scoped (e.g. "@scope/some-widget")
+        module = "/".join(parts[nbextensions + 1 : -1])
+        if module in found:
+            continue
+        dir = os.path.normpath(str(dist.locate_file(os.path.join(*parts[:-1]))))
+        if recorded_file_matches(os.path.join(dir, "index.js"), file.hash):
+            found[module] = dir
+
+    _distribution_nbextension_dirs[pkg] = found
+    return found
+
+
+def recorded_file_matches(file: str, expected: Optional[FileHash]) -> bool:
+    """
+    Whether `file` is the file the distribution recorded (per its hash), or
+    whether that can't be determined.
+
+    Some data dirs are shared between Python installations (e.g.,
+    `~/.local/share/jupyter` for `pip install --user`), so an install under a
+    different interpreter can overwrite the files another one recorded. In that
+    case the copy on disk doesn't match the package that's imported, and the
+    nbextension bundled with that package is the better choice.
+    """
+    if expected is None or expected.mode != "sha256":
+        return True
+    try:
+        with open(file, "rb") as f:
+            digest = base64.urlsafe_b64encode(hashlib.sha256(f.read()).digest())
+    except OSError:
+        return False
+    return digest.rstrip(b"=").decode("ascii") == expected.value
+
+
+def distribution_owns_package(dist, pkg: str) -> bool:
+    """
+    Whether the installed `dist` is the distribution that provides the imported
+    `pkg` module.
+
+    The metadata lookup goes by name, so a source checkout earlier on
+    `sys.path` (e.g. on `PYTHONPATH`) can shadow an installed wheel of the same
+    name: the imported code and the recorded data files would then be different
+    versions.
+    """
+    try:
+        mod: ModuleType = importlib.import_module(pkg)
+    except Exception:
+        return False
+    module_file = getattr(mod, "__file__", None)
+    if module_file is None:
+        return False
+    try:
+        root = str(dist.locate_file(""))
+    except Exception:
+        return False
+    return os.path.realpath(module_file).startswith(
+        os.path.join(os.path.realpath(root), "")
+    )
+
+
+def distribution_nbextension_path(w: Widget, module_name: str) -> Optional[str]:
+    """
+    Path to the nbextension for `module_name` that the widget's own distribution
+    installed into a Jupyter data dir, if any.
+    """
+    for pkg in dict.fromkeys(frontend_packages(w, module_name)):
+        dir = distribution_nbextension_paths(pkg).get(module_name)
+        if dir is not None and dir_has_index_js(dir):
+            return dir
+
+    return None
+
+
 def package_nbextension_path(w: Widget, module_name: str) -> Optional[str]:
     """
     Path to the nbextension bundled inside the widget's own installed Python
     package (as declared by its `_jupyter_nbextension_paths()`), if that
     package provides an extension for `module_name`.
 
-    The providing package is usually the widget package itself (e.g.,
-    ipyleaflet), but it can also be a separate package named after the
-    extension: plotly widgets request the "jupyterlab-plotly" module, whose
-    nbextension ships inside the jupyterlab_plotly package.
+    Unlike `distribution_nbextension_path()`, this doesn't depend on the package
+    installing data files (e.g., editable installs), but the bundled copy can be
+    incomplete.
     """
-    candidates = [widget_pkg(w), module_name.replace("-", "_")]
-    for pkg in dict.fromkeys(candidates):
+    for pkg in dict.fromkeys(frontend_packages(w, module_name)):
         try:
             mod: ModuleType = importlib.import_module(pkg)
         except Exception:
             continue
-        if mod.__file__ is None:
+        module_file = getattr(mod, "__file__", None)
+        if module_file is None:
+            # builtins, namespace packages, C extensions, ...
             continue
         nbextension_paths = getattr(mod, "_jupyter_nbextension_paths", None)
         if nbextension_paths is None:
@@ -234,7 +371,7 @@ def package_nbextension_path(w: Widget, module_name: str) -> Optional[str]:
         for entry in entries:
             if entry.get("dest") != module_name or "src" not in entry:
                 continue
-            dir = os.path.join(os.path.dirname(mod.__file__), entry["src"])
+            dir = os.path.join(os.path.dirname(module_file), entry["src"])
             if dir_has_index_js(dir):
                 return dir
 
