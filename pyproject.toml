@@ -42,8 +42,13 @@ Issues = "https://github.com/rstudio/py-shinywidgets/issues"
 altair = ["altair>=5.1"]
 bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
+ipyaladin = ["ipyaladin"]
 ipydatagrid = ["ipydatagrid"]
 jscatter = ["jupyter-scatter"]
+# An explicit pre-release specifier, so uv/pip accept it without --pre.
+# keplergl 0.3.x imports pkg_resources (removed in setuptools 82), so 0.4
+# (an anywidget rewrite) is the first version that imports there.
+keplergl = ["keplergl>=0.4.0rc4"]
 # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
 # Python 3.15+ yet, so lonboard can't be installed there
 lonboard = ["lonboard; python_version < '3.15'"]
@@ -63,6 +68,7 @@ test = [
   "datashader",
   "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipyaladin",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -70,6 +76,7 @@ test = [
   "matplotlib",
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
+  "keplergl>=0.4.0rc4",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
@@ -98,6 +105,7 @@ dev = [
   "datashader",
   "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipyaladin",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -105,6 +113,9 @@ dev = [
   "matplotlib",
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
+  "keplergl>=0.4.0rc4",
+  # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
+  # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
   "pandas",
@@ -134,6 +145,7 @@ test = [
   "datashader",
   "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipyaladin",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -141,6 +153,7 @@ test = [
   "matplotlib",
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
+  "keplergl>=0.4.0rc4",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
