@@ -93,7 +93,16 @@ const quakBehavior: WidgetBehavior = {
 // traits (and three.js doesn't update the camera's aspect ratio when the
 // canvas resizes), so drive both from the container's size. The traits are
 // synced, so the Python-side Renderer/camera see the new values too.
-function setupPythreejsResize({ el, model }: BehaviorContext): () => void {
+function setupPythreejsResize({ el, lmWidget, model }: BehaviorContext): () => void {
+  // An inline <canvas> sits on the text baseline, leaving a ~6px strut of
+  // line height below it. In a container whose height is content-derived
+  // (plain page_fluid, an auto-height card), that strut makes el taller than
+  // the canvas, so sizing the canvas to el grows el, which fires the observer
+  // again -- an unbounded feedback loop. Block display removes the strut, so
+  // sizing the canvas to el is a fixed point.
+  const canvas = lmWidget.querySelector('canvas');
+  if (canvas) canvas.style.display = 'block';
+
   const camera = model.get('camera') as WidgetModel | undefined;
   // Manage the aspect ratio only while it holds a value we set (or the initial
   // one): a user-set aspect (from either side) wins.
@@ -119,8 +128,9 @@ function setupPythreejsResize({ el, model }: BehaviorContext): () => void {
   };
 
   const observer = new ResizeObserver(() => resizeToFit());
-  // Observe the output container (not the widget) so the canvas's own size
-  // changes don't create a feedback loop.
+  // Observe the output container (not the widget): with the strut removed
+  // above, the container tracks the canvas exactly, so resizing the canvas
+  // to it doesn't change it and the observer settles.
   observer.observe(el);
   resizeToFit();
   return () => observer.disconnect();

@@ -11,6 +11,10 @@ app_ui = ui.page_fluid(
     ui.card(output_widget("fill_scene"), id="fill_card", height="420px"),
     output_widget("fixed_scene"),
     output_widget("sized_output", height="250px"),
+    # Content-derived heights: these containers are only as tall as the canvas
+    # inside them
+    output_widget("unfillable_scene"),
+    ui.card(output_widget("unfillable_card_scene")),
 )
 
 
@@ -47,6 +51,14 @@ def server(input, output, session):
 
     @render_pythreejs
     def sized_output():
+        return make_renderer()
+
+    @render_pythreejs
+    def unfillable_scene():
+        return make_renderer()
+
+    @render_pythreejs
+    def unfillable_card_scene():
         return make_renderer()
 
     @render.text

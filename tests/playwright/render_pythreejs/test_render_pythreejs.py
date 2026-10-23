@@ -56,6 +56,21 @@ def canvas_size(page: Page, selector: str) -> tuple[float, float]:
     return box["width"], box["height"]
 
 
+def wait_for_settled_height(
+    page: Page, selector: str, timeout_ms: int = 10000
+) -> float:
+    """Poll the canvas height until it's unchanged across 3 samples (250ms apart)."""
+    heights: list[float] = []
+    waited = 0
+    while waited < timeout_ms:
+        heights.append(canvas_size(page, selector)[1])
+        if len(heights) >= 3 and heights[-1] == heights[-2] == heights[-3]:
+            return heights[-1]
+        page.wait_for_timeout(250)
+        waited += 250
+    raise AssertionError(f"{selector} canvas height never settled: {heights}")
+
+
 def test_pythreejs_renders_webgl_scene(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
@@ -115,6 +130,25 @@ def test_pythreejs_respects_explicit_sizes(page: Page, local_app) -> None:
         "clientHeight", 250, timeout=30000
     )
     assert canvas_size(page, "#sized_output")[1] == 250
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_pythreejs_settles_in_unfillable_containers(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+
+    # In a container whose height comes from its content (plain page_fluid, or
+    # a card with no height), sizing the canvas to the output must reach a
+    # fixed point -- previously the canvas grew by a few px on every
+    # ResizeObserver fire, growing the output again, until the canvas died
+    for sel in ("#unfillable_scene", "#unfillable_card_scene"):
+        expect(page.locator(f"{sel} canvas")).to_have_count(1, timeout=30000)
+        settled = wait_for_settled_height(page, f"{sel} canvas")
+        assert settled > 0
+        # Once settled, it stays put
+        page.wait_for_timeout(1000)
+        assert canvas_size(page, f"{sel} canvas")[1] == settled
 
     assert_no_unexpected_errors(errors, failed_requests)
 
