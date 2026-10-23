@@ -1,5 +1,10 @@
+from typing import TYPE_CHECKING
+
 import pytest
 import shinywidgets._render_widget_base as rwb
+
+if TYPE_CHECKING:
+    from jscatter import Scatter
 
 
 class StubSession:
@@ -202,6 +207,107 @@ def test_altair_concat_chart_emits_warning(monkeypatch) -> None:
 
     with pytest.warns(UserWarning, match="layout_column_wrap"):
         rwb.set_layout_defaults(w)
+
+
+def test_ipydatagrid_fills_unless_widget_height_is_set() -> None:
+    pytest.importorskip("ipydatagrid")
+    import pandas as pd
+    from ipydatagrid import DataGrid
+
+    df = pd.DataFrame({"a": [1, 2, 3]})
+
+    _, fill = rwb.set_layout_defaults(DataGrid(df))
+    assert fill is True
+
+    _, fill = rwb.set_layout_defaults(DataGrid(df, layout={"height": "300px"}))
+    assert fill is False
+
+
+def _jscatter_widget() -> "Scatter":
+    pytest.importorskip("jscatter")
+    pd = pytest.importorskip("pandas")
+    from jscatter import Scatter
+
+    df = pd.DataFrame({"x": [0.1, 0.5, 0.9], "y": [0.3, 0.6, 0.2]})
+    return Scatter(data=df, x="x", y="y")
+
+
+def test_jscatter_default_height_keeps_fill_true() -> None:
+    scatter = _jscatter_widget()
+    _, fill = rwb.set_layout_defaults(scatter.widget)
+    assert fill is True
+
+
+def test_jscatter_explicit_height_disables_fill() -> None:
+    scatter = _jscatter_widget()
+    scatter.height(500)
+    _, fill = rwb.set_layout_defaults(scatter.widget)
+    assert fill is False
+
+
+def test_jscatter_default_height_matches_package_default() -> None:
+    # The layout default compares against jscatter's own default height, so
+    # fail loudly if jscatter changes it
+    scatter = _jscatter_widget()
+    assert scatter.height() == rwb.JSCATTER_DEFAULT_HEIGHT
+
+
+def test_jscatter_keeps_filling_after_browser_syncs_height() -> None:
+    # In a filling layout the browser sets the widget's height from its
+    # container's size, so displaying the same widget again (e.g., a widget
+    # reused via session_lifetime()) must not mistake that for a user-set height
+    widget = _jscatter_widget().widget
+    assert rwb.set_layout_defaults(widget)[1] is True
+
+    widget.height = 691
+    assert rwb.set_layout_defaults(widget)[1] is True
+
+
+def test_jscatter_explicit_height_stays_fixed_when_displayed_again() -> None:
+    scatter = _jscatter_widget()
+    scatter.height(500)
+    assert rwb.set_layout_defaults(scatter.widget)[1] is False
+    assert rwb.set_layout_defaults(scatter.widget)[1] is False
+
+
+@pytest.mark.parametrize(
+    ("sizing_mode", "expected_fill"),
+    [
+        ("stretch_both", True),
+        ("stretch_height", True),
+        ("scale_both", True),
+        ("scale_height", True),
+        (None, False),
+        ("fixed", False),
+        ("stretch_width", False),
+        ("scale_width", False),
+    ],
+)
+def test_bokeh_fills_only_when_root_stretches_vertically(
+    sizing_mode: str | None, expected_fill: bool
+) -> None:
+    pytest.importorskip("jupyter_bokeh")
+    from bokeh.plotting import figure
+    from jupyter_bokeh import BokehModel
+
+    w = BokehModel(figure(height=200, sizing_mode=sizing_mode))
+
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is expected_fill
+
+
+def test_bokeh_fill_respects_upstream_decision() -> None:
+    pytest.importorskip("jupyter_bokeh")
+    import ipywidgets as widgets
+    from bokeh.plotting import figure
+    from jupyter_bokeh import BokehModel
+
+    w = BokehModel(
+        figure(sizing_mode="stretch_both"), layout=widgets.Layout(height="200px")
+    )
+
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is False
 
 
 def test_maplibre_default_height_fills() -> None:

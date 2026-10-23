@@ -1,5 +1,4 @@
 shiny
-shinywidgets
-itables[widget]
+shinywidgets[itables]
 numpy
 pandas

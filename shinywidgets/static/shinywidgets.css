@@ -66,6 +66,30 @@
   min-width: 0;
 }
 
+/*
+* ipydatagrid's stylesheet gives the grid a fixed 500px height, so in an output with
+* an explicit height fit the grid to that height instead of letting it overflow (and
+* be clipped by) the output. The selector matches the inline `height:` style that
+* output_widget(height=) emits (keep in sync with _output_widget.py). Intrinsic
+* heights (`auto`, `fit-content`, ...; the browser may reserialize the style with a
+* space after the colon) aren't definite, so 100% of them would collapse the grid.
+* The exclusions name the height declaration specifically so an intrinsic width
+* (e.g., `width: fit-content`) doesn't disable the override.
+*/
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .datagrid-container {
+  height: 100%;
+}
+
 
 /*
 * Allow Shiny's busy indicator (spinner) to show while recalculating, even though
@@ -103,6 +127,17 @@
 */
 .shiny-ipywidget-output > .lm-Widget > [data-overlay-container]:has(> .lonboard) {
   margin-top: 0;
+}
+
+/*
+* A stretching bokeh root (e.g., a figure with sizing_mode="stretch_both", or a
+* HoloViews plot with responsive=True) sizes itself to its container's height,
+* so in an output that isn't filling (e.g., output_widget(height="300px")) it
+* collapses to a sliver unless the container has a definite height. (BokehJS
+* renders the root inside a `display: contents` div.)
+*/
+.shiny-ipywidget-output:not(.forward-fill-potential) > .lm-Widget:has(> * > [class^="bk-"]) {
+  height: 100%;
 }
 
 /*

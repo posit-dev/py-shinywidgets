@@ -88,7 +88,7 @@ def test_missing_itables_gives_install_hint(
     monkeypatch.setitem(sys.modules, "itables.widget", None)
     r = rw.render_itables()
     r(lambda: [1, 2, 3])
-    with pytest.raises(ImportError, match=r"pip install 'itables\[widget\]'"):
+    with pytest.raises(ImportError, match=r"pip install 'shinywidgets\[itables\]'"):
         render(r, widget_session)
 
 
