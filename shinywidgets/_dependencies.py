@@ -96,6 +96,9 @@ def require_dependency(
                 )
             return None
 
+    if module_name == "anywidget":
+        module_dir = relax_anywidget_init_timeout(module_dir)
+
     version = parse_version_safely(getattr(w, "_model_module_version", "1.0"))
     source = HTMLDependencySource(subdir=module_dir)
 
@@ -113,6 +116,72 @@ def require_dependency(
         all_files=True,
         head=tags.script(f"window.require.config({json.dumps(config)})"),
     )
+
+
+# anywidget's front-end rejects a model's `ready` promise if initialization
+# (i.e., loading the widget's `_esm`) takes longer than a hard-coded 2s
+# (`AbortSignal.timeout(2e3)` -> "[anywidget] Failed to initialize model.").
+# `_handle_comm_msg` awaits that promise, so once it rejects, every subsequent
+# Python -> browser state update is dropped (and surfaces as a console error).
+# That's unsuitable outside Jupyter for widgets with multi-MB inline ESM
+# bundles (keplergl's `_esm` is ~13MB), which can't compile within 2s on
+# slower hardware. Serve a patched copy with a more generous budget instead.
+# Interim workaround for https://github.com/manzt/anywidget/issues/1030 --
+# remove this (and serve anywidget's files unmodified) once upstream makes
+# the init budget configurable or stops gating comm messages on it.
+ANYWIDGET_INIT_TIMEOUT_MS = 60000
+
+
+def relax_anywidget_init_timeout(module_dir: str) -> str:
+    """
+    Return a directory holding a copy of anywidget's front-end (nbextension)
+    with the hard-coded 2s model-initialization budget raised. Falls back to
+    `module_dir` itself if the timeout can't be located (e.g., a future
+    anywidget release restructures this code).
+    """
+    index = os.path.join(module_dir, "index.js")
+    try:
+        mtime = os.path.getmtime(index)
+    except OSError:
+        return module_dir
+
+    key = (module_dir, mtime)
+    if key in _anywidget_patched_dirs:
+        return _anywidget_patched_dirs[key]
+
+    patched_dir = module_dir
+    with open(index, encoding="utf-8") as f:
+        js = f.read()
+
+    i = js.find("Failed to initialize model")
+    if i >= 0:
+        # The timeout that guards model initialization sits just before the
+        # rejection; match its numeric argument (2e3 or 2000)
+        m = re.search(
+            r"AbortSignal\.timeout\(\s*(?:2e3|2000)\s*\)", js[max(0, i - 500) : i]
+        )
+        if m is not None:
+            patched_dir = tempfile.mkdtemp(prefix="shinywidgets-anywidget-")
+            for f_ in os.listdir(module_dir):
+                src = os.path.join(module_dir, f_)
+                if not os.path.isfile(src):
+                    continue
+                with open(src, "rb") as fin:
+                    contents = fin.read()
+                if f_ == "index.js":
+                    contents = (
+                        js[: max(0, i - 500) + m.start()]
+                        + f"AbortSignal.timeout({ANYWIDGET_INIT_TIMEOUT_MS})"
+                        + js[max(0, i - 500) + m.end() :]
+                    ).encode("utf-8")
+                with open(os.path.join(patched_dir, f_), "wb") as fout:
+                    fout.write(contents)
+
+    _anywidget_patched_dirs[key] = patched_dir
+    return patched_dir
+
+
+_anywidget_patched_dirs: dict[tuple[str, float], str] = {}
 
 
 def jupyter_extension_path(module_name: str) -> Optional[str]:

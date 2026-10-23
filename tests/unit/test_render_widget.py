@@ -153,6 +153,11 @@ def test_render_pyvista_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_plotnine_is_render_widget_base() -> None:
+    renderer = rw.render_plotnine()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_plotly_accepts_figure_config_tuple(widget_session) -> None:
     pytest.importorskip("plotly")
     import plotly.graph_objects as go
@@ -232,6 +237,7 @@ def test_import_shinywidgets_without_optional_deps() -> None:
         "matplotlib",
         "panel",
         "plotly",
+        "plotnine",
         "pydeck",
     ]
     script = f"""

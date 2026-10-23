@@ -56,6 +56,7 @@ maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
 plotly = ["plotly>=5.0.0"]
+plotnine = ["plotnine", "ipympl"]
 # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
 # so pyvista can't be installed there
 pyvista = ["pyvista[jupyter]; python_version < '3.15'"]
@@ -87,6 +88,7 @@ test = [
   "perspective-python>=3.0",
   "playwright>=1.40.0",
   "plotly>=5.0.0",
+  "plotnine",
   # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
   # so pyvista can't be installed there
   "pyvista[jupyter]; python_version < '3.15'",
@@ -124,6 +126,7 @@ dev = [
   "perspective-python>=3.0",
   "playwright>=1.40.0",
   "plotly>=5.0.0",
+  "plotnine",
   # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
   # so pyvista can't be installed there
   "pyvista[jupyter]; python_version < '3.15'",
@@ -164,6 +167,7 @@ test = [
   "perspective-python>=3.0",
   "playwright>=1.40.0",
   "plotly>=5.0.0",
+  "plotnine",
   # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
   # so pyvista can't be installed there
   "pyvista[jupyter]; python_version < '3.15'",
