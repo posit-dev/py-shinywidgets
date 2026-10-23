@@ -220,7 +220,8 @@
   flex-direction: column;
 }
 
-/* A Layout(height=...) on the map (an inline style) takes precedence */
-.shiny-ipywidget-output:not(.html-fill-container) > .jupyter-widgets.leaflet-widgets[style*="height"] {
+/* A Layout(height=...) on the map takes precedence (js/src/fill.ts adds the
+ * class; an attribute selector can't tell `height:` from `min-height:`) */
+.shiny-ipywidget-output:not(.html-fill-container) > .jupyter-widgets.leaflet-widgets.shinywidgets-explicit-height {
   flex: none;
 }

@@ -24,6 +24,7 @@ app_ui = ui.page_fluid(
     output_widget("map_layout_height"),
     output_widget("map_auto_height", height="auto"),
     output_widget("map_layout_in_output_height", height="300px"),
+    output_widget("map_min_height_in_output", height="600px"),
 )
 
 
@@ -69,6 +70,10 @@ def server(input, output, session):
     @render_ipyleaflet
     def map_layout_in_output_height():
         return L.Map(center=(52, 360), zoom=4, layout=Layout(height="250px"))
+
+    @render_ipyleaflet
+    def map_min_height_in_output():
+        return L.Map(center=(52, 360), zoom=4, layout=Layout(min_height="100px"))
 
     @render.text
     def zoom_text():

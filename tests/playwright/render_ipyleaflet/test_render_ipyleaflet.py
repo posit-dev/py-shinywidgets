@@ -109,6 +109,17 @@ def test_render_ipyleaflet_layout_height_wins_over_output_height(
     assert abs(box(page, sel)["height"] - 250) <= EPS
 
 
+def test_render_ipyleaflet_min_height_fills_explicit_output_height(
+    page: Page, local_app
+) -> None:
+    # A Layout(min_height=...) is not an explicit height: the map should still
+    # grow to the output's definite height instead of staying at the 400px default
+    page.goto(local_app.url)
+    sel = "#map_min_height_in_output .leaflet-container"
+    expect(page.locator(sel)).to_have_count(1, timeout=30000)
+    assert abs(box(page, sel)["height"] - 600) <= EPS
+
+
 def test_render_ipyleaflet_controls_follow_theme(page: Page, local_app) -> None:
     # jupyter-leaflet colors controls with JupyterLab theme variables, which don't
     # exist in Shiny (the zoom buttons would be transparent)
@@ -144,16 +155,20 @@ def test_render_ipyleaflet_rerender_lifecycle(page: Page, local_app) -> None:
 
     expect(page.locator("#lmap .leaflet-container")).to_have_count(1, timeout=30000)
     expect(page.locator("#render_count")).to_have_text("0")
+    # Wait for the last output so every map's view exists before counting
+    expect(page.locator("#map_min_height_in_output .leaflet-container")).to_have_count(
+        1, timeout=30000
+    )
 
     def live_map_views() -> int:
         # Maps whose model is retired on rerender are closed, so only the live
-        # ones (7 outputs) should still hold a view
+        # ones (8 outputs) should still hold a view
         return sum(
             m["views"] for m in client_models(page) if m["name"] == "LeafletMapModel"
         )
 
     initial = live_map_views()
-    assert initial == 7
+    assert initial == 8
 
     for i in range(1, 4):
         page.click("#rerender")
