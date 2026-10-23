@@ -112,6 +112,9 @@ js/node_modules
 typings/
 Untitled*.ipynb
 
+# Local scratch space (already excluded from ruff/pyright)
+sandbox/
+
 rsconnect-python/
 
 # Deploy to Connect Cloud Button
