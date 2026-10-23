@@ -1,6 +1,5 @@
 shiny
-shinywidgets
-lonboard
+shinywidgets[lonboard]
 geopandas
 numpy
 pandas

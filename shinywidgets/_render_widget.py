@@ -8,9 +8,12 @@ from htmltools import Tag
 from ipywidgets.widgets.widget import Widget
 
 if TYPE_CHECKING:
+    import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
+    from ipydatagrid import DataGrid
     from ipympl.backend_nbagg import Canvas as MplCanvas
+    from jscatter.widget import JupyterScatter
     from jupyter_bokeh import BokehModel
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
     from maplibre.ipywidget import MapWidget
@@ -24,15 +27,16 @@ if TYPE_CHECKING:
     else:
         from ipywidgets import Widget as EmbeddingAtlasWidget
 else:
-    JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
-        EmbeddingAtlasWidget
-    ) = object
+    JupyterChart = DataGrid = JupyterScatter = MplCanvas = BokehModel = MapWidget = (
+        FigureWidget
+    ) = DeckGLWidget = EmbeddingAtlasWidget = object
     LonboardMap = object
 
 from shiny.render.renderer import ValueFn
 
 from ._as_widget import PYDECK_NO_WIDGET_MESSAGE, as_widget_panel, pydeck_has_widget
 from ._bokeh import _bokeh_dependency
+from ._dependencies import widget_pkg
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
 if TYPE_CHECKING:
@@ -54,6 +58,8 @@ __all__ = (
     "render_bokeh",
     "render_embedding_atlas",
     "render_holoviews",
+    "render_ipydatagrid",
+    "render_jscatter",
     "render_lonboard",
     "render_maplibre",
     "render_matplotlib",
@@ -126,7 +132,8 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     Reactively render an [altair](https://altair-viz.github.io) chart as a Shiny output.
 
     The decorated function may return either an `altair.Chart` (which is coerced to
-    an `altair.JupyterChart` widget) or an `altair.JupyterChart` widget.
+    an `altair.JupyterChart` widget) or an `altair.JupyterChart` widget (requires
+    ``pip install 'shinywidgets[altair]'``).
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
@@ -182,7 +189,8 @@ class render_embedding_atlas(render_widget_base[ValueT, EmbeddingAtlasWidget]):
     explorer as a Shiny output.
 
     The decorated function should return an `embedding_atlas.widget.EmbeddingAtlasWidget`
-    (requires ``pip install embedding-atlas``, which needs Python 3.11 or newer).
+    (requires ``pip install 'shinywidgets[embedding_atlas]'``, which needs Python 3.11
+    or newer).
     Unlike the other decorators, a bare data frame isn't enough to build the widget, so
     construct it yourself, passing the data frame along with the columns that describe
     the embedding (e.g., ``EmbeddingAtlasWidget(df, x="x", y="y", text="text")``).
@@ -202,7 +210,7 @@ class render_embedding_atlas(render_widget_base[ValueT, EmbeddingAtlasWidget]):
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Note
-    ----
+    ---
     **Security**: the explorer runs its queries by sending SQL from the browser to
     the widget's DuckDB connection, and any visitor can send arbitrary SQL,
     including SQL that reads or writes files on the server. In deployed apps,
@@ -240,6 +248,52 @@ class render_embedding_atlas(render_widget_base[ValueT, EmbeddingAtlasWidget]):
     """
 
 
+class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
+    """
+    Reactively render a [jupyter-scatter](https://jupyter-scatter.dev) scatter plot as a
+    Shiny output.
+
+    The decorated function may return a `jscatter.Scatter` (which is coerced to its
+    `jscatter.widget.JupyterScatter` widget; requires ``pip install 'shinywidgets[jscatter]'``)
+    or a `JupyterScatter` widget. The plot is resized to fit its output, whether the
+    output fills its layout or has an explicit ``height`` (see below), unless the plot
+    has a height of its own (e.g., from `Scatter.height()`; jupyter-scatter's default of
+    240 doesn't count).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `JupyterScatter` instance. Use `.widget` to programmatically update the rendered
+    plot in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state (e.g., the selected points via ``"selection"``) with
+    :func:`~shinywidgets.reactive_read`. The selection is an array of row *positions*
+    (use ``df.iloc[...]``), not index labels.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Large selections**: selecting more than about 3 million points sends the
+    server a message larger than the default 16 MiB websocket limit, which
+    disconnects the session. Raise the limit with ``shiny run --ws-max-size``.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+
 class render_lonboard(render_widget_base[ValueT, LonboardMap]):
     """
     Reactively render a [lonboard](https://developmentseed.org/lonboard/) map as a
@@ -249,7 +303,8 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
     list of layers), which is placed on a `Map`, or any data that `lonboard.viz()`
     accepts (e.g., a GeoPandas `GeoDataFrame` or a GeoArrow-compatible Arrow table),
     which is converted to a `Map` via `lonboard.viz()` (requires ``pip install
-    lonboard``). In a filling layout, the map fills its container unless the `Map`
+    'shinywidgets[lonboard]'``). In a filling layout, the map fills its container
+    unless the `Map`
     has an explicit ``height``.
 
     The decorated function also gains two read-only attributes: `.value`, the value
@@ -285,7 +340,7 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
             import lonboard  # pyright: ignore[reportMissingImports]
         except ImportError:
             raise ImportError(
-                "Install the lonboard package to use render_lonboard with shinywidgets (pip install lonboard)."
+                "Install the lonboard package to use render_lonboard with shinywidgets (pip install 'shinywidgets[lonboard]')."
             )
 
         # viz() handles lists of data, but not lists of layers
@@ -304,7 +359,7 @@ class render_maplibre(render_widget_base[MaplibreValueT, MapWidget]):
     Shiny output.
 
     The decorated function may return either a `maplibre.Map` (which is coerced to a
-    `maplibre.ipywidget.MapWidget`; requires ``pip install 'maplibre[anywidget]'``)
+    `maplibre.ipywidget.MapWidget`; requires ``pip install 'shinywidgets[maplibre]'``)
     or a `maplibre.ipywidget.MapWidget` widget. In a filling layout, the map fills
     its container unless the `MapWidget` has an explicit ``height``.
 
@@ -347,7 +402,8 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
 
     The decorated function may return a `matplotlib.figure.Figure`, a
     `matplotlib.axes.Axes` (rendered via its figure), or an `ipympl.backend_nbagg.Canvas`
-    widget. Figures and axes are coerced to a `Canvas` (requires ``pip install ipympl``),
+    widget. Figures and axes are coerced to a `Canvas` (requires ``pip install
+    'shinywidgets[matplotlib]'``),
     so this also works with libraries built on matplotlib (e.g., seaborn or
     ``pandas.DataFrame.plot()``). Figures created through pyplot are closed (via
     ``plt.close()``) when their widget is retired. In a filling layout, the figure is
@@ -386,7 +442,7 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
     The decorated function may return either a bokeh model (e.g., a
     `bokeh.plotting.figure`), which is coerced to a `jupyter_bokeh.BokehModel`
     widget, or a `jupyter_bokeh.BokehModel` widget (requires ``pip install
-    jupyter_bokeh``).
+    'shinywidgets[bokeh]'``).
 
     A `figure` fills its output by default (i.e., it gets
     ``sizing_mode="stretch_both"``), unless you give it a ``width``, ``height``,
@@ -439,7 +495,7 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
 
     The decorated function may return any object that ``pn.panel()`` accepts (e.g., a
     pane, widget, layout, `pn.viewable.Viewer`, string, DataFrame, or figure), which
-    is rendered through bokeh (requires ``pip install panel jupyter_bokeh``), or the
+    is rendered through bokeh (requires ``pip install 'shinywidgets[panel]'``), or the
     underlying `jupyter_bokeh.BokehModel` widget. Panel callbacks (e.g., ``pn.bind()``,
     ``.param.watch()``, and ``on_click()``) run in the Shiny server, without a Panel
     server.
@@ -508,7 +564,7 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
     as a Shiny output.
 
     The decorated function may return either a holoviews/hvplot/geoviews object
-    (which is rendered through panel; requires ``pip install panel jupyter_bokeh``)
+    (which is rendered through panel; requires ``pip install 'shinywidgets[holoviews]'``)
     or the underlying `jupyter_bokeh.BokehModel` widget. geoviews 1.15 requires
     ``cartopy<0.26``. If you call ``.opts()`` without importing hvplot, call
     ``hv.extension("bokeh")`` first. Plots rasterized with
@@ -578,12 +634,91 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
         return res
 
 
+class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
+    """
+    Reactively render a pandas DataFrame as an interactive
+    [ipydatagrid](https://github.com/bloomberg/ipydatagrid) data grid Shiny output.
+
+    The decorated function may return either a `pandas.DataFrame` (which is coerced to
+    an `ipydatagrid.DataGrid`; requires ``pip install 'shinywidgets[ipydatagrid]'``) or an
+    `ipydatagrid.DataGrid` widget. Pass a `DataGrid` to customize the grid (e.g.,
+    `selection_mode`, `editable`, or cell renderers).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `DataGrid` instance. Use `.widget` to programmatically update the rendered grid
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state (e.g., `selections`) with
+    :func:`~shinywidgets.reactive_read`.
+
+    Some ipydatagrid behaviors worth knowing about:
+
+    * A returned DataFrame uses ipydatagrid's default ``selection_mode="none"``, so
+      `selections` stays empty; return ``DataGrid(df, selection_mode="row")`` (or
+      ``"cell"``/``"column"``) to let users select.
+    * `selections` index the grid as displayed (after any sort or filter), so map
+      them through ``.widget.get_visible_data()``.
+    * ``DataGrid.select()``, ``DataGrid.clear_selection()`` and cell edits modify the
+      widget's state in place, which doesn't trigger
+      :func:`~shinywidgets.reactive_read`. Assign a new list to ``.widget.selections``
+      instead, and use ``.widget.on_cell_change()`` to react to edits.
+    * Cell renderers and scales are widgets too, so create them inside the render
+      function rather than at import time.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    # A DataFrame is a generic type (several renderers accept one), so it isn't
+    # registered with as_widget()
+    def _as_widget(self, value: ValueT) -> DataGrid:
+        if is_pandas_dataframe(value):
+            return dataframe_to_datagrid(cast("pd.DataFrame", value))
+        return super()._as_widget(value)
+
+
+def is_pandas_dataframe(value: object) -> bool:
+    # Checked by name (pandas is optional) and through the MRO, so subclasses such
+    # as geopandas.GeoDataFrame count
+    return any(
+        widget_pkg(cls) == "pandas" and cls.__name__ == "DataFrame"
+        for cls in type(value).__mro__
+    )
+
+
+def dataframe_to_datagrid(df: pd.DataFrame) -> DataGrid:
+    try:
+        from ipydatagrid import DataGrid
+    except ImportError:
+        raise ImportError(
+            "Install the ipydatagrid package to use render_ipydatagrid with "
+            "shinywidgets (pip install 'shinywidgets[ipydatagrid]')."
+        )
+    return DataGrid(df)
+
+
 class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     """
     Reactively render a [plotly](https://plotly.com/python/) figure as a Shiny output.
 
     The decorated function may return either a `plotly.graph_objects.Figure` (which
-    is coerced to a `FigureWidget`) or a `plotly.graph_objects.FigureWidget` widget.
+    is coerced to a `FigureWidget`) or a `plotly.graph_objects.FigureWidget` widget
+    (requires ``pip install 'shinywidgets[plotly]'``).
     Alternatively, it may return a Dash-style
     `(figure, config)` tuple, where `config` is a dict of Plotly.js [config
     options](https://plotly.com/javascript/configuration-options/) (e.g.,
@@ -712,7 +847,7 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
       [maplibre](https://eoda-dev.github.io/py-maplibregl/) map's
       `add_deck_layers()` and render it with
       :class:`~shinywidgets.render_maplibre` (requires ``pip install
-      'maplibre[anywidget]'``). Restyle the rendered map in place with
+      'shinywidgets[maplibre]'``). Restyle the rendered map in place with
       `.widget.set_deck_layers()` (the camera stays where the user left it), and
       read its state (e.g., ``"view_state"``, ``"clicked"``) with
       :func:`~shinywidgets.reactive_read`.
