@@ -25,6 +25,7 @@ everything it needs:
 | `@render_ipyaladin` | `pip install 'shinywidgets[ipyaladin]'` |
 | `@render_ipydatagrid` | `pip install 'shinywidgets[ipydatagrid]'` |
 | `@render_jscatter` | `pip install 'shinywidgets[jscatter]'` |
+| `@render_keplergl` | `pip install 'shinywidgets[keplergl]'` |
 | `@render_lonboard` | `pip install 'shinywidgets[lonboard]'` (Python < 3.15) |
 | `@render_maplibre` | `pip install 'shinywidgets[maplibre]'` |
 | `@render_mapwidget` | `pip install 'shinywidgets[mapwidget]'` |
