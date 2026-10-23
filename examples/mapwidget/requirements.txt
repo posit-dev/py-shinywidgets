@@ -1,3 +1,2 @@
 shiny
-shinywidgets
-mapwidget
+shinywidgets[mapwidget]

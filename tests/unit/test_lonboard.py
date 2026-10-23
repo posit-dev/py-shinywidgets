@@ -233,7 +233,7 @@ def test_render_lonboard_missing_lonboard_errors(
     widget_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setitem(sys.modules, "lonboard", None)
-    with pytest.raises(ImportError, match=r"pip install lonboard"):
+    with pytest.raises(ImportError, match=r"pip install 'shinywidgets\[lonboard\]'"):
         render(points_table(), widget_session)
 
 
