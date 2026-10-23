@@ -143,6 +143,11 @@ def test_render_ipysigma_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_ipycytoscape_is_render_widget_base() -> None:
+    renderer = rw.render_ipycytoscape()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_keplergl_is_render_widget_base() -> None:
     renderer = rw.render_keplergl()
     assert isinstance(renderer, rwb.render_widget_base)

@@ -45,6 +45,7 @@ bqplot = ["bqplot"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
+ipycytoscape = ["ipycytoscape"]
 ipydatagrid = ["ipydatagrid"]
 ipysigma = ["ipysigma"]
 itables = ["itables[widget]"]
@@ -77,6 +78,7 @@ test = [
   "hvplot",
   "ipyaladin",
   "ipycanvas",
+  "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "ipysigma",
@@ -120,6 +122,7 @@ dev = [
   "hvplot",
   "ipyaladin",
   "ipycanvas",
+  "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "ipysigma",
@@ -166,6 +169,7 @@ test = [
   "hvplot",
   "ipyaladin",
   "ipycanvas",
+  "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "ipysigma",
