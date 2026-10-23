@@ -32,6 +32,17 @@ def test_controls_widgets_do_not_fill() -> None:
     assert fill is False
 
 
+def test_controls_output_widgets_do_not_fill() -> None:
+    import ipywidgets as widgets
+
+    # HTML is the sibling class of trame_pyvista's EmbeddableWidget, which is
+    # exempted from the controls early-return by pyvista_layout_defaults;
+    # plain controls widgets must still not fill
+    for w in (widgets.HTML(), widgets.Button()):
+        _, fill = rwb.set_layout_defaults(w)
+        assert fill is False
+
+
 def test_layout_height_non_auto_disables_fill() -> None:
     import ipywidgets as widgets
 
