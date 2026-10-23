@@ -40,7 +40,12 @@ test = [
   "altair",
   "bokeh",
   "coverage>=7",
+  # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
+  # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
+  # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
+  "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -65,7 +70,12 @@ dev = [
   "altair",
   "bokeh",
   "coverage>=7",
+  # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
+  # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
+  # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
+  "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -91,7 +101,12 @@ test = [
   "altair",
   "bokeh",
   "coverage>=7",
+  # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
+  # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
+  # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
+  "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyleaflet>=0.20.0",
   "holoviews",

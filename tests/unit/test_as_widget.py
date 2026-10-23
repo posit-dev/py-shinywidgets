@@ -565,6 +565,50 @@ def test_as_widget_holoviews_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(res, Widget)
 
 
+def test_as_widget_geoviews_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_panel(monkeypatch, root=object())
+    _fake_jupyter_bokeh(monkeypatch)
+
+    class GeoObj:
+        __module__ = "geoviews.element.geo"
+
+    res = as_widget(GeoObj())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_geoviews_without_panel_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "panel", None)
+
+    class GeoObj:
+        __module__ = "geoviews.element.geo"
+
+    with pytest.raises(ImportError, match="pip install panel"):
+        as_widget(GeoObj())
+
+
+@pytest.mark.parametrize("overlay_tiles", [False, True], ids=["points", "tiles"])
+def test_as_widget_real_geoviews_object(
+    monkeypatch: pytest.MonkeyPatch, overlay_tiles: bool
+) -> None:
+    gv = pytest.importorskip("geoviews")
+    pn = pytest.importorskip("panel")
+    jupyter_bokeh = pytest.importorskip("jupyter_bokeh")
+    gv.extension("bokeh")
+    monkeypatch.setattr(Widget, "_widget_construction_callback", None)
+
+    points = gv.Points([(-122.4, 37.8), (-0.1, 51.5)])
+    obj = gv.tile_sources.OSM * points if overlay_tiles else points
+    widget = as_widget(obj)
+
+    try:
+        assert isinstance(widget, jupyter_bokeh.BokehModel)
+    finally:
+        # Mirror test_widget_closure_releases_its_panel_root's cleanup
+        pn.state._views.pop(widget._model.id, None)
+
+
 def test_as_widget_hvplot_success(monkeypatch: pytest.MonkeyPatch) -> None:
     _fake_panel(monkeypatch, root=object())
     _fake_jupyter_bokeh(monkeypatch)

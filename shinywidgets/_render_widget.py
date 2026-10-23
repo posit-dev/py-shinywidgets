@@ -431,13 +431,15 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
 
 class render_holoviews(render_widget_base[ValueT, BokehModel]):
     """
-    Reactively render a [holoviews](https://holoviews.org) or
-    [hvPlot](https://hvplot.holoviz.org) object as a Shiny output.
+    Reactively render a [holoviews](https://holoviews.org),
+    [hvPlot](https://hvplot.holoviz.org), or [geoviews](https://geoviews.org) object
+    as a Shiny output.
 
-    The decorated function may return either a holoviews/hvplot object (which is
-    rendered through panel; requires ``pip install panel jupyter_bokeh``) or the
-    underlying `jupyter_bokeh.BokehModel` widget. If you call ``.opts()`` without
-    importing hvplot, call ``hv.extension("bokeh")`` first. Plots rasterized with
+    The decorated function may return either a holoviews/hvplot/geoviews object
+    (which is rendered through panel; requires ``pip install panel jupyter_bokeh``)
+    or the underlying `jupyter_bokeh.BokehModel` widget. geoviews 1.15 requires
+    ``cartopy<0.26``. If you call ``.opts()`` without importing hvplot, call
+    ``hv.extension("bokeh")`` first. Plots rasterized with
     [datashader](https://datashader.org) are supported too (e.g., hvPlot's
     ``rasterize=True`` or holoviews' ``rasterize()`` operation; requires
     ``pip install datashader``): they re-aggregate the data on the server for the
@@ -448,10 +450,19 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
     event loop, so a slow aggregation delays every session served by that
     process.
 
+    Linked streams (e.g., ``holoviews.streams.Tap`` or ``BoundsXY``) run their
+    callbacks outside Shiny's reactive cycle: with shiny < 1.9, the updates they
+    trigger only reach the browser after the next unrelated input. And because
+    ``.opts()`` styles shared objects such as ``gv.tile_sources.OSM`` or
+    ``gv.feature.coastline`` in place, use ``.opts(..., clone=True)`` on them, or
+    one session's styling will show up in every session.
+
     HoloViews and hvPlot plots have a fixed size by default (and get clipped by a
     smaller container). To make a plot fill its output, pass ``responsive=True``
     (e.g., ``df.hvplot.line(..., responsive=True)`` or ``.opts(responsive=True)``),
-    optionally with a fixed ``height``.
+    optionally with a fixed ``height``. If you give the output a fixed height, set
+    ``fillable=True`` too (e.g., ``output_widget("map", height="400px",
+    fillable=True)``); otherwise a responsive plot collapses to a thin strip.
 
     The decorated function also gains two read-only attributes: `.value`, the
     holoviews/hvplot object most recently returned by the render function, and
