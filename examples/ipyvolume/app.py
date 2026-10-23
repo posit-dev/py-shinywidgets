@@ -50,6 +50,12 @@ def server(input, output, session):
             color_selected="tomato",
         )
         fig.scatters = [scatter]
+        # Directly-constructed figures default to a [0, 1]^3 axis box with no
+        # auto-fit, so set explicit limits that match the (standard normal)
+        # data -- otherwise points spray across the whole canvas
+        fig.xlim = (-4, 4)
+        fig.ylim = (-4, 4)
+        fig.zlim = (-4, 4)
         fig.selector = "rectangle"
         # Selections arrive as custom messages (not trait changes), so read
         # them in a callback and set a reactive value
