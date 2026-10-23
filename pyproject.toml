@@ -46,6 +46,10 @@ ipyaladin = ["ipyaladin"]
 ipydatagrid = ["ipydatagrid"]
 jscatter = ["jupyter-scatter"]
 k3d = ["k3d"]
+# An explicit pre-release specifier, so uv/pip accept it without --pre.
+# keplergl 0.3.x imports pkg_resources (removed in setuptools 82), so 0.4
+# (an anywidget rewrite) is the first version that imports there.
+keplergl = ["keplergl>=0.4.0rc4"]
 # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
 # Python 3.15+ yet, so lonboard can't be installed there
 lonboard = ["lonboard; python_version < '3.15'"]
@@ -73,6 +77,7 @@ test = [
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
   "k3d",
+  "keplergl>=0.4.0rc4",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
@@ -107,6 +112,9 @@ dev = [
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
   "k3d",
+  "keplergl>=0.4.0rc4",
+  # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
+  # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
   "panel",
@@ -142,6 +150,7 @@ test = [
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
   "k3d",
+  "keplergl>=0.4.0rc4",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
