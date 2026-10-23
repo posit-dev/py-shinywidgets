@@ -333,8 +333,10 @@ def as_widget_pyvista(x: object) -> Widget:
     from pyvista import Plotter
 
     if not isinstance(x, Plotter):
+        # Name the type rather than interpolating x: a pyvista mesh repr is a
+        # multi-line stats dump that would flood the Shiny error box
         raise TypeError(
-            f"Don't know how to coerce {x} into a ipywidget (expected a pyvista.Plotter)."
+            f"Don't know how to coerce {type(x).__name__} into an ipywidget (expected a pyvista.Plotter)."
         )
 
     try:

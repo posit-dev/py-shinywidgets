@@ -56,6 +56,17 @@ def test_as_widget_pyvista_rejects_non_plotter() -> None:
         as_widget_pyvista(object())
 
 
+def test_as_widget_pyvista_error_names_type_not_repr() -> None:
+    # A pyvista mesh repr is a multi-line stats dump; the error should name
+    # the type instead of flooding the Shiny error box with mesh stats
+    with pytest.raises(TypeError) as excinfo:
+        as_widget_pyvista(pv.Sphere())
+    msg = str(excinfo.value)
+    assert "PolyData" in msg
+    assert "an ipywidget" in msg
+    assert "\n" not in msg
+
+
 def test_pyvista_layout_defaults_fill(widget_session) -> None:
     w = coerce_plotter(widget_session, make_plotter())
     _, fill = set_layout_defaults(w)
