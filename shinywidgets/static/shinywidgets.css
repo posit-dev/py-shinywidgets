@@ -138,6 +138,13 @@
   --bq-mark-tooltip-border: 2px solid var(--jp-border-color0);
   --bq-mark-tooltip-background-color: var(--jp-layout-color0);
   --bq-mark-tooltip-td-border: 1px solid var(--jp-border-color1);
+  /* bqplot also resolves these aliases at :root (through --bq-content-font-color),
+     so they must be re-declared here for the font color above to reach them */
+  --bq-default-stroke: var(--bq-content-font-color);
+  --bq-stick-stroke: var(--bq-content-font-color);
+  --bq-stick-fill: var(--bq-content-font-color);
+  --bq-sticktext-fill: var(--bq-content-font-color);
+  --bq-pie-polyline-stroke: var(--bq-content-font-color);
 }
 
 /*
@@ -146,12 +153,19 @@
 * inline style output_widget(height=) emits (see _output_widget.py), so keep the two
 * in sync. Intrinsic heights (`auto`, `fit-content`, ...; the browser may reserialize
 * the style with a space after the colon) aren't definite, so 100% of them would
-* collapse the figure.
+* collapse the figure. The exclusions match `height:` declarations only, so that an
+* intrinsic `width:` (or a custom-property height like `var(--content-height)`) doesn't
+* disable explicit-height sizing.
 */
 .shiny-ipywidget-output[style*="height:"]:not(
     [style*="height:auto"],
     [style*="height: auto"],
-    [style*="-content"]
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
   )
   > .bqplot {
   height: 100%;
