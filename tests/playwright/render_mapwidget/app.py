@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipywidgets as widgets
 import mapwidget.leaflet
 import mapwidget.maplibre
 import mapwidget.openlayers
@@ -29,6 +30,7 @@ app_ui = ui.page_fluid(
     output_widget("map_output_height", height="300px"),
     output_widget("mapml_output_height", height="300px"),
     output_widget("map_explicit_height"),
+    output_widget("map_layout_height"),
     output_widget("map_auto_height", height="auto"),
 )
 
@@ -74,6 +76,12 @@ def server(input, output, session):
     @render_mapwidget
     def map_explicit_height():
         return mapwidget.maplibre.Map(height="800px")
+
+    # An explicit Layout height must size the map itself, not just the widget
+    # container (the backend's default 600px inner map would overflow it)
+    @render_mapwidget
+    def map_layout_height():
+        return mapwidget.leaflet.Map(layout=widgets.Layout(height="300px"))
 
     # `height: auto` is not a definite height, so the map keeps its own
     # default height rather than collapsing to 0

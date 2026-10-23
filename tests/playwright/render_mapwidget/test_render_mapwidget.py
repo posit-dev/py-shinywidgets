@@ -87,6 +87,9 @@ def test_mapwidget_respects_explicit_heights(page: Page, local_app) -> None:
     expect(page.locator("#map_explicit_height .maplibregl-map")).to_have_count(
         1, timeout=30000
     )
+    expect(page.locator("#map_layout_height .leaflet-container")).to_have_count(
+        1, timeout=30000
+    )
     expect(page.locator("#map_auto_height .maplibregl-map")).to_have_count(
         1, timeout=30000
     )
@@ -98,6 +101,11 @@ def test_mapwidget_respects_explicit_heights(page: Page, local_app) -> None:
     assert abs(box(page, "#mapml_output_height .maplibregl-map")["height"] - 300) <= EPS
     # ... an explicit map height wins over filling...
     assert abs(box(page, "#map_explicit_height .maplibregl-map")["height"] - 800) <= EPS
+    # ... and an explicit Layout height sizes the map itself (the backend's
+    # default 600px inner map would overflow the 300px widget container)
+    assert (
+        abs(box(page, "#map_layout_height .leaflet-container")["height"] - 300) <= EPS
+    )
     # ... and an `auto` output height isn't definite, so the map keeps its
     # default 600px (it must not collapse to 0)
     assert abs(box(page, "#map_auto_height .maplibregl-map")["height"] - 600) <= EPS

@@ -318,6 +318,42 @@ def test_mapwidget_explicit_layout_height_does_not_fill() -> None:
     _, fill = rwb.set_layout_defaults(w)
     assert fill is False
     assert "shinywidgets-mapwidget-fill" not in w._dom_classes
+    # The backend sizes the map from its own `height` trait (600px by default),
+    # so the layout height must be propagated to it for the map to actually
+    # render at 300px
+    assert w.height == "300px"
+
+
+def test_mapwidget_fill_class_removed_when_rerender_stops_filling() -> None:
+    pytest.importorskip("mapwidget")
+    import ipywidgets as widgets
+    from mapwidget.leaflet import Map
+
+    # A session-lifetime map first rendered with its default height (fill
+    # class added), then returned again with an explicit height, must lose the
+    # class -- otherwise its CSS keeps clamping the new view to the output
+    # height instead of respecting the explicit map height
+    w = Map()
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is True
+    assert "shinywidgets-mapwidget-fill" in w._dom_classes
+
+    w.height = "400px"
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is False
+    assert "shinywidgets-mapwidget-fill" not in w._dom_classes
+
+    # Same transition via an explicit layout height
+    w2 = Map()
+    _, fill = rwb.set_layout_defaults(w2)
+    assert fill is True
+    assert "shinywidgets-mapwidget-fill" in w2._dom_classes
+
+    w2.layout = widgets.Layout(height="300px")
+    _, fill = rwb.set_layout_defaults(w2)
+    assert fill is False
+    assert "shinywidgets-mapwidget-fill" not in w2._dom_classes
+    assert w2.height == "300px"
 
 
 def test_mapwidget_subclass_gets_layout_defaults() -> None:

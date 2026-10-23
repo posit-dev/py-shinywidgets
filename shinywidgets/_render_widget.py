@@ -307,7 +307,16 @@ class render_mapwidget(render_widget_base[ValueT, MapwidgetMap]):
     Note that calls made *before* the map's first render (e.g., inside the
     render function itself) are silently dropped by mapwidget -- issue them
     from a `@reactive.effect` that reads `.widget`, which also re-applies them
-    if a re-render replaces the map.
+    if a re-render replaces the map. Be aware, though, that reading `.widget`
+    tracks widget *replacement*, not browser readiness: the effect runs as
+    soon as the Python-side widget exists, but the browser view (and the
+    message listener the backend installs while rendering, possibly after its
+    CDN imports load) may not exist yet, so a call issued the moment the
+    effect runs can still be silently dropped -- including right after a
+    replacement. mapwidget currently provides no client-side readiness signal,
+    so for reliably timed initialization, gate calls on state that only the
+    browser can produce (e.g., a :func:`~shinywidgets.reactive_read` of map
+    state synced back from the browser, or user input).
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
