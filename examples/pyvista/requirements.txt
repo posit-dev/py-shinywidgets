@@ -1,0 +1,4 @@
+shiny
+shinywidgets
+pyvista[jupyter]
+numpy

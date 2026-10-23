@@ -60,6 +60,9 @@ test = [
   "perspective-python>=3.0",
   "playwright>=1.40.0",
   "plotly>=5.0.0",
+  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
+  # so pyvista can't be installed there
+  "pyvista[jupyter]; python_version < '3.15'",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
@@ -88,6 +91,9 @@ dev = [
   "perspective-python>=3.0",
   "playwright>=1.40.0",
   "plotly>=5.0.0",
+  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
+  # so pyvista can't be installed there
+  "pyvista[jupyter]; python_version < '3.15'",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
@@ -121,6 +127,9 @@ test = [
   "perspective-python>=3.0",
   "playwright>=1.40.0",
   "plotly>=5.0.0",
+  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
+  # so pyvista can't be installed there
+  "pyvista[jupyter]; python_version < '3.15'",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",

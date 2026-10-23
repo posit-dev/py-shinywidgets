@@ -42,6 +42,8 @@ def as_widget(x: object) -> Widget:
       `ipympl.backend_nbagg.Canvas`
     * panel pane/viewable -> bokeh model
     * plotly `Figure` -> `plotly.graph_objects.FigureWidget`
+    * pyvista `Plotter` -> a self-contained client-side (vtk.js) widget (via
+      pyvista's ``jupyter_backend='html'`` export)
     * pydeck `Deck` -> `pydeck.widget.DeckGLWidget` (pydeck <= 0.8 only; pydeck
       v0.9 removed its widget, so this raises a `TypeError` that points to
       alternatives)
@@ -324,6 +326,47 @@ def as_widget_plotly(x: object) -> Optional[Widget]:
     return go.FigureWidget(x.data, x.layout)  # type: ignore
 
 
+def as_widget_pyvista(x: object) -> Widget:
+    # pyvista is guaranteed to be installed here since this function is only
+    # called when x comes from the pyvista package
+    from ipywidgets import DOMWidget, Layout
+    from pyvista import Plotter
+
+    if not isinstance(x, Plotter):
+        raise TypeError(
+            f"Don't know how to coerce {x} into a ipywidget (expected a pyvista.Plotter)."
+        )
+
+    try:
+        from trame_pyvista.jupyter import show_trame
+    except ImportError:
+        raise ImportError(
+            "Install pyvista's jupyter extra to use pyvista with shinywidgets (pip install 'pyvista[jupyter]')."
+        )
+
+    # jupyter_backend='html' exports the scene to a self-contained,
+    # client-side vtk.js view. pyvista's other interactive backends ('trame',
+    # 'client', 'server') need their own trame websocket server, which
+    # shinywidgets can't host.
+    widget = show_trame(x, mode="html", width="100%", height="100%")
+    if not isinstance(widget, DOMWidget):
+        raise TypeError(
+            f"Expected pyvista's html jupyter backend to produce an ipywidget, but got {type(widget)}."
+        )
+
+    # Size the iframe (via width/height='100%' above) and the widget itself to
+    # the output container; _LAYOUT_DEFAULTS in _render_widget_base.py keeps
+    # this from reading as a user-specified height
+    widget.layout = Layout(width="100%", height="100%")
+
+    # The scene is fully serialized into the widget, so the plotter's
+    # (offscreen) GL resources are no longer needed (mirrors Plotter.show()'s
+    # auto_close)
+    x.close()
+
+    return widget
+
+
 def as_widget_pydeck(x: object) -> Widget:
     # Check before calling show(): on pydeck >= 0.9 it serializes the whole deck
     # into HTML for nothing, and that can fail with a cryptic error of its own
@@ -371,6 +414,7 @@ AS_WIDGET_MAP = {
     "panel": as_widget_panel,
     "plotly": as_widget_plotly,
     "pydeck": as_widget_pydeck,
+    "pyvista": as_widget_pyvista,
     "seaborn": as_widget_mpl,
 }
 
