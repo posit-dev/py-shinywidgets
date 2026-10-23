@@ -40,7 +40,7 @@ from ._as_widget import as_widget, pydeck_has_widget
 from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
-from ._dependencies import require_dependency, widget_pkg
+from ._dependencies import jupyter_vue_dependency, require_dependency, widget_pkg
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -63,7 +63,7 @@ def init_shiny_widget(w: Widget):
         return
     session = get_current_session()
     if session is None:
-        if importing_lonboard():
+        if importing_lonboard() or importing_ipyvue() or importing_ipyvuetify():
             return
         raise RuntimeError(
             "shinywidgets requires that all ipywidgets be constructed within an active Shiny session"
@@ -135,6 +135,10 @@ def init_shiny_widget(w: Widget):
 
     widget_deps: List[Optional[HTMLDependency]] = [widget_dep]
     open_keys: Dict[str, object] = {}
+    if getattr(w, "_model_module", None) == "jupyter-vuetify":
+        # jupyter-vuetify's bundle externally requires('jupyter-vue'), which
+        # otherwise has no require.js path config (and 404s to a CDN fallback)
+        widget_deps.append(jupyter_vue_dependency(session))
     if getattr(w, "_model_module", None) == "@bokeh/jupyter_bokeh":
         widget_deps.append(_bokeh_dependency())
         ext = bokeh_extension_assets(w, session)
@@ -271,6 +275,33 @@ def importing_lonboard() -> bool:
     lonboard = sys.modules.get("lonboard")
     # lonboard.Map is only bound once its class body has finished executing
     return lonboard is not None and not hasattr(lonboard, "Map")
+
+
+def importing_ipyvue() -> bool:
+    """
+    Is ipyvue constructing its module-level `force_load_instance` widget?
+
+    That singleton exists to force Jupyter to load the jupyter-vue frontend
+    extension; shinywidgets loads widget modules on demand instead, so the
+    instance is never displayed and can't belong to a session. ipyvolume
+    imports ipyvue (via ipyvuetify), so without this an app can't even
+    `import ipyvolume` at module level.
+    """
+    force_load = sys.modules.get("ipyvue.ForceLoad")
+    # force_load_instance is only bound once the module has finished executing
+    return force_load is not None and not hasattr(force_load, "force_load_instance")
+
+
+def importing_ipyvuetify() -> bool:
+    """
+    Is ipyvuetify constructing its module-level `theme` widget (and its
+    ThemeColors sub-widgets)? Like ipyvue's force_load_instance (see
+    importing_ipyvue()), it's a shared singleton that can't belong to a
+    session, and ipyvolume imports ipyvuetify at module level.
+    """
+    themes = sys.modules.get("ipyvuetify.Themes")
+    # theme is only bound once the module has finished executing
+    return themes is not None and not hasattr(themes, "theme")
 
 
 def is_unused_pydeck_widget(w: Widget) -> bool:

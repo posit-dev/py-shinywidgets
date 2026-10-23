@@ -49,6 +49,9 @@ test = [
   "hvplot",
   "ipyleaflet>=0.20.0",
   "holoviews",
+  # ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
+  "ipyvolume",
+  "ipython_genutils",
   "ipympl",
   "matplotlib",
   "jupyter_bokeh>=4.1",
@@ -79,6 +82,9 @@ dev = [
   "hvplot",
   "ipyleaflet>=0.20.0",
   "holoviews",
+  # ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
+  "ipyvolume",
+  "ipython_genutils",
   "ipympl",
   "matplotlib",
   "jupyter_bokeh>=4.1",
@@ -110,6 +116,9 @@ test = [
   "hvplot",
   "ipyleaflet>=0.20.0",
   "holoviews",
+  # ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
+  "ipyvolume",
+  "ipython_genutils",
   "ipympl",
   "matplotlib",
   "jupyter_bokeh>=4.1",

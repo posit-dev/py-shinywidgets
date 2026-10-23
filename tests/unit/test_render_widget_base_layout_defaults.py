@@ -279,3 +279,23 @@ def test_maplibre_explicit_layout_height_is_kept() -> None:
     _, fill = rwb.set_layout_defaults(w)
     assert fill is False
     assert w.layout.height == "300px"
+
+
+def test_ipyvolume_default_size_fills() -> None:
+    pytest.importorskip("ipyvolume")
+    import ipyvolume as ipv
+
+    # Both construction paths' default canvas sizes count as "unset": the
+    # trait default (500x400) and ipv.figure()'s (400x500)
+    for w in (ipv.Figure(), ipv.figure()):
+        _, fill = rwb.set_layout_defaults(w)
+        assert fill is True
+
+
+def test_ipyvolume_explicit_size_disables_fill() -> None:
+    pytest.importorskip("ipyvolume")
+    import ipyvolume as ipv
+
+    for w in (ipv.Figure(height=300), ipv.figure(width=800), ipv.figure(height=300)):
+        _, fill = rwb.set_layout_defaults(w)
+        assert fill is False

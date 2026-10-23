@@ -103,7 +103,19 @@ def require_dependency(
     # Get the location where the dependency files will be mounted by the shiny app
     # and use that to inform the requirejs import path
     href = dep.source_path_map(lib_prefix=session.app.lib_prefix)["href"]
-    config = {"paths": {module_name: os.path.join(href, "index")}}
+    config: dict[str, object] = {"paths": {module_name: os.path.join(href, "index")}}
+    paths = config["paths"]
+    assert isinstance(paths, dict)
+    for bundled, global_name in _AMD_BUNDLED_DEPS.get(module_name, {}).items():
+        if not os.path.exists(os.path.join(module_dir, f"{bundled}.js")):
+            continue
+        alias = f"{module_name}/{bundled}"
+        paths[alias] = os.path.join(href, bundled)
+        config["map"] = {module_name: {bundled: alias}}
+        # UMD bundles take the global-export branch (shiny's require.js wrapper
+        # keeps define.amd = false), so expose the global as the module value
+        if global_name is not None:
+            config["shim"] = {alias: {"exports": global_name}}
     # Basically our equivalent of the extension.js file provided by the cookiecutter
     # https://github.com/jupyter-widgets/widget-cookiecutter/blob/master/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js
     return HTMLDependency(
@@ -159,6 +171,52 @@ def widget_pkg(w: object) -> str:
     # Instances of builtins (e.g., "x", {}) have no __module__ attribute
     module: str = getattr(w, "__module__", None) or type(w).__module__
     return module.split(".")[0]
+
+
+def jupyter_vue_dependency(session: Session) -> Optional[HTMLDependency]:
+    """
+    A require.js path config for the jupyter-vue nbextension.
+
+    jupyter-vuetify's AMD bundle externally requires('jupyter-vue'), but no
+    widget with that module is ever constructed (e.g., ipyvolume's Container
+    is a VuetifyTemplate, whose module is jupyter-vuetify), so without this
+    require.js looks for jupyter-vue.js at the app root (404) and falls back
+    to a CDN.
+    """
+    module_dir = jupyter_extension_path("jupyter-vue")
+    if module_dir is None:
+        return None
+
+    import ipyvue
+
+    version = parse_version_safely(ipyvue.__version__)
+    source = HTMLDependencySource(subdir=module_dir)
+    dep = HTMLDependency("jupyter-vue", version, source=source)
+    href = dep.source_path_map(lib_prefix=session.app.lib_prefix)["href"]
+    config = {"paths": {"jupyter-vue": os.path.join(href, "index")}}
+    return HTMLDependency(
+        "jupyter-vue",
+        version,
+        source=source,
+        all_files=True,
+        head=tags.script(f"window.require.config({json.dumps(config)})"),
+    )
+
+
+# Some widgets' AMD bundles declare external require.js dependencies (see the
+# define([...]) header of their index.js) that the classic notebook resolves
+# through nbextension require.config paths we don't replicate. Each ships its
+# own build of the dependency in its nbextension directory, so serve that copy
+# under an alias and scope it to the module via require.js `map` -- ipyvolume
+# and pythreejs (jupyter-threejs), for example, bundle different three.js
+# builds, and an ipyvolume figure needs both of them (its scene/camera are
+# pythreejs widgets). The value is the name of the global the bundle exports
+# when it's a UMD bundle (which takes the global branch under shiny's
+# define.amd = false) rather than an AMD module.
+_AMD_BUNDLED_DEPS: dict[str, dict[str, Optional[str]]] = {
+    "ipyvolume": {"three": None},
+    "jupyter-threejs": {"three": "THREE"},
+}
 
 
 def parse_version(v: str) -> str:

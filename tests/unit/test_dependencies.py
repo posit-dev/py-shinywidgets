@@ -1,3 +1,4 @@
+import json
 import types
 import warnings
 from types import ModuleType
@@ -9,6 +10,7 @@ from ipywidgets.widgets.domwidget import DOMWidget
 from shinywidgets._dependencies import (
     jupyter_extension_destination,
     jupyter_extension_path,
+    jupyter_vue_dependency,
     output_binding_dependency,
     parse_version,
     parse_version_safely,
@@ -200,3 +202,100 @@ def test_require_dependency_extension_found_returns_dependency(
     assert "window.require.config(" in head
     assert "some-widget-module" in head
     assert "/lib/some-widget-module-1.2.3/index" in head
+
+
+# (module, expected shim): pythreejs's three.js is a UMD bundle, which takes
+# the global-export branch under shiny's define.amd = false, so its module
+# value has to come from a shim; ipyvolume's is a plain AMD module
+@pytest.mark.parametrize(
+    "module_name,shim",
+    [("ipyvolume", None), ("jupyter-threejs", "THREE")],
+)
+def test_require_dependency_maps_bundled_amd_dependencies(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, module_name: str, shim: str | None
+) -> None:
+    # ipyvolume's and pythreejs's AMD bundles declare an external `three`
+    # dependency; each ships its own three.js build in its nbextension
+    # directory, which must be mapped (scoped per module) or require.js
+    # resolves `three` relative to the app root and 404s
+    class DummyWidget:
+        __module__ = f"{module_name}.widgets"
+
+    w = DummyWidget()
+    w._model_module = module_name
+    w._model_module_version = "^1.2.3"
+
+    module_dir = tmp_path / "nbextensions" / module_name
+    module_dir.mkdir(parents=True)
+    (module_dir / "index.js").write_text("// hi", encoding="utf-8")
+    (module_dir / "three.js").write_text("// three", encoding="utf-8")
+
+    session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
+    monkeypatch.setattr(deps, "jupyter_extension_path", lambda name: str(module_dir))
+
+    dep = require_dependency(w, session)
+    assert dep is not None
+    head = str(dep.head)
+    config = json.loads(head.split("window.require.config(", 1)[1].split(")", 1)[0])
+    alias = f"{module_name}/three"
+    assert config["paths"][alias].endswith(f"{module_name}-1.2.3/three")
+    assert config["map"] == {module_name: {"three": alias}}
+    if shim is None:
+        assert "shim" not in config
+    else:
+        assert config["shim"] == {alias: {"exports": shim}}
+
+
+def test_require_dependency_without_bundled_amd_dependency(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No three.js next to index.js: no map config (the CDN fallback applies)
+    class DummyWidget:
+        __module__ = "ipyvolume.widgets"
+
+    w = DummyWidget()
+    w._model_module = "ipyvolume"
+    w._model_module_version = "^1.2.3"
+
+    module_dir = tmp_path / "nbextensions" / "ipyvolume"
+    module_dir.mkdir(parents=True)
+    (module_dir / "index.js").write_text("// hi", encoding="utf-8")
+
+    session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
+    monkeypatch.setattr(deps, "jupyter_extension_path", lambda name: str(module_dir))
+
+    dep = require_dependency(w, session)
+    assert dep is not None
+    head = str(dep.head)
+    config = json.loads(head.split("window.require.config(", 1)[1].split(")", 1)[0])
+    assert "map" not in config
+
+
+def test_jupyter_vue_dependency_maps_the_nbextension(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # jupyter-vuetify's AMD bundle externally requires('jupyter-vue'); without
+    # this path config require.js requests jupyter-vue.js at the app root
+    # (404) and falls back to a CDN
+    module_dir = tmp_path / "nbextensions" / "jupyter-vue"
+    module_dir.mkdir(parents=True)
+    (module_dir / "index.js").write_text("// hi", encoding="utf-8")
+
+    session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
+    monkeypatch.setattr(deps, "jupyter_extension_path", lambda name: str(module_dir))
+
+    dep = jupyter_vue_dependency(session)
+    assert dep is not None
+    head = str(dep.head)
+    config = json.loads(head.split("window.require.config(", 1)[1].split(")", 1)[0])
+    assert config["paths"]["jupyter-vue"].startswith("/lib/jupyter-vue-")
+    assert config["paths"]["jupyter-vue"].endswith("/index")
+
+
+def test_jupyter_vue_dependency_missing_nbextension(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
+    monkeypatch.setattr(deps, "jupyter_extension_path", lambda name: None)
+
+    assert jupyter_vue_dependency(session) is None

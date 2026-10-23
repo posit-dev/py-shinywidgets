@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     import plotly.graph_objects as go
     from altair import JupyterChart
     from ipympl.backend_nbagg import Canvas as MplCanvas
+    from ipyvolume.widgets import Figure as IpyvolumeFigure
     from jupyter_bokeh import BokehModel
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
     from maplibre.ipywidget import MapWidget
@@ -20,7 +21,7 @@ else:
     JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
         object
     )
-    LonboardMap = object
+    IpyvolumeFigure = LonboardMap = object
 
 from shiny.render.renderer import ValueFn
 
@@ -46,6 +47,7 @@ __all__ = (
     "render_altair",
     "render_bokeh",
     "render_holoviews",
+    "render_ipyvolume",
     "render_lonboard",
     "render_maplibre",
     "render_matplotlib",
@@ -165,6 +167,82 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    """
+
+
+class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
+    """
+    Reactively render an [ipyvolume](https://ipyvolume.readthedocs.io) 3D plot as
+    a Shiny output.
+
+    The decorated function may return an `ipyvolume.Figure` widget (e.g.,
+    `ipv.figure()`, or `ipv.gcf()` after drawing with pylab functions like
+    `ipv.scatter()`), or the container returned by `ipv.quickscatter()` and
+    `ipv.gcc()`, which is unwrapped to its figure (requires ``pip install
+    ipyvolume``; ipyvolume 0.6.3 also needs ``pip install ipython_genutils``,
+    which it doesn't declare). Call the pylab functions inside the render
+    function: they draw on a module-level "current figure", so figures created
+    elsewhere can end up shared across sessions. If the output re-renders
+    often, construct `ipyvolume.Figure`/`ipyvolume.widgets.Scatter` directly
+    instead: pylab also constructs a (never rendered) Container whose shared
+    template widgets get closed by the first re-render, leaving dangling
+    model waiters in the browser. With direct construction, set
+    ``size_selected``/``color_selected`` explicitly on scatters -- their
+    trait defaults are 0-d numpy arrays, which don't JSON-serialize. In a
+    filling layout, the
+    figure's WebGL canvas is resized to fill its container (and tracks
+    container resizes) unless the figure has an explicit ``width`` or
+    ``height``.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `ipyvolume.Figure` instance. Use `.widget` to programmatically update the
+    rendered figure in place (trait changes on the widget are synced to the
+    browser), or to reactively read widget state with
+    :func:`~shinywidgets.reactive_read` (e.g., ``reactive_read(plot.widget,
+    "camera")``). For selections, register a callback with
+    ``plot.widget.on_selection(fn)`` (selections arrive as custom messages, not
+    trait changes) and set a `reactive.value` inside it.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    import ipyvolume as ipv
+    import numpy as np
+    from shiny import App, ui
+    from shinywidgets import output_widget, render_ipyvolume
+
+    app_ui = ui.page_fillable(output_widget("plot"))
+
+
+    def server(input, output, session):
+        @render_ipyvolume
+        def plot():
+            x, y, z = np.random.normal(size=(3, 1000))
+            ipv.quickscatter(x, y, z, size=1, marker="sphere")
+            return ipv.gcf()
+
+
+    app = App(app_ui, server)
+    ```
     """
 
 

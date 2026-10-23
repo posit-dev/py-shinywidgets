@@ -304,6 +304,22 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def ipyvolume_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from ipyvolume.widgets import Figure
+
+    if not isinstance(widget, Figure):
+        return fill
+
+    # A figure's width/height are its WebGL canvas size in pixels. Treat both
+    # "default" sizes as unset: the trait default (500x400) and the one
+    # ipv.figure()/quickscatter() always passes explicitly (400x500). When
+    # filling, the browser resizes the canvas to the container (see
+    # WIDGET_BEHAVIORS in js/src/fill.ts).
+    if (widget.width, widget.height) not in ((500, 400), (400, 500)):
+        return False
+    return fill
+
+
 def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     from lonboard import Map  # pyright: ignore[reportMissingImports]
 
@@ -380,6 +396,7 @@ def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
+    "ipyvolume": ipyvolume_layout_defaults,
     "lonboard": lonboard_layout_defaults,
     "jupyter_bokeh": bokeh_layout_defaults,
     "maplibre": maplibre_layout_defaults,

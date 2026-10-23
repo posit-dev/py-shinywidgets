@@ -1,4 +1,5 @@
 import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
+import { setupIpyvolumeAutoResize } from './ipyvolume';
 import { setupMplAutoResize } from './mpl';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 
@@ -72,6 +73,25 @@ const plotlyBehavior: WidgetBehavior = {
   },
 };
 
+// ipyvolume figures render at a fixed pixel size and need their canvas
+// resized to the container (see setupIpyvolumeAutoResize). The same applies
+// when the output (or the widget's own Layout) has an explicit height;
+// otherwise the figure's intrinsic size applies, so leave it alone.
+const ipyvolumeBehavior: WidgetBehavior = {
+  setupFill: ({ el, view, model }) => setupIpyvolumeAutoResize(el, view, model),
+  setupFixedSize: ({ el, lmWidget, view, model }) =>
+    // Only resize when the output (or the widget's own Layout, which lands on
+    // the widget element) has an explicit height; otherwise the figure's
+    // intrinsic pixel size applies. Checked at resize time: the Layout style
+    // may only be applied after setup runs.
+    setupIpyvolumeAutoResize(
+      el,
+      view,
+      model,
+      () => !!(el.style.height || lmWidget.style.height || (view.el as HTMLElement).style.height)
+    ),
+};
+
 // In most cases, we can get widgets to fill through Python/CSS, but quak
 // doesn't have a Python API and uses shadow DOM, which can only be accessed
 // from JS
@@ -87,6 +107,7 @@ const quakBehavior: WidgetBehavior = {
 
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
+  ipyvolume: ipyvolumeBehavior,
   plotly: plotlyBehavior,
   quak: quakBehavior,
 };
