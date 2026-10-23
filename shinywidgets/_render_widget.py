@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, cast
 
 from htmltools import Tag
@@ -12,6 +13,7 @@ if TYPE_CHECKING:
     from jupyter_bokeh import BokehModel
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
     from maplibre.ipywidget import MapWidget
+    from maplibre.map import Map as MaplibreMap
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
     from quak import Widget as QuakWidget
@@ -21,6 +23,9 @@ else:
     )
     LonboardMap = QuakWidget = object
 
+from shiny.render.renderer import ValueFn
+
+from ._as_widget import PYDECK_NO_WIDGET_MESSAGE, as_widget_panel, pydeck_has_widget
 from ._bokeh import bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
@@ -34,6 +39,8 @@ if TYPE_CHECKING:
 # The bound is a string so it stays a lazy forward reference at runtime (the
 # alias it points to references plotly, an optional dependency).
 PlotlyValueT = TypeVar("PlotlyValueT", bound="PlotlyValue")
+# MapWidget subclasses maplibre.Map, so this bound covers both.
+MaplibreValueT = TypeVar("MaplibreValueT", bound="MaplibreMap")
 
 __all__ = (
     "render_widget",
@@ -123,6 +130,28 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ---
+    **Selections and params**: name your selections and params (e.g.,
+    ``alt.selection_interval(name="brush")``), then read them with
+    ``reactive_read(chart.widget.selections, "brush").value``, or observe them on a
+    `JupyterChart` you build yourself (``jchart.selections.observe(fn, ["brush"])``).
+    Selections can't be set from Python, but params can: setting
+    ``chart.widget.params.<name> = value`` updates the chart in place without
+    re-sending its data. To throttle how often selections update Python while
+    dragging, return ``alt.JupyterChart(chart, debounce_wait=150)``. Prefer params
+    (or a re-render) over replacing ``chart.widget.chart``, which re-sends the data,
+    drops the container sizing described below, and replaces
+    ``chart.widget.selections`` and ``chart.widget.params``.
+
+    **Sizing**: a chart without an explicit width or height is sized to fill its
+    output (``"container"``). Concatenated, faceted, and repeated charts keep their
+    natural size.
+
+    **Offline use**: `JupyterChart` loads its JavaScript from a CDN; call
+    ``alt.JupyterChart.enable_offline()`` (requires ``vl-convert-python``) for apps
+    that run without internet access.
+
     Parameters
     ----------
     width
@@ -199,7 +228,7 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         return super()._as_widget(cast(ValueT, m))
 
 
-class render_maplibre(render_widget_base[ValueT, MapWidget]):
+class render_maplibre(render_widget_base[MaplibreValueT, MapWidget]):
     """
     Reactively render a [maplibre](https://eoda-dev.github.io/py-maplibregl/) map as a
     Shiny output.
@@ -324,15 +353,36 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
     """
     Reactively render a [panel](https://panel.holoviz.org) object as a Shiny output.
 
-    The decorated function may return either a panel pane or viewable (which is
-    rendered through bokeh; requires ``pip install panel``) or the underlying
-    `jupyter_bokeh.BokehModel` widget.
+    The decorated function may return any object that ``pn.panel()`` accepts (e.g., a
+    pane, widget, layout, `pn.viewable.Viewer`, string, DataFrame, or figure), which
+    is rendered through bokeh (requires ``pip install panel jupyter_bokeh``), or the
+    underlying `jupyter_bokeh.BokehModel` widget. Panel callbacks (e.g., ``pn.bind()``,
+    ``.param.watch()``, and ``on_click()``) run in the Shiny server, without a Panel
+    server.
 
-    The decorated function also gains two read-only attributes: `.value`, the value
+    The decorated function also gains two read-only attributes: `.value`, the object
     most recently returned by the render function, and `.widget`, the rendered
-    `BokehModel` instance. Use `.widget` to programmatically update the rendered
-    output in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    `BokehModel` instance. `.value` is the return value exactly as returned -- to get
+    a Panel object with a parameter interface, return a pane or widget explicitly
+    rather than a raw value like a DataFrame. To update the output without
+    re-rendering, modify `.value` in place (e.g., ``table.value.value = df``).
+    Panel parameters are not
+    widget traits, so instead of :func:`~shinywidgets.reactive_read`, use
+    ``.param.watch()`` to react to them (e.g., ``slider.param.watch(lambda e:
+    val.set(e.new), "value")``, where ``val`` is a `reactive.value`).
+
+    Some other things to know:
+
+    * Set ``sizing_mode="stretch_both"`` on the panel object to fill the output.
+    * Call ``pn.extension()`` with the extensions you use (e.g.,
+      ``pn.extension("tabulator")``) at the top of the app, especially for
+      components that may first appear after the initial render (e.g., inside
+      ``pn.bind()``). Otherwise they render blank.
+    * Create panel objects per session (e.g., inside the render function), not at the
+      top level of a Shiny Core app, where every visitor would share them (and see
+      each other's changes).
+    * Panel templates are full pages, so they can't be rendered in an output; use
+      Shiny's page layouts instead.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -358,6 +408,14 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
         res.children.append(bokeh_dependency())
         return res
 
+    def _as_widget(self, value: ValueT) -> BokehModel:
+        if isinstance(value, Widget):
+            return super()._as_widget(value)
+        # Like Panel itself, render anything pn.panel() accepts (e.g., a string or
+        # DataFrame), and render figures as Panel panes rather than through
+        # their own package's widget (e.g., a plotly FigureWidget)
+        return cast(BokehModel, as_widget_panel(value))
+
 
 class render_holoviews(render_widget_base[ValueT, BokehModel]):
     """
@@ -365,14 +423,40 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
     [hvPlot](https://hvplot.holoviz.org) object as a Shiny output.
 
     The decorated function may return either a holoviews/hvplot object (which is
-    rendered through panel; requires ``pip install panel``) or the underlying
-    `jupyter_bokeh.BokehModel` widget.
+    rendered through panel; requires ``pip install panel jupyter_bokeh``) or the
+    underlying `jupyter_bokeh.BokehModel` widget. If you call ``.opts()`` without
+    importing hvplot, call ``hv.extension("bokeh")`` first. Plots rasterized with
+    [datashader](https://datashader.org) are supported too (e.g., hvPlot's
+    ``rasterize=True`` or holoviews' ``rasterize()`` operation; requires
+    ``pip install datashader``): they re-aggregate the data on the server for the
+    visible region whenever the user zooms or pans. Build such plots inside the
+    render function rather than once at module level: holoviews links every
+    display of the same object, so a shared plot would apply one user's zoom to
+    every session's plot. Also note that re-aggregation runs on the server's
+    event loop, so a slow aggregation delays every session served by that
+    process.
 
-    The decorated function also gains two read-only attributes: `.value`, the value
-    most recently returned by the render function, and `.widget`, the rendered
-    `BokehModel` instance. Use `.widget` to programmatically update the rendered
-    output in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    HoloViews and hvPlot plots have a fixed size by default (and get clipped by a
+    smaller container). To make a plot fill its output, pass ``responsive=True``
+    (e.g., ``df.hvplot.line(..., responsive=True)`` or ``.opts(responsive=True)``),
+    optionally with a fixed ``height``.
+
+    The decorated function also gains two read-only attributes: `.value`, the
+    holoviews/hvplot object most recently returned by the render function, and
+    `.widget`, the rendered `BokehModel` instance. HoloViews' own Python-side
+    interactivity (e.g., widgets for a ``HoloMap`` or ``DynamicMap``, streams such as
+    ``Selection1D`` or ``BoundsXY``, and ``hv.link_selections``) works without a Bokeh
+    server. To react to it in Shiny, set a `reactive.value` from a stream subscriber
+    or a ``.param.watch()`` callback (e.g., ``links.param.watch(lambda e:
+    selection.set(e.new), "selection_expr")``) instead of using
+    :func:`~shinywidgets.reactive_read`. To update a plot without re-rendering, drive
+    a ``DynamicMap`` with a stream (e.g., call ``stream.event(...)`` or
+    ``pipe.send(...)`` in a `reactive.effect`).
+
+    Create streams and ``link_selections`` instances per session (e.g., in the
+    server function, or anywhere in a Shiny Express app), not at the top level of a
+    Shiny Core app, where every visitor would share them (and see each other's
+    selections).
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -416,13 +500,33 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     exactly what the render function returned (a figure or the `(figure, config)`
     tuple), and `.widget`, which is always the coerced `FigureWidget` (with `config`
     merged into its ``_config`` trait). Use `.widget` to programmatically update the
-    rendered figure in place (trait changes on the widget are synced to the browser),
-    or to reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    rendered figure in place (trait changes on the widget are synced to the browser).
+    When the render function returns a `go.Figure`, `.value` is that figure, not the
+    displayed one, so modifying it has no effect.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Note
     ---
+    **Events**: to respond to user interaction, return a `go.FigureWidget` and
+    register plotly callbacks on it (e.g., ``fig.data[0].on_click(fn)``,
+    ``fig.data[0].on_selection(fn)``, or ``fig.layout.xaxis.on_change(fn,
+    "range")``), typically setting a `reactive.value` inside the callback.
+    Callbacks registered on a `go.Figure` don't carry over when it's coerced to a
+    `FigureWidget`, so they never fire.
+
+    **Updating in place**: re-rendering rebuilds the figure, resetting zoom and
+    selection. To change a displayed figure instead, read inputs under
+    `reactive.isolate()` in the render function and modify `.widget` in a
+    `reactive.effect` (use ``with .widget.batch_update():`` for many changes, or
+    ``.widget.batch_animate()`` for animated transitions).
+
+    **Sizing**: a figure with an explicit ``layout.height`` keeps that height
+    instead of filling its container. For a plot that fills a fixed height, use
+    ``output_widget("id", height="450px", fillable=True)``: without
+    ``fillable=True``, the plot renders at plotly's default height (360px)
+    regardless of the output's height.
+
     **Typing**: no return-type annotation is needed -- the renderer's value
     type is statically bounded, so type checkers flag unsupported return
     values at decoration time, and the output's `.value` attribute is
@@ -498,19 +602,35 @@ def _split_config(value: object) -> tuple[object, Optional[Dict[str, Any]]]:
 
 class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
     """
-    Reactively render a [pydeck](https://pydeck.gl) map as a Shiny output.
+    Deprecated: use pydeck layers with :class:`~shinywidgets.render_maplibre`
+    instead.
 
-    The decorated function may return either a `pydeck.Deck` (which is coerced to a
-    `pydeck.widget.DeckGLWidget`) or a `pydeck.widget.DeckGLWidget` widget (requires
-    pydeck <= 0.8, since pydeck v0.9 removed ipywidgets support).
+    pydeck v0.9 removed its Jupyter widget (`Deck.show()` now returns static HTML and
+    `Deck.update()` raises), so no ipywidgets bridge, shinywidgets included, can
+    render a live `pydeck.Deck`. With pydeck v0.9 or newer, this decorator raises a
+    `TypeError` explaining the alternatives below. (pydeck v0.8's widget requires
+    ipywidgets < 8, while shinywidgets requires ipywidgets >= 8.1.)
 
-    The decorated function also gains two read-only attributes: `.value`, the value
-    most recently returned by the render function, and `.widget`, the rendered
-    `DeckGLWidget` instance. Use `.widget` to programmatically update the rendered
-    map in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    Alternatives:
 
-    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+    * **Reactive maps from pydeck layers:** pass `pydeck.Layer` objects to a
+      [maplibre](https://eoda-dev.github.io/py-maplibregl/) map's
+      `add_deck_layers()` and render it with
+      :class:`~shinywidgets.render_maplibre` (requires ``pip install
+      'maplibre[anywidget]'``). Restyle the rendered map in place with
+      `.widget.set_deck_layers()` (the camera stays where the user left it), and
+      read its state (e.g., ``"view_state"``, ``"clicked"``) with
+      :func:`~shinywidgets.reactive_read`.
+    * **Large data:** [lonboard](https://developmentseed.org/lonboard/) and
+      :class:`~shinywidgets.render_lonboard` send binary data once and restyle
+      layers without re-sending it.
+    * **Static maps:** use shiny's ``@render.ui`` and return ``deck.show()`` (a
+      500px-tall iframe), or, to fill the container,
+      ``ui.tags.iframe(srcdoc=deck.to_html(as_string=True),
+      style="border:0;width:100%;height:100%;flex:1 1 auto")``. Every change
+      re-sends the whole page and resets the camera, and there are no events back to
+      Python. (Don't return ``deck.to_html()``: without a filename, it returns
+      ``None``.)
 
     Parameters
     ----------
@@ -527,7 +647,71 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    import pydeck as pdk
+    from maplibre import Map, MapOptions
+    from maplibre.basemaps import Carto
+    from shiny import reactive
+    from shiny.express import input, ui
+    from shinywidgets import render_maplibre
+
+    ui.input_slider("radius", "Hexagon radius (m)", 1000, 10000, 4000, step=500)
+
+    POINTS = [[-0.13, 51.51], [-0.12, 51.50], [-2.24, 53.48]]  # [lng, lat]
+
+
+    @render_maplibre
+    def deck():
+        m = Map(MapOptions(style=Carto.DARK_MATTER, center=(-1.9, 52.25), zoom=6))
+        # Filled (and restyled in place, without re-rendering the map) below
+        m.add_deck_layers([])
+        return m
+
+
+    @reactive.effect
+    def _():
+        deck.widget.set_deck_layers([layer()])
+
+
+    def layer():
+        return pdk.Layer(
+            "HexagonLayer",
+            POINTS,
+            id="hex",
+            get_position="-",
+            radius=input.radius(),
+            extruded=True,
+        )
+    ```
     """
+
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[ValueT]] = None,
+        *,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+    ):
+        warnings.warn(
+            "render_pydeck is deprecated: pydeck v0.9 removed its Jupyter widget, so "
+            "it can't render maps. Pass pydeck.Layer objects to a maplibre Map's "
+            "add_deck_layers() and use @render_maplibre instead (see "
+            "help(shinywidgets.render_pydeck) for other alternatives).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(_fn, width=width, height=height, fill=fill, fillable=fillable)
+
+    def _as_widget(self, value: ValueT) -> DeckGLWidget:
+        # A DeckGLWidget (which as_widget() passes through) can't render either
+        if not pydeck_has_widget():
+            raise TypeError(PYDECK_NO_WIDGET_MESSAGE)
+        return super()._as_widget(value)
 
 
 class render_quak(render_widget_base[ValueT, QuakWidget]):
