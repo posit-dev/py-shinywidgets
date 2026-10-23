@@ -9,6 +9,11 @@ from htmltools import HTMLDependency, div
 from shiny.session import session_context
 
 
+def test_render_ipyaladin_is_render_widget_base() -> None:
+    renderer = rw.render_ipyaladin()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_ipydatagrid_is_render_widget_base() -> None:
     renderer = rw.render_ipydatagrid()
     assert isinstance(renderer, rwb.render_widget_base)
@@ -123,6 +128,11 @@ def test_render_ipysigma_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_keplergl_is_render_widget_base() -> None:
+    renderer = rw.render_keplergl()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_lonboard_is_render_widget_base() -> None:
     renderer = rw.render_lonboard()
     assert isinstance(renderer, rwb.render_widget_base)
@@ -217,6 +227,7 @@ def test_import_shinywidgets_without_optional_deps() -> None:
         "jupyter_bokeh",
         "ipydatagrid",
         "ipympl",
+        "keplergl",
         "maplibre",
         "matplotlib",
         "panel",

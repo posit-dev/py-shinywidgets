@@ -1,30 +1,35 @@
 from __future__ import annotations
 
+import sys
 import warnings
+from importlib.metadata import version as package_version
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, cast
 
 from htmltools import Tag
 from ipywidgets.widgets.widget import Widget
+from packaging.version import Version
 
 if TYPE_CHECKING:
     import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
+    from ipyaladin import Aladin
     from ipydatagrid import DataGrid
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from ipysigma import Sigma
     from jscatter.widget import JupyterScatter
     from jupyter_bokeh import BokehModel
+    from keplergl import KeplerGl
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
     from maplibre.ipywidget import MapWidget
     from maplibre.map import Map as MaplibreMap
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = DataGrid = JupyterScatter = MplCanvas = Sigma = BokehModel = (
-        MapWidget
-    ) = FigureWidget = DeckGLWidget = object
-    LonboardMap = object
+    JupyterChart = DataGrid = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
+        BokehModel
+    ) = MapWidget = FigureWidget = DeckGLWidget = object
+    Aladin = LonboardMap = object
 
 from shiny.render.renderer import ValueFn
 
@@ -56,9 +61,11 @@ __all__ = (
     "render_altair",
     "render_bokeh",
     "render_holoviews",
+    "render_ipyaladin",
     "render_ipydatagrid",
     "render_ipysigma",
     "render_jscatter",
+    "render_keplergl",
     "render_lonboard",
     "render_maplibre",
     "render_matplotlib",
@@ -182,6 +189,73 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     """
 
 
+class render_ipyaladin(render_widget_base[ValueT, Aladin]):
+    """
+    Reactively render an [ipyaladin](https://cds-astro.github.io/ipyaladin/) sky
+    viewer (Aladin Lite) as a Shiny output.
+
+    The decorated function should return an `ipyaladin.Aladin` widget (requires
+    ``pip install 'shinywidgets[ipyaladin]'``). In a filling layout, the viewer
+    fills its container unless the `Aladin` has an explicit ``height`` (or its
+    ``layout`` has an explicit height).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `Aladin` instance. Use `.widget` to programmatically update the rendered
+    viewer in place (e.g., ``.widget.target = "M31"`` or ``.widget.fov = 5``;
+    trait changes on the widget are synced to the browser), or to reactively read
+    viewer state with :func:`~shinywidgets.reactive_read`.
+
+    Note
+    ---
+    **Reactive state**: the viewer's center and field of view are synced from the
+    browser to the ``_target`` (a ``"ra dec"`` string, in degrees) and ``_fov``
+    (degrees) traits, so panning or zooming the sky can drive a reactive
+    calculation (e.g., ``reactive_read(sky.widget, "_target")``). The public
+    ``.target``/``.fov`` properties (an astropy `SkyCoord`/`Angle`) parse these
+    traits, but are not themselves traits, so they can't be read reactively.
+
+    **Updating in place**: ipyaladin queues method calls (e.g.,
+    ``.widget.add_table()``) until the viewer has loaded in the browser, but
+    property assignments (e.g., ``.widget.fov = 5``) are not queued, so gate
+    effects that set them on ``reactive_read(sky.widget, "_is_loaded")``. Don't
+    gate on the ``_ready`` trait instead: ipyaladin 0.8.1 never sets it.
+
+    **Interacting with catalogs**: clicking a catalog source syncs it to the
+    ``clicked_object`` trait, and box-selecting
+    (``.widget.selection("rectangle")``) syncs the sources inside to
+    ``_selected_objects`` — both work with
+    :func:`~shinywidgets.reactive_read`. Prefer these traits over
+    ``.widget.set_listener()``: in ipyaladin 0.8.x listener callbacks are
+    shared across all `Aladin` instances, so they are not session-safe in a
+    multi-user Shiny app. When setting ``.widget.target`` in place, use a
+    ``"ra dec"`` string or an astropy `SkyCoord` (a plain float tuple raises
+    in ipyaladin's setter).
+
+    **Network access**: the viewer loads its JavaScript from a CDN and its sky
+    imagery (HiPS tiles) from CDS servers at render time, so it requires an
+    internet connection.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+
 class render_ipysigma(render_widget_base[ValueT, Sigma]):
     """
     Reactively render a graph with [ipysigma](https://github.com/medialab/ipysigma)
@@ -277,6 +351,58 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     """
+
+
+class render_keplergl(render_widget_base[ValueT, KeplerGl]):
+    """
+    Reactively render a [kepler.gl](https://kepler.gl) map as a Shiny output.
+
+    The decorated function may return either a `pandas.DataFrame` or
+    `geopandas.GeoDataFrame` (which is coerced to a `keplergl.KeplerGl` widget with
+    the data added as a single dataset named ``"data"``, the ``dataId`` to use in a
+    kepler.gl ``config``; requires ``pip install 'shinywidgets[keplergl]'``) or a
+    `keplergl.KeplerGl` widget. In a filling layout, the map is resized to fit its
+    container, unless the `KeplerGl` widget was given a ``height`` other than
+    kepler.gl's default (400). An explicit ``height`` on the output (see ``height``
+    below) takes precedence over the widget's own. While the output sizes the map,
+    the browser sets the widget's ``height`` to the size it measures, so change the
+    output's size rather than setting the widget's ``height`` from Python.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `KeplerGl` instance. Use `.widget` to programmatically update the rendered map
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    def _as_widget(self, value: ValueT) -> KeplerGl:
+        # A DataFrame is generic (several renderers accept one), so it's only
+        # coerced here rather than via AS_WIDGET_MAP
+        # (Only import pandas, an optional dependency, if it's already in use)
+        if "pandas" in sys.modules:
+            import pandas as pd
+
+            if isinstance(value, pd.DataFrame):
+                return dataframe_to_keplergl(value)
+        return super()._as_widget(value)
 
 
 class render_lonboard(render_widget_base[ValueT, LonboardMap]):
@@ -927,3 +1053,36 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
         if not pydeck_has_widget():
             raise TypeError(PYDECK_NO_WIDGET_MESSAGE)
         return super()._as_widget(value)
+
+
+def dataframe_to_keplergl(df: pd.DataFrame) -> KeplerGl:
+    # keplergl 0.3.x imports pkg_resources, which setuptools >= 82 no longer ships
+    hint = "pip install 'shinywidgets[keplergl]'"
+    try:
+        from keplergl import KeplerGl
+    except ModuleNotFoundError as e:
+        if e.name == "keplergl":
+            raise ImportError(
+                f"Install the keplergl package to use kepler.gl with shinywidgets ({hint})."
+            )
+        raise ImportError(
+            f"keplergl failed to import (missing module {e.name!r}); "
+            f"@render_keplergl requires keplergl>=0.4.0rc4 ({hint})."
+        ) from e
+
+    if Version(package_version("keplergl")) < Version("0.4.0rc4"):
+        raise ImportError(
+            f"@render_keplergl requires keplergl>=0.4.0rc4, but {package_version('keplergl')} "
+            f"is installed ({hint})."
+        )
+
+    import pandas as pd
+
+    # Arrow would send an index other than a RangeIndex as an extra column,
+    # which kepler.gl shows as a field (keplergl's JSON serialization drops it)
+    if not isinstance(df.index, pd.RangeIndex):
+        df = df.reset_index(drop=True)
+
+    # Unlike keplergl's default JSON serialization, Arrow keeps missing values
+    # (NaN isn't valid JSON) and is more compact
+    return KeplerGl(data={"data": df}, use_arrow=True)
