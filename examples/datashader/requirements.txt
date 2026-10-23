@@ -1,0 +1,6 @@
+shiny
+shinywidgets[holoviews]
+hvplot
+datashader
+numpy
+pandas

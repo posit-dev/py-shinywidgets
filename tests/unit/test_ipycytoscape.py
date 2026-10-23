@@ -55,7 +55,9 @@ def test_missing_ipycytoscape_gives_install_hint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setitem(sys.modules, "ipycytoscape", None)
-    with pytest.raises(ImportError, match="pip install ipycytoscape"):
+    with pytest.raises(
+        ImportError, match=r"pip install 'shinywidgets\[ipycytoscape\]'"
+    ):
         rw.render_ipycytoscape()._as_widget(make_graph())
 
 
