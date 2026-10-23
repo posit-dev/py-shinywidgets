@@ -186,17 +186,15 @@ _anywidget_patched_dirs: dict[tuple[str, float], str] = {}
 
 def jupyter_extension_path(module_name: str) -> Optional[str]:
     paths: List[str] = jupyter_path()
-    module_dir = None
     for x in paths:
         dir = os.path.join(x, "nbextensions", module_name)
         if not os.path.exists(dir):
             continue
         for f in os.listdir(dir):
             if f.startswith("index") and f.endswith(".js"):
-                module_dir = dir
-                break
+                return dir
 
-    return module_dir
+    return None
 
 
 # Approximates what `jupyter nbextension install` does to discover and copy source files

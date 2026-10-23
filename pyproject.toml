@@ -61,7 +61,7 @@ maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
 mosaic_widget = ["mosaic-widget"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
-plotly = ["plotly>=5.0.0"]
+plotly = ["plotly>=5.12.0"]
 plotnine = ["plotnine", "ipympl"]
 quak = ["quak"]
 test = [
@@ -98,7 +98,7 @@ test = [
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
-  "plotly>=5.0.0",
+  "plotly>=5.12.0",
   "plotnine",
   "polars",
   "pydeck",
@@ -142,7 +142,7 @@ dev = [
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
-  "plotly>=5.0.0",
+  "plotly>=5.12.0",
   "plotnine",
   "polars",
   "pydeck",
@@ -189,7 +189,7 @@ test = [
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
-  "plotly>=5.0.0",
+  "plotly>=5.12.0",
   "plotnine",
   "polars",
   "pydeck",
