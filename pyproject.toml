@@ -41,6 +41,7 @@ Issues = "https://github.com/rstudio/py-shinywidgets/issues"
 # anywidget is already a core dependency, so extras don't need to repeat it.
 altair = ["altair>=5.1"]
 bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
+bqplot = ["bqplot"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
@@ -61,9 +62,11 @@ mosaic_widget = ["mosaic-widget"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
 plotly = ["plotly>=5.0.0"]
 plotnine = ["plotnine", "ipympl"]
+quak = ["quak"]
 test = [
   "altair",
   "bokeh",
+  "bqplot",
   "coverage>=7",
   # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
   # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
@@ -99,11 +102,13 @@ test = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "quak",
   "tox-uv>=1",
 ]
 dev = [
   "altair",
   "bokeh",
+  "bqplot",
   "coverage>=7",
   # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
   # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
@@ -139,6 +144,7 @@ dev = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "quak",
   "ruff>=0.6.5",
   "tox-uv>=1",
 ]
@@ -147,6 +153,7 @@ dev = [
 test = [
   "altair",
   "bokeh",
+  "bqplot",
   "coverage>=7",
   # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
   # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
@@ -182,6 +189,7 @@ test = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "quak",
   "tox-uv>=1",
 ]
 dev = [

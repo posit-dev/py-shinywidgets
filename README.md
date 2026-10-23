@@ -21,6 +21,7 @@ everything it needs:
 | --- | --- |
 | `@render_altair` | `pip install 'shinywidgets[altair]'` |
 | `@render_bokeh` | `pip install 'shinywidgets[bokeh]'` |
+| `@render_bqplot` | `pip install 'shinywidgets[bqplot]'` |
 | `@render_holoviews` | `pip install 'shinywidgets[holoviews]'` |
 | `@render_ipyaladin` | `pip install 'shinywidgets[ipyaladin]'` |
 | `@render_ipycanvas` | `pip install 'shinywidgets[ipycanvas]'` |
@@ -36,6 +37,7 @@ everything it needs:
 | `@render_panel` | `pip install 'shinywidgets[panel]'` |
 | `@render_plotly` | `pip install 'shinywidgets[plotly]'` |
 | `@render_plotnine` | `pip install 'shinywidgets[plotnine]'` |
+| `@render_quak` | `pip install 'shinywidgets[quak]'` |
 
 ## Development
 
