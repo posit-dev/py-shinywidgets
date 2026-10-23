@@ -45,6 +45,7 @@ bqplot = ["bqplot"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipydatagrid = ["ipydatagrid"]
+itables = ["itables[widget]"]
 jscatter = ["jupyter-scatter"]
 # An explicit pre-release specifier, so uv/pip accept it without --pre.
 # keplergl 0.3.x imports pkg_resources (removed in setuptools 82), so 0.4
@@ -75,6 +76,7 @@ test = [
   "ipyleaflet>=0.20.0",
   "holoviews",
   "ipympl",
+  "itables[widget]",
   "matplotlib",
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
@@ -88,6 +90,7 @@ test = [
   "playwright>=1.40.0",
   "plotly>=5.0.0",
   "plotnine",
+  "polars",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
@@ -111,6 +114,7 @@ dev = [
   "ipyleaflet>=0.20.0",
   "holoviews",
   "ipympl",
+  "itables[widget]",
   "matplotlib",
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
@@ -124,6 +128,7 @@ dev = [
   "playwright>=1.40.0",
   "plotly>=5.0.0",
   "plotnine",
+  "polars",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
@@ -150,6 +155,7 @@ test = [
   "ipyleaflet>=0.20.0",
   "holoviews",
   "ipympl",
+  "itables[widget]",
   "matplotlib",
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
@@ -163,6 +169,7 @@ test = [
   "playwright>=1.40.0",
   "plotly>=5.0.0",
   "plotnine",
+  "polars",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
