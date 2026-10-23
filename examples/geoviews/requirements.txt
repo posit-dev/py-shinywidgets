@@ -1,0 +1,5 @@
+shiny
+shinywidgets[holoviews]
+cartopy<0.26
+geoviews
+pandas

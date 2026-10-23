@@ -4,6 +4,7 @@ import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import Callable, Generic, Iterator, Optional, Tuple, TypeVar, cast
+from weakref import WeakSet
 
 from htmltools import Tag
 from ipywidgets.widgets import DOMWidget, Layout, Widget
@@ -262,6 +263,33 @@ def _plotly_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+JSCATTER_DEFAULT_HEIGHT = 240
+"""
+The pixel height jscatter gives a `Scatter` unless the user sets one
+"""
+
+FILLING_JSCATTERS: WeakSet[DOMWidget] = WeakSet()
+"""
+jscatter widgets that were displayed with fill (see jscatter_layout_defaults())
+"""
+
+
+def jscatter_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # jupyter-scatter always has a pixel height (there's no "auto"), so the only
+    # sign that the user chose one is a value other than jscatter's own default.
+    # In a filling layout, the browser drives the height from the container size
+    # (see jscatter in js/src/fill.ts) and syncs it to the widget, so a widget
+    # that filled once (e.g., displayed again via session_lifetime()) must keep
+    # filling rather than look like it has a user-chosen height.
+    if widget in FILLING_JSCATTERS:
+        return fill
+    if getattr(widget, "height", JSCATTER_DEFAULT_HEIGHT) != JSCATTER_DEFAULT_HEIGHT:
+        return False
+    if fill:
+        FILLING_JSCATTERS.add(widget)
+    return fill
+
+
 def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # altair, confusingly, isn't setup to fill it's Layout() container by default. I
     # can't imagine a situation where you'd actually want it to _not_ fill the parent
@@ -331,6 +359,25 @@ def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def bokeh_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # Covers render_bokeh(), render_panel() and render_holoviews(): a bokeh root
+    # that doesn't stretch vertically has a height of its own, so filling would
+    # just reserve empty space below it. Panel propagates its sizing_mode (e.g.,
+    # from HoloViews' responsive=True) to the root.
+    from jupyter_bokeh import BokehModel
+
+    if not isinstance(widget, BokehModel):
+        return fill
+
+    sizing_mode = getattr(widget._model, "sizing_mode", None)
+    return fill and sizing_mode in (
+        "stretch_both",
+        "stretch_height",
+        "scale_both",
+        "scale_height",
+    )
+
+
 def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     from maplibre.ipywidget import MapWidget
 
@@ -356,13 +403,14 @@ def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 # decision, applies package-specific mutations, and returns the (possibly
 # revised) fill decision.
 #
-# N.B. bokeh is intentionally absent: its sizing_mode hack lives in
-# as_widget_bokeh() because applying it here doesn't work (see the TODO
-# there).
+# N.B. a bokeh figure's default sizing_mode is set in as_widget_bokeh() instead
+# (see the comment there for why it can't happen here).
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
+    "jscatter": jscatter_layout_defaults,
     "lonboard": lonboard_layout_defaults,
+    "jupyter_bokeh": bokeh_layout_defaults,
     "maplibre": maplibre_layout_defaults,
 }
 

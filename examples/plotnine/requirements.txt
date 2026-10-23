@@ -1,5 +1,3 @@
 shiny
-shinywidgets
-ipympl
-plotnine
+shinywidgets[plotnine]
 numpy

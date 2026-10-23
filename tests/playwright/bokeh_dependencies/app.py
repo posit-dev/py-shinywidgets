@@ -1,3 +1,5 @@
+import warnings
+
 from bokeh.plotting import figure
 from jupyter_bokeh import BokehModel
 from shiny import App, Inputs, Outputs, Session, ui
@@ -25,8 +27,14 @@ def server(input: Inputs, output: Outputs, session: Session) -> None:
 
 
 automatic = App(ui.page_fluid(output_widget("plot"), output_widget("widget")), server)
+
+# bokeh_dependency() is deprecated but must keep working until removed
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    explicit_dep = bokeh_dependency()
+
 explicit = App(
-    ui.page_fluid(bokeh_dependency(), output_widget("plot"), output_widget("widget")),
+    ui.page_fluid(explicit_dep, output_widget("plot"), output_widget("widget")),
     server,
 )
 app = Starlette(

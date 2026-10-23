@@ -148,7 +148,7 @@ def test_missing_ipympl_error_mentions_plotnine(
     monkeypatch.setitem(sys.modules, "ipympl.backend_nbagg", None)
     with pytest.raises(
         ImportError,
-        match=r"Install the ipympl package to use plotnine with shinywidgets \(pip install ipympl\)",
+        match=r"Install the ipympl package to use plotnine with shinywidgets \(pip install 'shinywidgets\[plotnine\]'\)",
     ):
         as_widget(FakePlot())
 

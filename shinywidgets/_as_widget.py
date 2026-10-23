@@ -41,7 +41,8 @@ def as_widget(x: object) -> Widget:
 
     * altair `Chart` -> `altair.JupyterChart`
     * bokeh model (e.g., `bokeh.plotting.figure`) -> `jupyter_bokeh.BokehModel`
-    * holoviews/hvplot object -> bokeh model (via panel)
+    * holoviews/hvplot/geoviews object -> bokeh model (via panel)
+    * jupyter-scatter `Scatter` -> `jscatter.widget.JupyterScatter`
     * lonboard layer -> `lonboard.Map`
     * maplibre `Map` -> `maplibre.ipywidget.MapWidget`
     * matplotlib `Figure` or `Axes` (or a seaborn figure-level grid) ->
@@ -112,20 +113,22 @@ def as_widget_altair(x: object) -> Optional[Widget]:
         from altair import JupyterChart
     except ImportError:
         raise RuntimeError(
-            "Failed to import altair.JupyterChart (do you need to pip install -U altair?)"
+            "Failed to import altair.JupyterChart (do you need to pip install -U 'shinywidgets[altair]'?)"
         )
 
     return JupyterChart(x)  # type: ignore
 
 
 def as_widget_bokeh(x: object) -> Optional[Widget]:
-    # TODO: ideally we'd do this in set_layout_defaults() but doing
-    # `BokehModel(x)._model.sizing_mode = "stretch_both"`
-    # there, but that doesn't seem to work??
     from bokeh.plotting import figure
 
-    if isinstance(x, figure):
-        x.sizing_mode = "stretch_both"  # type: ignore
+    # Make a figure fill its output, unless the user sized it. This has to
+    # happen before BokehModel() snapshots the document: changes made after
+    # that are only sent as patches over the comm, which isn't open yet.
+    if isinstance(x, figure) and not BOKEH_SIZING_PROPS & set(
+        x.properties_with_values(include_defaults=False)
+    ):
+        x.sizing_mode = "stretch_both"
 
     return bokeh_model_class(context="bokeh")(cast("LayoutDOM", x))
 
@@ -136,7 +139,7 @@ def as_widget_panel(x: object) -> Optional[Widget]:
         context="panel",
         missing_panel_message=(
             "Install the panel package to use panel objects with shinywidgets: "
-            "pip install panel"
+            "pip install 'shinywidgets[panel]'"
         ),
     )
 
@@ -144,12 +147,24 @@ def as_widget_panel(x: object) -> Optional[Widget]:
 def as_widget_holoviews(x: object) -> Optional[Widget]:
     return panel_to_widget(
         x,
-        context="holoviews/hvplot",
+        context="holoviews/hvplot/geoviews",
         missing_panel_message=(
-            "Rendering holoviews/hvplot objects requires the panel package "
-            "(hvplot renders through panel). Install it with: pip install panel"
+            "Rendering holoviews/hvplot/geoviews objects requires the panel package "
+            "(they render through panel). Install it with: pip install 'shinywidgets[holoviews]'"
         ),
     )
+
+
+def as_widget_jscatter(x: object) -> Optional[Widget]:
+    # jscatter is guaranteed to be installed here since this function is only
+    # called when x comes from the jscatter package
+    from jscatter import Scatter
+
+    if not isinstance(x, Scatter):
+        raise TypeError(f"Don't know how to coerce {x} into a jscatter Scatter object.")
+
+    # Scatter isn't a widget itself, but wraps (and lazily creates) one
+    return x.widget
 
 
 def as_widget_lonboard(x: object) -> Widget:
@@ -180,7 +195,7 @@ def as_widget_maplibre(x: object) -> Widget:
         # maplibre.ipywidget requires anywidget, and unfortunately raises a
         # NameError (not ImportError) when it's missing
         raise ImportError(
-            "Install maplibre's anywidget extra to use maplibre with shinywidgets (pip install 'maplibre[anywidget]')."
+            "Install maplibre's anywidget extra to use maplibre with shinywidgets (pip install 'shinywidgets[maplibre]')."
         )
 
     # MapWidget.__init__() expects MapOptions (not the dict that Map stores), and
@@ -220,7 +235,7 @@ def as_widget_mpl(x: object, *, context: str = "matplotlib") -> Widget:
             from ipympl.backend_nbagg import Canvas, FigureManager
     except ImportError:
         raise ImportError(
-            f"Install the ipympl package to use {context} with shinywidgets (pip install ipympl)."
+            f"Install the ipympl package to use {context} with shinywidgets (pip install 'shinywidgets[{context}]')."
         )
 
     # Canvas(figure=x) alone isn't enough -- ipympl's browser message handling
@@ -393,7 +408,7 @@ PYDECK_NO_WIDGET_MESSAGE = (
     "pydeck v0.9 removed its Jupyter widget (Deck.show() now returns static HTML), "
     "so shinywidgets can't render pydeck maps. To use pydeck layers in a reactive "
     "map, pass pydeck.Layer objects to a maplibre Map's add_deck_layers() and render "
-    "it with @render_maplibre (pip install 'maplibre[anywidget]'). For large data, "
+    "it with @render_maplibre (pip install 'shinywidgets[maplibre]'). For large data, "
     "consider lonboard and @render_lonboard. For a static map, use shiny's @render.ui "
     "decorator and return deck.show() (or, to fill the container, "
     "ui.tags.iframe(srcdoc=deck.to_html(as_string=True), "
@@ -405,8 +420,10 @@ PYDECK_NO_WIDGET_MESSAGE = (
 AS_WIDGET_MAP = {
     "altair": as_widget_altair,
     "bokeh": as_widget_bokeh,
+    "geoviews": as_widget_holoviews,
     "holoviews": as_widget_holoviews,
     "hvplot": as_widget_holoviews,
+    "jscatter": as_widget_jscatter,
     "lonboard": as_widget_lonboard,
     "maplibre": as_widget_maplibre,
     "matplotlib": as_widget_mpl,
@@ -416,6 +433,9 @@ AS_WIDGET_MAP = {
     "pydeck": as_widget_pydeck,
     "seaborn": as_widget_mpl,
 }
+
+
+BOKEH_SIZING_PROPS = {"width", "height", "sizing_mode", "aspect_ratio"}
 
 
 def bokeh_model_class(*, context: str) -> type["BokehModel"]:
