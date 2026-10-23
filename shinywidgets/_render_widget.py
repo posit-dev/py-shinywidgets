@@ -76,6 +76,7 @@ __all__ = (
     "render_itables",
     "render_jscatter",
     "render_keplergl",
+    "render_leafmap",
     "render_lonboard",
     "render_maplibre",
     "render_matplotlib",
@@ -284,8 +285,8 @@ class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
     `center`, `bounds`) with :func:`~shinywidgets.reactive_read`.
 
     In a filling layout, the map fills its container unless it has its own height
-    (e.g., ``Layout(height="300px")``). Some subclasses set one by default: leafmap's
-    `Map` is 600px tall unless created with ``height="100%"``.
+    (e.g., ``Layout(height="300px")``). Default heights set by a subclass (e.g.,
+    leafmap's 600px) are treated as unset.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -465,6 +466,64 @@ class render_keplergl(render_widget_base[ValueT, KeplerGl]):
             if isinstance(value, pd.DataFrame):
                 return dataframe_to_keplergl(value)
         return super()._as_widget(value)
+
+
+class render_leafmap(render_widget_base[ValueT, LeafletMap]):
+    """
+    Reactively render a [leafmap](https://leafmap.org) map as a Shiny output.
+
+    leafmap (requires ``pip install 'shinywidgets[leafmap]'``) is a high-level API
+    over several mapping engines. Return any of its widget-backed backends:
+
+    * `leafmap.leafmap.Map` (the default; an `ipyleaflet.Map`) -- includes
+      leafmap's toolbar, basemap gallery, legends, and its other tools. This is
+      the backend to start with.
+    * `leafmap.maplibregl.Map` (a maplibre `MapWidget`) -- vector tiles, globe
+      projection, and deck.gl layers via `add_deck_layers()`.
+    * `leafmap.kepler.Map` (a kepler.gl widget) -- kepler.gl's layer/filter UI,
+      including time playback. Keep in mind that its `config` trait nests
+      kepler's own config (e.g., ``config["config"]["mapState"]``).
+
+    leafmap's folium (``leafmap.foliumap.Map``) and pydeck (``leafmap.deck.Map``)
+    backends aren't ipywidgets, so they raise a `TypeError` that points to
+    alternatives.
+
+    Maps fill their container, including in a non-filling ``page_*()``, unless the
+    map has a height of its own (e.g., ``leafmap.Map(height=400)``, or
+    ``Layout(height="300px")``). leafmap's 600px default is treated as unset.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    widget. Use `.widget` to programmatically update the rendered map in place
+    (e.g., change its `zoom` or `center`, or add layers; trait changes on the
+    widget are synced to the browser), or to reactively read map state with
+    :func:`~shinywidgets.reactive_read`, e.g. ``zoom``/``center``/``bounds`` for
+    the ipyleaflet backend, or ``view_state``/``clicked`` for the maplibre one.
+
+    Note
+    ----
+    **Typing**: `.widget` is typed as an `ipyleaflet.Map` (the default backend,
+    and what `leafmap.leafmap.Map` subclasses), so it type-checks best with that
+    backend. For another backend, `.widget` is that backend's widget at runtime.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
 
 
 class render_lonboard(render_widget_base[ValueT, LonboardMap]):
