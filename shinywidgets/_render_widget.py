@@ -757,6 +757,13 @@ class render_pyvista(render_widget_base[PyvistaValueT, PyvistaHtmlWidget]):
     view fills its container unless an explicit ``height`` is given. On a
     headless server, set ``pyvista.OFF_SCREEN = True`` before plotting.
 
+    Return the `Plotter` itself -- do not call `Plotter.show()`. Outside
+    Jupyter, `show()` ignores ``jupyter_backend``, returns `None`, and the
+    output renders nothing. If you pre-build the widget (e.g., via
+    ``trame_pyvista.jupyter.show_trame(pl, mode="html")``), pass
+    ``width="100%", height="100%"`` or it keeps the plotter's pixel
+    ``window_size`` instead of filling the container.
+
     The export is a self-contained, client-side vtk.js view: camera
     interaction (rotate/zoom/pan) happens entirely in the browser, and no
     widget state is synced back to Python, so there is nothing to read with
