@@ -100,8 +100,19 @@ def test_lonboard_view_state_roundtrips_to_python(page: Page, local_app) -> None
 
     canvas = page.locator("#map .lonboard canvas").first
     expect(canvas).to_be_visible()
-    box = canvas.bounding_box()
-    assert box is not None
+    # The canvas can be re-created while the map finishes initializing (e.g.,
+    # when the initial view state syncs back), in which case a one-shot
+    # bounding_box() call intermittently returns None. Poll the live DOM for a
+    # connected, non-zero-sized canvas instead.
+    box = page.wait_for_function(
+        """() => {
+            const c = document.querySelector('#map .lonboard canvas');
+            if (!c || !c.isConnected) return false;
+            const b = c.getBoundingClientRect();
+            if (b.width === 0 || b.height === 0) return false;
+            return {x: b.x, y: b.y, width: b.width, height: b.height};
+        }"""
+    ).json_value()
     x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
     page.mouse.move(x, y)
     page.mouse.down()
