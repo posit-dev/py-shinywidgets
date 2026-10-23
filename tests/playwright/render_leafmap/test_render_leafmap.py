@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from playwright.sync_api import Page, expect
+from shiny.pytest import create_app_fixture
+from shiny.run import ShinyAppProc
 from tests.playwright.conftest import (
     assert_no_unexpected_errors,
     collect_errors,
@@ -10,6 +13,8 @@ from tests.playwright.conftest import (
 
 # Tolerance (px) for comparing a map's box to its container's
 EPS = 2
+
+local_app_plotly = create_app_fixture(Path(__file__).parent / "app_plotly.py")
 
 
 def box(page: Page, selector: str) -> dict[str, float]:
@@ -102,3 +107,34 @@ def test_render_leafmap_bounds_are_reactive(page: Page, local_app) -> None:
     # Zooming in directly on the map should narrow the bounds
     page.locator("#default_map .leaflet-control-zoom-in").click()
     expect(bounds_text).not_to_have_text(before, timeout=30000)
+
+
+def test_render_leafmap_plotly_fills_and_updates_in_place(
+    page: Page, local_app_plotly: ShinyAppProc
+) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app_plotly.url)
+    expect(page.locator("#plot .scatterlayer .point")).to_have_count(2, timeout=30000)
+
+    page.evaluate(
+        "window.leafmapPlotlyGraph = document.querySelector('#plot .js-plotly-plot')"
+    )
+    page.wait_for_function(
+        """() => {
+          const body = document.querySelector('#plotly_card .card-body');
+          const style = getComputedStyle(body);
+          const height = body.clientHeight
+            - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+          return Math.abs(window.leafmapPlotlyGraph._fullLayout.height - height) <= 2;
+        }"""
+    )
+    assert box(page, "#plot .js-plotly-plot")["height"] < 600
+
+    page.click("#update")
+    page.wait_for_function(
+        "() => window.leafmapPlotlyGraph.data[0].marker.color === 'blue'"
+    )
+    assert page.evaluate(
+        "window.leafmapPlotlyGraph === document.querySelector('#plot .js-plotly-plot')"
+    )
+    assert_no_unexpected_errors(errors, failed_requests)

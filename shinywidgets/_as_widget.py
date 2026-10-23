@@ -18,6 +18,7 @@ from ._dependencies import widget_pkg
 if TYPE_CHECKING:
     from bokeh.models import LayoutDOM
     from ipympl.backend_nbagg import Canvas
+    from ipysigma import Sigma
     from jupyter_bokeh import BokehModel
     from matplotlib.figure import Figure
     from panel.viewable import Viewable
@@ -223,6 +224,20 @@ def as_widget_maplibre(x: object) -> Widget:
     res.map_options = dict(state["mapOptions"])
     res._message_queue = list(state["calls"])
     return res
+
+
+def networkx_to_sigma(x: object) -> Sigma:
+    # Not in AS_WIDGET_MAP: a networkx graph is generic (ipycytoscape accepts one
+    # too), so only @render_ipysigma coerces it.
+    try:
+        from ipysigma import Sigma
+    except ImportError:
+        raise ImportError(
+            "Install the ipysigma package to use render_ipysigma with shinywidgets (pip install 'shinywidgets[ipysigma]')."
+        )
+
+    # Sigma validates the graph itself (raising a TypeError for non-graphs)
+    return Sigma(x)
 
 
 def as_widget_mpl(x: object, *, context: str = "matplotlib") -> Widget:
