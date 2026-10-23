@@ -112,7 +112,9 @@ def test_render_ipydatagrid_missing_package_error(
         return pd.DataFrame({"a": [1]})
 
     with session_context(widget_session):
-        with pytest.raises(ImportError, match=r"pip install ipydatagrid"):
+        with pytest.raises(
+            ImportError, match=r"pip install 'shinywidgets\[ipydatagrid\]'"
+        ):
             asyncio.run(r._render())
 
 

@@ -1,5 +1,4 @@
 shiny
-shinywidgets
-ipydatagrid
+shinywidgets[ipydatagrid]
 numpy
 pandas
