@@ -54,6 +54,7 @@ jscatter = ["jupyter-scatter"]
 # keplergl 0.3.x imports pkg_resources (removed in setuptools 82), so 0.4
 # (an anywidget rewrite) is the first version that imports there.
 keplergl = ["keplergl>=0.4.0rc4"]
+leafmap = ["leafmap"]
 # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
 # Python 3.15+ yet, so lonboard can't be installed there
 lonboard = ["lonboard; python_version < '3.15'"]
