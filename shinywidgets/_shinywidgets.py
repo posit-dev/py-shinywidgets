@@ -134,7 +134,7 @@ def init_shiny_widget(w: Widget):
     id = cast(str, w._model_id)
 
     widget_deps: List[Optional[HTMLDependency]] = [widget_dep]
-    if widget_pkg(w) == "perspective":
+    if any(widget_pkg(cls) == "perspective" for cls in type(w).__mro__):
         widget_deps.append(custom_elements_dependency())
     open_keys: Dict[str, object] = {}
     if getattr(w, "_model_module", None) == "@bokeh/jupyter_bokeh":

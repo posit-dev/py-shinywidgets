@@ -49,6 +49,21 @@ def test_render_perspective_accepts_dataframe(widget_session) -> None:
     assert {"a", "b"} <= set(table.columns())
 
 
+def test_render_perspective_accepts_dataframe_subclass(widget_session) -> None:
+    # A subclass defined outside pandas reports its own module, not "pandas"
+    class MyDataFrame(pd.DataFrame):
+        pass
+
+    r = rw.render_perspective()
+    df = MyDataFrame({"a": [1, 2, 3]})
+    with session_context(widget_session):
+        assert render(r, df) is not None
+    assert isinstance(r.widget, PerspectiveWidget)
+    table = r.widget.table
+    assert table is not None
+    assert table.size() == 3
+
+
 def test_render_perspective_dataframes_are_private_to_their_widget(
     widget_session,
 ) -> None:
@@ -156,6 +171,20 @@ def test_perspective_comm_open_includes_custom_element_guard(
     guards = [dep for dep in dependencies if dep.name == "shinywidgets-custom-elements"]
     assert len(guards) == 1
     assert "customElements.define" in str(guards[0].head)
+
+
+def test_perspective_widget_subclass_gets_custom_element_guard(
+    monkeypatch: pytest.MonkeyPatch, widget_session: Session
+) -> None:
+    # A subclass defined outside the perspective package reports its own module,
+    # but still evaluates perspective's ES module per model
+    class MyPerspectiveWidget(PerspectiveWidget):
+        pass
+
+    dependencies = comm_open_dependencies(
+        monkeypatch, widget_session, lambda: MyPerspectiveWidget({"a": [1]})
+    )
+    assert any(dep.name == "shinywidgets-custom-elements" for dep in dependencies)
 
 
 def test_other_widgets_do_not_get_custom_element_guard(

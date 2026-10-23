@@ -22,13 +22,27 @@
   }
 }
 
+/*
 * Perspective's stylesheet gives its container a fixed 520px height, which overflows
 * (and gets clipped by) an output with an explicit height. [style*="height:"] matches the
 * inline `height:` style that output_widget(height=...) emits (keep in sync with
 * _output_widget.py); otherwise the container is sized by the widget's layout (or by
-* filling).
+* filling). Intrinsic heights (`auto`, `fit-content`, ...; the browser may reserialize
+* the style with a space after the colon) aren't definite, so 100% of them would
+* collapse the viewer; the exclusions name the height declaration specifically so an
+* intrinsic width (e.g., `width: fit-content`) doesn't disable the override.
 */
-.shiny-ipywidget-output[style*="height:"] > .PSPContainer {
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .PSPContainer {
   height: 100%;
   min-height: 0;
 }

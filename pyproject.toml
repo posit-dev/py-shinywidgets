@@ -61,7 +61,9 @@ maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
 mosaic_widget = ["mosaic-widget"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
-perspective = ["perspective-python>=3.0"]
+# pyarrow is required for pandas DataFrame conversion (perspective-python
+# doesn't depend on it)
+perspective = ["perspective-python>=3.0", "pyarrow"]
 plotly = ["plotly>=5.0.0"]
 plotnine = ["plotnine", "ipympl"]
 quak = ["quak"]

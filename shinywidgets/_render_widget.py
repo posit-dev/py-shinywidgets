@@ -1191,8 +1191,7 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
 
     The decorated function may return a `pandas` or `polars` DataFrame or a
     `perspective.Table` (both are coerced to a `perspective.widget.PerspectiveWidget`;
-    requires ``pip install 'shinywidgets[perspective]'``, plus ``pyarrow`` for
-    pandas), or a
+    requires ``pip install 'shinywidgets[perspective]'``), or a
     `perspective.widget.PerspectiveWidget` widget. A pandas index becomes an ``index``
     column.
 
@@ -1242,8 +1241,13 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
 
     def _as_widget(self, value: ValueT) -> PerspectiveWidget:
         # DataFrames are generic types that other renderers accept too, so
-        # they can't be registered in AS_WIDGET_MAP
-        if widget_pkg(type(value)) in ("pandas", "polars"):
+        # they can't be registered in AS_WIDGET_MAP. Checked by name (pandas and
+        # polars are optional) and through the MRO, so subclasses (e.g.,
+        # geopandas.GeoDataFrame, or an app-defined subclass) count too.
+        if any(
+            widget_pkg(cls) in ("pandas", "polars") and cls.__name__ == "DataFrame"
+            for cls in type(value).__mro__
+        ):
             return perspective_widget(value)
         return super()._as_widget(value)
 

@@ -57,20 +57,29 @@ def output_binding_dependency() -> HTMLDependency:
 
 
 def custom_elements_dependency() -> HTMLDependency:
-    # Some anywidgets (e.g., perspective) ship an ES module that calls
-    # customElements.define() at module scope. anywidget evaluates that module once
-    # per model, so a second model in the page (e.g., after a re-render) throws
-    # "the name ... has already been used" and never initializes. Ignoring the
-    # redefinition leaves the elements registered by the first evaluation in place.
+    # Perspective's anywidget ES module calls customElements.define() at module
+    # scope, and anywidget evaluates that module once per model, so a second model
+    # in the page (e.g., after a re-render) throws "the name ... has already been
+    # used" and never initializes. Perspective guards its own registrations
+    # against this, but these three elements (registered at module scope by its
+    # bundled regular-layout dependency) are unguarded. Ignoring just their
+    # redefinition leaves the elements registered by the first evaluation in
+    # place, while duplicate registration of any other element still throws, as
+    # the platform intends.
     return HTMLDependency(
         name="shinywidgets-custom-elements",
         version=__version__,
         head=tags.script(
             """
 (function () {
+  const PERSPECTIVE_ELEMENTS = new Set([
+    "regular-layout",
+    "regular-layout-frame",
+    "regular-layout-tab",
+  ]);
   const define = customElements.define;
   customElements.define = function (name, constructor, options) {
-    if (customElements.get(name)) return;
+    if (PERSPECTIVE_ELEMENTS.has(name) && customElements.get(name)) return;
     define.call(customElements, name, constructor, options);
   };
 })();
