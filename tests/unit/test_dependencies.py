@@ -2,7 +2,9 @@ import os
 import sys
 import types
 import warnings
-from types import ModuleType
+from importlib.metadata import PackageNotFoundError
+from pathlib import PurePosixPath
+from types import ModuleType, SimpleNamespace
 
 import pytest
 import shinywidgets._dependencies as deps
@@ -19,6 +21,13 @@ from shinywidgets._dependencies import (
     require_dependency,
     widget_pkg,
 )
+
+
+@pytest.fixture(autouse=True)
+def clear_distribution_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    # distribution_nbextension_paths() caches per distribution; each test fakes
+    # distributions, so it needs a fresh cache
+    monkeypatch.setattr(deps, "_distribution_nbextension_dirs", {})
 
 
 def test_parse_version_strips_semver_prefixes() -> None:
@@ -253,12 +262,116 @@ def test_require_dependency_prefers_bundled_over_data_dirs(
     assert dep.source == {"subdir": str(tmp_path / "fakepkg" / "nbextension")}
 
 
-def test_require_dependency_prefers_env_data_dir_over_bundled(
+def make_distribution_nbextension(
+    tmp_path,
+    module_name: str,
+    pkg: str = "fakepkg",
+    files: tuple[str, ...] = ("index.js", "asset.svg"),
+) -> SimpleNamespace:
+    """
+    A fake installed distribution that put a (complete) nbextension for
+    `module_name` into a Jupyter data dir, as a wheel records it in RECORD.
+    """
+
+    class FakeDistribution:
+        def __init__(self, data_dir) -> None:
+            self.data_dir = data_dir
+            self.files = [
+                PurePosixPath(
+                    "..", "..", "..", "share", "jupyter", "nbextensions", module_name, f
+                )
+                for f in files
+            ]
+
+        def locate_file(self, path) -> str:
+            # `path` is relative to the distribution's install location (e.g.
+            # site-packages); resolve it against the data dir's own root
+            parts = PurePosixPath(str(path)).parts
+            tail = parts[parts.index("nbextensions") :]
+            return str(self.data_dir.joinpath(*tail))
+
+    data_dir = tmp_path / pkg / "share" / "jupyter"
+    nb_dir = data_dir / "nbextensions" / module_name
+    nb_dir.mkdir(parents=True)
+    for f in files:
+        (nb_dir / f).write_text("// data", encoding="utf-8")
+
+    return SimpleNamespace(dist=FakeDistribution(data_dir), dir=nb_dir)
+
+
+def install_distributions(monkeypatch: pytest.MonkeyPatch, **dists) -> None:
+    """Make `deps.distribution()` return the given fake distributions by name."""
+
+    def fake_distribution(name: str):
+        if name not in dists:
+            raise PackageNotFoundError(name)
+        return dists[name]
+
+    monkeypatch.setattr(deps, "distribution", fake_distribution)
+
+
+def test_distribution_nbextension_path_finds_data_files(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The environment's data dir (where the wheel installs its data files,
-    # including any asset files the bundle loads at runtime) wins over the
-    # package-bundled copy (e.g., ipydatagrid's bundled copy lacks assets)
+    # The wheel's data files are where the distribution that's actually
+    # installed put its extension -- wherever that is (here: outside the
+    # environment's own data dir, e.g. a `pip install --user` layout)
+    class DummyWidget:
+        __module__ = "fakepkg.sub"
+
+    fake = make_distribution_nbextension(tmp_path, "some-widget-module")
+    install_distributions(monkeypatch, fakepkg=fake.dist)
+
+    path = deps.distribution_nbextension_path(DummyWidget(), "some-widget-module")  # type: ignore[arg-type]
+    assert path == str(fake.dir)
+
+
+def test_distribution_nbextension_path_resolves_base_class_package(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An app-defined subclass of an installed widget (e.g. an
+    # `ipydatagrid.DataGrid` subclass in the app's own package) must resolve
+    # through the base class's distribution, not the app's package
+    fake = make_distribution_nbextension(
+        tmp_path, "some-widget-module", pkg="base_widget_pkg"
+    )
+    install_distributions(monkeypatch, base_widget_pkg=fake.dist)
+
+    class BaseWidget:
+        __module__ = "base_widget_pkg.grid"
+
+    class AppWidget(BaseWidget):
+        __module__ = "app_pkg.maps"
+
+    path = deps.distribution_nbextension_path(AppWidget(), "some-widget-module")  # type: ignore[arg-type]
+    assert path == str(fake.dir)
+
+
+def test_distribution_nbextension_path_ignores_unrecorded_extension(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A distribution that doesn't ship an nbextension for this module (e.g.
+    # ipyleaflet 0.20, which removed its bundled nbextension)
+    class DummyWidget:
+        __module__ = "fakepkg.sub"
+
+    dist = SimpleNamespace(
+        files=[PurePosixPath("fakepkg/__init__.py")], locate_file=lambda path: path
+    )
+    install_distributions(monkeypatch, fakepkg=dist)
+
+    assert (
+        deps.distribution_nbextension_path(DummyWidget(), "some-widget-module")  # type: ignore[arg-type]
+        is None
+    )
+
+
+def test_require_dependency_prefers_data_files_over_bundled(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The data files the wheel installed are complete (they include the assets
+    # the bundle loads at runtime), unlike some bundled nbextensions (e.g.,
+    # ipydatagrid's bundled copy lacks its SVG/PNG assets)
     class DummyWidget:
         __module__ = "fakepkg.sub"
 
@@ -267,18 +380,68 @@ def test_require_dependency_prefers_env_data_dir_over_bundled(
     w._model_module_version = "^1.2.3"
 
     mod = make_nbextension_pkg(tmp_path)
-
-    env_dir = tmp_path / "env" / "nbextensions" / "some-widget-module"
-    env_dir.mkdir(parents=True)
-    (env_dir / "index.js").write_text("// env", encoding="utf-8")
+    fake = make_distribution_nbextension(tmp_path, "some-widget-module")
 
     session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
-    monkeypatch.setattr(deps, "ENV_JUPYTER_PATH", [str(tmp_path / "env")])
+    install_distributions(monkeypatch, fakepkg=fake.dist)
     monkeypatch.setitem(sys.modules, "fakepkg", mod)
 
     dep = require_dependency(w, session)
     assert dep is not None
-    assert dep.source == {"subdir": str(env_dir)}
+    assert dep.source == {"subdir": str(fake.dir)}
+
+
+def test_require_dependency_data_files_win_over_stale_data_dirs(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The distribution's own data files win over a stale copy in another
+    # Jupyter data dir (the #332 failure mode), even with no bundled copy
+    # available (e.g., an editable install)
+    class DummyWidget:
+        __module__ = "fakepkg.sub"
+
+    w = DummyWidget()
+    w._model_module = "some-widget-module"
+    w._model_module_version = "^1.2.3"
+
+    fake = make_distribution_nbextension(tmp_path, "some-widget-module")
+
+    stale_root = tmp_path / "stale"
+    stale_dir = stale_root / "nbextensions" / "some-widget-module"
+    stale_dir.mkdir(parents=True)
+    (stale_dir / "index.js").write_text("// stale", encoding="utf-8")
+
+    session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
+    install_distributions(monkeypatch, fakepkg=fake.dist)
+    monkeypatch.setattr(deps, "jupyter_path", lambda: [str(stale_root)])
+
+    dep = require_dependency(w, session)
+    assert dep is not None
+    assert dep.source == {"subdir": str(fake.dir)}
+
+
+def test_package_nbextension_path_resolves_base_class_package(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An app-defined subclass (e.g., a leafmap-style ipyleaflet.Map subclass)
+    # lives in another package, but it renders with the base class's extension
+    mod = make_nbextension_pkg(
+        tmp_path, name="base_widget_pkg", dest="some-widget-module"
+    )
+    monkeypatch.setitem(sys.modules, "base_widget_pkg", mod)
+
+    class BaseWidget:
+        __module__ = "base_widget_pkg.leaflet"
+
+    class AppWidget(BaseWidget):
+        __module__ = "app_pkg.maps"
+
+    w = AppWidget()
+    w._model_module = "some-widget-module"  # type: ignore[attr-defined]
+
+    assert package_nbextension_path(w, "some-widget-module") == str(  # type: ignore[arg-type]
+        tmp_path / "base_widget_pkg" / "nbextension"
+    )
 
 
 def test_require_dependency_extension_found_returns_dependency(
