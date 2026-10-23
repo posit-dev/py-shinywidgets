@@ -279,3 +279,36 @@ def test_maplibre_explicit_layout_height_is_kept() -> None:
     _, fill = rwb.set_layout_defaults(w)
     assert fill is False
     assert w.layout.height == "300px"
+
+
+def make_pythreejs_renderer(**kwargs):
+    p3 = pytest.importorskip("pythreejs")
+    return p3.Renderer(
+        scene=p3.Scene(),
+        camera=p3.PerspectiveCamera(position=[3, 3, 3]),
+        **kwargs,
+    )
+
+
+def test_pythreejs_default_size_fills() -> None:
+    _, fill = rwb.set_layout_defaults(make_pythreejs_renderer())
+    assert fill is True
+
+
+def test_pythreejs_explicit_size_disables_fill() -> None:
+    _, fill = rwb.set_layout_defaults(make_pythreejs_renderer(width=640, height=480))
+    assert fill is False
+
+
+def test_pythreejs_layout_height_disables_fill() -> None:
+    import ipywidgets as widgets
+
+    renderer = make_pythreejs_renderer()
+    renderer.layout = widgets.Layout(height="300px")
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is False
+
+
+def test_pythreejs_default_size_is_treated_as_unset_and_fills() -> None:
+    _, fill = rwb.set_layout_defaults(make_pythreejs_renderer(width=200, height=200))
+    assert fill is True

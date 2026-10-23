@@ -21,6 +21,10 @@ export interface BehaviorContext {
   lmWidget: HTMLElement;
   view: DOMWidgetView;
   model: WidgetModel;
+  // The server-side fill decision (set_layout_defaults()): false means the
+  // widget itself opted out of filling (e.g., an explicit size), so a
+  // setupFixedSize() hook must leave its size alone
+  widgetWantsFill: boolean;
 }
 
 export interface PostDisplayContext extends BehaviorContext {
@@ -85,8 +89,55 @@ const quakBehavior: WidgetBehavior = {
   },
 };
 
+// A pythreejs Renderer draws into a canvas fixed to its _width/_height pixel
+// traits (and three.js doesn't update the camera's aspect ratio when the
+// canvas resizes), so drive both from the container's size. The traits are
+// synced, so the Python-side Renderer/camera see the new values too.
+function setupPythreejsResize({ el, model }: BehaviorContext): () => void {
+  const camera = model.get('camera') as WidgetModel | undefined;
+  // Manage the aspect ratio only while it holds a value we set (or the initial
+  // one): a user-set aspect (from either side) wins.
+  const initialAspect = camera?.get('aspect');
+  let lastAspect = typeof initialAspect === 'number' ? initialAspect : undefined;
+  let lastWidth = -1;
+  let lastHeight = -1;
+
+  const resizeToFit = () => {
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    if (w <= 0 || h <= 0 || (w === lastWidth && h === lastHeight)) return;
+    lastWidth = w;
+    lastHeight = h;
+    model.set('_width', w);
+    model.set('_height', h);
+    model.save_changes();
+    if (camera && lastAspect !== undefined && camera.get('aspect') === lastAspect) {
+      lastAspect = w / h;
+      camera.set('aspect', lastAspect);
+      camera.save_changes();
+    }
+  };
+
+  const observer = new ResizeObserver(() => resizeToFit());
+  // Observe the output container (not the widget) so the canvas's own size
+  // changes don't create a feedback loop.
+  observer.observe(el);
+  resizeToFit();
+  return () => observer.disconnect();
+}
+
+const pythreejsBehavior: WidgetBehavior = {
+  setupFill: (ctx) => setupPythreejsResize(ctx),
+  // A fixed-size output (e.g., output_widget(height="250px")) gets the canvas
+  // sized to it too, unless the Renderer opted out of filling (its own
+  // explicit width/height), in which case its pixel size is respected.
+  setupFixedSize: (ctx) =>
+    ctx.widgetWantsFill ? setupPythreejsResize(ctx) : undefined,
+};
+
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
   plotly: plotlyBehavior,
+  pythreejs: pythreejsBehavior,
   quak: quakBehavior,
 };

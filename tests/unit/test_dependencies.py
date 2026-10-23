@@ -200,3 +200,32 @@ def test_require_dependency_extension_found_returns_dependency(
     assert "window.require.config(" in head
     assert "some-widget-module" in head
     assert "/lib/some-widget-module-1.2.3/index" in head
+
+
+def test_require_dependency_maps_sibling_modules(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # pythreejs's index.js require()s a sibling "three" module (a UMD bundle),
+    # which needs both a path mapping and a shim adopting its window global
+    class DummyWidget:
+        __module__ = "fakepkg.sub"
+
+    w = DummyWidget()
+    w._model_module = "jupyter-threejs"
+    w._model_module_version = "^2.4.1"
+
+    module_dir = tmp_path / "nbextensions" / "jupyter-threejs"
+    module_dir.mkdir(parents=True)
+    (module_dir / "index.js").write_text("// hi", encoding="utf-8")
+
+    session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
+
+    monkeypatch.setattr(deps, "jupyter_extension_path", lambda name: str(module_dir))
+
+    dep = require_dependency(w, session)
+    assert dep is not None
+
+    head = str(dep.head)
+    assert "/lib/jupyter-threejs-2.4.1/index" in head
+    assert "/lib/jupyter-threejs-2.4.1/three" in head
+    assert '"shim": {"three": {"exports": "THREE"}}' in head

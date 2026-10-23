@@ -369,6 +369,24 @@ def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+PYTHREEJS_DEFAULT_SIZE = 200
+
+
+def pythreejs_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from pythreejs import Renderer
+
+    # A pythreejs Renderer draws into a fixed pixel-size canvas, so an explicit
+    # width/height is a request for that size rather than filling. The 200x200
+    # default can't be told apart from an explicit 200x200 (Renderer.__init__()
+    # sets it either way), so the default is treated as unset.
+    if isinstance(widget, Renderer) and (
+        widget.width != PYTHREEJS_DEFAULT_SIZE
+        or widget.height != PYTHREEJS_DEFAULT_SIZE
+    ):
+        return False
+    return fill
+
+
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
 # (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
 # in js/src/fill.ts). A handler receives the widget and the current fill
@@ -383,6 +401,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "lonboard": lonboard_layout_defaults,
     "jupyter_bokeh": bokeh_layout_defaults,
     "maplibre": maplibre_layout_defaults,
+    "pythreejs": pythreejs_layout_defaults,
 }
 
 
