@@ -114,6 +114,47 @@ def test_as_widget_builtin_value_raises_helpful_type_error(value: object) -> Non
         as_widget(value)
 
 
+def test_as_widget_mro_routes_subclass_to_base_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # e.g., leafmap.deck.Map instances report __module__ == "leafmap.deck" but
+    # subclass pydeck's Deck, so they should route to the pydeck coercer.
+    called: dict[str, object] = {}
+
+    def fake_coercer(x: object) -> Widget:
+        called["x"] = x
+        return Widget.__new__(Widget)
+
+    monkeypatch.setattr(asw, "AS_WIDGET_MAP", {"basepkg": fake_coercer})
+
+    class Base:
+        __module__ = "basepkg.mod"
+
+    class Sub(Base):
+        __module__ = "leafmap.deck"
+
+    sub = Sub()
+    assert isinstance(as_widget(sub), Widget)
+    assert called["x"] is sub
+
+
+def test_as_widget_error_truncates_long_repr() -> None:
+    # repr(pydeck.Deck) is the deck's entire JSON spec; error messages shouldn't
+    # dump all of it.
+    class Big:
+        __module__ = "unknownpkg.mod"
+
+        def __repr__(self) -> str:
+            return "x" * 5000
+
+    with pytest.raises(TypeError) as excinfo:
+        as_widget(Big())
+    msg = str(excinfo.value)
+    assert "Don't know how to coerce" in msg
+    assert len(msg) < 1000
+    assert "..." in msg
+
+
 def test_as_widget_unknown_package_with_repr_html_hint() -> None:
     class Unknown:
         __module__ = "unknownpkg.mod"
@@ -525,6 +566,24 @@ def test_as_widget_pydeck_show_returning_widget_succeeds() -> None:
 
     res = as_widget_pydeck(Deck())
     assert isinstance(res, Widget)
+
+
+def test_as_widget_pydeck_subclass_from_other_package_routes() -> None:
+    # leafmap.deck.Map subclasses pydeck's Deck, so instances report
+    # __module__ == "leafmap.deck". They should still route to the pydeck
+    # coercer (which, on pydeck >= 0.9, raises the helpful no-widget message
+    # instead of the generic "Don't know how to coerce").
+    pydeck = pytest.importorskip("pydeck")
+    from shinywidgets._as_widget import pydeck_has_widget
+
+    if pydeck_has_widget():
+        pytest.skip("test targets pydeck >= 0.9 (no DeckGLWidget)")
+
+    class LeafmapDeck(pydeck.bindings.deck.Deck):  # type: ignore[name-defined]
+        __module__ = "leafmap.deck"
+
+    with pytest.raises(TypeError, match="pydeck v0.9 removed its Jupyter widget"):
+        as_widget(LeafmapDeck())
 
 
 def _fake_panel(monkeypatch: pytest.MonkeyPatch, root: object) -> None:
