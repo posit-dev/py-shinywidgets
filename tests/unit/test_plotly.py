@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import sys
+import types
+
 import pytest
 import shinywidgets._shinywidgets as sw
 from packaging.version import Version
@@ -72,3 +75,39 @@ def test_plotly_widget_ok_when_supported(
         w = go.FigureWidget(go.Scatter(x=[1], y=[1]))
     assert sw.unsupported_plotly_version(w) is None
     w.close()
+
+
+def test_plotly_version_prefers_the_imported_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A checkout on PYTHONPATH can shadow the installed wheel, so the installed
+    # metadata's version isn't necessarily the version that renders
+    imported = types.ModuleType("plotly")
+    imported.__version__ = "5.24.1"  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "plotly", imported)
+    monkeypatch.setattr(sw, "package_version", lambda name: "5.11.0")
+
+    assert sw._plotly_version() == Version("5.24.1")
+
+    class FakePlotlyWidget:
+        pass
+
+    FakePlotlyWidget.__module__ = "plotly.basewidget"
+    # ... so a checkout of a supported version isn't rejected because of the
+    # (older) version that happens to be installed
+    assert sw.unsupported_plotly_version(FakePlotlyWidget()) is None  # type: ignore
+
+
+def test_plotly_version_falls_back_to_installed_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # No `__version__` on the imported module (or nothing imported at all)
+    monkeypatch.setitem(sys.modules, "plotly", types.ModuleType("plotly"))
+    monkeypatch.setattr(sw, "package_version", lambda name: "5.11.0")
+    assert sw._plotly_version() == Version("5.11.0")
+
+    # Unparseable versions fall through to the next candidate
+    imported = types.ModuleType("plotly")
+    imported.__version__ = "not-a-version"  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "plotly", imported)
+    assert sw._plotly_version() == Version("5.11.0")
