@@ -23,7 +23,10 @@ dependencies = [
   "ipywidgets>=8.1",
   "jupyter_core",
   "python-dateutil>=2.8.2",
-  "shiny>=0.6.1.9005",
+  # TODO: pin to the next PyPI release (>=1.9.0) once it's out -- we need
+  # https://github.com/posit-dev/py-shiny/issues/1889 (custom messages sent
+  # outside the message cycle are flushed right away), which isn't released yet
+  "shiny @ git+https://github.com/posit-dev/py-shiny.git@main",
 ]
 
 [project.urls]
@@ -37,12 +40,18 @@ test = [
   "altair",
   "bokeh",
   "coverage>=7",
+  # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
+  # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
+  # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
+  "cartopy<0.26; python_version < '3.14'",
+  "datashader",
+  "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyleaflet>=0.20.0",
   "holoviews",
   "ipympl",
   "matplotlib",
-  "jupyter_bokeh",
+  "jupyter_bokeh>=4.1",
   "k3d",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
@@ -62,12 +71,18 @@ dev = [
   "altair",
   "bokeh",
   "coverage>=7",
+  # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
+  # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
+  # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
+  "cartopy<0.26; python_version < '3.14'",
+  "datashader",
+  "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyleaflet>=0.20.0",
   "holoviews",
   "ipympl",
   "matplotlib",
-  "jupyter_bokeh",
+  "jupyter_bokeh>=4.1",
   "k3d",
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
@@ -88,12 +103,18 @@ test = [
   "altair",
   "bokeh",
   "coverage>=7",
+  # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
+  # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
+  # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
+  "cartopy<0.26; python_version < '3.14'",
+  "datashader",
+  "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyleaflet>=0.20.0",
   "holoviews",
   "ipympl",
   "matplotlib",
-  "jupyter_bokeh",
+  "jupyter_bokeh>=4.1",
   "k3d",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
@@ -117,6 +138,10 @@ dev = [
 [build-system]
 requires = ["hatchling>=1.26.0", "hatch-vcs>=0.4.0"]
 build-backend = "hatchling.build"
+
+# Needed for the (temporary) git dependency on shiny in project.dependencies
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build]
 skip-excluded-dirs = true

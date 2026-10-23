@@ -7,7 +7,8 @@ vega_datasets
 bokeh
 jupyter_bokeh
 ipyleaflet
-pydeck==0.8.0
+pydeck
+maplibre[anywidget]
 altair
 plotly
 bqplot
