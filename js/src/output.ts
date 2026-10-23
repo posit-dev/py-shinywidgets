@@ -1,4 +1,5 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
+import { patchAnywidgetModelInit } from './anywidget';
 import { ShinyComm } from './comm';
 import { WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
 import { jsonParse } from './utils';
@@ -207,11 +208,21 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
     (window as any).define("base/js/dialog", [], function() { return null });
   }
 
-  return requireLoader(moduleName, moduleVersion).finally(() => {
-    (window as any).define.amd = oldAmd;
-    (window as any).$ = old$;
-    (window as any).jQuery = oldJQ;
-  });
+  return requireLoader(moduleName, moduleVersion)
+    .then((module) => {
+      // AnyModel's prototype is shared by every anywidget model instance, so
+      // patching it here (at module load) covers all of them. No-ops cleanly
+      // if the module's shape isn't what we expect.
+      if (moduleName === 'anywidget') {
+        patchAnywidgetModelInit(module);
+      }
+      return module;
+    })
+    .finally(() => {
+      (window as any).define.amd = oldAmd;
+      (window as any).$ = old$;
+      (window as any).jQuery = oldJQ;
+    });
 }
 
 const manager = new OutputManager({ loader: shinyRequireLoader });

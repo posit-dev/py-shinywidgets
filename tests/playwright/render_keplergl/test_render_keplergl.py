@@ -88,6 +88,32 @@ def test_keplergl_fills_container_and_respects_explicit_height(
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_keplergl_state_updates_survive_slow_model_init(page: Page, local_app) -> None:
+    # anywidget's front-end rejects a model's `ready` promise when loading the
+    # widget's `_esm` exceeds a hard-coded 2s budget, and gates every
+    # Python -> browser message on that promise -- so once it rejects, all
+    # subsequent state updates are dropped (the map stays at its default
+    # 400px height and each update logs "[anywidget] Failed to initialize
+    # model."). keplergl inlines ~13MB of ESM; heavy CPU throttling pushes
+    # its compilation past the budget. shinywidgets patches AnyModel in its
+    # own bundle to apply state updates anyway (js/src/anywidget.ts).
+    errors, failed_requests = collect_errors(page)
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("Emulation.setCPUThrottlingRate", {"rate": 12})
+    page.goto(local_app.url)
+
+    expect(page.locator("#map .kepler-gl")).to_be_visible(timeout=180000)
+
+    # The fill-height state update must still land (not be dropped with the
+    # rejected `ready` promise)
+    page.wait_for_function(KEPLER_MATCHES_CONTAINER_JS, arg="map", timeout=90000)
+    fill = page.evaluate(HEIGHTS_JS, "map")
+    assert fill["container"] > 400
+    assert abs(fill["kepler"] - fill["container"]) <= 1
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_keplergl_config_roundtrips_to_python(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
