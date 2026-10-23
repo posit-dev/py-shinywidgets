@@ -57,6 +57,7 @@ matplotlib = ["matplotlib", "ipympl"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
 perspective = ["perspective-python>=3.0"]
 plotly = ["plotly>=5.0.0"]
+plotnine = ["plotnine", "ipympl"]
 test = [
   "altair",
   "bokeh",
@@ -86,6 +87,7 @@ test = [
   "perspective-python>=3.0",
   "playwright>=1.40.0",
   "plotly>=5.0.0",
+  "plotnine",
   "polars",
   "pyarrow",
   "pydeck",
@@ -123,6 +125,7 @@ dev = [
   "perspective-python>=3.0",
   "playwright>=1.40.0",
   "plotly>=5.0.0",
+  "plotnine",
   "polars",
   "pyarrow",
   "pydeck",
@@ -163,6 +166,7 @@ test = [
   "perspective-python>=3.0",
   "playwright>=1.40.0",
   "plotly>=5.0.0",
+  "plotnine",
   "polars",
   "pyarrow",
   "pydeck",
