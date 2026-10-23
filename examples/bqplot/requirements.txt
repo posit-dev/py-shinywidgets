@@ -1,5 +1,4 @@
 shiny
-shinywidgets
-bqplot
+shinywidgets[bqplot]
 numpy
 pandas

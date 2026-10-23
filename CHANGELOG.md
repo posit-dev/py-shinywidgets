@@ -7,19 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### New features
+
+* Added per-renderer extras, so each `@render_*` decorator's widget dependencies can be installed in one command (e.g., `pip install 'shinywidgets[plotly]'` or `'shinywidgets[maplibre,bokeh]'`). See the README for the full list.
+
+### Deprecated
+
+* `bokeh_dependency()` is deprecated and will be removed in a future release. Bokeh's JavaScript/CSS assets are included automatically with every bokeh-based output (including dynamically created ones), so the call can simply be removed from your UI.
+
 ### Changed
 
 * shinywidgets now requires ipywidgets 8.1 or newer, and the bundled JavaScript widget manager (`@jupyter-widgets/html-manager`) was upgraded from 0.20 to 1.0. Together these fix a wide range of long-standing issues with ipywidgets 8 (see the bug fixes below). (#237, #259)
 
+### Deprecated
+
+* `@render_pydeck` is deprecated. pydeck v0.9 (April 2024) removed its Jupyter widget, so `@render_pydeck` (and `@render_widget` with a `pydeck.Deck`) can't render a map with any pydeck release that works with ipywidgets 8. It now emits a `DeprecationWarning`, and returning a `Deck` raises a `TypeError` that explains the alternatives up front (previously the advice was wrong, and with pandas 3 a cryptic `vars()` error from pydeck hid it). To keep using pydeck layers reactively, pass `pydeck.Layer` objects to a maplibre map's `add_deck_layers()` and render it with `@render_maplibre` (see `examples/pydeck/app.py`). For large data, consider `@render_lonboard`. For a static map, use shiny's `@render.ui` and return `deck.show()`. (#187)
+
 ### New features
 
 * Added several new `@render_*` decorators that bring more visualization and widget ecosystems into shinywidgets:
-  * `@render_panel` for [panel](https://panel.holoviz.org) widgets and layouts (e.g., `pn.widgets.Tabulator`). All required JS/CSS assets are served automatically. (#82, #88, #253)
-  * `@render_holoviews` for [HoloViews](https://holoviews.org) and [hvPlot](https://hvplot.holoviz.org) objects. (#87, #250, #253)
-  * `@render_lonboard` for [lonboard](https://developmentseed.org/lonboard/) maps (requires `pip install lonboard`). Return a `Map`, one or more layers, or any data `lonboard.viz()` accepts (e.g., a GeoPandas `GeoDataFrame` or a GeoArrow table). Maps fill their container unless given an explicit `height`, and `reactive_read()` gives you access to map state (e.g., `view_state`, or a layer's `selected_index`). (#278)
-  * `@render_maplibre` for [maplibre](https://eoda-dev.github.io/py-maplibregl/) maps (requires `pip install 'maplibre[anywidget]'`). Compared to maplibre's own Shiny bindings, maps fill their container (including `full_screen` cards) unless given an explicit height, any effect can update a map in place via `.widget` methods (e.g., `set_paint_property()`), and the same code runs in Jupyter. `reactive_read()` gives you access to map state (e.g., `view_state`, `clicked`).
-  * `@render_matplotlib` for matplotlib figures -- covering anything that produces one (seaborn, `pandas.DataFrame.plot()`, scikit-learn displays, etc.) -- rendered as interactive [ipympl](https://matplotlib.org/ipympl/) widgets (requires `pip install ipympl`). Figures fill and resize with their container in filling layouts, and repeated re-renders don't leak pyplot figures.
-  * `@render_bqplot` for [bqplot](https://bqplot.github.io/bqplot/) figures, including those built with `bqplot.pyplot` (requires `pip install bqplot`). Figures fill their container, follow Shiny's light/dark theme, and respect an explicit `height`; interaction state like `Scatter.selected` is available through `reactive_read()`. (#278)
+  * `@render_panel` for [panel](https://panel.holoviz.org) widgets and layouts (e.g., `pn.widgets.Tabulator`). Like Panel itself, it renders anything `pn.panel()` accepts (e.g., a `pn.viewable.Viewer` or `pn.custom.JSComponent` subclass, a string, a DataFrame, or a figure). All required JS/CSS assets are served automatically. (#82, #88, #253)
+  * `@render_holoviews` for [HoloViews](https://holoviews.org), [hvPlot](https://hvplot.holoviz.org), and [geoviews](https://geoviews.org) objects, including [datashader](https://datashader.org)-rasterized plots, which re-aggregate as you zoom and pan. Pass `responsive=True` to make plots fill their container. (#87, #250, #253, #278)
+  * `@render_jscatter` for [jupyter-scatter](https://jupyter-scatter.dev) GPU-accelerated scatter plots. Plots fit their output (in a filling layout or with an explicit `output_widget(height=)`) unless they have a height of their own, and `reactive_read(widget, "selection")` brings the selected points back to Python, e.g., to link brushing across plots and tables. (#278, #293)
+  * `@render_lonboard` for [lonboard](https://developmentseed.org/lonboard/) maps. Return a `Map`, one or more layers, or any data `lonboard.viz()` accepts (e.g., a GeoPandas `GeoDataFrame` or a GeoArrow table). Maps fill their container unless given an explicit `height`, and `reactive_read()` gives you access to map state (e.g., `view_state`, or a layer's `selected_index`). (#278)
+  * `@render_maplibre` for [maplibre](https://eoda-dev.github.io/py-maplibregl/) maps. Compared to maplibre's own Shiny bindings, maps fill their container (including `full_screen` cards) unless given an explicit height, any effect can update a map in place via `.widget` methods (e.g., `set_paint_property()`), and the same code runs in Jupyter. `reactive_read()` gives you access to map state (e.g., `view_state`, `clicked`).
+  * `@render_matplotlib` for matplotlib figures -- covering anything that produces one (seaborn, `pandas.DataFrame.plot()`, scikit-learn displays, etc.) -- rendered as interactive [ipympl](https://matplotlib.org/ipympl/) widgets. Figures fill and resize with their container in filling layouts, and repeated re-renders don't leak pyplot figures.
+  * `@render_bqplot` for [bqplot](https://bqplot.github.io/bqplot/) figures, including those built with `bqplot.pyplot`. Figures fill their container, follow Shiny's light/dark theme, and respect an explicit `height`; interaction state like `Scatter.selected` is available through `reactive_read()`. (#278)
+  * `@render_ipydatagrid` for pandas DataFrames (or `ipydatagrid.DataGrid` widgets), rendered as interactive [ipydatagrid](https://github.com/bloomberg/ipydatagrid) data grids. Grids fill their container in filling layouts and fit an explicit `height`, and `reactive_read()` gives you access to grid state like `selections`. (#278)
 * Bokeh plots using [extension models](https://docs.bokeh.org/en/latest/docs/user_guide/advanced/extensions.html) now work out of the box -- their assets are served automatically. (#88, #256)
 * `@render_plotly` now accepts a Dash-style `(figure, config)` tuple return value, where `config` is a dict of [Plotly.js config options](https://plotly.com/javascript/configuration-options/) (e.g., `{"displayModeBar": False}`). The config is merged over plotly's defaults and takes precedence over shinywidgets' own defaults. (#173)
 * Added `session_lifetime()`, a context manager for constructing widgets that should outlive the current render (for example, one cached widget per dataset that is displayed again when the user switches back). Attempting to return a widget that was already closed by an earlier render now raises an error pointing to `session_lifetime()` instead of timing out in the browser. (#258)
@@ -45,9 +59,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * Re-rendering stays fast with many concurrent sessions or large widgets (e.g., large GeoJSON payloads or Altair specs). (#261)
   * Fixed additional cleanup edge cases involving widgets closed before opening, background tasks, and cross-session references. (#258, #261)
 * Returning an unsupported builtin value (e.g., a string, number, or dict) from a `@render_widget` function now raises the intended "Don't know how to coerce ..." `TypeError` instead of a confusing `AttributeError: ... has no attribute '__module__'`. (#287)
+* With shinywidgets imported, constructing a `pydeck.Deck` (pydeck v0.9 or newer) no longer raises "shinywidgets requires that all ipywidgets be constructed within an active Shiny session" outside a session (e.g., a module-level `Deck` in a core app), and no longer leaks unused widget comms (and browser console errors) inside a session (e.g., a static `deck.show()` map in `@render.ui`).
 * Fixed an issue where an ipyleaflet map with many markers could turn gray and show no markers when re-rendered. (#215, #237)
 * Fixed an issue where fonts used by widget CSS, such as FontAwesome icons, failed to load (404). (#237)
+* Fixed an issue where an Altair chart in an output with an explicit height (e.g., `output_widget("plot", height="300px")`) collapsed to a sliver instead of filling that height.
+* Fixed an issue where observers registered on an `altair.JupyterChart`'s `selections` or `params` before returning it from `@render_altair` (e.g., `jchart.selections.observe(fn, ["brush"])`, as documented by Altair) never fired.
 * Fixed an issue where an output that once rendered a filling widget kept stretching later widgets to fill it, even ones given their own height (e.g., `layout.height="200px"`). (#300)
+* Fixed several sizing issues with bokeh-based outputs (`@render_bokeh`, `@render_panel`, and `@render_holoviews`):
+  * A bokeh `figure` given an explicit `width`, `height`, `sizing_mode`, or `aspect_ratio` now keeps that size, instead of always being stretched to fill its output.
+  * A plot that stretches to fill (e.g., a default `figure`, or a HoloViews plot with `responsive=True`) no longer collapses to a sliver inside an output with an explicit height (e.g., `output_widget(height="300px")`).
+  * Content with a size of its own (e.g., a fixed-size figure, a HoloViews plot without `responsive=True`, or a panel `Markdown` pane) no longer reserves empty space below it in non-filling layouts.
 * Fixed a regression (introduced alongside the busy-indicator fix in 0.8.2, #243) where re-rendering a widget output could show a brief flash of the previous (stale) content: Shiny stops showing the recalculating spinner, and un-hides the old content, as soon as the new value arrives -- before shinywidgets has had a chance to build and attach the new view. The output now stays hidden across that gap and reveals only once the new view has actually rendered, so widgets whose view takes noticeable time to construct (e.g., Bokeh, HoloViews/datashader, ipyleaflet, lonboard) no longer pop back to the old content before swapping to the new one. (#318)
 
 ## [0.8.2] - 2026-10-15

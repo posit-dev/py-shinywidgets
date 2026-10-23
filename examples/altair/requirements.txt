@@ -1,0 +1,3 @@
+shiny
+shinywidgets[altair]
+vega_datasets
