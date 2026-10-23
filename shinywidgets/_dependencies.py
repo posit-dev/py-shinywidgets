@@ -2,6 +2,7 @@ import importlib
 import json
 import os
 import re
+import sys
 import tempfile
 import warnings
 from types import ModuleType
@@ -85,7 +86,12 @@ def require_dependency(
     # system-wide, e.g. /usr/local/share/jupyter) can hold stale copies from
     # older installs, so they're only a fallback (a stale ipywidgets-7-era
     # jupyterlab-plotly bundle in /usr/local/share/jupyter caused #332)
-    module_dir = jupyter_extension_path(module_name, ENV_JUPYTER_PATH)
+    module_dir = None
+    if widget_package_in_env(w):
+        # The environment's data dir is only version-matched for packages that
+        # are installed in that same environment; otherwise a copy there is a
+        # leftover, and the package's bundled nbextension wins instead
+        module_dir = jupyter_extension_path(module_name, ENV_JUPYTER_PATH)
     if module_dir is None:
         module_dir = package_nbextension_path(w, module_name)
     if module_dir is None:
@@ -205,6 +211,32 @@ def jupyter_extension_path(
     return None
 
 
+def widget_package_in_env(w: Widget) -> bool:
+    """
+    Whether the widget's own Python package is installed in this environment
+    (i.e., under `sys.prefix`).
+
+    A wheel installs its data files (including any nbextension) into the data
+    dir of the environment it's installed into, so that copy matches the
+    installed version -- but only for packages installed in this same
+    environment. A package installed elsewhere (e.g., `pip install --user`) can
+    leave a stale copy behind in this environment's data dir, which must not be
+    preferred over the nbextension bundled with the package that's actually
+    imported.
+    """
+    try:
+        mod: ModuleType = importlib.import_module(widget_pkg(w))
+    except Exception:
+        # Can't tell; keep the historical (environment data dir first) behavior
+        return True
+    module_file = getattr(mod, "__file__", None)
+    if module_file is None:
+        return True
+    return os.path.abspath(module_file).startswith(
+        os.path.join(os.path.abspath(sys.prefix), "")
+    )
+
+
 def package_nbextension_path(w: Widget, module_name: str) -> Optional[str]:
     """
     Path to the nbextension bundled inside the widget's own installed Python
@@ -213,16 +245,23 @@ def package_nbextension_path(w: Widget, module_name: str) -> Optional[str]:
 
     The providing package is usually the widget package itself (e.g.,
     ipyleaflet), but it can also be a separate package named after the
-    extension: plotly widgets request the "jupyterlab-plotly" module, whose
-    nbextension ships inside the jupyterlab_plotly package.
+    extension (plotly widgets request the "jupyterlab-plotly" module, whose
+    nbextension ships inside the jupyterlab_plotly package), or a base class's
+    package (e.g., an app-defined subclass of ipyleaflet's Map lives in another
+    package, but the extension it renders with is ipyleaflet's).
     """
-    candidates = [widget_pkg(w), module_name.replace("-", "_")]
+    candidates = [
+        *(widget_pkg(cls) for cls in type(w).__mro__),
+        module_name.replace("-", "_"),
+    ]
     for pkg in dict.fromkeys(candidates):
         try:
             mod: ModuleType = importlib.import_module(pkg)
         except Exception:
             continue
-        if mod.__file__ is None:
+        module_file = getattr(mod, "__file__", None)
+        if module_file is None:
+            # builtins, namespace packages, C extensions, ...
             continue
         nbextension_paths = getattr(mod, "_jupyter_nbextension_paths", None)
         if nbextension_paths is None:
@@ -234,7 +273,7 @@ def package_nbextension_path(w: Widget, module_name: str) -> Optional[str]:
         for entry in entries:
             if entry.get("dest") != module_name or "src" not in entry:
                 continue
-            dir = os.path.join(os.path.dirname(mod.__file__), entry["src"])
+            dir = os.path.join(os.path.dirname(module_file), entry["src"])
             if dir_has_index_js(dir):
                 return dir
 
