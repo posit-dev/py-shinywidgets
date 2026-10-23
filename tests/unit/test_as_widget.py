@@ -169,25 +169,41 @@ def test_as_widget_bokeh_import_error_path(monkeypatch: pytest.MonkeyPatch) -> N
         as_widget_bokeh(object())
 
 
-def test_as_widget_bokeh_success_with_fakes(monkeypatch: pytest.MonkeyPatch) -> None:
-    jb = ModuleType("jupyter_bokeh")
-    jb.BokehModel = lambda x: Widget.__new__(Widget)  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "jupyter_bokeh", jb)
+def test_as_widget_bokeh_stretches_unsized_figure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bokeh.plotting import figure
 
-    _inject_package(monkeypatch, "bokeh")
-    plotting = ModuleType("bokeh.plotting")
+    _fake_jupyter_bokeh(monkeypatch)
 
-    class FakeFigure:
-        def __init__(self):
-            self.sizing_mode = None
-
-    plotting.figure = FakeFigure  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "bokeh.plotting", plotting)
-
-    fig = FakeFigure()
+    fig = figure()
     res = as_widget_bokeh(fig)
     assert isinstance(res, Widget)
     assert fig.sizing_mode == "stretch_both"
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"height": 200},
+        {"width": 250},
+        {"width": 250, "height": 150, "sizing_mode": "fixed"},
+        {"height": 200, "sizing_mode": "stretch_width"},
+        {"aspect_ratio": 2},
+    ],
+)
+def test_as_widget_bokeh_respects_user_sizing(
+    monkeypatch: pytest.MonkeyPatch, kwargs: dict[str, object]
+) -> None:
+    from bokeh.plotting import figure
+
+    _fake_jupyter_bokeh(monkeypatch)
+
+    fig = figure(**kwargs)
+    as_widget_bokeh(fig)
+    assert fig.sizing_mode == kwargs.get("sizing_mode")
+    for name, value in kwargs.items():
+        assert getattr(fig, name) == value
 
 
 def test_as_widget_plotly_success_and_type_check_with_fakes(
@@ -370,6 +386,40 @@ def test_as_widget_maplibre_real_map_widget(monkeypatch: pytest.MonkeyPatch) -> 
     assert res._message_queue == m.to_dict()["calls"]
 
 
+def test_as_widget_maplibre_does_not_share_state_with_map(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A module-level Map is coerced once per session/render, so widget calls
+    # (queued until the browser renders the map) must not leak back into it.
+    pytest.importorskip("maplibre")
+    pytest.importorskip("anywidget")
+
+    import shinywidgets._shinywidgets as sw
+
+    monkeypatch.setattr(sw, "get_current_session", lambda: StubSession())
+
+    from maplibre import Map
+    from maplibre.ipywidget import MapWidget
+
+    m = Map()
+    m.add_source(
+        "src",
+        {"type": "geojson", "data": {"type": "FeatureCollection", "features": []}},
+    )
+    calls_before = list(m._message_queue)
+    options_before = dict(m.map_options)
+
+    res = as_widget(m)
+    assert isinstance(res, MapWidget)
+    assert res._message_queue is not m._message_queue
+    assert res.map_options is not m.map_options
+
+    res.add_call("flyTo", {"zoom": 3})
+    res.map_options["zoom"] = 3
+    assert m._message_queue == calls_before
+    assert m.map_options == options_before
+
+
 def test_as_widget_mpl_real_ipympl_canvas(monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("matplotlib")
     pytest.importorskip("ipympl")
@@ -437,6 +487,13 @@ def test_as_widget_mpl_non_pyplot_figure_retirement_is_noop(
         context.invalidate()
 
 
+@pytest.fixture
+def pydeck_08(monkeypatch: pytest.MonkeyPatch) -> None:
+    pydeck = pytest.importorskip("pydeck")
+    monkeypatch.setattr(pydeck, "__version__", "0.8.0")
+
+
+@pytest.mark.usefixtures("pydeck_08")
 def test_as_widget_pydeck_missing_show_errors() -> None:
     class NoShow:
         __module__ = "pydeck.mod"
@@ -445,20 +502,19 @@ def test_as_widget_pydeck_missing_show_errors() -> None:
         as_widget_pydeck(NoShow())
 
 
-def test_as_widget_pydeck_show_returning_non_widget_explains() -> None:
+@pytest.mark.usefixtures("pydeck_08")
+def test_as_widget_pydeck_show_returning_non_widget_errors() -> None:
     class Deck:
         __module__ = "pydeck.mod"
 
         def show(self):
             return "not-a-widget"
 
-    with pytest.raises(TypeError) as excinfo:
+    with pytest.raises(TypeError, match=r"Deck\.show\(\) to return an ipywidget"):
         as_widget_pydeck(Deck())
-    msg = str(excinfo.value)
-    assert "pydeck v0.9 removed ipywidgets support" in msg
-    assert "@render.ui" in msg
 
 
+@pytest.mark.usefixtures("pydeck_08")
 def test_as_widget_pydeck_show_returning_widget_succeeds() -> None:
     class Deck:
         __module__ = "pydeck.mod"
@@ -507,6 +563,50 @@ def test_as_widget_holoviews_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
     res = as_widget(HVObj())
     assert isinstance(res, Widget)
+
+
+def test_as_widget_geoviews_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_panel(monkeypatch, root=object())
+    _fake_jupyter_bokeh(monkeypatch)
+
+    class GeoObj:
+        __module__ = "geoviews.element.geo"
+
+    res = as_widget(GeoObj())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_geoviews_without_panel_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "panel", None)
+
+    class GeoObj:
+        __module__ = "geoviews.element.geo"
+
+    with pytest.raises(ImportError, match="pip install panel"):
+        as_widget(GeoObj())
+
+
+@pytest.mark.parametrize("overlay_tiles", [False, True], ids=["points", "tiles"])
+def test_as_widget_real_geoviews_object(
+    monkeypatch: pytest.MonkeyPatch, overlay_tiles: bool
+) -> None:
+    gv = pytest.importorskip("geoviews")
+    pn = pytest.importorskip("panel")
+    jupyter_bokeh = pytest.importorskip("jupyter_bokeh")
+    gv.extension("bokeh")
+    monkeypatch.setattr(Widget, "_widget_construction_callback", None)
+
+    points = gv.Points([(-122.4, 37.8), (-0.1, 51.5)])
+    obj = gv.tile_sources.OSM * points if overlay_tiles else points
+    widget = as_widget(obj)
+
+    try:
+        assert isinstance(widget, jupyter_bokeh.BokehModel)
+    finally:
+        # Mirror test_widget_closure_releases_its_panel_root's cleanup
+        pn.state._views.pop(widget._model.id, None)
 
 
 def test_as_widget_hvplot_success(monkeypatch: pytest.MonkeyPatch) -> None:

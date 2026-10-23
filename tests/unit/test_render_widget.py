@@ -32,7 +32,7 @@ def test_render_embedding_atlas_renders_widget_as_is(widget_session) -> None:
     with session_context(widget_session):
         res = asyncio.run(r._render())
 
-    assert res is not None
+    assert isinstance(res, dict)
     assert r.widget is created[0]
     assert res["fill"] is True
 
@@ -54,7 +54,7 @@ def test_render_embedding_atlas_respects_widget_layout_height(widget_session) ->
     with session_context(widget_session):
         res = asyncio.run(r._render())
 
-    assert res is not None
+    assert isinstance(res, dict)
     assert res["fill"] is False
 
 
@@ -200,7 +200,7 @@ def test_render_bokeh_auto_output_ui_appends_bokeh_dependency(monkeypatch) -> No
     )
 
     monkeypatch.setattr(rwb, "output_widget", lambda *args, **kwargs: div())
-    monkeypatch.setattr(rw, "bokeh_dependency", lambda: sentinel)
+    monkeypatch.setattr(rw, "_bokeh_dependency", lambda: sentinel)
 
     renderer = rw.render_bokeh()
     renderer.output_id = "plot"
@@ -220,7 +220,7 @@ def test_render_panel_and_hvplot_auto_output_ui_append_bokeh_dependency(
     )
 
     monkeypatch.setattr(rwb, "output_widget", lambda *args, **kwargs: div())
-    monkeypatch.setattr(rw, "bokeh_dependency", lambda: sentinel)
+    monkeypatch.setattr(rw, "_bokeh_dependency", lambda: sentinel)
 
     for cls in (rw.render_panel, rw.render_holoviews):
         renderer = cls()

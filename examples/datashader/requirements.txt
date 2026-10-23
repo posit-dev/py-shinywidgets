@@ -1,0 +1,9 @@
+shiny
+shinywidgets
+holoviews
+hvplot
+panel
+jupyter_bokeh
+datashader
+numpy
+pandas
