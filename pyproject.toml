@@ -45,6 +45,7 @@ bqplot = ["bqplot"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
+ipycytoscape = ["ipycytoscape"]
 ipydatagrid = ["ipydatagrid"]
 itables = ["itables[widget]"]
 jscatter = ["jupyter-scatter"]
@@ -77,6 +78,7 @@ test = [
   "hvplot",
   "ipyaladin",
   "ipycanvas",
+  "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -91,6 +93,7 @@ test = [
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
   "pandas",
+  "networkx",
   "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
@@ -120,6 +123,7 @@ dev = [
   "hvplot",
   "ipyaladin",
   "ipycanvas",
+  "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -134,6 +138,7 @@ dev = [
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
   "pandas",
+  "networkx",
   "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
@@ -166,6 +171,7 @@ test = [
   "hvplot",
   "ipyaladin",
   "ipycanvas",
+  "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -180,6 +186,7 @@ test = [
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
   "pandas",
+  "networkx",
   "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
