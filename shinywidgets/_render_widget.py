@@ -118,7 +118,8 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     Reactively render an [altair](https://altair-viz.github.io) chart as a Shiny output.
 
     The decorated function may return either an `altair.Chart` (which is coerced to
-    an `altair.JupyterChart` widget) or an `altair.JupyterChart` widget.
+    an `altair.JupyterChart` widget) or an `altair.JupyterChart` widget (requires
+    ``pip install 'shinywidgets[altair]'``).
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
@@ -177,7 +178,8 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
     list of layers), which is placed on a `Map`, or any data that `lonboard.viz()`
     accepts (e.g., a GeoPandas `GeoDataFrame` or a GeoArrow-compatible Arrow table),
     which is converted to a `Map` via `lonboard.viz()` (requires ``pip install
-    lonboard``). In a filling layout, the map fills its container unless the `Map`
+    'shinywidgets[lonboard]'``). In a filling layout, the map fills its container
+    unless the `Map`
     has an explicit ``height``.
 
     The decorated function also gains two read-only attributes: `.value`, the value
@@ -213,7 +215,7 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
             import lonboard  # pyright: ignore[reportMissingImports]
         except ImportError:
             raise ImportError(
-                "Install the lonboard package to use render_lonboard with shinywidgets (pip install lonboard)."
+                "Install the lonboard package to use render_lonboard with shinywidgets (pip install 'shinywidgets[lonboard]')."
             )
 
         # viz() handles lists of data, but not lists of layers
@@ -232,7 +234,7 @@ class render_maplibre(render_widget_base[MaplibreValueT, MapWidget]):
     Shiny output.
 
     The decorated function may return either a `maplibre.Map` (which is coerced to a
-    `maplibre.ipywidget.MapWidget`; requires ``pip install 'maplibre[anywidget]'``)
+    `maplibre.ipywidget.MapWidget`; requires ``pip install 'shinywidgets[maplibre]'``)
     or a `maplibre.ipywidget.MapWidget` widget. In a filling layout, the map fills
     its container unless the `MapWidget` has an explicit ``height``.
 
@@ -275,7 +277,8 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
 
     The decorated function may return a `matplotlib.figure.Figure`, a
     `matplotlib.axes.Axes` (rendered via its figure), or an `ipympl.backend_nbagg.Canvas`
-    widget. Figures and axes are coerced to a `Canvas` (requires ``pip install ipympl``),
+    widget. Figures and axes are coerced to a `Canvas` (requires ``pip install
+    'shinywidgets[matplotlib]'``),
     so this also works with libraries built on matplotlib (e.g., seaborn or
     ``pandas.DataFrame.plot()``). Figures created through pyplot are closed (via
     ``plt.close()``) when their widget is retired. In a filling layout, the figure is
@@ -314,7 +317,7 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
     The decorated function may return either a bokeh model (e.g., a
     `bokeh.plotting.figure`), which is coerced to a `jupyter_bokeh.BokehModel`
     widget, or a `jupyter_bokeh.BokehModel` widget (requires ``pip install
-    jupyter_bokeh``).
+    'shinywidgets[bokeh]'``).
 
     A `figure` fills its output by default (i.e., it gets
     ``sizing_mode="stretch_both"``), unless you give it a ``width``, ``height``,
@@ -367,7 +370,7 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
 
     The decorated function may return any object that ``pn.panel()`` accepts (e.g., a
     pane, widget, layout, `pn.viewable.Viewer`, string, DataFrame, or figure), which
-    is rendered through bokeh (requires ``pip install panel jupyter_bokeh``), or the
+    is rendered through bokeh (requires ``pip install 'shinywidgets[panel]'``), or the
     underlying `jupyter_bokeh.BokehModel` widget. Panel callbacks (e.g., ``pn.bind()``,
     ``.param.watch()``, and ``on_click()``) run in the Shiny server, without a Panel
     server.
@@ -436,7 +439,7 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
     as a Shiny output.
 
     The decorated function may return either a holoviews/hvplot/geoviews object
-    (which is rendered through panel; requires ``pip install panel jupyter_bokeh``)
+    (which is rendered through panel; requires ``pip install 'shinywidgets[holoviews]'``)
     or the underlying `jupyter_bokeh.BokehModel` widget. geoviews 1.15 requires
     ``cartopy<0.26``. If you call ``.opts()`` without importing hvplot, call
     ``hv.extension("bokeh")`` first. Plots rasterized with
@@ -511,7 +514,8 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     Reactively render a [plotly](https://plotly.com/python/) figure as a Shiny output.
 
     The decorated function may return either a `plotly.graph_objects.Figure` (which
-    is coerced to a `FigureWidget`) or a `plotly.graph_objects.FigureWidget` widget.
+    is coerced to a `FigureWidget`) or a `plotly.graph_objects.FigureWidget` widget
+    (requires ``pip install 'shinywidgets[plotly]'``).
     Alternatively, it may return a Dash-style
     `(figure, config)` tuple, where `config` is a dict of Plotly.js [config
     options](https://plotly.com/javascript/configuration-options/) (e.g.,
@@ -640,7 +644,7 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
       [maplibre](https://eoda-dev.github.io/py-maplibregl/) map's
       `add_deck_layers()` and render it with
       :class:`~shinywidgets.render_maplibre` (requires ``pip install
-      'maplibre[anywidget]'``). Restyle the rendered map in place with
+      'shinywidgets[maplibre]'``). Restyle the rendered map in place with
       `.widget.set_deck_layers()` (the camera stays where the user left it), and
       read its state (e.g., ``"view_state"``, ``"clicked"``) with
       :func:`~shinywidgets.reactive_read`.

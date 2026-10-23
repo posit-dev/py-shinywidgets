@@ -145,7 +145,7 @@ def test_as_widget_coercer_returning_non_widget_errors(
 def test_as_widget_altair_import_error_path(monkeypatch: pytest.MonkeyPatch) -> None:
     # A module that exists but doesn't provide JupyterChart still triggers ImportError.
     monkeypatch.setitem(sys.modules, "altair", ModuleType("altair"))
-    with pytest.raises(RuntimeError, match="pip install -U altair"):
+    with pytest.raises(RuntimeError, match=r"pip install -U 'shinywidgets\[altair\]'"):
         as_widget_altair(object())
 
 
@@ -286,7 +286,7 @@ def test_as_widget_maplibre_anywidget_import_error(
     monkeypatch.setitem(
         sys.modules, "maplibre.ipywidget", ModuleType("maplibre.ipywidget")
     )
-    with pytest.raises(ImportError, match=r"maplibre\[anywidget\]"):
+    with pytest.raises(ImportError, match=r"shinywidgets\[maplibre\]"):
         as_widget_maplibre(Map())
 
 
@@ -323,7 +323,7 @@ def test_as_widget_mpl_import_error_path(monkeypatch: pytest.MonkeyPatch) -> Non
     Figure, _ = _fake_matplotlib(monkeypatch)
     # A module that exists but doesn't provide backend_nbagg still triggers ImportError.
     monkeypatch.setitem(sys.modules, "ipympl", ModuleType("ipympl"))
-    with pytest.raises(ImportError, match="pip install ipympl"):
+    with pytest.raises(ImportError, match=r"pip install 'shinywidgets\[matplotlib\]'"):
         as_widget_mpl(Figure())
 
 
@@ -584,7 +584,7 @@ def test_as_widget_geoviews_without_panel_errors(
     class GeoObj:
         __module__ = "geoviews.element.geo"
 
-    with pytest.raises(ImportError, match="pip install panel"):
+    with pytest.raises(ImportError, match=r"pip install 'shinywidgets\[holoviews\]'"):
         as_widget(GeoObj())
 
 
@@ -626,7 +626,7 @@ def test_as_widget_panel_without_panel_errors(monkeypatch: pytest.MonkeyPatch) -
     class PanelObj:
         __module__ = "panel.widgets.tables"
 
-    with pytest.raises(ImportError, match="pip install panel"):
+    with pytest.raises(ImportError, match=r"pip install 'shinywidgets\[panel\]'"):
         as_widget(PanelObj())
 
 
@@ -638,7 +638,7 @@ def test_as_widget_holoviews_without_panel_errors(
     class HVObj:
         __module__ = "holoviews.element.chart"
 
-    with pytest.raises(ImportError, match="pip install panel"):
+    with pytest.raises(ImportError, match=r"pip install 'shinywidgets\[holoviews\]'"):
         as_widget(HVObj())
 
 
