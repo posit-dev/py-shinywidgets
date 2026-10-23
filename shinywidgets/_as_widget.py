@@ -43,6 +43,8 @@ def as_widget(x: object) -> Widget:
     * bokeh model (e.g., `bokeh.plotting.figure`) -> `jupyter_bokeh.BokehModel`
     * holoviews/hvplot/geoviews object -> bokeh model (via panel)
     * jupyter-scatter `Scatter` -> `jscatter.widget.JupyterScatter`
+    * leafmap's folium and deck backends raise a `TypeError` (leafmap's other
+      backends are already ipywidgets)
     * lonboard layer -> `lonboard.Map`
     * maplibre `Map` -> `maplibre.ipywidget.MapWidget`
     * matplotlib `Figure` or `Axes` (or a seaborn figure-level grid) ->
@@ -522,6 +524,36 @@ def forget_drawn_figure(plot: object) -> None:
         forget_drawn_figure(item)
 
 
+LEAFMAP_FOLIUM_MESSAGE = (
+    "leafmap's folium backend (leafmap.foliumap.Map) isn't an ipywidget, so it "
+    "can't be rendered with a shinywidgets render decorator. For a static map, "
+    "use shiny's @render.ui decorator and return ui.HTML(m._repr_html_()) — not "
+    "m.to_html(), which is a whole HTML document. For a reactive map, use one of "
+    "leafmap's widget backends instead: leafmap.Map (ipyleaflet) or "
+    "leafmap.maplibregl.Map."
+)
+
+
+def as_widget_leafmap(x: object) -> Widget:
+    """
+    Coerce a leafmap map into a Widget (see `as_widget()`).
+
+    leafmap's ipyleaflet (`leafmap.Map`), maplibre (`leafmap.maplibregl.Map`), and
+    kepler.gl (`leafmap.kepler.Map`) backends are already ipywidgets, so they
+    never reach this function (``as_widget()`` returns those as-is). Its folium
+    and deck backends aren't widgets, so this raises a `TypeError` that points to
+    an alternative.
+    """
+    # The deck backend subclasses pydeck's Deck, so give it pydeck's advice
+    if any(widget_pkg(base) == "pydeck" for base in type(x).__mro__):
+        raise TypeError(
+            PYDECK_NO_WIDGET_MESSAGE
+            + " With leafmap, that's leafmap.maplibregl.Map and its add_deck_layers()."
+        )
+
+    raise TypeError(LEAFMAP_FOLIUM_MESSAGE)
+
+
 def as_widget_pydeck(x: object) -> Widget:
     # Check before calling show(): on pydeck >= 0.9 it serializes the whole deck
     # into HTML for nothing, and that can fail with a cryptic error of its own
@@ -564,6 +596,7 @@ AS_WIDGET_MAP = {
     "holoviews": as_widget_holoviews,
     "hvplot": as_widget_holoviews,
     "jscatter": as_widget_jscatter,
+    "leafmap": as_widget_leafmap,
     "lonboard": as_widget_lonboard,
     "maplibre": as_widget_maplibre,
     "matplotlib": as_widget_mpl,

@@ -468,3 +468,66 @@ def test_render_panel_and_hvplot_auto_output_ui_append_bokeh_dependency(
         res = renderer.auto_output_ui()
 
         assert any(dep.name == "bokeh-inline" for dep in res.get_dependencies()), cls
+
+
+def test_render_leafmap_is_render_widget_base() -> None:
+    renderer = rw.render_leafmap()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
+def _leafmap_backend_map(base, module: str, **kwargs):
+    # leafmap's backends are subclasses of another package's widget, defined in
+    # leafmap, so mimic one without needing leafmap installed
+    return type("Map", (base,), {"__module__": module})(**kwargs)
+
+
+def test_render_leafmap_treats_leafmaps_default_height_as_unset(widget_session) -> None:
+    ipyleaflet = pytest.importorskip("ipyleaflet")
+    r = rw.render_leafmap()
+
+    with session_context(widget_session):
+        # leafmap.Map sets Layout.height to 600px itself, which is leafmap's
+        # default rather than user intent, so the map should still fill
+        @r
+        def _():  # noqa: ANN202
+            return _leafmap_backend_map(
+                ipyleaflet.Map,
+                "leafmap.leafmap",
+                layout=Layout(height="600px"),
+            )
+
+        res = asyncio.run(r._render())
+        assert res is not None and res["fill"] is True
+        assert r.widget.layout.height == "100%"
+
+        # A height the user actually asked for is respected
+        @r
+        def _():  # noqa: ANN202
+            return _leafmap_backend_map(
+                ipyleaflet.Map,
+                "leafmap.leafmap",
+                layout=Layout(height="300px"),
+            )
+
+        res = asyncio.run(r._render())
+        assert res is not None and res["fill"] is False
+        assert r.widget.layout.height == "300px"
+
+
+def test_render_leafmap_maplibre_backend_default_height_is_unset(
+    widget_session,
+) -> None:
+    pytest.importorskip("maplibre")
+    from maplibre.ipywidget import MapWidget
+
+    r = rw.render_leafmap()
+
+    with session_context(widget_session):
+
+        @r
+        def _():  # noqa: ANN202
+            return _leafmap_backend_map(MapWidget, "leafmap.maplibregl", height="600px")
+
+        res = asyncio.run(r._render())
+        assert res is not None and res["fill"] is True
+        assert r.widget.height == "100%"
