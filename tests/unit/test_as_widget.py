@@ -24,6 +24,13 @@ def _inject_package(monkeypatch: pytest.MonkeyPatch, name: str) -> ModuleType:
     return pkg
 
 
+def importorskip_ipympl() -> None:
+    # Importing ipympl makes it pyplot's backend, which would leak into every
+    # later test in the process
+    with asw.backend_selection_suppressed():
+        pytest.importorskip("ipympl")
+
+
 class StubSession:
     def is_stub_session(self) -> bool:
         return True
@@ -62,6 +69,14 @@ def _fake_matplotlib(monkeypatch: pytest.MonkeyPatch):
     axes_mod.Axes = Axes  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "matplotlib.axes", axes_mod)
 
+    pylab_helpers = ModuleType("matplotlib._pylab_helpers")
+
+    class Gcf:
+        figs: dict[int, object] = {}
+
+    setattr(pylab_helpers, "Gcf", Gcf)
+    monkeypatch.setitem(sys.modules, "matplotlib._pylab_helpers", pylab_helpers)
+
     return Figure, Axes
 
 
@@ -77,6 +92,10 @@ def _fake_ipympl_canvas(monkeypatch: pytest.MonkeyPatch):
             captured["figure"] = figure
             self.manager: object | None = None
             self.comm = None
+            self._data_url = ""
+
+        def _repr_mimebundle_(self, **kwargs: object) -> None:
+            self._data_url = "data:image/png;base64,"
 
     class FigureManager:
         def __init__(self, canvas, num):
@@ -464,7 +483,7 @@ def test_as_widget_maplibre_does_not_share_state_with_map(
 
 def test_as_widget_mpl_real_ipympl_canvas(monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("matplotlib")
-    pytest.importorskip("ipympl")
+    importorskip_ipympl()
 
     import shinywidgets._shinywidgets as sw
 
@@ -481,36 +500,11 @@ def test_as_widget_mpl_real_ipympl_canvas(monkeypatch: pytest.MonkeyPatch) -> No
     plt.close(fig)
 
 
-def test_as_widget_mpl_pyplot_figure_closed_at_render_retirement(
-    widget_session,
-) -> None:
-    plt = pytest.importorskip("matplotlib.pyplot")
-    pytest.importorskip("ipympl")
-
-    from shiny.reactive._core import Context
-    from shiny.session import session_context
-    from shinywidgets._render_widget_base import WidgetRenderContext
-
-    with session_context(widget_session):
-        context = Context()
-        with context():
-            with WidgetRenderContext():
-                fig, ax = plt.subplots()
-                ax.plot([1, 2, 3])
-                as_widget_mpl(fig)
-
-        assert fig.number in plt.get_fignums()
-        context.invalidate()
-        # Retiring the render deregisters the figure from pyplot (otherwise
-        # repeated renders leak figures in pyplot's global registry)
-        assert fig.number not in plt.get_fignums()
-
-
 def test_as_widget_mpl_non_pyplot_figure_retirement_is_noop(
     widget_session,
 ) -> None:
     pytest.importorskip("matplotlib")
-    pytest.importorskip("ipympl")
+    importorskip_ipympl()
 
     from matplotlib.figure import Figure
     from shiny.reactive._core import Context

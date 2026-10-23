@@ -15,7 +15,9 @@ app_ui = ui.page_fillable(
     ui.layout_sidebar(
         ui.sidebar(
             ui.input_select("shape", "Shape", list(GEOMETRIES)),
-            ui.input_select("color", "Color", ["#d62728", "#1f77b4", "#2ca02c", "#9467bd"]),
+            ui.input_select(
+                "color", "Color", ["#d62728", "#1f77b4", "#2ca02c", "#9467bd"]
+            ),
             ui.output_text("camera", inline=True),
         ),
         ui.card(
