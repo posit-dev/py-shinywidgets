@@ -209,6 +209,20 @@ def as_widget_mpl(x: object) -> Widget:
             "Install the ipympl package to use matplotlib with shinywidgets (pip install ipympl)."
         )
 
+    # A GUI backend's canvas gets destroyed (its window closed) and replaced
+    # with ipympl's below. That path relies on platform-specific behavior
+    # (e.g., HiDPI dpi scaling) that automated tests can't exercise, so warn
+    # and point to the well-tested paths.
+    if not isinstance(x.canvas, Canvas) and is_gui_backend_canvas(x.canvas):
+        warnings.warn(
+            "render_matplotlib is replacing a canvas created by a GUI backend "
+            f"({type(x.canvas).__module__}): the figure's window (if any) is "
+            "destroyed and ipympl's canvas takes over, a path that relies on "
+            "platform-specific behavior that shinywidgets can't test. Prefer "
+            "creating figures with matplotlib.figure.Figure(), or selecting "
+            'the agg backend (matplotlib.use("agg")) before creating figures.',
+        )
+
     # Before the ipympl canvas is attached: leaving pyplot may replace the
     # figure's canvas. Isolated since destroying a GUI-backend manager fires
     # close_event, running the user's callbacks (see the draw below).
@@ -298,6 +312,19 @@ def refresh_stale_mpl_canvases(widget: Widget) -> None:
         canvas = cast("Canvas", w)
         if not canvas._data_url or canvas.figure.stale:
             draw_initial_image(canvas)
+
+
+def is_gui_backend_canvas(x: object) -> bool:
+    """
+    Whether a matplotlib canvas comes from an interactive GUI framework (Qt,
+    Tk, GTK, wx, macOS). Those canvases live in matplotlib's
+    ``backend_<gui>[agg]`` modules (e.g., ``backend_qtagg``); the
+    non-interactive ones (agg, svg, pdf, ...) and ipympl's do not.
+    """
+    module = type(x).__module__.lower()
+    return module.startswith("matplotlib.backends.backend_") and any(
+        marker in module for marker in ("qt", "tk", "gtk", "wx", "macosx")
+    )
 
 
 def is_ipympl_canvas(x: Widget) -> bool:

@@ -473,6 +473,24 @@ def test_first_draw_callbacks_dont_invalidate_the_render(
     assert not context._invalidated
 
 
+def test_gui_backend_canvas_warns(widget_session: Session) -> None:
+    # Rendering a figure created under a GUI backend means destroying its
+    # window and replacing its canvas, which relies on platform-specific
+    # behavior (e.g., HiDPI dpi scaling) that automated tests can't exercise --
+    # so it warns, pointing to the well-tested paths (Figure()/agg).
+    gui_canvas_type = type(
+        "FakeGUICanvas",
+        (FigureCanvasAgg,),
+        {"__module__": "matplotlib.backends.backend_macosx"},
+    )
+    figure = Figure()
+    gui_canvas_type(figure)  # takes over as figure.canvas
+
+    with session_context(widget_session):
+        with pytest.warns(UserWarning, match="GUI backend"):
+            as_widget(figure)
+
+
 def test_coercion_preserves_pyplot_backend() -> None:
     # ipympl selects itself as pyplot's backend when first imported, so this
     # must run in a process that hasn't imported it yet

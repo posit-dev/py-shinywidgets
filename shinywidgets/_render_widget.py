@@ -263,6 +263,15 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     current figure or axes (``plt.plot()``, ``plt.gca()``, or seaborn functions without
     ``ax=``), which are shared by every output and session in the process.
 
+    Create figures with a non-interactive backend: ``matplotlib.figure.Figure()``
+    directly, or pyplot under the ``agg`` backend (the default when no display is
+    available, as on a server; select it locally with ``matplotlib.use("agg")``
+    before creating figures). A figure created under a GUI backend (Qt, Tk, macOS,
+    ...) can still be rendered -- its window is destroyed and ipympl's canvas
+    replaces its own -- but that path depends on platform-specific behavior that
+    automated tests can't exercise, so it is supported on a best-effort basis and
+    warns at render time.
+
     Browser interactions reach Python through matplotlib's own callbacks, e.g.,
     ``fig.canvas.mpl_connect("button_press_event", f)`` or
     ``ax.callbacks.connect("xlim_changed", f)`` (which fires on every zoom and pan). To
