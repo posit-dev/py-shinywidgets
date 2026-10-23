@@ -62,6 +62,9 @@ def server(input, output, session):
 
     @render_ipycanvas
     def canvas():
+        # Read the counter so each Rerender click invalidates (and
+        # rebuilds) the canvas
+        counter.get()
         return make_canvas()
 
     @render_ipycanvas

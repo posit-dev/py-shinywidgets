@@ -42,14 +42,43 @@ TOP_LEFT_PIXELS_JS = """(sel) => {
 }"""
 
 
+# Checks exact pixel values at known buffer coordinates. The samples below
+# are all outside the bottom animation strip, so only the initial drawing
+# can satisfy them
+KNOWN_PIXELS_JS = """(args) => {
+  const canvas = document.querySelector(args.sel);
+  if (!canvas) return false;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return false;
+  for (const [x, y, r, g, b] of args.pixels) {
+    const d = ctx.getImageData(x, y, 1, 1).data;
+    if (d[0] !== r || d[1] !== g || d[2] !== b || d[3] !== 255) return false;
+  }
+  return true;
+}"""
+
+# Known pixels from the render function's initial drawing: the steelblue
+# fill_rect(10, 10, 100, 80) and the red put_image_data(..., 150, 10) image
+# (the latter exercises binary transport via the startup draw-command cache
+# flush -- a rect-only check could pass with the image missing)
+INITIAL_DRAWING_PIXELS = {
+    "sel": CANVAS,
+    "pixels": [
+        [20, 20, 70, 130, 180],  # steelblue rect
+        [160, 20, 200, 0, 0],  # red image
+    ],
+}
+
+
 def test_ipycanvas_renders_and_draws(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
 
     expect(page.locator(CANVAS)).to_have_count(1, timeout=30000)
     # The render function's drawing (a rect + an image sent as a binary
-    # buffer) survives the trip to the browser
-    page.wait_for_function(CANVAS_HAS_PIXELS_JS, arg="#canvas", timeout=30000)
+    # buffer) survives the trip to the browser: assert exact known pixels
+    # from both, outside the animation strip
+    page.wait_for_function(KNOWN_PIXELS_JS, arg=INITIAL_DRAWING_PIXELS, timeout=30000)
 
     assert_no_unexpected_errors(errors, failed_requests)
 
@@ -244,13 +273,25 @@ def test_ipycanvas_rerender_lifecycle(page: Page, local_app) -> None:
     expect(page.locator("#render_count")).to_have_text("0")
 
     for i in range(1, 4):
+        # Tag the current canvas element so we can prove the click actually
+        # replaces it (a mere counter bump would leave the element in place)
+        page.evaluate(
+            "(sel) => { window.__canvasBefore = document.querySelector(sel); }",
+            CANVAS,
+        )
         page.click("#rerender")
         expect(page.locator("#render_count")).to_have_text(str(i))
-        expect(page.locator(CANVAS)).to_have_count(1)
+        page.wait_for_function(
+            "(sel) => { const c = document.querySelector(sel); return c && c !== window.__canvasBefore; }",
+            arg=CANVAS,
+            timeout=30000,
+        )
 
     # Re-rendering replaces the widget; the old view must be disposed
     expect(page.locator("#canvas .lm-Widget")).to_have_count(1)
-    page.wait_for_function(CANVAS_HAS_PIXELS_JS, arg="#canvas", timeout=30000)
+    # The replacement canvas must redraw the full initial drawing (rect +
+    # image), not just accumulate some pixels
+    page.wait_for_function(KNOWN_PIXELS_JS, arg=INITIAL_DRAWING_PIXELS, timeout=30000)
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
