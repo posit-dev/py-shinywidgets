@@ -42,6 +42,7 @@ Issues = "https://github.com/rstudio/py-shinywidgets/issues"
 altair = ["altair>=5.1"]
 bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
+ipyaladin = ["ipyaladin"]
 ipydatagrid = ["ipydatagrid"]
 jscatter = ["jupyter-scatter"]
 k3d = ["k3d"]
@@ -63,6 +64,7 @@ test = [
   "datashader",
   "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipyaladin",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -96,6 +98,7 @@ dev = [
   "datashader",
   "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipyaladin",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -130,6 +133,7 @@ test = [
   "datashader",
   "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipyaladin",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
