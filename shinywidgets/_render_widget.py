@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from ipycanvas import MultiCanvas, MultiRoughCanvas, RoughCanvas
     from ipycytoscape import CytoscapeWidget
     from ipydatagrid import DataGrid
+    from ipyleaflet import Map as LeafletMap
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from ipysigma import Sigma
     from itables.widget import ITable
@@ -37,7 +38,7 @@ else:
         BokehModel
     ) = MapWidget = FigureWidget = DeckGLWidget = MosaicWidget = BqplotFigure = (
         CytoscapeWidget
-    ) = base = object
+    ) = base = LeafletMap = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
     ) = QuakWidget = object
@@ -84,6 +85,7 @@ __all__ = (
     "render_ipycanvas",
     "render_ipycytoscape",
     "render_ipydatagrid",
+    "render_ipyleaflet",
     "render_ipysigma",
     "render_itables",
     "render_jscatter",
@@ -260,6 +262,45 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
     **Network access**: the viewer loads its JavaScript from a CDN and its sky
     imagery (HiPS tiles) from CDS servers at render time, so it requires an
     internet connection.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+
+class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
+    """
+    Reactively render an [ipyleaflet](https://ipyleaflet.readthedocs.io) map as a Shiny
+    output.
+
+    The decorated function should return an `ipyleaflet.Map` (requires ``pip install
+    ipyleaflet``) or a subclass of it, such as a `leafmap.leafmap.Map`.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `Map` instance. Use `.widget` to programmatically update the rendered map in
+    place (e.g., change its `zoom` or `center`, or add layers; trait changes on the
+    widget are synced to the browser), or to reactively read map state (e.g., `zoom`,
+    `center`, `bounds`) with :func:`~shinywidgets.reactive_read`.
+
+    In a filling layout, the map fills its container unless it has its own height
+    (e.g., ``Layout(height="300px")``). Some subclasses set one by default: leafmap's
+    `Map` is 600px tall unless created with ``height="100%"``.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 

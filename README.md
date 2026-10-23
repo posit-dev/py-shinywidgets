@@ -27,6 +27,7 @@ everything it needs:
 | `@render_ipycanvas` | `pip install 'shinywidgets[ipycanvas]'` |
 | `@render_ipycytoscape` | `pip install 'shinywidgets[ipycytoscape]'` |
 | `@render_ipydatagrid` | `pip install 'shinywidgets[ipydatagrid]'` |
+| `@render_ipyleaflet` | `pip install 'shinywidgets[ipyleaflet]'` |
 | `@render_ipysigma` | `pip install 'shinywidgets[ipysigma]'` |
 | `@render_itables` | `pip install 'shinywidgets[itables]'` |
 | `@render_jscatter` | `pip install 'shinywidgets[jscatter]'` |
