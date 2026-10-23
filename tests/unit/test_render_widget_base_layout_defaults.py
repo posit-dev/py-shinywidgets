@@ -409,3 +409,48 @@ def test_pythreejs_layout_height_disables_fill() -> None:
 def test_pythreejs_default_size_is_treated_as_unset_and_fills() -> None:
     _, fill = rwb.set_layout_defaults(make_pythreejs_renderer(width=200, height=200))
     assert fill is True
+
+
+def test_pythreejs_frontend_size_sync_keeps_fill_on_rerender() -> None:
+    # Regression: a default-sized Renderer cached (e.g., with
+    # session_lifetime()) and returned on a later render must keep filling
+    # after the browser syncs its container size back (setupPythreejsResize()
+    # in js/src/fill.ts) -- the synced size is not an explicit user size
+    renderer = make_pythreejs_renderer()
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is True
+
+    # What the front-end's model.set('_width', ...); save_changes() delivers
+    renderer.set_state({"_width": 800, "_height": 600})
+    assert (renderer.width, renderer.height) == (800, 600)
+
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is True
+
+
+def test_pythreejs_explicit_size_change_after_fill_disables_fill() -> None:
+    # An explicit user size change is still honored after the Renderer filled
+    renderer = make_pythreejs_renderer()
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is True
+    renderer.set_state({"_width": 800, "_height": 600})
+
+    renderer.width = 640
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is False
+
+    # Setting the size back to the 200x200 default is treated as unset
+    renderer.width = 200
+    renderer.height = 200
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is True
+
+
+def test_pythreejs_explicit_size_stays_fixed_after_frontend_sync() -> None:
+    renderer = make_pythreejs_renderer(width=640, height=480)
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is False
+
+    renderer.set_state({"_width": 800, "_height": 600})
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is False
