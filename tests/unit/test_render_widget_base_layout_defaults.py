@@ -209,6 +209,20 @@ def test_altair_concat_chart_emits_warning(monkeypatch) -> None:
         rwb.set_layout_defaults(w)
 
 
+def test_ipydatagrid_fills_unless_widget_height_is_set() -> None:
+    pytest.importorskip("ipydatagrid")
+    import pandas as pd
+    from ipydatagrid import DataGrid
+
+    df = pd.DataFrame({"a": [1, 2, 3]})
+
+    _, fill = rwb.set_layout_defaults(DataGrid(df))
+    assert fill is True
+
+    _, fill = rwb.set_layout_defaults(DataGrid(df, layout={"height": "300px"}))
+    assert fill is False
+
+
 def _jscatter_widget() -> "Scatter":
     pytest.importorskip("jscatter")
     pd = pytest.importorskip("pandas")
