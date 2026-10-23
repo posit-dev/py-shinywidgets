@@ -54,7 +54,7 @@ def test_render_ipysigma_requires_ipysigma_package(
         return nx.path_graph(3)
 
     with session_context(widget_session):
-        with pytest.raises(ImportError, match=r"pip install ipysigma"):
+        with pytest.raises(ImportError, match=r"pip install 'shinywidgets\[ipysigma\]'"):
             asyncio.run(r._render())
 
 

@@ -1,7 +1,5 @@
 shiny
-shinywidgets
+shinywidgets[holoviews]
 cartopy<0.26
 geoviews
-jupyter_bokeh
 pandas
-panel

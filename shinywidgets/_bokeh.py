@@ -18,11 +18,13 @@ def bokeh_dependency() -> HTMLDependency:
     """
     Create an HTML dependency on bokeh's JavaScript/CSS resources.
 
-    The `render_bokeh`, `render_panel`, and `render_holoviews` decorators include this
-    dependency automatically, so you only need to add it to the UI explicitly when
-    bokeh-based outputs are produced dynamically (for example, an
-    :func:`~shinywidgets.output_widget` rendered inside a ``@render.ui``, where the
-    decorator's own UI is never used).
+    .. deprecated::
+        `bokeh_dependency()` is deprecated and will be removed in a future
+        release. It is no longer needed: bokeh's JavaScript/CSS assets are
+        included automatically with every bokeh-based output (including
+        outputs created dynamically, e.g., an
+        :func:`~shinywidgets.output_widget` rendered inside a ``@render.ui``),
+        so this call can simply be removed from the UI.
 
     Returns
     -------
@@ -30,6 +32,19 @@ def bokeh_dependency() -> HTMLDependency:
         An `htmltools.HTMLDependency` suitable for inclusion in the app's UI
         definition.
     """
+    warnings.warn(
+        "bokeh_dependency() is deprecated and will be removed in a future "
+        "release. It is no longer needed: bokeh's JavaScript/CSS assets are "
+        "included automatically with every bokeh-based output (including "
+        "outputs created dynamically). Remove this call from your UI.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _bokeh_dependency()
+
+
+def _bokeh_dependency() -> HTMLDependency:
+    """Create an HTML dependency on bokeh's JavaScript/CSS resources."""
 
     from bokeh import __version__ as bokeh_version
     from bokeh.resources import Resources
@@ -94,7 +109,7 @@ def bokeh_extension_urls(
 ) -> Tuple[List[str], List[str], Dict[str, List[str]]]:
     """
     Compute scripts, styles, and module exports for the bokeh document, excluding
-    base bokeh assets (already provided by bokeh_dependency()).
+    base bokeh assets (already provided by _bokeh_dependency()).
     """
     from bokeh.resources import Resources
 
@@ -345,7 +360,7 @@ def warn_missing_extension(pkg: str) -> None:
 
 
 def filter_bokeh_core(urls: List[str]) -> List[str]:
-    """Drop base bokeh assets (provided by bokeh_dependency()) from a url list."""
+    """Drop base bokeh assets (provided by _bokeh_dependency()) from a url list."""
     res = []
     for u in urls:
         if "cdn.bokeh.org" in u:
