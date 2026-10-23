@@ -22,6 +22,7 @@ everything it needs:
 | `@render_altair` | `pip install 'shinywidgets[altair]'` |
 | `@render_bokeh` | `pip install 'shinywidgets[bokeh]'` |
 | `@render_holoviews` | `pip install 'shinywidgets[holoviews]'` |
+| `@render_ipyaladin` | `pip install 'shinywidgets[ipyaladin]'` |
 | `@render_ipycytoscape` | `pip install 'shinywidgets[ipycytoscape]'` |
 | `@render_ipydatagrid` | `pip install 'shinywidgets[ipydatagrid]'` |
 | `@render_jscatter` | `pip install 'shinywidgets[jscatter]'` |
