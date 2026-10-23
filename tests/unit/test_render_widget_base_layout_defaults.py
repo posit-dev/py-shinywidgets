@@ -279,3 +279,55 @@ def test_maplibre_explicit_layout_height_is_kept() -> None:
     _, fill = rwb.set_layout_defaults(w)
     assert fill is False
     assert w.layout.height == "300px"
+
+
+def test_mapwidget_default_height_fills() -> None:
+    pytest.importorskip("mapwidget")
+    from mapwidget.leaflet import Map as LeafletMap
+    from mapwidget.maplibre import Map as MaplibreMap
+    from mapwidget.openlayers import Map as OpenLayersMap
+
+    # The backends' default 600px height (and relative heights) don't count as
+    # user-specified, so the map is marked for sizing to its container (see
+    # .shinywidgets-mapwidget-fill in shinywidgets.css)
+    for Map in (MaplibreMap, LeafletMap, OpenLayersMap):
+        for kwargs in ({}, {"height": "600px"}, {"height": "50%"}):
+            w = Map(**kwargs)  # type: ignore[arg-type]
+            _, fill = rwb.set_layout_defaults(w)
+            assert fill is True
+            assert "shinywidgets-mapwidget-fill" in w._dom_classes
+
+
+def test_mapwidget_explicit_height_does_not_fill() -> None:
+    pytest.importorskip("mapwidget")
+    from mapwidget.leaflet import Map
+
+    w = Map(height="400px")
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is False
+    assert "shinywidgets-mapwidget-fill" not in w._dom_classes
+    assert w.height == "400px"
+
+
+def test_mapwidget_explicit_layout_height_does_not_fill() -> None:
+    pytest.importorskip("mapwidget")
+    import ipywidgets as widgets
+    from mapwidget.leaflet import Map
+
+    w = Map(layout=widgets.Layout(height="300px"))
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is False
+    assert "shinywidgets-mapwidget-fill" not in w._dom_classes
+
+
+def test_mapwidget_subclass_gets_layout_defaults() -> None:
+    pytest.importorskip("mapwidget")
+    from mapwidget.maplibre import Map
+
+    # An app-defined subclass's widget_pkg() is the app's package, not
+    # "mapwidget" -- the defaults must apply via the class's MRO
+    class MyMap(Map):  # type: ignore[misc]
+        pass
+
+    _, fill = rwb.set_layout_defaults(MyMap())
+    assert fill is True

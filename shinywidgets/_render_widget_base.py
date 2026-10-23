@@ -350,6 +350,25 @@ def bokeh_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     )
 
 
+def mapwidget_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # mapwidget's backends style the map's root (or an inner container) with an
+    # inline `height` (600px by default), which would ignore the output's size.
+    # shinywidgets.css sizes a .shinywidgets-mapwidget-fill map to the widget
+    # container instead (falling back to the inline height when the container
+    # has no definite height), so mark maps that don't have a user-specified
+    # height. The default can't be told apart from an explicit one of the same
+    # value, so treat it as unset, as with a percentage (which is relative to
+    # the container anyway).
+    height = getattr(widget, "height", None)
+    if not isinstance(height, str):
+        return fill
+    if height == widget.trait_defaults("height") or height.endswith("%"):
+        if fill:
+            widget.add_class("shinywidgets-mapwidget-fill")
+        return fill
+    return False
+
+
 def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     from maplibre.ipywidget import MapWidget
 
@@ -383,6 +402,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "lonboard": lonboard_layout_defaults,
     "jupyter_bokeh": bokeh_layout_defaults,
     "maplibre": maplibre_layout_defaults,
+    "mapwidget": mapwidget_layout_defaults,
 }
 
 
