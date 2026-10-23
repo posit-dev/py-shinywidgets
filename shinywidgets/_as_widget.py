@@ -5,13 +5,14 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from copy import deepcopy
 from typing import TYPE_CHECKING, Optional, Protocol, cast
-from weakref import WeakSet
 
 from htmltools import HTMLDependency
 from ipywidgets.widgets.widget import Widget
 from packaging.version import Version
+from shiny.reactive import isolate
 from shiny.session import get_current_session
 
+from ._comm import ShinyComm
 from ._dependencies import widget_pkg
 
 if TYPE_CHECKING:
@@ -26,8 +27,6 @@ if TYPE_CHECKING:
 
 
 __all__ = ("as_widget",)
-
-MPL_CLEANUP_CANVASES: WeakSet[Widget] = WeakSet()
 
 
 # Some objects aren't directly renderable as an ipywidget, but in some cases,
@@ -71,7 +70,7 @@ def as_widget(x: object) -> Widget:
         ``@render.ui`` decorator as a fallback for objects with an HTML repr).
     """
     if isinstance(x, Widget):
-        # A Canvas may still need its FigureManager and pyplot cleanup
+        # A Canvas may still need its FigureManager and to leave pyplot
         if is_ipympl_canvas(x):
             return as_widget_mpl(x)
         # A lonboard layer needs a Map to display
@@ -227,8 +226,9 @@ def as_widget_maplibre(x: object) -> Widget:
 def as_widget_mpl(x: object, *, context: str = "matplotlib") -> Widget:
     from matplotlib.figure import Figure, SubFigure
 
-    # The renderer imports this module, so defer this circular import.
+    # The renderer imports this module, so defer these circular imports.
     from ._render_widget_base import is_closed_widget
+    from ._shinywidgets import foreign_or_closed_widget
 
     # Several higher-level APIs return something that holds the figure: an Axes
     # (e.g., pandas.DataFrame.plot()), an ipympl Canvas, or a seaborn grid
@@ -251,6 +251,26 @@ def as_widget_mpl(x: object, *, context: str = "matplotlib") -> Widget:
             f"Install the ipympl package to use {context} with shinywidgets (pip install 'shinywidgets[{context}]')."
         )
 
+    # A GUI backend's canvas gets destroyed (its window closed) and replaced
+    # with ipympl's below. That path relies on platform-specific behavior
+    # (e.g., HiDPI dpi scaling) that automated tests can't exercise, so warn
+    # and point to the well-tested paths.
+    if not isinstance(x.canvas, Canvas) and is_gui_backend_canvas(x.canvas):
+        warnings.warn(
+            "render_matplotlib is replacing a canvas created by a GUI backend "
+            f"({type(x.canvas).__module__}): the figure's window (if any) is "
+            "destroyed and ipympl's canvas takes over, a path that relies on "
+            "platform-specific behavior that shinywidgets can't test. Prefer "
+            "creating figures with matplotlib.figure.Figure(), or selecting "
+            'the agg backend (matplotlib.use("agg")) before creating figures.',
+        )
+
+    # Before the ipympl canvas is attached: leaving pyplot may replace the
+    # figure's canvas. Isolated since destroying a GUI-backend manager fires
+    # close_event, running the user's callbacks (see the draw below).
+    with isolate():
+        leave_pyplot(x, keep_canvas=isinstance(x.canvas, Canvas))
+
     # Canvas(figure=x) alone isn't enough -- ipympl's browser message handling
     # goes through canvas.manager (e.g., a resize message calls
     # manager.handle_json()), so the canvas needs a FigureManager (which also
@@ -259,16 +279,94 @@ def as_widget_mpl(x: object, *, context: str = "matplotlib") -> Widget:
         canvas = x.canvas
     else:
         # The previous canvas may have scaled the dpi by its screen's pixel ratio
-        # (e.g., pyplot's macosx backend on a HiDPI display); ipympl applies the
-        # browser's ratio instead.
+        # (e.g., a GUI backend on a HiDPI display); ipympl applies the browser's
+        # ratio instead.
         x.set_dpi(x.dpi / x.canvas.device_pixel_ratio)
         canvas = Canvas(x)
     if canvas.manager is None:
         FigureManager(canvas, getattr(x, "number", id(x)))
 
-    close_mpl_figure_with_widget(canvas, x)
+    # A cached image describes the figure only if it hasn't changed since the
+    # image was drawn.
+    if not canvas._data_url or x.stale:
+        # Drawing updates state synced to the browser (and a failure may close
+        # the canvas), so a reused canvas that's live in another session must
+        # be rejected before the draw, not after it by the renderer.
+        session = get_current_session()
+        if session is not None and not session.is_stub_session():
+            bad = foreign_or_closed_widget(canvas, session.root_scope())
+            if bad is not None:
+                raise RuntimeError(
+                    f"{type(bad).__name__} belongs to another Shiny session, so it "
+                    "can't be displayed here. Construct widgets per session."
+                )
+        draw_initial_image(canvas)
 
     return canvas
+
+
+def draw_initial_image(canvas: "Canvas") -> None:
+    """
+    Draw the image the frontend first paints now, rather than when the comm
+    opens (see init_shiny_widget()), so that a draw-time error (e.g., invalid
+    mathtext) fails the render instead of the comm-open effect, which would
+    end the whole session.
+    """
+    # The renderer imports this module, so defer this circular import.
+    from ._shinywidgets import close_widget
+
+    try:
+        # Isolated since drawing fires the user's callbacks (e.g., draw_event,
+        # or xlim_changed from autoscaling), and what they read shouldn't
+        # become dependencies of the render.
+        with isolate():
+            canvas._repr_mimebundle_()
+    except Exception:
+        # Close only a canvas whose comm hasn't opened yet (opening it would
+        # fail the same way, inside an effect, ending the session). A live
+        # canvas may be displayed by other outputs in this session, so just
+        # propagate the error to this render.
+        if not isinstance(canvas.comm, ShinyComm):
+            close_widget(canvas)
+        raise
+
+
+def refresh_stale_mpl_canvases(widget: Widget) -> None:
+    """
+    Redraw ipympl canvases anywhere in `widget`'s tree whose image is stale.
+
+    as_widget() draws the canvas it coerces, but a canvas coerced earlier and
+    then returned nested in a container (e.g., VBox([canvas])) isn't coerced
+    again, so a change made to its figure after the coercion (or a canvas never
+    coerced at all) would otherwise reach the browser with an out-of-date (or
+    missing) initial image: the deferred comm open reuses the cached one.
+    Drawing here, during the render, also keeps a draw-time error this output's
+    error rather than a failure in the comm-open effect.
+
+    Must run after the renderer's ownership validation, since drawing updates
+    state synced to the browser.
+    """
+    from ._shinywidgets import walk_widget_tree
+
+    for w in walk_widget_tree([widget]):
+        if not is_ipympl_canvas(w):
+            continue
+        canvas = cast("Canvas", w)
+        if not canvas._data_url or canvas.figure.stale:
+            draw_initial_image(canvas)
+
+
+def is_gui_backend_canvas(x: object) -> bool:
+    """
+    Whether a matplotlib canvas comes from an interactive GUI framework (Qt,
+    Tk, GTK, wx, macOS). Those canvases live in matplotlib's
+    ``backend_<gui>[agg]`` modules (e.g., ``backend_qtagg``); the
+    non-interactive ones (agg, svg, pdf, ...) and ipympl's do not.
+    """
+    module = type(x).__module__.lower()
+    return module.startswith("matplotlib.backends.backend_") and any(
+        marker in module for marker in ("qt", "tk", "gtk", "wx", "macosx")
+    )
 
 
 def is_ipympl_canvas(x: Widget) -> bool:
@@ -299,35 +397,49 @@ def backend_selection_suppressed() -> Iterator[None]:
         matplotlib.use = use
 
 
-def close_mpl_figure_with_widget(canvas: Widget, fig: Figure) -> None:
+def leave_pyplot(fig: Figure, *, keep_canvas: bool) -> None:
     """
-    Deregister a pyplot figure (via plt.close()) when the canvas widget closes.
+    Remove a figure from pyplot's global figure registry, like @render.plot does.
 
-    Figures created through pyplot (e.g., plt.subplots()) stay registered in
-    pyplot's global figure manager, which leaks memory (and triggers "More
-    than 20 figures have been opened" warnings) as renders repeat. The widget
-    machinery already closes the ipympl canvas at the end of its lifetime, so
-    tying the pyplot deregistration to the widget's close means it happens
-    exactly when the canvas goes away -- at render retirement, or at session
-    end for widgets kept alive via session_lifetime().
+    pyplot's registry (and its "current figure") is shared by every output and
+    session in the process, so leaving a live figure there lets a later
+    plt.gca(), plt.figure(num), or seaborn call (from any session) draw into it.
+    The ipympl canvas doesn't need the registry to keep working.
+
+    Parameters
+    ----------
+    fig
+        The figure.
+    keep_canvas
+        Whether the figure's current canvas must survive (it's the ipympl canvas
+        that gets displayed).
     """
-    num = getattr(fig, "number", None)
-    if num is None or canvas in MPL_CLEANUP_CANVASES:
+    from matplotlib._pylab_helpers import Gcf
+
+    found = next(
+        (item for item in Gcf.figs.items() if item[1].canvas.figure is fig), None
+    )
+    if found is None:
         return
-    MPL_CLEANUP_CANVASES.add(canvas)
-
-    def on_comm_change(change: dict[str, object]) -> None:
-        # The comm becomes None exactly once: when the widget closes
-        if change["new"] is not None:
-            return
-        canvas.unobserve(on_comm_change, names="comm")
-        import matplotlib.pyplot as plt
-
-        # plt.close(fig) deregisters by figure identity (Gcf.destroy_fig()), so
-        # it's safe even if the user already closed it or the number was reused
-        plt.close(fig)
-
-    canvas.observe(on_comm_change, names="comm")
+    num, manager = found
+    if not keep_canvas:
+        # What plt.close(fig) does. Destroying a manager also resets the figure
+        # to a plain canvas, which undoes a GUI backend's HiDPI dpi scaling
+        # without firing resize_event.
+        Gcf.destroy(manager)
+        # Matplotlib 3.10 leaves the figure on the destroyed manager's canvas, so
+        # resizing the figure (e.g., undoing the dpi scaling) would resize the
+        # destroyed window and fire resize_event.
+        if fig.canvas.manager is manager:
+            fig.canvas.manager = None
+        return
+    # The canvas comes from pyplot itself (ipympl is pyplot's backend) or from
+    # the user. Destroying the manager would close or detach it, so only
+    # deregister it, like ipympl's own non-interactive show() does.
+    del Gcf.figs[num]
+    cid = getattr(manager, "_cidgcf", None)
+    if cid is not None:
+        manager.canvas.mpl_disconnect(cid)
 
 
 def as_widget_plotly(x: object) -> Optional[Widget]:
