@@ -119,5 +119,9 @@ examples/*/README_FILES/*
 examples/*/README.html
 .claude/
 
+# Local scratch space for one-off repro/reprex scripts (already excluded from
+# ruff and pyright in pyproject.toml)
+sandbox/
+
 # uv lockfile: library CI resolves fresh against PyPI (see #319)
 uv.lock

@@ -25,7 +25,7 @@ from shiny.reactive._core import (
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
 from shiny.session import get_current_session
 
-from ._as_widget import as_widget
+from ._as_widget import as_widget, refresh_stale_mpl_canvases
 from ._comm import OrphanedShinyComm
 from ._dependencies import widget_pkg
 from ._output_widget import output_widget
@@ -142,6 +142,12 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
                     f"{type(bad).__name__} belongs to another Shiny session, so it "
                     "can't be displayed here. Construct widgets per session."
                 )
+
+        # A canvas nested in the returned widget may have been coerced (and
+        # drawn) earlier and then had its figure changed; refresh its initial
+        # image here, where a draw error is still this output's error. After
+        # the ownership check, since drawing updates browser-synced state.
+        refresh_stale_mpl_canvases(widget)
 
         widget, fill = set_layout_defaults(widget)
 
@@ -502,6 +508,16 @@ def bokeh_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     )
 
 
+def ipycanvas_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # A canvas has fixed pixel dimensions (its width/height traits), which
+    # aren't layout sizes: stretching the element to fill would scale the
+    # bitmap (blurry). Keep the fill decision (so the output claims the
+    # container) and instead mark the widget so shinywidgets.css centers it
+    # (shrinking to fit, aspect preserved) within the filled container.
+    widget.add_class("shinywidgets-ipycanvas")
+    return fill
+
+
 def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     from maplibre.ipywidget import MapWidget
 
@@ -533,6 +549,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
     "ipyaladin": ipyaladin_layout_defaults,
+    "ipycanvas": ipycanvas_layout_defaults,
     "itables": itables_layout_defaults,
     "jscatter": jscatter_layout_defaults,
     "keplergl": keplergl_layout_defaults,
