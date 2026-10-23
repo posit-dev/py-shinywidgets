@@ -112,12 +112,16 @@ function protectPageJQuery(): void {
     get: () => (hasOverride ? override : win.jQuery),
     set: (value: unknown) => {
       if (isJQuery(value)) {
+        if (value === win.jQuery) {
+          // Restoring the page jQuery (e.g., after noConflict()) clears the override
+          hasOverride = false;
+          override = undefined;
+          return;
+        }
         // itables evaluates JavascriptCode options against the global `$` (e.g., its
         // documented `$.fn.dataTable.render.number(...)`), so lend the refused jQuery's
         // DataTables plugin to the page jQuery
-        if (value !== win.jQuery) {
-          lendDataTables(value as JQueryLike, win.jQuery as JQueryLike | undefined);
-        }
+        lendDataTables(value as JQueryLike, win.jQuery as JQueryLike | undefined);
         // Refused: keep the current binding (a pre-existing non-jQuery `$`, e.g.,
         // one established before itables loaded, survives the refused write)
         return;

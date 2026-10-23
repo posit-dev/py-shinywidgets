@@ -87,6 +87,23 @@ def test_non_jquery_dollar_survives_foreign_jquery_write(page: Page, local_app) 
     assert page.evaluate("() => window.$.name") == "customDollar"
 
 
+def test_dollar_can_be_restored_to_page_jquery(page: Page, local_app) -> None:
+    # After noConflict() releases `$`, assigning the page jQuery back must restore
+    # the binding that Shiny's global-`$` call sites use
+    page.goto(local_app.url)
+    expect(page.locator("#nested tbody tr").first).to_be_visible(timeout=30000)
+    page.wait_for_function("() => window.$ === window.jQuery")
+
+    released = page.evaluate("""() => {
+        window.jQuery.noConflict();
+        return typeof window.$ === 'undefined';
+    }""")
+    assert released
+
+    page.evaluate("() => { window.$ = window.jQuery; }")
+    assert page.evaluate("() => window.$ === window.jQuery")
+
+
 def test_app_without_itables_leaves_dollar_alone(page: Page, local_app_plain) -> None:
     page.goto(local_app_plain.url)
     expect(page.locator("#plain .lm-Widget")).to_be_visible(timeout=30000)
