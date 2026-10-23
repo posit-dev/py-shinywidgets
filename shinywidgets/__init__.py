@@ -25,6 +25,7 @@ from ._render_widget import (
     render_holoviews,
     render_ipyaladin,
     render_ipycanvas,
+    render_ipycytoscape,
     render_ipydatagrid,
     render_ipyleaflet,
     render_itables,
@@ -39,6 +40,7 @@ from ._render_widget import (
     render_plotly,
     render_plotnine,
     render_pydeck,
+    render_quak,
     render_widget,
 )
 from ._shinywidgets import reactive_read, register_widget, session_lifetime
@@ -53,6 +55,7 @@ __all__ = (
     "render_holoviews",
     "render_ipyaladin",
     "render_ipycanvas",
+    "render_ipycytoscape",
     "render_ipydatagrid",
     "render_ipyleaflet",
     "render_itables",
@@ -67,6 +70,7 @@ __all__ = (
     "render_plotly",
     "render_plotnine",
     "render_pydeck",
+    "render_quak",
     # Reactive read second
     "reactive_read",
     # UI methods third
