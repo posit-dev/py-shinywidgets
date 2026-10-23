@@ -200,3 +200,64 @@
 .html-fill-container > .lm-Widget:not(.html-fill-item) {
   flex: 0 0 auto;
 }
+
+/*
+* itables (DataTables): render_itables() adds the .shinywidgets-itables-fill class
+* (and defaults scrollY) unless the user chose their own scrollY (see
+* itables_layout_defaults). DataTables sizes the scrolling table body with an inline
+* height, which can't fill an auto-height ancestor chain, so lay the controls, body
+* and footer out as a flex column that fills the output (the body takes the space
+* left over, and scrolls).
+*/
+.shiny-ipywidget-output > .shinywidgets-itables-fill {
+  height: 100%;
+}
+
+.shinywidgets-itables-fill .dt-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.shinywidgets-itables-fill .dt-layout-row.dt-layout-table {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.shinywidgets-itables-fill .dt-layout-table > .dt-layout-cell {
+  display: flex !important;
+  flex-direction: column;
+  align-items: stretch !important;
+  min-height: 0;
+}
+
+.shinywidgets-itables-fill .dt-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.shinywidgets-itables-fill .dt-scroll > :not(.dt-scroll-body) {
+  flex: none;
+}
+
+.shinywidgets-itables-fill .dt-scroll-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+  height: auto !important;
+}
+
+/*
+* itables only switches to its dark palette for `.dark`/`data-theme` markers, not
+* Bootstrap's `data-bs-theme`, which leaves the page's light dark-mode text on a white
+* table.
+*/
+:root[data-bs-theme=dark] .itables_anywidget {
+  --dt-html-background: var(--bs-body-bg);
+  --dt-row-stripe: 255, 255, 255;
+  --dt-row-hover: 255, 255, 255;
+  --dt-column-ordering: 255, 255, 255;
+}
