@@ -22,9 +22,13 @@ export function setupQuakFit(el: HTMLElement, lmWidget: HTMLElement, fill: boole
   if (fill) {
     impl.classList.add('html-fill-container', 'html-fill-item');
   } else {
-    // Without a height from the output or the widget, the table keeps its natural size
-    if (!el.style.height && !lmWidget.style.height) return noop;
-    lmWidget.style.height ||= '100%';
+    // Without a height from the output or the widget, the table keeps its natural
+    // size. "auto" is no constraint: with the cap lifted the table would grow with
+    // every batch, and the ResizeObserver below would keep loading rows.
+    const heightOf = (s: CSSStyleDeclaration) => (s.height === 'auto' ? '' : s.height);
+    const widgetHeight = heightOf(lmWidget.style);
+    if (!heightOf(el.style) && !widgetHeight) return noop;
+    lmWidget.style.height = widgetHeight || '100%';
     impl.style.height = '100%';
   }
 

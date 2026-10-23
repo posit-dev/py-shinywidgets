@@ -83,7 +83,7 @@ def test_quak_fills_container(page: Page, local_app) -> None:
         page.wait_for_function(
             f"""(id) => {{
               const m = ({MEASURE_JS})(id);
-              return m.scrollerScroll >= m.scrollerClient &&
+              return m.scrollerScroll > m.scrollerClient &&
                 Math.abs(m.quak - m.container) <= {TOLERANCE};
             }}""",
             arg=output_id,
@@ -92,8 +92,9 @@ def test_quak_fills_container(page: Page, local_app) -> None:
         m = measure(page, output_id)
         print(f"fill {output_id}: {m}")
         assert abs(m["quak"] - m["container"]) <= TOLERANCE, m
-        # No blank space: loaded rows cover the scroll area
-        assert m["scrollerScroll"] >= m["scrollerClient"], m
+        # No blank space: loaded rows more than cover the scroll area (a
+        # non-strict check would also pass with too few rows)
+        assert m["scrollerScroll"] > m["scrollerClient"], m
 
     assert_no_unexpected_errors(errors, failed_requests)
 
