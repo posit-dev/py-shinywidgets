@@ -1816,6 +1816,17 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+
+    Notes
+    -----
+    * Scene background: set `pythreejs.Scene(background=...)` (it defaults to
+      white and overrides ``Renderer(background=...)``).
+    * Give `pythreejs.DirectionalLight`/`pythreejs.SpotLight` an explicit
+      ``target`` (added to the scene) and ``shadow`` (with a camera) to avoid
+      server-side warnings -- pythreejs creates them browser-side otherwise,
+      and browser-created widgets don't sync to Python.
+    * Rotate objects via ``mesh.quaternion``; pythreejs's ``rotation`` (Euler)
+      updates don't render (an upstream pythreejs bug).
     """
 
 

@@ -28,13 +28,21 @@ app_ui = ui.page_fillable(
 
 
 def make_scene(shape: str, color: str) -> p3.Renderer:
+    # Give the light an explicit target (added to the scene) and shadow (with
+    # a camera): pythreejs creates defaults for them browser-side otherwise,
+    # and browser-created widgets don't sync back to Python (server-side
+    # TraitErrors on every render)
+    light = p3.DirectionalLight(position=[3, 5, 2])
+    light.target = p3.Object3D()
+    light.shadow = p3.DirectionalLightShadow(camera=p3.OrthographicCamera())
     scene = p3.Scene(
         children=[
             p3.Mesh(
                 GEOMETRIES[shape](),
                 p3.MeshStandardMaterial(color=color, roughness=0.4),
             ),
-            p3.DirectionalLight(position=[3, 5, 2]),
+            light,
+            light.target,
             p3.AmbientLight(intensity=0.5),
         ]
     )
