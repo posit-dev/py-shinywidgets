@@ -138,6 +138,11 @@ def test_render_ipydatagrid_missing_package_error(
             asyncio.run(r._render())
 
 
+def test_render_ipysigma_is_render_widget_base() -> None:
+    renderer = rw.render_ipysigma()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_ipycytoscape_is_render_widget_base() -> None:
     renderer = rw.render_ipycytoscape()
     assert isinstance(renderer, rwb.render_widget_base)
