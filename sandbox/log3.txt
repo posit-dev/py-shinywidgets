@@ -1,0 +1,34 @@
+INFO:     Started server process [81397]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:19378 (Press CTRL+C to quit)
+INFO:     127.0.0.1:59776 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59777 - "GET /lib/shiny-busy-indicators-1.6.0/busy-indicators.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59776 - "GET /lib/requirejs-2.3.6/require.min.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59780 - "GET /lib/shiny-1.6.0/shiny.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59778 - "GET /lib/jquery-3.6.0/jquery-3.6.0.min.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59779 - "GET /lib/bootstrap-5.3.1/bootstrap.min.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59781 - "GET /lib/bootstrap-5.3.1/bootstrap.bundle.min.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59777 - "GET /lib/ipywidget-output-binding-0.8.2.post1.dev22%2Bgff9fffb.d20261021/shinywidgets.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59776 - "GET /lib/htmltools-fill-0.5.9.9000/fill.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59778 - "GET /lib/bslib-components-0.10.0.9000/web-components.min.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59780 - "GET /lib/ionrangeslider-2.3.1/js/ion.rangeSlider.min.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59781 - "GET /lib/bslib-components-0.10.0.9000/components.min.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59781 - "GET /lib/ipywidget-output-binding-0.8.2.post1.dev22%2Bgff9fffb.d20261021/libembed-amd.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59777 - "GET /lib/strftime-0.9.2/strftime-min.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59778 - "GET /lib/selectize-0.12.6/js/selectize.min.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59780 - "GET /lib/ipywidget-output-binding-0.8.2.post1.dev22%2Bgff9fffb.d20261021/require-config.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59779 - "GET /lib/selectize-0.12.6/accessibility/js/selectize-plugin-a11y.min.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59776 - "GET /lib/bootstrap-datepicker-1.9.0/js/bootstrap-datepicker.min.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59778 - "GET /lib/ipywidget-output-binding-0.8.2.post1.dev22%2Bgff9fffb.d20261021/output.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59777 - "GET /lib/bootstrap-5.3.1/font.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59781 - "GET /lib/shiny-busy-indicators-1.6.0/spinners/ring.svg HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59782 - "WebSocket /websocket/" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:59781 - "GET /lib/bootstrap-5.3.1/fonts/memvYaGs126MiZpBA-UvWbX2vVnXBbObj2OVTS-muw.woff2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59781 - "GET /lib/anywidget-0.0/index.js HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [81397]
