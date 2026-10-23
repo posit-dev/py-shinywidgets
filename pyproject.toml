@@ -55,6 +55,8 @@ ipycytoscape = ["ipycytoscape"]
 ipydatagrid = ["ipydatagrid>=1.2.0"]
 ipyleaflet = ["ipyleaflet>=0.20.0"]
 ipysigma = ["ipysigma"]
+# ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
+ipyvolume = ["ipyvolume", "ipython_genutils"]
 itables = ["itables[widget]"]
 jscatter = ["jupyter-scatter"]
 k3d = ["k3d"]
@@ -103,6 +105,9 @@ test = [
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
+  # ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
+  "ipyvolume",
+  "ipython_genutils",
   "ipympl",
   "itables[widget]",
   "matplotlib",
@@ -153,6 +158,9 @@ dev = [
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
+  # ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
+  "ipyvolume",
+  "ipython_genutils",
   "ipympl",
   "itables[widget]",
   "matplotlib",
@@ -208,6 +216,9 @@ test = [
   "ipyvue>=3",
   "ipyvuetify>=3",
   "holoviews",
+  # ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
+  "ipyvolume",
+  "ipython_genutils",
   "ipympl",
   "itables[widget]",
   "matplotlib",

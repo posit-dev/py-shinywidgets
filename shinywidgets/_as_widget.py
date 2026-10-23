@@ -7,6 +7,7 @@ from copy import deepcopy
 from typing import TYPE_CHECKING, Optional, Protocol, cast
 
 from htmltools import HTMLDependency
+from ipywidgets.widgets.domwidget import DOMWidget
 from ipywidgets.widgets.widget import Widget
 from packaging.version import Version
 from shiny.reactive import isolate
@@ -43,6 +44,8 @@ def as_widget(x: object) -> Widget:
     * altair `Chart` -> `altair.JupyterChart`
     * bokeh model (e.g., `bokeh.plotting.figure`) -> `jupyter_bokeh.BokehModel`
     * holoviews/hvplot/geoviews object -> bokeh model (via panel)
+    * ipyvolume `Container` (e.g., the return value of `ipv.quickscatter()`) ->
+      its `ipyvolume.Figure`
     * jupyter-scatter `Scatter` -> `jscatter.widget.JupyterScatter`
     * leafmap's folium and deck backends raise a `TypeError` (leafmap's other
       backends are already ipywidgets)
@@ -81,6 +84,9 @@ def as_widget(x: object) -> Widget:
         # A lonboard layer needs a Map to display
         if any(widget_pkg(cls) == "lonboard" for cls in type(x).__mro__):
             return as_widget_lonboard(x)
+        # An ipyvolume Container displays its Figure
+        if any(widget_pkg(cls) == "ipyvolume" for cls in type(x).__mro__):
+            return as_widget_ipyvolume(x)
         return x
 
     pkg = widget_pkg(x)
@@ -182,6 +188,26 @@ def as_widget_jscatter(x: object) -> Optional[Widget]:
 
     # Scatter isn't a widget itself, but wraps (and lazily creates) one
     return x.widget
+
+
+def as_widget_ipyvolume(x: object) -> Widget:
+    # ipyvolume is guaranteed to be installed here since this function is only
+    # called when x comes from the ipyvolume package
+    from ipyvolume.ui import Container
+
+    # quickscatter() and friends return the Container (figure plus control
+    # widgets); the Figure is the renderable part
+    if isinstance(x, Container):
+        return x.figure
+
+    if not isinstance(x, DOMWidget):
+        raise TypeError(
+            f"Don't know how to render {type(x).__name__} on its own (it draws "
+            "onto an ipyvolume figure) -- return the figure instead (e.g., "
+            "`ipv.gcf()` after drawing, or `ipv.figure()`)."
+        )
+
+    return x
 
 
 def as_widget_lonboard(x: object) -> Widget:

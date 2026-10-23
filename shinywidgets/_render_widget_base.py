@@ -449,6 +449,24 @@ def keplergl_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 AUTO_SIZED_KEPLERGL_WIDGETS: WeakSet[Widget] = WeakSet()
 
 
+
+
+def ipyvolume_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from ipyvolume.widgets import Figure
+
+    if not isinstance(widget, Figure):
+        return fill
+
+    # A figure's width/height are its WebGL canvas size in pixels. Treat both
+    # "default" sizes as unset: the trait default (500x400) and the one
+    # ipv.figure()/quickscatter() always passes explicitly (400x500). When
+    # filling, the browser resizes the canvas to the container (see
+    # WIDGET_BEHAVIORS in js/src/fill.ts).
+    if (widget.width, widget.height) not in ((500, 400), (400, 500)):
+        return False
+    return fill
+
+
 def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     from lonboard import Map  # pyright: ignore[reportMissingImports]
 
@@ -703,6 +721,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "pygwalker": pygwalker_layout_defaults,
     "k3d": k3d_layout_defaults,
     "keplergl": keplergl_layout_defaults,
+    "ipyvolume": ipyvolume_layout_defaults,
     "lonboard": lonboard_layout_defaults,
     "jupyter_bokeh": bokeh_layout_defaults,
     "leafmap": leafmap_layout_defaults,

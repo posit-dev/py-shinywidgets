@@ -454,3 +454,23 @@ def test_pythreejs_explicit_size_stays_fixed_after_frontend_sync() -> None:
     renderer.set_state({"_width": 800, "_height": 600})
     _, fill = rwb.set_layout_defaults(renderer)
     assert fill is False
+
+
+def test_ipyvolume_default_size_fills() -> None:
+    pytest.importorskip("ipyvolume")
+    import ipyvolume as ipv
+
+    # Both construction paths' default canvas sizes count as "unset": the
+    # trait default (500x400) and ipv.figure()'s (400x500)
+    for w in (ipv.Figure(), ipv.figure()):
+        _, fill = rwb.set_layout_defaults(w)
+        assert fill is True
+
+
+def test_ipyvolume_explicit_size_disables_fill() -> None:
+    pytest.importorskip("ipyvolume")
+    import ipyvolume as ipv
+
+    for w in (ipv.Figure(height=300), ipv.figure(width=800), ipv.figure(height=300)):
+        _, fill = rwb.set_layout_defaults(w)
+        assert fill is False
