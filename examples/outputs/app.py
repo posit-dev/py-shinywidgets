@@ -29,7 +29,6 @@ app_ui = ui.page_sidebar(
             selected="altair",
         )
     ),
-    bokeh_dependency(),
     ui.output_ui("figure", fill=True, fillable=True),
     title="Hello Jupyter Widgets in Shiny for Python",
     fillable=True,

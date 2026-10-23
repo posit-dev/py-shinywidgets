@@ -21,7 +21,7 @@ else:
     )
     LonboardMap = object
 
-from ._bokeh import bokeh_dependency
+from ._bokeh import _bokeh_dependency
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
 if TYPE_CHECKING:
@@ -331,7 +331,7 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
 
     def auto_output_ui(self) -> Tag:
         res = super().auto_output_ui()
-        res.children.append(bokeh_dependency())
+        res.children.append(_bokeh_dependency())
         return res
 
 
@@ -370,7 +370,7 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
 
     def auto_output_ui(self) -> Tag:
         res = super().auto_output_ui()
-        res.children.append(bokeh_dependency())
+        res.children.append(_bokeh_dependency())
         return res
 
 
@@ -410,7 +410,7 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
 
     def auto_output_ui(self) -> Tag:
         res = super().auto_output_ui()
-        res.children.append(bokeh_dependency())
+        res.children.append(_bokeh_dependency())
         return res
 
 
