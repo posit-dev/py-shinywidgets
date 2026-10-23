@@ -1,0 +1,3 @@
+shiny
+shinywidgets[ipycanvas]
+numpy
