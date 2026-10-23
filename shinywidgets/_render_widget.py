@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from ipyaladin import Aladin
     from ipydatagrid import DataGrid
     from ipympl.backend_nbagg import Canvas as MplCanvas
+    from itables.widget import ITable
     from jscatter.widget import JupyterScatter
     from jupyter_bokeh import BokehModel
     from keplergl import KeplerGl
@@ -26,9 +27,9 @@ if TYPE_CHECKING:
     from pydeck.widget import DeckGLWidget
     from pygwalker.api.anywidget import _WalkerWidget as WalkerWidget
 else:
-    JupyterChart = DataGrid = JupyterScatter = KeplerGl = MplCanvas = BokehModel = (
-        MapWidget
-    ) = FigureWidget = DeckGLWidget = WalkerWidget = object
+    JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = (
+        BokehModel
+    ) = MapWidget = FigureWidget = DeckGLWidget = WalkerWidget = object
     Aladin = LonboardMap = object
 
 from shiny.render.renderer import ValueFn
@@ -58,6 +59,7 @@ __all__ = (
     "render_holoviews",
     "render_ipyaladin",
     "render_ipydatagrid",
+    "render_itables",
     "render_jscatter",
     "render_keplergl",
     "render_lonboard",
@@ -250,6 +252,68 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     """
+
+
+class render_itables(render_widget_base[ValueT, ITable]):
+    """
+    Reactively render a [pandas](https://pandas.pydata.org) or
+    [polars](https://pola.rs) data frame as an interactive
+    [itables](https://itables.org) (DataTables) Shiny output.
+
+    The decorated function may return either a data frame (which is coerced to an
+    `itables.widget.ITable`) or an `itables.widget.ITable` widget, which is how to
+    pass itables options such as ``select=True`` (requires ``pip install
+    'shinywidgets[itables]'``).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `ITable` instance. Use `.widget` to programmatically update the rendered table
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state (e.g., `selected_rows`) with
+    :func:`~shinywidgets.reactive_read`.
+
+    In a filling layout, the table fills its container and scrolls its rows; give it
+    roughly 350px or more of height, since smaller containers leave no room for rows
+    below DataTables' controls. Some itables defaults worth knowing about:
+
+    * Columns sort when their arrow icon is clicked (header text is selectable); pass
+      ``text_in_header_can_be_selected=False`` to sort on any header click.
+    * Data frames larger than itables' ``maxBytes`` (64KB by default) are downsampled;
+      pass ``maxBytes=0`` to send all rows.
+    * `selected_rows` holds row positions in the current data frame.
+      ``ITable.update(df)`` keeps those positions as-is, and drops options such as
+      ``columnDefs`` and ``buttons`` unless they are passed again.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    def _as_widget(self, value: ValueT) -> ITable:
+        if isinstance(value, Widget):
+            return super()._as_widget(value)
+        try:
+            from itables.widget import ITable
+        except ImportError:
+            raise ImportError(
+                "Install the itables package to use data frames with shinywidgets "
+                "(pip install 'shinywidgets[itables]')."
+            )
+        return ITable(value)
 
 
 class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
