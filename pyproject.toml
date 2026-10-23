@@ -41,6 +41,7 @@ Issues = "https://github.com/rstudio/py-shinywidgets/issues"
 # anywidget is already a core dependency, so extras don't need to repeat it.
 altair = ["altair>=5.1"]
 bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
+bqplot = ["bqplot"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
@@ -64,6 +65,7 @@ pygwalker = ["pygwalker>=0.4.9.13"]
 test = [
   "altair",
   "bokeh",
+  "bqplot",
   "coverage>=7",
   # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
   # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
@@ -104,6 +106,7 @@ test = [
 dev = [
   "altair",
   "bokeh",
+  "bqplot",
   "coverage>=7",
   # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
   # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
@@ -147,6 +150,7 @@ dev = [
 test = [
   "altair",
   "bokeh",
+  "bqplot",
   "coverage>=7",
   # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
   # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
