@@ -90,6 +90,32 @@
   height: 100%;
 }
 
+/*
+* ipycytoscape's stylesheet gives every widget a fixed `height: 400px`, which already
+* shrinks and grows to fit a filling container but ignores a height set on the output.
+* The [style*="height:"] selector matches the inline style that output_widget(height=)
+* emits (keep in sync with _output_widget.py). Intrinsic keyword heights (e.g. "auto")
+* are excluded: they give the output no definite height, so 100% would collapse the
+* graph to 0px instead of keeping its 400px. They're matched with and without a space
+* because the browser re-serializes the attribute (as "height: auto;") once the output
+* binding sets another inline style. An explicit height on the widget itself is
+* inline, so it still takes precedence. `.__________cytoscape_container` is the class
+* cytoscape.js adds to the element it renders into (ipycytoscape's widget element).
+*/
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .__________cytoscape_container {
+  height: 100%;
+}
+
 
 /*
 * Allow Shiny's busy indicator (spinner) to show while recalculating, even though
