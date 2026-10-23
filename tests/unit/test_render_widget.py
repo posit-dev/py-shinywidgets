@@ -14,6 +14,11 @@ def test_render_bqplot_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_ipyaladin_is_render_widget_base() -> None:
+    renderer = rw.render_ipyaladin()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_ipydatagrid_is_render_widget_base() -> None:
     renderer = rw.render_ipydatagrid()
     assert isinstance(renderer, rwb.render_widget_base)

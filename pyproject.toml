@@ -43,6 +43,7 @@ altair = ["altair>=5.1"]
 bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 bqplot = ["bqplot"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
+ipyaladin = ["ipyaladin"]
 ipydatagrid = ["ipydatagrid"]
 jscatter = ["jupyter-scatter"]
 # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
@@ -64,6 +65,7 @@ test = [
   "datashader",
   "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipyaladin",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -97,6 +99,7 @@ dev = [
   "datashader",
   "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipyaladin",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -131,6 +134,7 @@ test = [
   "datashader",
   "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipyaladin",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
