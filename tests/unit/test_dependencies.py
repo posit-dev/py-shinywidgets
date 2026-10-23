@@ -225,6 +225,7 @@ def test_require_dependencies_extension_found_returns_dependencies(
     assert "window.require.config(" in head
     assert "some-widget-module" in head
     assert "/lib/some-widget-module-1.2.3/index" in head
+    assert '"shim"' not in head
 
 
 def test_require_dependencies_falls_back_when_view_module_is_none(
