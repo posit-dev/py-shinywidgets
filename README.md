@@ -37,6 +37,7 @@ everything it needs:
 | `@render_panel` | `pip install 'shinywidgets[panel]'` |
 | `@render_plotly` | `pip install 'shinywidgets[plotly]'` |
 | `@render_plotnine` | `pip install 'shinywidgets[plotnine]'` |
+| `@render_quak` | `pip install 'shinywidgets[quak]'` |
 
 ## Development
 
