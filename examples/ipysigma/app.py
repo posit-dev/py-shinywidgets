@@ -40,9 +40,7 @@ def server(input, output, session):
         # Changing the sizing re-renders the graph; start_layout=True lays it out
         # automatically, and the explicit Sigma gives access to all its options
         size = (
-            dict(G.degree)
-            if input.size() == "degree"
-            else nx.betweenness_centrality(G)
+            dict(G.degree) if input.size() == "degree" else nx.betweenness_centrality(G)
         )
         return Sigma(
             G,

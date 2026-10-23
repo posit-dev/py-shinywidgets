@@ -181,6 +181,7 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         ``height`` is not specified.
     """
 
+
 class render_ipysigma(render_widget_base[ValueT, Sigma]):
     """
     Reactively render a graph with [ipysigma](https://github.com/medialab/ipysigma)
