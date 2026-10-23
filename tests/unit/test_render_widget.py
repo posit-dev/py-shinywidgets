@@ -15,6 +15,11 @@ def test_render_ipyaladin_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_ipycanvas_is_render_widget_base() -> None:
+    renderer = rw.render_ipycanvas()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_itables_is_render_widget_base() -> None:
     renderer = rw.render_itables()
     assert isinstance(renderer, rwb.render_widget_base)
@@ -270,6 +275,7 @@ def test_import_shinywidgets_without_optional_deps() -> None:
         "bokeh",
         "holoviews",
         "hvplot",
+        "ipycanvas",
         "jscatter",
         "jupyter_bokeh",
         "ipydatagrid",

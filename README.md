@@ -23,6 +23,7 @@ everything it needs:
 | `@render_bokeh` | `pip install 'shinywidgets[bokeh]'` |
 | `@render_holoviews` | `pip install 'shinywidgets[holoviews]'` |
 | `@render_ipyaladin` | `pip install 'shinywidgets[ipyaladin]'` |
+| `@render_ipycanvas` | `pip install 'shinywidgets[ipycanvas]'` |
 | `@render_ipydatagrid` | `pip install 'shinywidgets[ipydatagrid]'` |
 | `@render_ipyleaflet` | `pip install 'shinywidgets[ipyleaflet]'` |
 | `@render_itables` | `pip install 'shinywidgets[itables]'` |

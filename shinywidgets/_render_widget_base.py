@@ -508,6 +508,16 @@ def bokeh_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     )
 
 
+def ipycanvas_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # A canvas has fixed pixel dimensions (its width/height traits), which
+    # aren't layout sizes: stretching the element to fill would scale the
+    # bitmap (blurry). Keep the fill decision (so the output claims the
+    # container) and instead mark the widget so shinywidgets.css centers it
+    # (shrinking to fit, aspect preserved) within the filled container.
+    widget.add_class("shinywidgets-ipycanvas")
+    return fill
+
+
 def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     from maplibre.ipywidget import MapWidget
 
@@ -539,6 +549,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
     "ipyaladin": ipyaladin_layout_defaults,
+    "ipycanvas": ipycanvas_layout_defaults,
     "itables": itables_layout_defaults,
     "jscatter": jscatter_layout_defaults,
     "keplergl": keplergl_layout_defaults,
