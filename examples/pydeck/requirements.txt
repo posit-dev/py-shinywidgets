@@ -1,0 +1,6 @@
+shiny
+shinywidgets
+pydeck
+maplibre[anywidget]
+numpy
+pandas

@@ -105,9 +105,81 @@ def test_altair_sets_container_width_height(monkeypatch) -> None:
     _, fill = rwb.set_layout_defaults(w)
     assert fill is True
 
-    spec = w.chart.to_dict()
-    assert spec.get("width") == "container"
-    assert spec.get("height") == "container"
+    assert w.spec.get("width") == "container"
+    assert w.spec.get("height") == "container"
+
+
+def test_altair_keeps_user_defined_size(monkeypatch) -> None:
+    alt = pytest.importorskip("altair")
+
+    monkeypatch.setattr(rwb, "widget_pkg", lambda _widget: "altair")
+
+    chart = (
+        alt.Chart(alt.Data(values=[{"x": 1, "y": 2}]))
+        .mark_point()
+        .encode(x="x:Q", y="y:Q")
+        .properties(height=200)
+    )
+    w = alt.JupyterChart(chart)
+
+    rwb.set_layout_defaults(w)
+
+    assert w.spec.get("width") == "container"
+    assert w.spec.get("height") == 200
+
+
+def test_altair_preserves_selection_and_param_observers(monkeypatch) -> None:
+    # Altair documents observing a JupyterChart's selections/params before display
+    # (jchart.selections.observe(cb, ["brush"])); layout defaults must not orphan them.
+    alt = pytest.importorskip("altair")
+
+    monkeypatch.setattr(rwb, "widget_pkg", lambda _widget: "altair")
+
+    brush = alt.selection_interval(name="brush")
+    size = alt.param(name="size", value=10)
+    chart = (
+        alt.Chart(alt.Data(values=[{"x": 1, "y": 2}]))
+        .mark_point()
+        .encode(x="x:Q", y="y:Q")
+        .add_params(brush, size)
+    )
+    w = alt.JupyterChart(chart)
+    seen: list[str] = []
+    w.selections.observe(lambda change: seen.append(change["name"]), ["brush"])
+    w.params.observe(lambda change: seen.append(change["name"]), ["size"])
+
+    rwb.set_layout_defaults(w)
+
+    assert w.spec.get("width") == "container"
+    w._vl_selections = {"brush": {"value": {"x": [0, 1]}, "store": []}}
+    w._params = {"size": 20}
+    assert seen == ["brush", "size"]
+
+
+def test_altair_vegafusion_pending_spec_falls_back_to_chart(monkeypatch) -> None:
+    # A JupyterChart constructed inside `with alt.data_transformers.enable(
+    # "vegafusion"):` keeps `.spec` as None until the browser reports its timezone.
+    # Layout defaults run after that context exits, so the active transformer is no
+    # longer "vegafusion" -- the decision to patch `.spec` must be based on the
+    # spec itself, or unpacking None raises TypeError.
+    alt = pytest.importorskip("altair")
+
+    monkeypatch.setattr(rwb, "widget_pkg", lambda _widget: "altair")
+
+    chart = (
+        alt.Chart(alt.Data(values=[{"x": 1, "y": 2}]))
+        .mark_point()
+        .encode(x="x:Q", y="y:Q")
+    )
+    with alt.data_transformers.enable("vegafusion"):
+        w = alt.JupyterChart(chart)
+    assert w.spec is None
+
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is True
+
+    assert w.chart.width == "container"
+    assert w.chart.height == "container"
 
 
 def test_altair_concat_chart_emits_warning(monkeypatch) -> None:
