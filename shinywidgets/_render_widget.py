@@ -16,8 +16,8 @@ if TYPE_CHECKING:
     from maplibre.map import Map as MaplibreMap
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
-    from pyvista import Plotter as PyvistaPlotter
-    from trame_pyvista.jupyter import EmbeddableWidget as PyvistaHtmlWidget
+    from pyvista import Plotter as PyvistaPlotter  # pyright: ignore[reportMissingImports]
+    from trame_pyvista.jupyter import EmbeddableWidget as PyvistaHtmlWidget  # pyright: ignore[reportMissingImports]
 else:
     JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
         object

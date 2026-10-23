@@ -376,7 +376,7 @@ def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 
 
 def pyvista_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
-    from trame_pyvista.jupyter import EmbeddableWidget
+    from trame_pyvista.jupyter import EmbeddableWidget  # pyright: ignore[reportMissingImports]
 
     if not isinstance(widget, EmbeddableWidget):
         return fill

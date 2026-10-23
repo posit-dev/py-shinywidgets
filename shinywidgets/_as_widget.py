@@ -330,7 +330,7 @@ def as_widget_pyvista(x: object) -> Widget:
     # pyvista is guaranteed to be installed here since this function is only
     # called when x comes from the pyvista package
     from ipywidgets import DOMWidget, Layout
-    from pyvista import Plotter
+    from pyvista import Plotter  # pyright: ignore[reportMissingImports]
 
     if not isinstance(x, Plotter):
         # Name the type rather than interpolating x: a pyvista mesh repr is a
@@ -350,7 +350,7 @@ def as_widget_pyvista(x: object) -> Widget:
         )
 
     try:
-        from trame_pyvista.jupyter import show_trame
+        from trame_pyvista.jupyter import show_trame  # pyright: ignore[reportMissingImports]
     except ImportError as e:
         raise ImportError(
             "Install pyvista's jupyter extra to use pyvista with shinywidgets (pip install 'pyvista[jupyter]')."
