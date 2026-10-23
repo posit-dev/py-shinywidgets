@@ -7,6 +7,9 @@ from shiny.pytest import create_app_fixture
 from tests.playwright.conftest import assert_no_unexpected_errors, collect_errors
 
 local_app_plain = create_app_fixture(Path(__file__).parent / "app_plain.py")
+local_app_nonconfig_dollar = create_app_fixture(
+    Path(__file__).parent / "app_nonconfig_dollar.py"
+)
 local_app_formatted = create_app_fixture(Path(__file__).parent / "app_formatted.py")
 local_app_dark = create_app_fixture(Path(__file__).parent / "app_dark.py")
 
@@ -112,6 +115,33 @@ def test_app_without_itables_leaves_dollar_alone(page: Page, local_app_plain) ->
         return { accessor: !!(d && (d.get || d.set)) };
     }""")
     assert descriptor == {"accessor": False}
+
+
+def test_nonconfigurable_dollar_binding_does_not_break_itable(
+    page: Page, local_app_nonconfig_dollar
+) -> None:
+    # A classic script that ran `var $` before jQuery loaded leaves the global
+    # binding non-configurable; the guard can't install its accessor there and
+    # must fall back without aborting model initialization or losing the page jQuery
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app_nonconfig_dollar.url)
+
+    expect(page.locator("#table tbody tr").first).to_be_visible(timeout=30000)
+    page.wait_for_function("() => window.$ === window.jQuery")
+
+    # The binding stays a plain (writable, non-configurable) data property; no
+    # accessor could be installed on it
+    descriptor = page.evaluate("""() => {
+        const d = Object.getOwnPropertyDescriptor(window, '$');
+        return { writable: !!d.writable, accessor: !!(d.get || d.set) };
+    }""")
+    assert descriptor == {"writable": True, "accessor": False}
+
+    # itables' bundle did replace `$` while its module evaluated, so the restore
+    # path must have lent its DataTables plugin to the page jQuery
+    assert page.evaluate("() => typeof window.jQuery.fn.dataTable !== 'undefined'")
+
+    assert_no_unexpected_errors(errors, failed_requests)
 
 
 def test_dollar_keeps_datatables_helpers_for_js_options(

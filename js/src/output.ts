@@ -1,7 +1,7 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
 import { WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
-import { jsonParse, protectPageJQuery } from './utils';
+import { isJQuery, jsonParse, lendDataTables, protectPageJQuery } from './utils';
 import { disposeNative, finishDetach, hasAncestor, patchMplCanvasRemove, viewParent } from './views';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
@@ -209,6 +209,14 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
 
   return requireLoader(moduleName, moduleVersion).finally(() => {
     (window as any).define.amd = oldAmd;
+    const new$ = (window as any).$;
+    if (new$ !== old$ && isJQuery(new$)) {
+      // A module that put its own jQuery on `$` (e.g., itables' bundle) may have
+      // escaped protectPageJQuery()'s guard when `$` is non-configurable; lend its
+      // DataTables plugin to the page jQuery before restoring, like the guard's
+      // refused-write path does
+      lendDataTables(new$, old$);
+    }
     (window as any).$ = old$;
     (window as any).jQuery = oldJQ;
   });
