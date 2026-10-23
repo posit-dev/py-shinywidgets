@@ -157,7 +157,7 @@ def test_render_bokeh_auto_output_ui_appends_bokeh_dependency(monkeypatch) -> No
     )
 
     monkeypatch.setattr(rwb, "output_widget", lambda *args, **kwargs: div())
-    monkeypatch.setattr(rw, "bokeh_dependency", lambda: sentinel)
+    monkeypatch.setattr(rw, "_bokeh_dependency", lambda: sentinel)
 
     renderer = rw.render_bokeh()
     renderer.output_id = "plot"
@@ -177,7 +177,7 @@ def test_render_panel_and_hvplot_auto_output_ui_append_bokeh_dependency(
     )
 
     monkeypatch.setattr(rwb, "output_widget", lambda *args, **kwargs: div())
-    monkeypatch.setattr(rw, "bokeh_dependency", lambda: sentinel)
+    monkeypatch.setattr(rw, "_bokeh_dependency", lambda: sentinel)
 
     for cls in (rw.render_panel, rw.render_holoviews):
         renderer = cls()

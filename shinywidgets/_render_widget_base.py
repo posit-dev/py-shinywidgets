@@ -272,7 +272,8 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 
     # Since as_widget() has already happened, we only need to handle JupyterChart
     if isinstance(widget, alt.JupyterChart):
-        chart = cast(alt.JupyterChart, widget).chart  # type: ignore
+        jchart = cast(alt.JupyterChart, widget)
+        chart = cast("alt.typing.ChartType | None", jchart.chart)
         if isinstance(chart, alt.ConcatChart):
             # Throw warning to use ui.layout_column_wrap() instead
             warnings.warn(
@@ -282,11 +283,24 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
             )
         else:
             UndefinedType = alt.utils.schemapi.UndefinedType  # type: ignore
+            sizing: dict[str, str] = {}
             if hasattr(chart, "width") and isinstance(chart.width, UndefinedType):  # type: ignore[reportMissingTypeStubs]
-                chart = chart.properties(width="container")  # type: ignore
+                sizing["width"] = "container"
             if hasattr(chart, "height") and isinstance(chart.height, UndefinedType):  # type: ignore[reportMissingTypeStubs]
-                chart = chart.properties(height="container")  # type: ignore
-        widget.chart = chart
+                sizing["height"] = "container"
+            if sizing and chart is not None:
+                # Reassigning `.chart` makes JupyterChart rebuild `.selections` and
+                # `.params`, orphaning observers the user attached before returning
+                # it, so patch the (vega-lite) spec instead. Check the spec itself
+                # (not the active transformer): a chart assigned under the
+                # vegafusion transformer has `.spec` set to None until the browser
+                # reports its timezone, and a pre-transformed vega spec afterwards,
+                # neither of which can be patched like this.
+                spec = cast("dict[str, object] | None", jchart.spec)
+                if isinstance(spec, dict) and "vega-lite" in str(spec.get("$schema")):
+                    jchart.spec = {**spec, **sizing}
+                else:
+                    jchart.chart = chart.properties(**sizing)
 
     return fill
 
@@ -337,6 +351,25 @@ def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def bokeh_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # Covers render_bokeh(), render_panel() and render_holoviews(): a bokeh root
+    # that doesn't stretch vertically has a height of its own, so filling would
+    # just reserve empty space below it. Panel propagates its sizing_mode (e.g.,
+    # from HoloViews' responsive=True) to the root.
+    from jupyter_bokeh import BokehModel
+
+    if not isinstance(widget, BokehModel):
+        return fill
+
+    sizing_mode = getattr(widget._model, "sizing_mode", None)
+    return fill and sizing_mode in (
+        "stretch_both",
+        "stretch_height",
+        "scale_both",
+        "scale_height",
+    )
+
+
 def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     from maplibre.ipywidget import MapWidget
 
@@ -362,14 +395,14 @@ def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 # decision, applies package-specific mutations, and returns the (possibly
 # revised) fill decision.
 #
-# N.B. bokeh is intentionally absent: its sizing_mode hack lives in
-# as_widget_bokeh() because applying it here doesn't work (see the TODO
-# there).
+# N.B. a bokeh figure's default sizing_mode is set in as_widget_bokeh() instead
+# (see the comment there for why it can't happen here).
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
     "keplergl": keplergl_layout_defaults,
     "lonboard": lonboard_layout_defaults,
+    "jupyter_bokeh": bokeh_layout_defaults,
     "maplibre": maplibre_layout_defaults,
 }
 
