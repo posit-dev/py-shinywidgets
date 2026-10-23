@@ -15,6 +15,7 @@ app_ui = ui.page_fluid(
     output_widget("fixed_plot"),
     output_widget("sized_output", height="250px"),
     output_widget("sized_layout"),
+    ui.card(output_widget("sized_layout_card"), id="layout_card", height="420px"),
 )
 
 
@@ -57,6 +58,15 @@ def server(input, output, session):
 
     @render_ipyvolume
     def sized_layout():
+        fig = make_figure()
+        fig.layout = widgets.Layout(height="300px")
+        return fig
+
+    @render_ipyvolume
+    def sized_layout_card():
+        # Like sized_layout, but inside a fillable card: the output stays a
+        # fill item (taller than the widget) even though the widget disables
+        # filling
         fig = make_figure()
         fig.layout = widgets.Layout(height="300px")
         return fig

@@ -37,8 +37,14 @@ export function setupIpyvolumeAutoResize(
       // available to the canvas
       const toolbar = view.el.firstElementChild as HTMLElement | null;
       const chrome = toolbar?.offsetHeight ?? 0;
-      const w = el.clientWidth;
-      const h = el.clientHeight - chrome;
+      const viewEl = view.el as HTMLElement;
+      // A Layout(width=/height=) on the widget lands as an inline style on
+      // the view, which is then smaller than the output (an output_widget()
+      // stays a fill item even when the widget disables filling). Measure
+      // the explicitly sized view in that case; otherwise the output
+      // supplies the size.
+      const w = viewEl.style.width ? viewEl.clientWidth : el.clientWidth;
+      const h = (viewEl.style.height ? viewEl.clientHeight : el.clientHeight) - chrome;
       // A hidden (or not-yet-laid-out) output has no size to match
       if (w < 5 || h < 5) return;
       if (w === lastWidth && h === lastHeight) return;
