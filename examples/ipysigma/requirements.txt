@@ -1,0 +1,3 @@
+shiny
+shinywidgets[ipysigma]
+networkx
