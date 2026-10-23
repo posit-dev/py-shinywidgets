@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Bug fixes
 
 * Improved error messages when an object can't be rendered as a widget: subclasses defined in another package (e.g., `leafmap.deck.Map`, which subclasses pydeck's `Deck`) now route to the coercer for their base class's package, so they get that package's specific guidance instead of the generic "Don't know how to coerce" error. Error messages also no longer dump enormous object reprs (e.g., a pydeck `Deck`'s entire JSON spec) into the output.
-* Fixed plotly 5 `FigureWidget`s rendering as a blank output (with no error) on the development version: the widget's JavaScript bundle was resolved from Jupyter data directories (e.g., `/usr/local/share/jupyter`), where a stale, incompatible copy from an older install could win. The nbextension bundled inside the widget's installed Python package is now preferred, so the served JavaScript always matches the installed package version (for plotly and all other widgets). (#332)
+* Fixed plotly 5 `FigureWidget`s rendering as a blank output (with no error) on the development version: the widget's JavaScript bundle was resolved from Jupyter data directories (e.g., `/usr/local/share/jupyter`), where a stale, incompatible copy from an older install could win. For plotly and all other widgets, a widget's extension is now resolved from assets that belong to the install being imported -- the data files its distribution recorded (verified against the distribution's recorded hashes when available) or the nbextension bundled inside the package -- and Jupyter data directories are only searched if neither is available. (#332)
 
 ### Deprecated
 
