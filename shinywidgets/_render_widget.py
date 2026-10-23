@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from ipydatagrid import DataGrid
     from ipyleaflet import Map as LeafletMap
     from ipympl.backend_nbagg import Canvas as MplCanvas
+    from ipysigma import Sigma
     from itables.widget import ITable
     from jscatter.widget import JupyterScatter
     from jupyter_bokeh import BokehModel
@@ -33,7 +34,7 @@ if TYPE_CHECKING:
     from pydeck.widget import DeckGLWidget
     from quak import Widget as QuakWidget
 else:
-    JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = (
+    JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
         BokehModel
     ) = MapWidget = FigureWidget = DeckGLWidget = MosaicWidget = BqplotFigure = (
         CytoscapeWidget
@@ -44,7 +45,12 @@ else:
 
 from shiny.render.renderer import ValueFn
 
-from ._as_widget import PYDECK_NO_WIDGET_MESSAGE, as_widget_panel, pydeck_has_widget
+from ._as_widget import (
+    PYDECK_NO_WIDGET_MESSAGE,
+    as_widget_panel,
+    networkx_to_sigma,
+    pydeck_has_widget,
+)
 from ._bokeh import _bokeh_dependency
 from ._dependencies import widget_pkg
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
@@ -80,6 +86,7 @@ __all__ = (
     "render_ipycytoscape",
     "render_ipydatagrid",
     "render_ipyleaflet",
+    "render_ipysigma",
     "render_itables",
     "render_jscatter",
     "render_keplergl",
@@ -313,6 +320,57 @@ class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     """
+
+
+class render_ipysigma(render_widget_base[ValueT, Sigma]):
+    """
+    Reactively render a graph with [ipysigma](https://github.com/medialab/ipysigma)
+    (sigma.js) as a Shiny output.
+
+    The decorated function may return either a networkx graph (which is coerced to an
+    `ipysigma.Sigma` widget with default options; requires ``pip install
+    'shinywidgets[ipysigma]'``) or an `ipysigma.Sigma` widget, which is the way to
+    customize node and edge appearance (e.g., `Sigma(G, node_size=G.degree,
+    node_color="community")`). This is also the answer for
+    [pyvis](https://pyvis.readthedocs.io) users: ipysigma renders larger
+    networks more smoothly and, being a widget, can report the selected node back to
+    Python. In a filling layout, the graph fills its container, unless the widget has
+    an explicit `height` or `raw_height` (a height of 500px, sigma's default, or one set
+    globally with `Sigma.set_defaults(height=...)`, counts as unset and fills).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `Sigma` instance. Use `.widget` to reactively read the user's interactions with
+    :func:`~shinywidgets.reactive_read` (e.g., ``reactive_read(sigma.widget,
+    "selected_node")``; also ``"selected_edge"``, ``"camera_state"`` and
+    ``"layout"``). Note that ipysigma only reads its options when the graph is
+    first drawn, so setting traits on `.widget` afterwards does not update the
+    browser. To change what's shown, re-render, passing any state you want to keep
+    (e.g., ``layout=``, ``camera_state=``) to the new `Sigma`.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    def _as_widget(self, value: ValueT) -> Sigma:
+        if isinstance(value, Widget):
+            return super()._as_widget(value)
+        return networkx_to_sigma(value)
 
 
 class render_itables(render_widget_base[ValueT, ITable]):
