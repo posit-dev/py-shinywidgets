@@ -56,6 +56,7 @@ keplergl = ["keplergl>=0.4.0rc4"]
 lonboard = ["lonboard; python_version < '3.15'"]
 maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
+mosaic_widget = ["mosaic-widget"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
 plotly = ["plotly>=5.0.0"]
 plotnine = ["plotnine", "ipympl"]
@@ -85,6 +86,7 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
@@ -123,6 +125,7 @@ dev = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
@@ -164,6 +167,7 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
@@ -180,6 +184,11 @@ dev = [
   "ruff>=0.6.5",
   { include-group = "test" },
 ]
+
+[tool.uv]
+# mosaic-widget 0.33.0 declares narwhals>=2.8 but imports is_into_lazyframe,
+# which was added in narwhals 2.22. Drop this once upstream fixes its metadata.
+constraint-dependencies = ["narwhals>=2.22"]
 
 [build-system]
 requires = ["hatchling>=1.26.0", "hatch-vcs>=0.4.0"]
