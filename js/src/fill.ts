@@ -108,9 +108,10 @@ const keplerglBehavior: WidgetBehavior = {
 // definite height via flex layout, unless the map has an explicit
 // `Layout(height=...)` (an inline style), which takes precedence. A CSS
 // attribute selector can't tell an inline `height:` apart from `min-height:`/
-// `max-height:`, so track the explicit height with a class instead. Registered
-// for leafmap too since its Map subclasses ipyleaflet's.
-const ipyleafletBehavior: WidgetBehavior = {
+// `max-height:`, so track the explicit height with a class instead. Exported
+// so output.ts can also apply it to Map subclasses (their widget_pkg is the
+// subclass's package, not "ipyleaflet").
+export const ipyleafletBehavior: WidgetBehavior = {
   setupFixedSize: ({ lmWidget }) => {
     if (!lmWidget.classList.contains('leaflet-widgets')) return;
     const sync = () =>
@@ -129,5 +130,4 @@ export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   plotly: plotlyBehavior,
   quak: quakBehavior,
   ipyleaflet: ipyleafletBehavior,
-  leafmap: ipyleafletBehavior,
 };

@@ -1,6 +1,6 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
-import { WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
+import { ipyleafletBehavior, WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
 import { jsonParse } from './utils';
 import { disposeNative, finishDetach, hasAncestor, patchMplCanvasRemove, viewParent } from './views';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
@@ -310,8 +310,13 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // The ipywidgets container (.lmWidget)
     const lmWidget = el.children[0] as HTMLElement;
 
-    const setupSize = fill ? behavior?.setupFill : behavior?.setupFixedSize;
-    if (setupSize) {
+    const setupHook = fill ? "setupFill" : "setupFixedSize";
+    // A Map subclass defined outside ipyleaflet (e.g. in app code) gets its
+    // own widget_pkg, so fall back to ipyleaflet's behavior for anything that
+    // renders as a leaflet map (the class is added when the view renders,
+    // hence the check inside the callback)
+    const maybeLeaflet = !fill && behavior?.setupFixedSize === undefined;
+    if (behavior?.[setupHook] !== undefined || maybeLeaflet) {
       // No timeout fallback here: running size setup before the
       // implementation exists is worse than waiting -- e.g. quak's setupFill
       // early-returns when its .quak element is absent, and (with the
@@ -320,6 +325,12 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       this._onImplementation(lmWidget, () => {
         // Don't set up fill/size behavior if this view has since been replaced
         if (this._views.get(el) !== view) return;
+        const resolved =
+          maybeLeaflet && lmWidget.classList.contains("leaflet-widgets")
+            ? ipyleafletBehavior
+            : behavior;
+        const setupSize = resolved?.[setupHook];
+        if (!setupSize) return;
         const cleanup = setupSize({ el, lmWidget, view, model });
         if (cleanup) view.once("remove", cleanup);
       });

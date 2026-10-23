@@ -25,7 +25,12 @@ app_ui = ui.page_fluid(
     output_widget("map_auto_height", height="auto"),
     output_widget("map_layout_in_output_height", height="300px"),
     output_widget("map_min_height_in_output", height="600px"),
+    output_widget("map_subclass_layout_height", height="600px"),
 )
+
+
+class MyMap(L.Map):
+    """An app-defined Map subclass (its widget_pkg is this module, not ipyleaflet)"""
 
 
 def server(input, output, session):
@@ -74,6 +79,10 @@ def server(input, output, session):
     @render_ipyleaflet
     def map_min_height_in_output():
         return L.Map(center=(52, 360), zoom=4, layout=Layout(min_height="100px"))
+
+    @render_ipyleaflet
+    def map_subclass_layout_height():
+        return MyMap(center=(52, 360), zoom=4, layout=Layout(height="250px"))
 
     @render.text
     def zoom_text():
