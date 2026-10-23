@@ -1,0 +1,98 @@
+/*
+  The child of this container, .lmWidget also does this, so seems harmless
+  to add (and yields better, more pixel-perfect results)
+*/
+.shiny-ipywidget-output {
+  overflow: hidden;
+}
+
+/*
+* At least one exception is .vega-embed, which needs to be visible.
+* This especially important for things like FacetChart or MosaicWidget, where responsive
+* sizing isn't supported.
+* https://github.com/altair-viz/altair/blob/5dac297/altair/jupyter/jupyter_chart.py#L103-L106
+*/
+.shiny-ipywidget-output:has(> .vega-embed, > .mosaic-widget) {
+  overflow: visible;
+  > * {
+    overflow: visible;
+  }
+  > .mosaic-widget > * {
+    align-items: center !important;
+  }
+}
+
+/*
+* The .forward-fill-potential class gets added after the widget gets displayed (since we
+* don't know if it's going to fill until then). Also note that we intentionally do this
+* instead of adding html-fill-container/html-fill-item classes to these elements since
+* that causes a flash of incorrect sizing.
+*/
+/*
+* Target .lm-Widget specifically (the ipywidgets/lumino container) rather than
+* all direct children. Some widgets (e.g., lonboard) inject transient tooltip
+* divs as siblings of .lm-Widget — using `> *` would give those elements flex
+* sizing, causing the widget to collapse when they appear.
+*/
+.forward-fill-potential > .lm-Widget {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 400px !important;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.forward-fill-potential > .lm-Widget > *:not(.deckgl-ui-elements-overlay) {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+
+/*
+* Allow Shiny's busy indicator (spinner) to show while recalculating, even though
+* renderValue() puts `visibility: hidden` on the output element (both when the
+* widget value is None/null and while a plotly widget is settling). This mirrors
+* Shiny's own handling of htmlwidgets (.html-widget-output) in busy-indicators.css.
+* https://github.com/posit-dev/py-shinywidgets/issues/213
+*/
+[data-shiny-busy-spinners] .recalculating.shiny-ipywidget-output {
+  visibility: inherit !important;
+}
+
+[data-shiny-busy-spinners] .recalculating.shiny-ipywidget-output > * {
+  visibility: hidden;
+}
+
+[data-shiny-busy-spinners] .recalculating.shiny-ipywidget-output :after {
+  visibility: visible;
+}
+
+/*
+* Our fill.css ends up overriding this rule from bqplot...
+* https://github.com/bqplot/bqplot/blob/c186fcd/js/less/bqplot.less#L170
+*/
+.bqplot > svg {
+  flex-grow: 1 !important;
+}
+
+/*
+* For some reason ipyleaflet puts `flex: 1` on the .lm-Widget container
+* which breaks our filling layout setup.
+* This fixes it (by putting higher priority) on `flex: 0`.
+*/
+.html-fill-container > .lm-Widget:not(.html-fill-item) {
+  flex: 0 0 auto;
+}
+
+/*
+* k3d sets a fixed pixel height (its `height` trait) as an inline style on its inner
+* container, which would overflow (and get clipped by) an output with an explicit height.
+*/
+.shiny-ipywidget-output[style*="height:"] > .k3d-plot {
+  height: 100%;
+}
+.shiny-ipywidget-output[style*="height:"] > .k3d-plot > div {
+  height: 100% !important;
+}
