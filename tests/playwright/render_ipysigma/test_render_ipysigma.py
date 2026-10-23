@@ -122,8 +122,16 @@ def test_ipysigma_selected_node_roundtrips_to_python(page: Page, local_app) -> N
     # Choosing a node in sigma's search box syncs `selected_node` back to Python
     # (browser -> shinywidgets comm -> reactive_read -> UI)
     page.locator("#fills .choices").click()
+    # Choices.js opens its dropdown and focuses the search input from a
+    # requestAnimationFrame callback, so keystrokes sent before that frame go to
+    # the container instead of the input (Enter would only then open the dropdown,
+    # leaving no option selected). Wait for the input to own focus before typing.
+    search = page.locator("#fills .choices__input--cloned")
+    expect(search).to_be_focused()
     page.keyboard.type("12")
-    page.keyboard.press("Enter")
+    option = page.locator('#fills .choices__list--dropdown [data-value="12"]')
+    expect(option).to_be_visible()
+    option.click()
     expect(page.locator("#selected")).to_have_text("12", timeout=30000)
 
     assert_no_unexpected_errors(errors, failed_requests)
