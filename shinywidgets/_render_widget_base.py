@@ -397,6 +397,25 @@ def _frontend_size(widget: Widget) -> Optional[Tuple[int, int]]:
     return getattr(widget, _FRONTEND_SIZE_ATTR, None)
 
 
+def keplergl_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # KeplerGl sizes itself from a pixel `height` trait (default 400), so the only
+    # way to tell the user asked for a specific height is that it isn't the default.
+    # The browser overwrites that trait with the size it measures, so decide once
+    # per instance (the first time it's seen) to keep re-displays filling.
+    from keplergl import KeplerGl
+
+    default_height = KeplerGl.class_traits()["height"].default_value
+    if widget in AUTO_SIZED_KEPLERGL_WIDGETS:
+        return fill
+    if isinstance(widget, KeplerGl) and widget.height != default_height:
+        return False
+    AUTO_SIZED_KEPLERGL_WIDGETS.add(widget)
+    return fill
+
+
+AUTO_SIZED_KEPLERGL_WIDGETS: WeakSet[Widget] = WeakSet()
+
+
 def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     from lonboard import Map  # pyright: ignore[reportMissingImports]
 
@@ -528,6 +547,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "ipyvolume": ipyvolume_layout_defaults,
     "ipyaladin": ipyaladin_layout_defaults,
     "jscatter": jscatter_layout_defaults,
+    "keplergl": keplergl_layout_defaults,
     "lonboard": lonboard_layout_defaults,
     "jupyter_bokeh": bokeh_layout_defaults,
     "maplibre": maplibre_layout_defaults,
