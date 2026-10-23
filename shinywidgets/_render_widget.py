@@ -175,24 +175,29 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
     Reactively render an [ipyvolume](https://ipyvolume.readthedocs.io) 3D plot as
     a Shiny output.
 
-    The decorated function may return an `ipyvolume.Figure` widget (e.g.,
-    `ipv.figure()`, or `ipv.gcf()` after drawing with pylab functions like
-    `ipv.scatter()`), or the container returned by `ipv.quickscatter()` and
-    `ipv.gcc()`, which is unwrapped to its figure (requires ``pip install
-    ipyvolume``; ipyvolume 0.6.3 also needs ``pip install ipython_genutils``,
-    which it doesn't declare). Call the pylab functions inside the render
-    function: they draw on a module-level "current figure", so figures created
-    elsewhere can end up shared across sessions. If the output re-renders
-    often, construct `ipyvolume.Figure`/`ipyvolume.widgets.Scatter` directly
-    instead: pylab also constructs a (never rendered) Container whose shared
-    template widgets get closed by the first re-render, leaving dangling
-    model waiters in the browser. With direct construction, set
-    ``size_selected``/``color_selected`` explicitly on scatters -- their
-    trait defaults are 0-d numpy arrays, which don't JSON-serialize. In a
-    filling layout, the
-    figure's WebGL canvas is resized to fill its container (and tracks
-    container resizes) unless the figure has an explicit ``width`` or
-    ``height``.
+    The decorated function may return an `ipyvolume.Figure` widget (requires
+    ``pip install ipyvolume``; ipyvolume 0.6.3 also needs ``pip install
+    ipython_genutils``, which it doesn't declare). For any output that can
+    re-render, construct the figure directly (`ipyvolume.Figure`, with
+    `ipyvolume.widgets.Scatter` and friends added to ``fig.scatters``) rather
+    than using the pylab API (`ipv.figure()`, `ipv.scatter()`,
+    `ipv.quickscatter()`): pylab also constructs a (never rendered) Container
+    whose shared template widgets get closed by the first re-render, leaving
+    dangling model waiters in the browser -- in practice, every other pylab
+    re-render stalls for ~30 seconds waiting on them, while directly
+    constructed figures re-render in well under a second. The pylab API is
+    still accepted (return `ipv.gcf()` after drawing, or the container
+    returned by `ipv.quickscatter()`/`ipv.gcc()`, which is unwrapped to its
+    figure) and is fine for static outputs; call the pylab functions inside
+    the render function, since they draw on a module-level "current figure",
+    so figures created elsewhere can end up shared across sessions. With
+    direct construction, set ``size_selected``/``color_selected`` explicitly
+    on scatters -- their trait defaults are 0-d numpy arrays, which don't
+    JSON-serialize -- and set ``fig.xlim``/``fig.ylim``/``fig.zlim``, since
+    directly constructed figures default to a [0, 1]^3 axis box with no
+    auto-fit. In a filling layout, the figure's WebGL canvas is resized to
+    fill its container (and tracks container resizes) unless the figure has
+    an explicit ``width`` or ``height``.
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
@@ -237,8 +242,20 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
         @render_ipyvolume
         def plot():
             x, y, z = np.random.normal(size=(3, 1000))
-            ipv.quickscatter(x, y, z, size=1, marker="sphere")
-            return ipv.gcf()
+            fig = ipv.Figure()
+            fig.xlim = fig.ylim = fig.zlim = (-4, 4)
+            fig.scatters = [
+                ipv.widgets.Scatter(
+                    x=x,
+                    y=y,
+                    z=z,
+                    size=1,
+                    marker="sphere",
+                    size_selected=1,
+                    color_selected="red",
+                )
+            ]
+            return fig
 
 
     app = App(app_ui, server)
