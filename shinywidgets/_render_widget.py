@@ -300,8 +300,14 @@ class render_mapwidget(render_widget_base[ValueT, MapwidgetMap]):
     :func:`~shinywidgets.reactive_read` with `center`, `zoom`, `bounds`, or
     `clicked_latlng` (all synced from the browser). Assigning those traits from
     Python doesn't move the rendered map; the maplibre backend can invoke any
-    MapLibre GL JS map method via `.widget.add_call()`, and the leaflet backend can
+    MapLibre GL JS map method via `.widget.add_call()` (e.g.,
+    `.widget.add_call("flyTo", [{"center": [-74, 40.7], "zoom": 11}])` or
+    `.widget.add_call("setStyle", [style_url])`), and the leaflet backend can
     add tile layers via `.widget.add_basemap()`/`.widget.add_layer()`.
+    Note that calls made *before* the map's first render (e.g., inside the
+    render function itself) are silently dropped by mapwidget -- issue them
+    from a `@reactive.effect` that reads `.widget`, which also re-applies them
+    if a re-render replaces the map.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
