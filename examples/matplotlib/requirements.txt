@@ -1,0 +1,4 @@
+shiny
+shinywidgets[matplotlib]
+numpy
+pandas

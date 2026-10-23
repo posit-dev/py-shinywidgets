@@ -3,11 +3,15 @@ from types import ModuleType
 
 import pytest
 import shinywidgets._as_widget as asw
+from bokeh.document import Document
 from ipywidgets import Widget
 from shinywidgets._as_widget import (
     as_widget,
     as_widget_altair,
     as_widget_bokeh,
+    as_widget_jscatter,
+    as_widget_maplibre,
+    as_widget_mpl,
     as_widget_plotly,
     as_widget_pydeck,
 )
@@ -18,6 +22,91 @@ def _inject_package(monkeypatch: pytest.MonkeyPatch, name: str) -> ModuleType:
     pkg.__path__ = []  # mark as a package for submodule imports
     monkeypatch.setitem(sys.modules, name, pkg)
     return pkg
+
+
+def importorskip_ipympl() -> None:
+    # Importing ipympl makes it pyplot's backend, which would leak into every
+    # later test in the process
+    with asw.backend_selection_suppressed():
+        pytest.importorskip("ipympl")
+
+
+class StubSession:
+    def is_stub_session(self) -> bool:
+        return True
+
+
+def _fake_matplotlib(monkeypatch: pytest.MonkeyPatch):
+    mpl = _inject_package(monkeypatch, "matplotlib")
+    setattr(mpl, "use", lambda backend: None)
+
+    figure_mod = ModuleType("matplotlib.figure")
+
+    class FigureCanvasBase:
+        device_pixel_ratio = 1.0
+
+    class Figure:
+        def __init__(self):
+            self.canvas = FigureCanvasBase()
+            self.dpi = 100.0
+
+        def set_dpi(self, dpi: float) -> None:
+            self.dpi = dpi
+
+    class SubFigure:
+        pass
+
+    figure_mod.Figure = Figure  # type: ignore[attr-defined]
+    setattr(figure_mod, "SubFigure", SubFigure)
+    monkeypatch.setitem(sys.modules, "matplotlib.figure", figure_mod)
+
+    axes_mod = ModuleType("matplotlib.axes")
+
+    class Axes:
+        def __init__(self, figure=None):
+            self.figure = figure if figure is not None else Figure()
+
+    axes_mod.Axes = Axes  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "matplotlib.axes", axes_mod)
+
+    pylab_helpers = ModuleType("matplotlib._pylab_helpers")
+
+    class Gcf:
+        figs: dict[int, object] = {}
+
+    setattr(pylab_helpers, "Gcf", Gcf)
+    monkeypatch.setitem(sys.modules, "matplotlib._pylab_helpers", pylab_helpers)
+
+    return Figure, Axes
+
+
+def _fake_ipympl_canvas(monkeypatch: pytest.MonkeyPatch):
+    captured = {}
+
+    _inject_package(monkeypatch, "ipympl")
+    nbagg = ModuleType("ipympl.backend_nbagg")
+
+    class Canvas(Widget):
+        def __init__(self, figure):
+            # Deliberately skip Widget.__init__() (it requires an active session)
+            captured["figure"] = figure
+            self.manager: object | None = None
+            self.comm = None
+            self._data_url = ""
+
+        def _repr_mimebundle_(self, **kwargs: object) -> None:
+            self._data_url = "data:image/png;base64,"
+
+    class FigureManager:
+        def __init__(self, canvas, num):
+            captured["num"] = num
+            captured["canvas"] = canvas
+            canvas.manager = self
+
+    nbagg.Canvas = Canvas  # type: ignore[attr-defined]
+    nbagg.FigureManager = FigureManager  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "ipympl.backend_nbagg", nbagg)
+    return captured
 
 
 def test_as_widget_passthrough_widget() -> None:
@@ -36,6 +125,53 @@ def test_as_widget_unknown_package_errors() -> None:
     msg = str(excinfo.value)
     assert "Don't know how to coerce" in msg
     assert "ipywidget.Widget" in msg
+
+
+@pytest.mark.parametrize("value", ["x", 1, 1.5, None, {}, [], (1, 2), object()])
+def test_as_widget_builtin_value_raises_helpful_type_error(value: object) -> None:
+    with pytest.raises(TypeError, match="Don't know how to coerce"):
+        as_widget(value)
+
+
+def test_as_widget_mro_routes_subclass_to_base_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # e.g., leafmap.deck.Map instances report __module__ == "leafmap.deck" but
+    # subclass pydeck's Deck, so they should route to the pydeck coercer.
+    called: dict[str, object] = {}
+
+    def fake_coercer(x: object) -> Widget:
+        called["x"] = x
+        return Widget.__new__(Widget)
+
+    monkeypatch.setattr(asw, "AS_WIDGET_MAP", {"basepkg": fake_coercer})
+
+    class Base:
+        __module__ = "basepkg.mod"
+
+    class Sub(Base):
+        __module__ = "leafmap.deck"
+
+    sub = Sub()
+    assert isinstance(as_widget(sub), Widget)
+    assert called["x"] is sub
+
+
+def test_as_widget_error_truncates_long_repr() -> None:
+    # repr(pydeck.Deck) is the deck's entire JSON spec; error messages shouldn't
+    # dump all of it.
+    class Big:
+        __module__ = "unknownpkg.mod"
+
+        def __repr__(self) -> str:
+            return "x" * 5000
+
+    with pytest.raises(TypeError) as excinfo:
+        as_widget(Big())
+    msg = str(excinfo.value)
+    assert "Don't know how to coerce" in msg
+    assert len(msg) < 1000
+    assert "..." in msg
 
 
 def test_as_widget_unknown_package_with_repr_html_hint() -> None:
@@ -70,7 +206,7 @@ def test_as_widget_coercer_returning_non_widget_errors(
 def test_as_widget_altair_import_error_path(monkeypatch: pytest.MonkeyPatch) -> None:
     # A module that exists but doesn't provide JupyterChart still triggers ImportError.
     monkeypatch.setitem(sys.modules, "altair", ModuleType("altair"))
-    with pytest.raises(RuntimeError, match="pip install -U altair"):
+    with pytest.raises(RuntimeError, match=r"pip install -U 'shinywidgets\[altair\]'"):
         as_widget_altair(object())
 
 
@@ -94,25 +230,41 @@ def test_as_widget_bokeh_import_error_path(monkeypatch: pytest.MonkeyPatch) -> N
         as_widget_bokeh(object())
 
 
-def test_as_widget_bokeh_success_with_fakes(monkeypatch: pytest.MonkeyPatch) -> None:
-    jb = ModuleType("jupyter_bokeh")
-    jb.BokehModel = lambda x: Widget.__new__(Widget)  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "jupyter_bokeh", jb)
+def test_as_widget_bokeh_stretches_unsized_figure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bokeh.plotting import figure
 
-    _inject_package(monkeypatch, "bokeh")
-    plotting = ModuleType("bokeh.plotting")
+    _fake_jupyter_bokeh(monkeypatch)
 
-    class FakeFigure:
-        def __init__(self):
-            self.sizing_mode = None
-
-    plotting.figure = FakeFigure  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "bokeh.plotting", plotting)
-
-    fig = FakeFigure()
+    fig = figure()
     res = as_widget_bokeh(fig)
     assert isinstance(res, Widget)
     assert fig.sizing_mode == "stretch_both"
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"height": 200},
+        {"width": 250},
+        {"width": 250, "height": 150, "sizing_mode": "fixed"},
+        {"height": 200, "sizing_mode": "stretch_width"},
+        {"aspect_ratio": 2},
+    ],
+)
+def test_as_widget_bokeh_respects_user_sizing(
+    monkeypatch: pytest.MonkeyPatch, kwargs: dict[str, object]
+) -> None:
+    from bokeh.plotting import figure
+
+    _fake_jupyter_bokeh(monkeypatch)
+
+    fig = figure(**kwargs)
+    as_widget_bokeh(fig)
+    assert fig.sizing_mode == kwargs.get("sizing_mode")
+    for name, value in kwargs.items():
+        assert getattr(fig, name) == value
 
 
 def test_as_widget_plotly_success_and_type_check_with_fakes(
@@ -125,6 +277,7 @@ def test_as_widget_plotly_success_and_type_check_with_fakes(
         def __init__(self):
             self.data = {"d": 1}
             self.layout = {"l": 1}
+            self.frames = ()
 
     def FigureWidget(*args, **kwargs):
         w = Widget.__new__(Widget)
@@ -142,7 +295,241 @@ def test_as_widget_plotly_success_and_type_check_with_fakes(
     with pytest.raises(TypeError, match="plotly.graph_objects.FigureWidget"):
         as_widget_plotly(object())
 
+    # Frames (i.e., animations) aren't supported by FigureWidget, so they're
+    # dropped with a warning (#156)
+    fig = Figure()
+    fig.frames = ({"data": []},)  # type: ignore[assignment]
+    with pytest.warns(UserWarning, match="does not support frames"):
+        res = as_widget_plotly(fig)
+    assert isinstance(res, Widget)
 
+
+def _fake_maplibre(monkeypatch: pytest.MonkeyPatch):
+    _inject_package(monkeypatch, "maplibre")
+
+    class Map:
+        def __init__(self):
+            self._state = {
+                "mapOptions": {"style": "dark-matter"},
+                "calls": [["addSource", ("src", {"type": "geojson"})]],
+            }
+
+        def to_dict(self):
+            return self._state
+
+    map_mod = ModuleType("maplibre.map")
+    map_mod.Map = Map  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "maplibre.map", map_mod)
+
+    ipywidget_mod = ModuleType("maplibre.ipywidget")
+
+    def MapWidget():
+        return Widget.__new__(Widget)
+
+    ipywidget_mod.MapWidget = MapWidget  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "maplibre.ipywidget", ipywidget_mod)
+
+    return Map
+
+
+def test_as_widget_maplibre_rejects_non_map(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_maplibre(monkeypatch)
+    with pytest.raises(TypeError, match="maplibre"):
+        as_widget_maplibre(object())
+
+
+def test_as_widget_maplibre_anywidget_import_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Map = _fake_maplibre(monkeypatch)
+    # maplibre.ipywidget exists, but MapWidget isn't defined (e.g., because
+    # anywidget isn't installed)
+    monkeypatch.setitem(
+        sys.modules, "maplibre.ipywidget", ModuleType("maplibre.ipywidget")
+    )
+    with pytest.raises(ImportError, match=r"shinywidgets\[maplibre\]"):
+        as_widget_maplibre(Map())
+
+
+def test_as_widget_maplibre_transfers_map_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Map = _fake_maplibre(monkeypatch)
+
+    m = Map()
+    res = as_widget_maplibre(m)
+    assert isinstance(res, Widget)
+    assert res.map_options == m.to_dict()["mapOptions"]  # type: ignore[attr-defined]
+    assert res._message_queue == m.to_dict()["calls"]  # type: ignore[attr-defined]
+
+
+def test_as_widget_maplibre_dispatch_via_as_widget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Map = _fake_maplibre(monkeypatch)
+
+    MlMap = type("Map", (Map,), {"__module__": "maplibre.map"})
+
+    res = as_widget(MlMap())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_mpl_rejects_non_figure(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_matplotlib(monkeypatch)
+    with pytest.raises(TypeError, match="matplotlib"):
+        as_widget_mpl(object())
+
+
+def test_as_widget_mpl_import_error_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    Figure, _ = _fake_matplotlib(monkeypatch)
+    # A module that exists but doesn't provide backend_nbagg still triggers ImportError.
+    monkeypatch.setitem(sys.modules, "ipympl", ModuleType("ipympl"))
+    with pytest.raises(ImportError, match=r"pip install 'shinywidgets\[matplotlib\]'"):
+        as_widget_mpl(Figure())
+
+
+def test_as_widget_mpl_success_with_fake_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Figure, _ = _fake_matplotlib(monkeypatch)
+    captured = _fake_ipympl_canvas(monkeypatch)
+
+    fig = Figure()
+    res = as_widget_mpl(fig)
+    assert isinstance(res, Widget)
+    assert captured["figure"] is fig
+
+
+def test_as_widget_mpl_axes_coerced_to_parent_figure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Figure, Axes = _fake_matplotlib(monkeypatch)
+    captured = _fake_ipympl_canvas(monkeypatch)
+
+    fig = Figure()
+    res = as_widget_mpl(Axes(fig))
+    assert isinstance(res, Widget)
+    assert captured["figure"] is fig
+
+
+def test_as_widget_mpl_dispatch_via_as_widget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    Figure, _ = _fake_matplotlib(monkeypatch)
+    _fake_ipympl_canvas(monkeypatch)
+
+    MplFigure = type("Figure", (Figure,), {"__module__": "matplotlib.figure"})
+
+    res = as_widget(MplFigure())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_maplibre_real_map_widget(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("maplibre")
+    pytest.importorskip("anywidget")
+
+    import shinywidgets._shinywidgets as sw
+
+    monkeypatch.setattr(sw, "get_current_session", lambda: StubSession())
+
+    from maplibre import Map
+    from maplibre.ipywidget import MapWidget
+
+    m = Map()
+    m.add_source(
+        "src",
+        {"type": "geojson", "data": {"type": "FeatureCollection", "features": []}},
+    )
+
+    res = as_widget(m)
+    assert isinstance(res, MapWidget)
+    assert res.map_options == m.to_dict()["mapOptions"]
+    assert res._message_queue == m.to_dict()["calls"]
+
+
+def test_as_widget_maplibre_does_not_share_state_with_map(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A module-level Map is coerced once per session/render, so widget calls
+    # (queued until the browser renders the map) must not leak back into it.
+    pytest.importorskip("maplibre")
+    pytest.importorskip("anywidget")
+
+    import shinywidgets._shinywidgets as sw
+
+    monkeypatch.setattr(sw, "get_current_session", lambda: StubSession())
+
+    from maplibre import Map
+    from maplibre.ipywidget import MapWidget
+
+    m = Map()
+    m.add_source(
+        "src",
+        {"type": "geojson", "data": {"type": "FeatureCollection", "features": []}},
+    )
+    calls_before = list(m._message_queue)
+    options_before = dict(m.map_options)
+
+    res = as_widget(m)
+    assert isinstance(res, MapWidget)
+    assert res._message_queue is not m._message_queue
+    assert res.map_options is not m.map_options
+
+    res.add_call("flyTo", {"zoom": 3})
+    res.map_options["zoom"] = 3
+    assert m._message_queue == calls_before
+    assert m.map_options == options_before
+
+
+def test_as_widget_mpl_real_ipympl_canvas(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("matplotlib")
+    importorskip_ipympl()
+
+    import shinywidgets._shinywidgets as sw
+
+    monkeypatch.setattr(sw, "get_current_session", lambda: StubSession())
+
+    import matplotlib.pyplot as plt
+    from ipympl.backend_nbagg import Canvas
+
+    fig, ax = plt.subplots()
+    ax.plot([1, 2, 3])
+
+    res = as_widget(fig)
+    assert isinstance(res, Canvas)
+    plt.close(fig)
+
+
+def test_as_widget_mpl_non_pyplot_figure_retirement_is_noop(
+    widget_session,
+) -> None:
+    pytest.importorskip("matplotlib")
+    importorskip_ipympl()
+
+    from matplotlib.figure import Figure
+    from shiny.reactive._core import Context
+    from shiny.session import session_context
+    from shinywidgets._render_widget_base import WidgetRenderContext
+
+    with session_context(widget_session):
+        context = Context()
+        with context():
+            with WidgetRenderContext():
+                # A bare Figure() isn't registered with pyplot, so there's
+                # nothing to clean up at retirement
+                as_widget_mpl(Figure())
+
+        # Retirement should be a clean no-op for this figure
+        context.invalidate()
+
+
+@pytest.fixture
+def pydeck_08(monkeypatch: pytest.MonkeyPatch) -> None:
+    pydeck = pytest.importorskip("pydeck")
+    monkeypatch.setattr(pydeck, "__version__", "0.8.0")
+
+
+@pytest.mark.usefixtures("pydeck_08")
 def test_as_widget_pydeck_missing_show_errors() -> None:
     class NoShow:
         __module__ = "pydeck.mod"
@@ -151,20 +538,19 @@ def test_as_widget_pydeck_missing_show_errors() -> None:
         as_widget_pydeck(NoShow())
 
 
-def test_as_widget_pydeck_show_returning_non_widget_explains() -> None:
+@pytest.mark.usefixtures("pydeck_08")
+def test_as_widget_pydeck_show_returning_non_widget_errors() -> None:
     class Deck:
         __module__ = "pydeck.mod"
 
         def show(self):
             return "not-a-widget"
 
-    with pytest.raises(TypeError) as excinfo:
+    with pytest.raises(TypeError, match=r"Deck\.show\(\) to return an ipywidget"):
         as_widget_pydeck(Deck())
-    msg = str(excinfo.value)
-    assert "pydeck v0.9 removed ipywidgets support" in msg
-    assert "@render.ui" in msg
 
 
+@pytest.mark.usefixtures("pydeck_08")
 def test_as_widget_pydeck_show_returning_widget_succeeds() -> None:
     class Deck:
         __module__ = "pydeck.mod"
@@ -174,3 +560,176 @@ def test_as_widget_pydeck_show_returning_widget_succeeds() -> None:
 
     res = as_widget_pydeck(Deck())
     assert isinstance(res, Widget)
+
+
+def test_as_widget_pydeck_subclass_from_other_package_routes() -> None:
+    # leafmap.deck.Map subclasses pydeck's Deck, so instances report
+    # __module__ == "leafmap.deck". They should still route to the pydeck
+    # coercer (which, on pydeck >= 0.9, raises the helpful no-widget message
+    # instead of the generic "Don't know how to coerce").
+    pydeck = pytest.importorskip("pydeck")
+    from shinywidgets._as_widget import pydeck_has_widget
+
+    if pydeck_has_widget():
+        pytest.skip("test targets pydeck >= 0.9 (no DeckGLWidget)")
+
+    class LeafmapDeck(pydeck.bindings.deck.Deck):  # type: ignore[name-defined]
+        __module__ = "leafmap.deck"
+
+    with pytest.raises(TypeError, match="pydeck v0.9 removed its Jupyter widget"):
+        as_widget(LeafmapDeck())
+
+
+def _fake_panel(monkeypatch: pytest.MonkeyPatch, root: object) -> None:
+    panel = ModuleType("panel")
+
+    class FakePane:
+        def get_root(self, doc: Document | None = None) -> object:
+            return root
+
+    panel.panel = lambda x: FakePane()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "panel", panel)
+
+
+def _fake_jupyter_bokeh(monkeypatch: pytest.MonkeyPatch) -> None:
+    jb = ModuleType("jupyter_bokeh")
+    jb.BokehModel = lambda x: Widget.__new__(Widget)  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "jupyter_bokeh", jb)
+
+
+def test_as_widget_panel_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_panel(monkeypatch, root=object())
+    _fake_jupyter_bokeh(monkeypatch)
+
+    class PanelObj:
+        __module__ = "panel.widgets.tables"
+
+    res = as_widget(PanelObj())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_holoviews_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_panel(monkeypatch, root=object())
+    _fake_jupyter_bokeh(monkeypatch)
+
+    class HVObj:
+        __module__ = "holoviews.element.chart"
+
+    res = as_widget(HVObj())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_geoviews_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_panel(monkeypatch, root=object())
+    _fake_jupyter_bokeh(monkeypatch)
+
+    class GeoObj:
+        __module__ = "geoviews.element.geo"
+
+    res = as_widget(GeoObj())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_geoviews_without_panel_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "panel", None)
+
+    class GeoObj:
+        __module__ = "geoviews.element.geo"
+
+    with pytest.raises(ImportError, match=r"pip install 'shinywidgets\[holoviews\]'"):
+        as_widget(GeoObj())
+
+
+@pytest.mark.parametrize("overlay_tiles", [False, True], ids=["points", "tiles"])
+def test_as_widget_real_geoviews_object(
+    monkeypatch: pytest.MonkeyPatch, overlay_tiles: bool
+) -> None:
+    gv = pytest.importorskip("geoviews")
+    pn = pytest.importorskip("panel")
+    jupyter_bokeh = pytest.importorskip("jupyter_bokeh")
+    gv.extension("bokeh")
+    monkeypatch.setattr(Widget, "_widget_construction_callback", None)
+
+    points = gv.Points([(-122.4, 37.8), (-0.1, 51.5)])
+    obj = gv.tile_sources.OSM * points if overlay_tiles else points
+    widget = as_widget(obj)
+
+    try:
+        assert isinstance(widget, jupyter_bokeh.BokehModel)
+    finally:
+        # Mirror test_widget_closure_releases_its_panel_root's cleanup
+        pn.state._views.pop(widget._model.id, None)
+
+
+def test_as_widget_hvplot_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_panel(monkeypatch, root=object())
+    _fake_jupyter_bokeh(monkeypatch)
+
+    class HvPlotObj:
+        __module__ = "hvplot.plotting"
+
+    res = as_widget(HvPlotObj())
+    assert isinstance(res, Widget)
+
+
+def test_as_widget_panel_without_panel_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "panel", None)
+
+    class PanelObj:
+        __module__ = "panel.widgets.tables"
+
+    with pytest.raises(ImportError, match=r"pip install 'shinywidgets\[panel\]'"):
+        as_widget(PanelObj())
+
+
+def test_as_widget_holoviews_without_panel_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "panel", None)
+
+    class HVObj:
+        __module__ = "holoviews.element.chart"
+
+    with pytest.raises(ImportError, match=r"pip install 'shinywidgets\[holoviews\]'"):
+        as_widget(HVObj())
+
+
+def test_as_widget_panel_without_jupyter_bokeh_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_panel(monkeypatch, root=object())
+    monkeypatch.setitem(sys.modules, "jupyter_bokeh", ModuleType("jupyter_bokeh"))
+
+    class PanelObj:
+        __module__ = "panel.widgets.tables"
+
+    with pytest.raises(ImportError, match="Install the jupyter_bokeh package"):
+        as_widget(PanelObj())
+
+
+def test_as_widget_jscatter_rejects_non_scatter() -> None:
+    pytest.importorskip("jscatter")
+    with pytest.raises(TypeError, match="jscatter"):
+        as_widget_jscatter(object())
+
+
+def test_as_widget_jscatter_real_scatter(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("jscatter")
+    pd = pytest.importorskip("pandas")
+
+    import shinywidgets._shinywidgets as sw
+
+    monkeypatch.setattr(sw, "get_current_session", lambda: StubSession())
+
+    from jscatter import Scatter
+    from jscatter.widget import JupyterScatter
+
+    scatter = Scatter(
+        data=pd.DataFrame({"x": [0.1, 0.5, 0.9], "y": [0.3, 0.6, 0.2]}), x="x", y="y"
+    )
+
+    res = as_widget(scatter)
+    assert isinstance(res, JupyterScatter)
+    assert res is scatter.widget

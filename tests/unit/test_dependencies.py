@@ -1,3 +1,4 @@
+import os
 import types
 import warnings
 from types import ModuleType
@@ -12,6 +13,7 @@ from shinywidgets._dependencies import (
     output_binding_dependency,
     parse_version,
     parse_version_safely,
+    relax_anywidget_init_timeout,
     require_dependency,
     widget_pkg,
 )
@@ -32,6 +34,19 @@ def test_widget_pkg_uses_first_module_component() -> None:
 
     Dummy.__module__ = "somepkg.sub.mod"
     assert widget_pkg(Dummy()) == "somepkg"
+
+
+def test_widget_pkg_accepts_classes_and_builtin_instances() -> None:
+    class Dummy:
+        pass
+
+    Dummy.__module__ = "somepkg.sub.mod"
+    assert widget_pkg(Dummy) == "somepkg"
+    assert widget_pkg(str) == "builtins"
+    assert widget_pkg("x") == "builtins"
+    assert widget_pkg({}) == "builtins"
+    assert widget_pkg(1) == "builtins"
+    assert widget_pkg(object()) == "builtins"
 
 
 def test_jupyter_extension_path_finds_index_js(
@@ -113,7 +128,12 @@ def test_output_binding_dependency_structure() -> None:
     assert isinstance(dep, HTMLDependency)
     assert dep.name == "ipywidget-output-binding"
     assert dep.source == {"package": "shinywidgets", "subdir": "static"}
-    assert dep.script == [{"src": "libembed-amd.js"}, {"src": "output.js"}]
+    # require-config.js must load first (see comment in output_binding_dependency)
+    assert dep.script == [
+        {"src": "require-config.js"},
+        {"src": "libembed-amd.js"},
+        {"src": "output.js"},
+    ]
     assert any(x.get("href") == "shinywidgets.css" for x in dep.stylesheet)
 
 
@@ -182,3 +202,43 @@ def test_require_dependency_extension_found_returns_dependency(
     assert "window.require.config(" in head
     assert "some-widget-module" in head
     assert "/lib/some-widget-module-1.2.3/index" in head
+
+
+ANYWIDGET_INDEX_JS = """
+    AbortSignal.timeout(2e3).addEventListener("abort", () => {
+      resolvers.reject(new Error("[anywidget] Failed to initialize model."));
+    });
+"""
+
+
+def test_relax_anywidget_init_timeout_patches_copy(tmp_path) -> None:
+    module_dir = tmp_path / "anywidget"
+    module_dir.mkdir()
+    (module_dir / "index.js").write_text(ANYWIDGET_INDEX_JS, encoding="utf-8")
+    (module_dir / "extension.js").write_text("// ext", encoding="utf-8")
+
+    patched_dir = relax_anywidget_init_timeout(str(module_dir))
+    assert patched_dir != str(module_dir)
+
+    with open(os.path.join(patched_dir, "index.js"), encoding="utf-8") as f:
+        js = f.read()
+    assert "AbortSignal.timeout(60000)" in js
+    assert "2e3" not in js
+    # The original extension directory is left untouched
+    with open(module_dir / "index.js", encoding="utf-8") as f:
+        assert f.read() == ANYWIDGET_INDEX_JS
+    # Sibling files come along for the ride
+    assert os.path.exists(os.path.join(patched_dir, "extension.js"))
+
+    # Repeat calls are cached
+    assert relax_anywidget_init_timeout(str(module_dir)) == patched_dir
+
+
+def test_relax_anywidget_init_timeout_falls_back_when_pattern_missing(
+    tmp_path,
+) -> None:
+    module_dir = tmp_path / "anywidget"
+    module_dir.mkdir()
+    (module_dir / "index.js").write_text("// no timeout here", encoding="utf-8")
+
+    assert relax_anywidget_init_timeout(str(module_dir)) == str(module_dir)

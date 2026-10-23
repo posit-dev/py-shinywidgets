@@ -7,7 +7,6 @@ from typing import Any, Dict
 import pytest
 
 from tests.unit._fakes import (
-    FakeCommManager,
     FakeContext,
     FakeReactive,
     FakeSession,
@@ -27,11 +26,23 @@ class _nullcontext:
 
 @pytest.fixture
 def reset_shinywidgets_globals(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
+    import shinywidgets._render_widget_base as rwb
     import shinywidgets._shinywidgets as sw
 
+    # _shinywidgets and _render_widget_base each import WIDGET_INSTANCE_MAP from
+    # _widget_registry, so in production they're the same dict. Patch both
+    # module-level bindings to the *same* fresh dict, or code that reads one
+    # module's binding (e.g. is_closed_widget(), imported into _shinywidgets
+    # from _render_widget_base) would see real-registry state instead of this
+    # test's fake one.
+    instance_map: Dict[str, Any] = {}
     monkeypatch.setattr(sw, "SESSIONS", sw.WeakSet())
     monkeypatch.setattr(sw, "SESSION_WIDGET_ID_MAP", {})
-    monkeypatch.setattr(sw, "WIDGET_INSTANCE_MAP", {})
+    monkeypatch.setattr(sw, "WIDGET_INSTANCE_MAP", instance_map)
+    monkeypatch.setattr(rwb, "WIDGET_INSTANCE_MAP", instance_map)
+    monkeypatch.setattr(sw, "COMM_MANAGERS", {})
+    monkeypatch.setattr(sw, "RENDER_OWNED_WIDGETS", {})
+    monkeypatch.setattr(sw, "KEPT_WIDGETS", {})
     return {"sw": sw}
 
 
@@ -65,21 +76,19 @@ def test_session_is_wired_once_and_open_effect_assigns_comm(
 ):
     sw = reset_shinywidgets_globals["sw"]
     reactive = FakeReactive()
-    comm_mgr = FakeCommManager()
     root = FakeSession(session_id="root")
 
     monkeypatch.setattr(sw, "get_current_session", lambda: root)
     monkeypatch.setattr(sw, "reactive", reactive)
-    monkeypatch.setattr(sw, "COMM_MANAGER", comm_mgr)
     monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
     monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
     monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
     monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
-    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
 
     w1 = FakeWidget()
     sw.init_shiny_widget(w1)  # type: ignore[arg-type]
+    sw.WIDGET_INSTANCE_MAP["w1"] = w1
 
     # Session wiring ran.
     assert root in sw.SESSIONS
@@ -95,9 +104,9 @@ def test_session_is_wired_once_and_open_effect_assigns_comm(
     open_eff()
     assert open_eff.destroyed is True
     assert isinstance(w1.comm, FakeShinyComm)
-    assert comm_mgr.comms["w1"] is w1.comm
+    assert sw.COMM_MANAGERS[root.id].comms["w1"] is w1.comm
     assert w1.comm.target_name == "jupyter.widget"
-    assert "_repr_mimebundle_" in w1.calls
+    assert "_repr_mimebundle_" not in w1.calls
     assert "get_state" in w1.calls
 
     # Second widget in same session should not re-wire session-level hooks/mounts.
@@ -113,21 +122,19 @@ def test_comm_send_handler_routes_to_existing_comm(
 ):
     sw = reset_shinywidgets_globals["sw"]
     reactive = FakeReactive()
-    comm_mgr = FakeCommManager()
     root = FakeSession(session_id="root")
 
     monkeypatch.setattr(sw, "get_current_session", lambda: root)
     monkeypatch.setattr(sw, "reactive", reactive)
-    monkeypatch.setattr(sw, "COMM_MANAGER", comm_mgr)
     monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
     monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
     monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
     monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
-    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
 
     w = FakeWidget()
     sw.init_shiny_widget(w)  # type: ignore[arg-type]
+    sw.WIDGET_INSTANCE_MAP["w1"] = w
     open_eff = next(e for e in reactive.effects if e.fn.__name__ == "_open_shiny_comm")
     open_eff()
 
@@ -137,7 +144,9 @@ def test_comm_send_handler_routes_to_existing_comm(
     )
     send_eff()
 
-    assert comm_mgr.comms["w1"].last_msg == {"content": {"comm_id": "w1"}}
+    assert sw.COMM_MANAGERS[root.id].comms["w1"].last_msg == {
+        "content": {"comm_id": "w1"}
+    }
 
 
 def test_session_end_cleanup_closes_widgets_and_clears_maps(
@@ -145,17 +154,14 @@ def test_session_end_cleanup_closes_widgets_and_clears_maps(
 ):
     sw = reset_shinywidgets_globals["sw"]
     reactive = FakeReactive()
-    comm_mgr = FakeCommManager()
     root = FakeSession(session_id="root")
 
     monkeypatch.setattr(sw, "get_current_session", lambda: root)
     monkeypatch.setattr(sw, "reactive", reactive)
-    monkeypatch.setattr(sw, "COMM_MANAGER", comm_mgr)
     monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
     monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
     monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
     monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
-    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
 
     w = FakeWidget()
@@ -176,25 +182,22 @@ def test_render_context_invalidation_closes_widget_and_preserves_model_id(
 ):
     sw = reset_shinywidgets_globals["sw"]
     reactive = FakeReactive()
-    comm_mgr = FakeCommManager()
     root = FakeSession(session_id="root")
     ctx = FakeContext()
 
     monkeypatch.setattr(sw, "get_current_session", lambda: root)
     monkeypatch.setattr(sw, "reactive", reactive)
-    monkeypatch.setattr(sw, "COMM_MANAGER", comm_mgr)
     monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
     monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
     monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
     monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
-    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
 
     monkeypatch.setattr(
-        sw.WidgetRenderContext, "is_rendering_widget", staticmethod(lambda _s: True)
+        sw.WidgetRenderContext, "is_rendering_widget", staticmethod(lambda: True)
     )
     monkeypatch.setattr(
-        sw.WidgetRenderContext, "get_render_context", staticmethod(lambda _s: ctx)
+        sw.WidgetRenderContext, "get_render_context", staticmethod(lambda: ctx)
     )
     monkeypatch.setattr(sw, "session_context", lambda _s: _nullcontext())
 
@@ -213,7 +216,6 @@ def test_nbextensions_mount_when_widget_dep_has_subdir(
 ):
     sw = reset_shinywidgets_globals["sw"]
     reactive = FakeReactive()
-    comm_mgr = FakeCommManager()
     root = FakeSession(session_id="root")
 
     class Dep:
@@ -222,11 +224,9 @@ def test_nbextensions_mount_when_widget_dep_has_subdir(
 
     monkeypatch.setattr(sw, "get_current_session", lambda: root)
     monkeypatch.setattr(sw, "reactive", reactive)
-    monkeypatch.setattr(sw, "COMM_MANAGER", comm_mgr)
     monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
     monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
     monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
-    monkeypatch.setattr(sw, "widget_comm_patch", lambda: _nullcontext())
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
 
     monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", False)
@@ -303,48 +303,6 @@ def test_decode_comm_buffers_decodes_base64_and_preserves_existing_buffers():
     assert res is msg
     assert res["buffers"][0].tobytes() == b"\x00\x01"
     assert res["buffers"][1] is existing
-
-
-def test_is_traitlet_instance_false_for_plain_object():
-    import shinywidgets._shinywidgets as sw
-
-    assert sw.is_traitlet_instance(object()) is False
-
-
-def test_widget_comm_patch_simulated_traitlet_instance(monkeypatch):
-    import shinywidgets._shinywidgets as sw
-
-    class FakeInstance:
-        def __init__(self) -> None:
-            self.klass = "orig"
-
-    fake_inst = FakeInstance()
-
-    monkeypatch.setattr(sw, "is_traitlet_instance", lambda x: True)
-    monkeypatch.setattr(sw.Widget, "comm", fake_inst, raising=False)
-
-    with sw.widget_comm_patch():
-        assert sw.Widget.comm.klass is object
-
-    assert sw.Widget.comm.klass == "orig"
-
-
-def test_widget_comm_patch_noop_when_comm_not_traitlet_instance(monkeypatch):
-    import shinywidgets._shinywidgets as sw
-
-    class FakeAny:
-        def __init__(self) -> None:
-            self.klass = "orig"
-
-    fake_any = FakeAny()
-
-    monkeypatch.setattr(sw, "is_traitlet_instance", lambda x: False)
-    monkeypatch.setattr(sw.Widget, "comm", fake_any, raising=False)
-
-    with sw.widget_comm_patch():
-        assert sw.Widget.comm.klass == "orig"
-
-    assert sw.Widget.comm.klass == "orig"
 
 
 def test_register_widget_uses_session_output_decorator(monkeypatch):

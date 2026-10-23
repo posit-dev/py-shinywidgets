@@ -23,6 +23,23 @@
 }
 
 /*
+* An explicit output height (e.g., output_widget(height="300px")) makes the output
+* non-fillable, so nothing stretches the widget to it. A chart without its own
+* width/height gets `"container"` sizing (see set_layout_defaults()), which
+* vega-embed marks by putting .fit-x/.fit-y on a .chart-wrapper div it creates
+* inside .vega-embed, sized to 100% of it. Since .vega-embed is inline-block
+* (shrink-to-fit), it collapses to ~0px without a definite size of its own, so
+* size it to the output and let the .chart-wrapper (and chart) fill it.
+*/
+.shiny-ipywidget-output > .vega-embed:has(> .chart-wrapper.fit-x) {
+  width: 100%;
+}
+
+.shiny-ipywidget-output > .vega-embed:has(> .chart-wrapper.fit-y) {
+  height: 100%;
+}
+
+/*
 * The .forward-fill-potential class gets added after the widget gets displayed (since we
 * don't know if it's going to fill until then). Also note that we intentionally do this
 * instead of adding html-fill-container/html-fill-item classes to these elements since
@@ -49,6 +66,112 @@
   min-width: 0;
 }
 
+/*
+* ipydatagrid's stylesheet gives the grid a fixed 500px height, so in an output with
+* an explicit height fit the grid to that height instead of letting it overflow (and
+* be clipped by) the output. The selector matches the inline `height:` style that
+* output_widget(height=) emits (keep in sync with _output_widget.py). Intrinsic
+* heights (`auto`, `fit-content`, ...; the browser may reserialize the style with a
+* space after the colon) aren't definite, so 100% of them would collapse the grid.
+* The exclusions name the height declaration specifically so an intrinsic width
+* (e.g., `width: fit-content`) doesn't disable the override.
+*/
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .datagrid-container {
+  height: 100%;
+}
+
+
+/*
+* Allow Shiny's busy indicator (spinner) to show while recalculating, even though
+* renderValue() puts `visibility: hidden` on the output element (both when the
+* widget value is None/null and while a plotly widget is settling). This mirrors
+* Shiny's own handling of htmlwidgets (.html-widget-output) in busy-indicators.css.
+* https://github.com/posit-dev/py-shinywidgets/issues/213
+*/
+[data-shiny-busy-spinners] .recalculating.shiny-ipywidget-output {
+  visibility: inherit !important;
+}
+
+[data-shiny-busy-spinners] .recalculating.shiny-ipywidget-output > * {
+  visibility: hidden;
+}
+
+[data-shiny-busy-spinners] .recalculating.shiny-ipywidget-output :after {
+  visibility: visible;
+}
+
+/*
+* A lonboard map's root is styled `min-height: 100%; height: 500px` (its default
+* height), so it grows to fill a definite-height container but overflows (and gets
+* clipped by) one shorter than 500px. Clamping to the container fixes the latter,
+* while a container with no definite height leaves the map at 500px (a percentage
+* max-height doesn't apply there). See lonboard_layout_defaults().
+*/
+.shiny-ipywidget-output .lonboard {
+  max-height: 100%;
+}
+
+/*
+* lonboard shifts its map up 5px (presumably to offset notebook output padding),
+* which here just clips the top of the map and misaligns its bottom edge.
+*/
+.shiny-ipywidget-output > .lm-Widget > [data-overlay-container]:has(> .lonboard) {
+  margin-top: 0;
+}
+
+/*
+* A stretching bokeh root (e.g., a figure with sizing_mode="stretch_both", or a
+* HoloViews plot with responsive=True) sizes itself to its container's height,
+* so in an output that isn't filling (e.g., output_widget(height="300px")) it
+* collapses to a sliver unless the container has a definite height. (BokehJS
+* renders the root inside a `display: contents` div.)
+*/
+.shiny-ipywidget-output:not(.forward-fill-potential) > .lm-Widget:has(> * > [class^="bk-"]) {
+  height: 100%;
+}
+
+/*
+* A maplibre MapWidget's root is styled `height: <height>` (400px by default), which
+* crops the map in a shorter output and leaves a gap in a taller one. Size it to the
+* widget container instead, which is sized to the output (or, with an explicit
+* MapWidget height, to that height; see maplibre_layout_defaults()). An output with
+* no definite height leaves the map at its own height (a percentage height doesn't
+* apply there). Only direct children are targeted, so maplibre maps inside other
+* widgets (e.g., lonboard) are left alone.
+*/
+.shiny-ipywidget-output > .lm-Widget:has(> .maplibregl-map) {
+  height: 100%;
+}
+
+.shiny-ipywidget-output > .lm-Widget > .maplibregl-map {
+  min-height: 100%;
+  max-height: 100%;
+}
+
+/*
+* An ipyaladin viewer (.aladin-widget) is styled `height: <_height>px` (400px by
+* default), which crops the viewer in a shorter output and leaves a gap in a
+* taller one. Size it to the widget container instead (ipyaladin itself sizes
+* .aladin-lite-lm-container to the output; an explicit Aladin height goes on the
+* container via ipyaladin_layout_defaults(), making it definite). An output with
+* no definite height leaves the viewer at its own height (a percentage height
+* doesn't apply there). aladin-lite observes its container's size, so it
+* redraws on resize.
+*/
+.shiny-ipywidget-output > .lm-Widget.aladin-lite-lm-container > .aladin-widget {
+  min-height: 100%;
+  max-height: 100%;
+}
 
 /*
 * Our fill.css ends up overriding this rule from bqplot...
@@ -65,4 +188,65 @@
 */
 .html-fill-container > .lm-Widget:not(.html-fill-item) {
   flex: 0 0 auto;
+}
+
+/*
+* itables (DataTables): render_itables() adds the .shinywidgets-itables-fill class
+* (and defaults scrollY) unless the user chose their own scrollY (see
+* itables_layout_defaults). DataTables sizes the scrolling table body with an inline
+* height, which can't fill an auto-height ancestor chain, so lay the controls, body
+* and footer out as a flex column that fills the output (the body takes the space
+* left over, and scrolls).
+*/
+.shiny-ipywidget-output > .shinywidgets-itables-fill {
+  height: 100%;
+}
+
+.shinywidgets-itables-fill .dt-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.shinywidgets-itables-fill .dt-layout-row.dt-layout-table {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.shinywidgets-itables-fill .dt-layout-table > .dt-layout-cell {
+  display: flex !important;
+  flex-direction: column;
+  align-items: stretch !important;
+  min-height: 0;
+}
+
+.shinywidgets-itables-fill .dt-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.shinywidgets-itables-fill .dt-scroll > :not(.dt-scroll-body) {
+  flex: none;
+}
+
+.shinywidgets-itables-fill .dt-scroll-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none !important;
+  height: auto !important;
+}
+
+/*
+* itables only switches to its dark palette for `.dark`/`data-theme` markers, not
+* Bootstrap's `data-bs-theme`, which leaves the page's light dark-mode text on a white
+* table.
+*/
+:root[data-bs-theme=dark] .itables_anywidget {
+  --dt-html-background: var(--bs-body-bg);
+  --dt-row-stripe: 255, 255, 255;
+  --dt-row-hover: 255, 255, 255;
+  --dt-column-ordering: 255, 255, 255;
 }

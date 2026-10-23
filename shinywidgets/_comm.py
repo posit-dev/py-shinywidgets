@@ -1,8 +1,11 @@
+import logging
+import threading
 from base64 import b64encode
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
-from shiny.session import get_current_session
+from shiny import Session
 
 from ._serialization import json_packer
 
@@ -10,14 +13,25 @@ _PENDING_UPDATES_ATTR = "__shinywidgets_pending_comm_updates"
 
 
 class ShinyCommManager:
-    comms: Dict[str, "ShinyComm"] = {}
+    """One per Shiny session: routes client messages to that session's comms."""
+
+    def __init__(self) -> None:
+        self.comms: Dict[str, "ShinyComm"] = {}
+        # Set to False when the session ends, so closing leftover widgets
+        # doesn't try to publish on a dead connection.
+        self.active = True
 
     def register_comm(self, comm: "ShinyComm") -> str:
         id = comm.comm_id
         self.comms[id] = comm
         return id
 
-    def unregister_comm(self, comm: "ShinyComm") -> "ShinyComm":
+    def unregister_comm(self, comm: "ShinyComm") -> Optional["ShinyComm"]:
+        # A newer comm may have since re-registered this id (e.g., a widget
+        # re-created with an explicit model_id); only remove the registry
+        # entry if it still belongs to this comm.
+        if self.comms.get(comm.comm_id) is not comm:
+            return None
         return self.comms.pop(comm.comm_id)
 
 
@@ -38,12 +52,17 @@ class ShinyComm:
     _close_callback: Optional[MsgCallback]
     _closed: bool = False
     _closed_data: Dict[str, object] = {}
+    # The header of the client message being handled, if any. ipywidgets answers
+    # a client update with an `echo_update`, and the browser only drops stale
+    # echoes if they name the update they answer in `parent_header.msg_id`.
+    _parent_header: Optional[object] = None
 
     def __init__(
         self,
         comm_id: str,
         comm_manager: ShinyCommManager,
         target_name: str,
+        session: Session,
         data: DataType = None,
         metadata: MetadataType = None,
         buffers: BufferType = None,
@@ -52,6 +71,7 @@ class ShinyComm:
         self.comm_id = comm_id
         self.comm_manager = comm_manager
         self.target_name = target_name
+        self.session = session
         self.open(data=data, metadata=metadata, buffers=buffers, **keys)
 
     def open(
@@ -99,7 +119,9 @@ class ShinyComm:
             return
         self._closed = True
         data = self._closed_data if data is None else data
-        if get_current_session():
+        if self.comm_manager.active:
+            # N.B. the send may be suppressed at send time if a newer comm has
+            # re-registered this id by then (see _publish_msg).
             self._publish_msg(
                 "shinywidgets_comm_close", data=data, metadata=metadata, buffers=buffers
             )
@@ -143,11 +165,7 @@ class ShinyComm:
                         "Buffer objects must support the buffer protocol."
                     ) from e
 
-        session = get_current_session()
-        if session is None:
-            raise RuntimeError(
-                "Cannot send an ipywidget messages to the client outside of a Shiny session context."
-            )
+        session = self.session
 
         # Coalesce state-update comm_msg messages for the same widget within a
         # flush cycle. When multiple reactive effects modify the same widget
@@ -196,7 +214,7 @@ class ShinyComm:
             return
 
         # Construct the message payload
-        msg = dict(
+        msg: Dict[str, object] = dict(
             content=dict(data=data, comm_id=self.comm_id, **keys),
             metadata=metadata,
             # Since Shiny doesn't currently have support for sending binary data, we base64 encode
@@ -210,10 +228,24 @@ class ShinyComm:
             # I don't think we need this info, but I could be wrong
             parent={},  # self.kernel.get_parent("shell")
         )
+        if self._parent_header is not None:
+            msg["parent_header"] = self._parent_header
 
         msg_txt = json_packer(msg)
 
         async def _send():
+            if msg_type == "shinywidgets_comm_close":
+                # The close is sent on_flushed; by then, a replacement widget
+                # may have re-registered this id (e.g., a widget re-created
+                # with an explicit model_id). The id would then belong to the
+                # newer comm, and a close would tell the browser to tear down
+                # the *new* model, so suppress the send when (and only when) a
+                # different comm owns the id at send time. (N.B. close()
+                # unregisters this comm before the send happens, so an
+                # unregistered id must not suppress the send.)
+                owner = self.comm_manager.comms.get(self.comm_id)
+                if owner is not None and owner is not self:
+                    return
             await session.send_custom_message(msg_type, msg_txt)  # type: ignore
 
         # N.B., if messages are sent immediately, run_coro_sync() could fail with
@@ -241,7 +273,17 @@ class ShinyComm:
 
     def handle_msg(self, msg: Dict[str, object]) -> None:
         if self._msg_callback is not None:
-            self._msg_callback(msg)
+            self._parent_header = msg.get("header")
+            scope = ClientMsgScope()
+            token = handling_client_msg.set(scope)
+            traitlets_level_patch.patch()
+            try:
+                self._msg_callback(msg)
+            finally:
+                self._parent_header = None
+                traitlets_level_patch.restore()
+                scope.active = False
+                handling_client_msg.reset(token)
 
     def handle_close(self, msg: Dict[str, object]) -> None:
         if self._close_callback is not None:
@@ -313,3 +355,91 @@ class OrphanedShinyComm:
 
     def on_msg(self, callback: MsgCallback) -> None:
         pass
+
+
+logger = logging.getLogger("shinywidgets")
+
+traitlets_logger = logging.getLogger("traitlets")
+
+
+class ClientMsgScope:
+    """
+    Tracks whether dispatch of a client message is still in progress.
+    `asyncio.create_task()` and `loop.call_soon()` copy the current context,
+    so resetting a ContextVar[bool] when dispatch ends would leave deferred
+    work rerouting (and dropping) `traitlets` records for the rest of its
+    life. Copied contexts share this object, so deactivating it stops
+    rerouting in deferred work too.
+    """
+
+    active = True
+
+
+handling_client_msg: ContextVar[Optional[ClientMsgScope]] = ContextVar(
+    "shinywidgets_handling_client_msg", default=None
+)
+
+
+def traitlets_is_enabled_for(level: int) -> bool:
+    scope = handling_client_msg.get()
+    if scope is not None and scope.active and level >= logging.WARNING:
+        # Admit the WARNING records ipywidgets logs for callback exceptions
+        # even when the configured level would suppress them (e.g. the root
+        # logger at ERROR); ClientMsgErrorFilter reroutes them.
+        return True
+    return logging.Logger.isEnabledFor(traitlets_logger, level)
+
+
+class TraitletsLevelPatch:
+    """
+    While a client message is dispatched, patches `traitlets_logger`'s level
+    check so ipywidgets' callback-exception records reach ClientMsgErrorFilter
+    regardless of the configured level (logger filters only see records that
+    pass the level check). Unlike lowering the logger's level, the patched
+    check consults the caller's dispatch scope, so records logged outside the
+    dispatch -- from other threads, deferred tasks, or descendant loggers
+    (whose records bypass this logger's filters) -- keep their configured
+    threshold. Counted so overlapping dispatches don't restore the check early.
+    """
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.count = 0
+
+    def patch(self) -> None:
+        with self.lock:
+            if self.count == 0:
+                # setattr/delattr since pyright forbids method assignment
+                setattr(traitlets_logger, "isEnabledFor", traitlets_is_enabled_for)
+            self.count += 1
+
+    def restore(self) -> None:
+        with self.lock:
+            self.count -= 1
+            if self.count == 0:
+                delattr(traitlets_logger, "isEnabledFor")
+
+
+traitlets_level_patch = TraitletsLevelPatch()
+
+
+class ClientMsgErrorFilter(logging.Filter):
+    """
+    Outside IPython, ipywidgets catches exceptions raised by widget callbacks
+    (observers, on_click handlers, ...) and logs them to the `traitlets` logger,
+    whose only handler is a NullHandler. That NullHandler also stops Python's
+    last-resort stderr handler from running, so under a Shiny server they vanish.
+    While handling a browser message, move such records to the `shinywidgets`
+    logger (dropping the original, so a configured root handler doesn't show
+    them twice). Everywhere else, e.g. in Jupyter, `traitlets` logging is untouched.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        scope = handling_client_msg.get()
+        if scope is None or not scope.active or record.levelno < logging.WARNING:
+            return True
+        logger.error(record.getMessage(), exc_info=record.exc_info)
+        return False
+
+
+traitlets_logger.addFilter(ClientMsgErrorFilter())
