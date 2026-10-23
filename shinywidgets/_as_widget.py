@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import threading
+import time
 import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -85,6 +88,11 @@ def as_widget(x: object) -> Widget:
         widget_pkg(base) == "panel" for base in type(x).__mro__
     ):
         _as_widget = as_widget_panel
+    # e.g., a pyvista.Plotter subclass defined in the app
+    if _as_widget is None and any(
+        widget_pkg(base) == "pyvista" for base in type(x).__mro__
+    ):
+        _as_widget = as_widget_pyvista
     if _as_widget is None:
         msg = f"Don't know how to coerce {x} into a ipywidget.Widget object."
         if callable(getattr(x, "_repr_html_", None)):
@@ -326,6 +334,79 @@ def as_widget_plotly(x: object) -> Optional[Widget]:
     return go.FigureWidget(x.data, x.layout)  # type: ignore
 
 
+_PYVISTA_TRAME_SERVER_LOCK = threading.Lock()
+
+
+def ensure_pyvista_trame_server() -> None:
+    """
+    Start pyvista's shared trame server, avoiding trame_pyvista's launcher.
+
+    pyvista's html jupyter export requires its shared trame server to be
+    running. When it isn't, trame_pyvista launches it via `elegantly_launch()`,
+    which globally patches asyncio with nest_asyncio2 -- unsafe inside Shiny's
+    event loop -- and leaves the server's lifecycle unmanaged. Start the server
+    here instead, in a daemon thread with its own event loop: asyncio stays
+    untouched, and the server (localhost-only, on an ephemeral port) is shared
+    by every html export in the process and dies with the process.
+    """
+    import pyvista as pv  # pyright: ignore[reportMissingImports]
+    from trame.widgets import vtk as vtk_widgets  # pyright: ignore[reportMissingImports]
+    from trame_pyvista.widgets import get_server  # pyright: ignore[reportMissingImports]
+
+    server = get_server(pv.global_theme.trame.jupyter_server_name)
+    if server is None:
+        raise RuntimeError("Failed to resolve pyvista's shared trame server.")
+    if server.running:
+        return
+
+    with _PYVISTA_TRAME_SERVER_LOCK:
+        if server.running:
+            return
+
+        # Enable the vtk widget module (which registers the scene-export
+        # protocol the html export uses) before the server starts. This is
+        # the piece of trame_pyvista.jupyter.launch_server() the export
+        # actually needs; the rest (vuetify UI, vtklocal wasm) is for the
+        # interactive backends shinywidgets doesn't use.
+        vtk_widgets.initialize(server)
+
+        def run_server() -> None:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            start = server.start(
+                # Return a coroutine to schedule on this thread's loop (rather
+                # than blocking it), so the server runs until the process exits
+                exec_mode="coroutine",
+                # Non-main thread: don't install signal handlers
+                thread=True,
+                # Localhost-only, on an ephemeral port; the exported widget is
+                # self-contained, so nothing ever connects to this server
+                host="127.0.0.1",
+                port=0,
+                open_browser=False,
+                show_connection_info=False,
+                disable_logging=True,
+                # Disable trame's auto-shutdown when no client is connected
+                # (nothing ever is)
+                timeout=0,
+            )
+            loop.create_task(cast(Any, start))
+            loop.run_forever()
+
+        threading.Thread(
+            target=run_server, name="shinywidgets-pyvista-trame", daemon=True
+        ).start()
+
+        deadline = time.monotonic() + 30
+        while not server.running:
+            if time.monotonic() > deadline:
+                raise RuntimeError(
+                    "Timed out waiting for pyvista's shared trame server to start "
+                    "(needed to export the scene for the html jupyter backend)."
+                )
+            time.sleep(0.01)
+
+
 def as_widget_pyvista(x: object) -> Widget:
     # pyvista is guaranteed to be installed here since this function is only
     # called when x comes from the pyvista package
@@ -365,21 +446,30 @@ def as_widget_pyvista(x: object) -> Widget:
     # client-side vtk.js view. pyvista's other interactive backends ('trame',
     # 'client', 'server') need their own trame websocket server, which
     # shinywidgets can't host.
-    widget = show_trame(x, mode="html", width="100%", height="100%")
-    if not isinstance(widget, DOMWidget):
-        raise TypeError(
-            f"Expected pyvista's html jupyter backend to produce an ipywidget, but got {type(widget)}."
-        )
+    #
+    # The export still needs pyvista's shared trame server running, so start it
+    # ourselves (localhost-only, in a daemon thread) rather than letting
+    # trame_pyvista's elegantly_launch() patch asyncio process-wide via
+    # nest_asyncio2
+    ensure_pyvista_trame_server()
 
-    # Size the iframe (via width/height='100%' above) and the widget itself to
-    # the output container; _LAYOUT_DEFAULTS in _render_widget_base.py keeps
-    # this from reading as a user-specified height
-    widget.layout = Layout(width="100%", height="100%")
+    try:
+        widget = show_trame(x, mode="html", width="100%", height="100%")
+        if not isinstance(widget, DOMWidget):
+            raise TypeError(
+                f"Expected pyvista's html jupyter backend to produce an ipywidget, but got {type(widget)}."
+            )
 
-    # The scene is fully serialized into the widget, so the plotter's
-    # (offscreen) GL resources are no longer needed (mirrors Plotter.show()'s
-    # auto_close)
-    plotter.close()
+        # Size the iframe (via width/height='100%' above) and the widget itself to
+        # the output container; _LAYOUT_DEFAULTS in _render_widget_base.py keeps
+        # this from reading as a user-specified height
+        widget.layout = Layout(width="100%", height="100%")
+    finally:
+        # The scene is fully serialized into the widget, so the plotter's
+        # (offscreen) GL resources are no longer needed (mirrors Plotter.show()'s
+        # auto_close). Close on failure too, so repeated failed renders don't
+        # accumulate rendering resources.
+        plotter.close()
 
     return widget
 
