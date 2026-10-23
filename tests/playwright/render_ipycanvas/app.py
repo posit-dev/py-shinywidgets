@@ -18,6 +18,9 @@ app_ui = ui.page_fillable(
     ui.card(output_widget("canvas"), style="height: 500px;"),
     # An output with an explicit height (which must be respected)
     output_widget("canvas_fixed", height="150px"),
+    # A canvas with an ipywidgets Layout height (opts out of fill); the
+    # bitmap must keep its aspect ratio rather than stretch
+    ui.card(output_widget("canvas_layout_height"), style="height: 500px;"),
 )
 
 
@@ -64,6 +67,12 @@ def server(input, output, session):
     @render_ipycanvas
     def canvas_fixed():
         return make_canvas()
+
+    @render_ipycanvas
+    def canvas_layout_height():
+        c = make_canvas()
+        c.layout.height = "120px"
+        return c
 
     # Drive animation frames from Python, off the reactive cycle
     ticker = {"i": 0}

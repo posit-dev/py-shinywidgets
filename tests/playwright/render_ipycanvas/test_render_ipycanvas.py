@@ -56,7 +56,8 @@ def test_ipycanvas_renders_and_draws(page: Page, local_app) -> None:
 
 def test_ipycanvas_fill_centers_canvas_at_natural_size(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
-    page.set_viewport_size({"width": 900, "height": 1200})
+    # Tall enough for all three 500px cards to keep their full height
+    page.set_viewport_size({"width": 900, "height": 1800})
     page.goto(local_app.url)
 
     expect(page.locator(CANVAS)).to_have_count(1, timeout=30000)
@@ -80,17 +81,45 @@ def test_ipycanvas_fill_centers_canvas_at_natural_size(page: Page, local_app) ->
         abs((canvas["y"] + canvas["height"] / 2) - (out["y"] + out["height"] / 2)) < 1
     )
 
-    # An explicit output height is respected (no filling)
+    # An explicit output height is respected (no filling); the canvas
+    # shrinks to fit (aspect preserved) and centers rather than overflowing
     fixed = page.evaluate(BOXES_JS, "#canvas_fixed")
     assert fixed is not None
     assert fixed["out"]["height"] == 150
-    assert fixed["canvas"]["height"] == 200  # still natural size
+    assert fixed["canvas"]["height"] == 150
+    assert fixed["canvas"]["width"] == 225  # 300x200 scaled to 150px tall
+    assert (
+        abs(
+            (fixed["canvas"]["x"] + fixed["canvas"]["width"] / 2)
+            - (fixed["out"]["x"] + fixed["out"]["width"] / 2)
+        )
+        < 1
+    )
+
+    # A Layout height opts out of fill, but must not stretch the bitmap: the
+    # 300x200 buffer at 120px tall keeps its aspect ratio (180px wide) and
+    # centers within the wider output
+    layout_h = page.evaluate(BOXES_JS, "#canvas_layout_height")
+    assert layout_h is not None
+    assert layout_h["canvas"]["height"] == 120
+    assert layout_h["canvas"]["width"] == 180
+    assert layout_h["canvas"]["width"] < layout_h["out"]["width"]
+    assert (
+        abs(
+            (layout_h["canvas"]["x"] + layout_h["canvas"]["width"] / 2)
+            - (layout_h["out"]["x"] + layout_h["out"]["width"] / 2)
+        )
+        < 1
+    )
 
     assert_no_unexpected_errors(errors, failed_requests)
 
 
 def test_ipycanvas_mouse_events_roundtrip_to_python(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
+    # Tall enough that the canvas renders at its natural size, so CSS and
+    # buffer pixels coincide (the widget scales mouse coords otherwise)
+    page.set_viewport_size({"width": 900, "height": 1800})
     page.goto(local_app.url)
 
     canvas = page.locator(CANVAS)

@@ -248,7 +248,10 @@ class render_ipycanvas(render_widget_base[IpycanvasCanvasT, IpycanvasCanvasT]):
     install ipycanvas``). The canvas keeps its pixel ``width``/``height`` (which are
     drawing-buffer sizes, not layout sizes): in a filling layout the output fills its
     container and the canvas is centered within it (shrinking to fit, aspect
-    preserved), never stretched.
+    preserved), never stretched. Size the canvas through the constructor's
+    ``width``/``height``, not ``widget.layout.height`` -- a Layout height opts out of
+    filling, and since the buffer pixels are fixed, the browser can only rescale the
+    existing bitmap to fit.
 
     The decorated function also gains two read-only attributes: `.value` and
     `.widget`, both the rendered canvas. Draw on `.widget` from anywhere (e.g., a
