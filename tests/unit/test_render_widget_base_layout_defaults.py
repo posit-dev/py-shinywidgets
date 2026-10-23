@@ -474,3 +474,38 @@ def test_ipyvolume_explicit_size_disables_fill() -> None:
     for w in (ipv.Figure(height=300), ipv.figure(width=800), ipv.figure(height=300)):
         _, fill = rwb.set_layout_defaults(w)
         assert fill is False
+
+
+def test_ipyvolume_browser_synced_size_still_fills() -> None:
+    # When a cached, session-lifetime figure is redisplayed, its width/height
+    # may hold the size the browser resizer measured and synced back (a
+    # front-end "update" message, which arrives via Widget.set_state()). That
+    # must not be mistaken for an explicit user size.
+    pytest.importorskip("ipyvolume")
+    import ipyvolume as ipv
+
+    w = ipv.figure()
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is True
+
+    # The browser resizer saves its measured canvas size back to Python
+    w.set_state({"width": 800, "height": 390})
+    assert (w.width, w.height) == (800, 390)
+
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is True
+
+
+def test_ipyvolume_user_resize_after_browser_sync_disables_fill() -> None:
+    # An intentional size change in Python (after the browser's sync) is an
+    # explicit user size, so the output should stop filling
+    pytest.importorskip("ipyvolume")
+    import ipyvolume as ipv
+
+    w = ipv.figure()
+    rwb.set_layout_defaults(w)
+    w.set_state({"width": 800, "height": 390})
+
+    w.height = 300
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is False

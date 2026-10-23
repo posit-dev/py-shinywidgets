@@ -461,10 +461,59 @@ def ipyvolume_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # "default" sizes as unset: the trait default (500x400) and the one
     # ipv.figure()/quickscatter() always passes explicitly (400x500). When
     # filling, the browser resizes the canvas to the container (see
-    # WIDGET_BEHAVIORS in js/src/fill.ts).
-    if (widget.width, widget.height) not in ((500, 400), (400, 500)):
-        return False
-    return fill
+    # WIDGET_BEHAVIORS in js/src/fill.ts) and saves the measured size back to
+    # these traits, so also treat a size matching the last browser sync as
+    # unset -- otherwise re-rendering a cached, session-lifetime figure would
+    # mistake the browser's measurements for an explicit user size (while a
+    # size the user assigned after that sync still counts as explicit).
+    size = (widget.width, widget.height)
+    # Called unconditionally (even for a default-sized figure, where the
+    # answer is already known): it installs the sync tracking that later
+    # renders of this same figure rely on
+    synced = _frontend_size(widget)
+    if size in ((500, 400), (400, 500)) or size == synced:
+        return fill
+    return False
+
+
+# Widget attribute names used by _frontend_size() to track the figure size
+# last synced from the browser (see below)
+_FRONTEND_SIZE_ATTR = "_shinywidgets_frontend_size"
+_FRONTEND_SIZE_TRACKING_ATTR = "_shinywidgets_tracking_frontend_size"
+
+
+def _frontend_size(widget: Widget) -> Optional[Tuple[int, int]]:
+    """
+    The (width, height) last synced from the browser, or None.
+
+    Installs (once) a wrapper on the widget's set_state() -- the method
+    front-end "update" messages go through -- that records width/height
+    syncs, so the browser resizer's measurements can be told apart from
+    sizes the user assigned in Python.
+    """
+    if not getattr(widget, _FRONTEND_SIZE_TRACKING_ATTR, False):
+        original = widget.set_state
+
+        def set_state(sync_data: dict) -> None:  # pyright: ignore[reportMissingParameterType]
+            if "width" in sync_data or "height" in sync_data:
+                # sync_data may update only one of the two traits; the other
+                # keeps its current value (set_state applies the state after
+                # this wrapper runs). Only called with widgets that have
+                # width/height traits (e.g., ipyvolume.Figure).
+                setattr(
+                    widget,
+                    _FRONTEND_SIZE_ATTR,
+                    (
+                        sync_data.get("width", getattr(widget, "width")),
+                        sync_data.get("height", getattr(widget, "height")),
+                    ),
+                )
+            original(sync_data)
+
+        setattr(widget, "set_state", set_state)
+        setattr(widget, _FRONTEND_SIZE_TRACKING_ATTR, True)
+
+    return getattr(widget, _FRONTEND_SIZE_ATTR, None)
 
 
 def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
