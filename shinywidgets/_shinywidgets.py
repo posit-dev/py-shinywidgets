@@ -5,6 +5,8 @@ import os
 import sys
 from base64 import b64decode
 from contextlib import contextmanager
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from typing import (
     Any,
     Dict,
@@ -20,6 +22,7 @@ from uuid import uuid4
 from weakref import WeakSet, ref
 
 import ipywidgets
+from packaging.version import Version
 
 from ._render_widget import render_widget
 
@@ -61,6 +64,9 @@ def init_shiny_widget(w: Widget):
     if is_unused_pydeck_widget(w):
         retire_unused_widget(w)
         return
+    plotly_version = unsupported_plotly_version(w)
+    if plotly_version is not None:
+        raise RuntimeError(PLOTLY_VERSION_MESSAGE.format(version=plotly_version))
     session = get_current_session()
     if session is None:
         if importing_lonboard() or importing_ipycanvas():
@@ -361,6 +367,37 @@ def is_unused_pydeck_widget(w: Widget) -> bool:
     for Jupyter support) but can never display?
     """
     return widget_pkg(w) == "pydeck" and not pydeck_has_widget()
+
+
+PLOTLY_VERSION_MESSAGE = (
+    "shinywidgets requires plotly >= 5.12, but plotly {version} is installed. "
+    "Older plotly versions' FigureWidget is incompatible with the widget "
+    "manager shinywidgets uses (it renders as a blank output with no error; "
+    "see https://github.com/posit-dev/py-shinywidgets/issues/332). "
+    "Upgrade plotly (`pip install -U plotly`), or pin shinywidgets to 0.8.2 "
+    "to keep using an older plotly."
+)
+
+
+def unsupported_plotly_version(w: Widget) -> Optional[Version]:
+    """
+    The installed plotly version, if `w` is a plotly widget and that version
+    is too old to render (< 5.12, the first release whose FigureWidget
+    frontend supports ipywidgets 8); otherwise None.
+    """
+    if not any(widget_pkg(cls) == "plotly" for cls in type(w).__mro__):
+        return None
+    version = _plotly_version()
+    if version is not None and version < Version("5.12"):
+        return version
+    return None
+
+
+def _plotly_version() -> Optional[Version]:
+    try:
+        return Version(package_version("plotly"))
+    except PackageNotFoundError:
+        return None
 
 
 def retire_unused_widget(w: Widget) -> None:

@@ -1,4 +1,5 @@
 import os
+import sys
 import types
 import warnings
 from types import ModuleType
@@ -11,6 +12,7 @@ from shinywidgets._dependencies import (
     jupyter_extension_destination,
     jupyter_extension_path,
     output_binding_dependency,
+    package_nbextension_path,
     parse_version,
     parse_version_safely,
     relax_anywidget_init_timeout,
@@ -158,7 +160,7 @@ def test_require_dependency_missing_extension_warns_and_returns_none(
 
     session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
 
-    monkeypatch.setattr(deps, "jupyter_extension_path", lambda name: None)
+    monkeypatch.setattr(deps, "jupyter_extension_path", lambda name, paths=None: None)
     monkeypatch.setattr(deps, "jupyter_extension_destination", lambda w: "some-dest")
 
     with pytest.warns(
@@ -172,6 +174,111 @@ def test_require_dependency_missing_extension_warns_and_returns_none(
     assert not any(
         "Couldn't find local path to widget extension" in str(w.message) for w in rec
     )
+
+
+def make_nbextension_pkg(
+    tmp_path, name: str = "fakepkg", dest: str = "some-widget-module"
+) -> ModuleType:
+    """A fake installed package that bundles an nbextension for `dest`."""
+    ext_dir = tmp_path / name / "nbextension"
+    ext_dir.mkdir(parents=True)
+    (ext_dir / "index.js").write_text("// bundled", encoding="utf-8")
+
+    mod = ModuleType(name)
+    mod.__file__ = str(tmp_path / name / "__init__.py")
+    mod._jupyter_nbextension_paths = lambda: [  # type: ignore[attr-defined]
+        {"section": "notebook", "src": "nbextension", "dest": dest}
+    ]
+    return mod
+
+
+def test_package_nbextension_path_finds_bundled_extension(tmp_path) -> None:
+    class DummyWidget:
+        __module__ = "fakepkg.sub"
+
+    mod = make_nbextension_pkg(tmp_path)
+    sys.modules["fakepkg"] = mod
+    try:
+        path = package_nbextension_path(DummyWidget(), "some-widget-module")
+        assert path == str(tmp_path / "fakepkg" / "nbextension")
+    finally:
+        del sys.modules["fakepkg"]
+
+
+def test_package_nbextension_path_resolves_extension_named_package(tmp_path) -> None:
+    # plotly widgets request the "jupyterlab-plotly" module, but the
+    # nbextension ships inside the separate jupyterlab_plotly package (#332)
+    class DummyWidget:
+        __module__ = "plotly.basewidget"
+
+    mod = make_nbextension_pkg(
+        tmp_path, name="jupyterlab_plotly", dest="jupyterlab-plotly"
+    )
+    sys.modules["jupyterlab_plotly"] = mod
+    try:
+        path = package_nbextension_path(DummyWidget(), "jupyterlab-plotly")
+        assert path == str(tmp_path / "jupyterlab_plotly" / "nbextension")
+    finally:
+        del sys.modules["jupyterlab_plotly"]
+
+
+def test_require_dependency_prefers_bundled_over_data_dirs(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A stale copy in a user/system Jupyter data dir must not win over the
+    # nbextension bundled with the installed package (#332)
+    class DummyWidget:
+        __module__ = "fakepkg.sub"
+
+    w = DummyWidget()
+    w._model_module = "some-widget-module"
+    w._model_module_version = "^1.2.3"
+
+    mod = make_nbextension_pkg(tmp_path)
+
+    stale_root = tmp_path / "data"
+    stale_dir = stale_root / "nbextensions" / "some-widget-module"
+    stale_dir.mkdir(parents=True)
+    (stale_dir / "index.js").write_text("// stale", encoding="utf-8")
+
+    session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
+    # The env data dir (ENV_JUPYTER_PATH) doesn't have this module, so the
+    # stale copy would win without the bundled-extension preference
+    monkeypatch.setattr(deps, "jupyter_path", lambda: [str(stale_root)])
+    monkeypatch.setitem(sys.modules, "fakepkg", mod)
+
+    dep = require_dependency(w, session)
+    assert dep is not None
+    # The dependency source is the bundled copy, not the stale data-dir copy
+    assert dep.source == {"subdir": str(tmp_path / "fakepkg" / "nbextension")}
+
+
+def test_require_dependency_prefers_env_data_dir_over_bundled(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The environment's data dir (where the wheel installs its data files,
+    # including any asset files the bundle loads at runtime) wins over the
+    # package-bundled copy (e.g., ipydatagrid's bundled copy lacks assets)
+    class DummyWidget:
+        __module__ = "fakepkg.sub"
+
+    w = DummyWidget()
+    w._model_module = "some-widget-module"
+    w._model_module_version = "^1.2.3"
+
+    mod = make_nbextension_pkg(tmp_path)
+
+    env_dir = tmp_path / "env" / "nbextensions" / "some-widget-module"
+    env_dir.mkdir(parents=True)
+    (env_dir / "index.js").write_text("// env", encoding="utf-8")
+
+    session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
+    monkeypatch.setattr(deps, "ENV_JUPYTER_PATH", [str(tmp_path / "env")])
+    monkeypatch.setitem(sys.modules, "fakepkg", mod)
+
+    dep = require_dependency(w, session)
+    assert dep is not None
+    assert dep.source == {"subdir": str(env_dir)}
 
 
 def test_require_dependency_extension_found_returns_dependency(
@@ -190,7 +297,9 @@ def test_require_dependency_extension_found_returns_dependency(
 
     session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
 
-    monkeypatch.setattr(deps, "jupyter_extension_path", lambda name: str(module_dir))
+    monkeypatch.setattr(
+        deps, "jupyter_extension_path", lambda name, paths=None: str(module_dir)
+    )
 
     dep = require_dependency(w, session)
     assert dep is not None

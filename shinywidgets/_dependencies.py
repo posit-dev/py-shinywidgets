@@ -14,7 +14,7 @@ from htmltools._core import (
 )
 from ipywidgets.widgets.domwidget import DOMWidget
 from ipywidgets.widgets.widget import Widget
-from jupyter_core.paths import jupyter_path
+from jupyter_core.paths import ENV_JUPYTER_PATH, jupyter_path
 from shiny import Session
 
 from . import __version__
@@ -79,12 +79,22 @@ def require_dependency(
     if module_name.startswith("@jupyter-widgets/"):
         return None
 
-    # It's technically possible for the npm package name to be different from the actual
-    # extension path (defined by `_jupyter_nbextension_paths` in __init__.py), but we
-    # also don't have a fool-proof way to discovering the relevant __init__.py file,
-    # which is why we only use look for it if the npm package isn't installed
-    module_dir = jupyter_extension_path(module_name)
+    # Search version-matched sources first: the environment's data dir
+    # (where the widget wheel's data files install) and the nbextension
+    # bundled inside the widget package itself. Other data dirs (user and
+    # system-wide, e.g. /usr/local/share/jupyter) can hold stale copies from
+    # older installs, so they're only a fallback (a stale ipywidgets-7-era
+    # jupyterlab-plotly bundle in /usr/local/share/jupyter caused #332)
+    module_dir = jupyter_extension_path(module_name, ENV_JUPYTER_PATH)
     if module_dir is None:
+        module_dir = package_nbextension_path(w, module_name)
+    if module_dir is None:
+        module_dir = jupyter_extension_path(module_name)
+    if module_dir is None:
+        # It's technically possible for the npm package name to be different from the actual
+        # extension path (defined by `_jupyter_nbextension_paths` in __init__.py), but we
+        # also don't have a fool-proof way to discovering the relevant __init__.py file,
+        # which is why we only use look for it if the npm package isn't installed
         module_dir = jupyter_extension_path(jupyter_extension_destination(w))
         if module_dir is None:
             if warn_if_missing:
@@ -184,19 +194,60 @@ def relax_anywidget_init_timeout(module_dir: str) -> str:
 _anywidget_patched_dirs: dict[tuple[str, float], str] = {}
 
 
-def jupyter_extension_path(module_name: str) -> Optional[str]:
-    paths: List[str] = jupyter_path()
-    module_dir = None
-    for x in paths:
+def jupyter_extension_path(
+    module_name: str, paths: Optional[List[str]] = None
+) -> Optional[str]:
+    for x in jupyter_path() if paths is None else paths:
         dir = os.path.join(x, "nbextensions", module_name)
-        if not os.path.exists(dir):
-            continue
-        for f in os.listdir(dir):
-            if f.startswith("index") and f.endswith(".js"):
-                module_dir = dir
-                break
+        if dir_has_index_js(dir):
+            return dir
 
-    return module_dir
+    return None
+
+
+def package_nbextension_path(w: Widget, module_name: str) -> Optional[str]:
+    """
+    Path to the nbextension bundled inside the widget's own installed Python
+    package (as declared by its `_jupyter_nbextension_paths()`), if that
+    package provides an extension for `module_name`.
+
+    The providing package is usually the widget package itself (e.g.,
+    ipyleaflet), but it can also be a separate package named after the
+    extension: plotly widgets request the "jupyterlab-plotly" module, whose
+    nbextension ships inside the jupyterlab_plotly package.
+    """
+    candidates = [widget_pkg(w), module_name.replace("-", "_")]
+    for pkg in dict.fromkeys(candidates):
+        try:
+            mod: ModuleType = importlib.import_module(pkg)
+        except Exception:
+            continue
+        if mod.__file__ is None:
+            continue
+        nbextension_paths = getattr(mod, "_jupyter_nbextension_paths", None)
+        if nbextension_paths is None:
+            continue
+        try:
+            entries = nbextension_paths()
+        except Exception:
+            continue
+        for entry in entries:
+            if entry.get("dest") != module_name or "src" not in entry:
+                continue
+            dir = os.path.join(os.path.dirname(mod.__file__), entry["src"])
+            if dir_has_index_js(dir):
+                return dir
+
+    return None
+
+
+def dir_has_index_js(dir: str) -> bool:
+    if not os.path.isdir(dir):
+        return False
+    for f in os.listdir(dir):
+        if f.startswith("index") and f.endswith(".js"):
+            return True
+    return False
 
 
 # Approximates what `jupyter nbextension install` does to discover and copy source files
