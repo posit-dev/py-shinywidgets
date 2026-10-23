@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 
 import numpy as np
 from PIL import Image
@@ -18,14 +19,18 @@ MIN_RED_PIXELS = 50
 
 # True once the scene's canvas matches its output container's size (the canvas
 # is resized asynchronously after the output/card lay out)
-CANVAS_FILLS_OUTPUT_JS = """() => {
-  const out = document.querySelector('#fill_scene');
-  const canvas = out && out.querySelector('canvas');
-  if (!canvas) return false;
-  const o = out.getBoundingClientRect();
-  const c = canvas.getBoundingClientRect();
-  return Math.abs(c.width - o.width) <= 1 && Math.abs(c.height - o.height) <= 1;
-}"""
+def canvas_fills_output_js(selector: str) -> str:
+    return f"""() => {{
+      const out = document.querySelector('{selector}');
+      const canvas = out && out.querySelector('canvas');
+      if (!canvas) return false;
+      const o = out.getBoundingClientRect();
+      const c = canvas.getBoundingClientRect();
+      return Math.abs(c.width - o.width) <= 1 && Math.abs(c.height - o.height) <= 1;
+    }}"""
+
+
+CANVAS_FILLS_OUTPUT_JS = canvas_fills_output_js("#fill_scene")
 
 
 def count_red_pixels(page: Page, selector: str) -> int:
@@ -175,6 +180,101 @@ def test_pythreejs_camera_roundtrips_to_python(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_pythreejs_camera_swap_tracks_container_aspect(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.set_viewport_size({"width": 900, "height": 900})
+    page.goto(local_app.url)
+    expect(page.locator("#fill_scene canvas")).to_have_count(1, timeout=30000)
+    page.wait_for_function(CANVAS_FILLS_OUTPUT_JS, timeout=30000)
+
+    # The initial camera's aspect tracks the (much wider than tall) container
+    expect(page.locator("#camera_aspect")).to_have_text(
+        re.compile(r"^\d+\.\d{4}$"), timeout=30000
+    )
+    initial_text = page.locator("#camera_aspect").inner_text()
+    assert float(initial_text) != 1.0
+
+    # Replacing the camera in place applies the current container size to the
+    # replacement immediately, even though the container size is unchanged
+    # (the replacement's default aspect is 1.0). Record output mutations before
+    # clicking so the swap's round-trip can be observed reliably: the output
+    # briefly shows the replacement's default aspect ("1.0000") before the
+    # browser applies the container aspect, and that window is too short for
+    # expect()'s polling to catch. (Asserting initial_text right after the
+    # click is a no-op -- the output still shows the pre-swap value -- which
+    # would let the resize below reach the browser before the camera change
+    # does.)
+    page.evaluate(
+        """() => {
+          const el = document.querySelector('#camera_aspect');
+          window.__cameraAspectTouched = false;
+          new MutationObserver(() => { window.__cameraAspectTouched = true; })
+            .observe(el, { childList: true, characterData: true, subtree: true });
+        }"""
+    )
+    page.click("#swap_camera")
+    page.wait_for_function("() => window.__cameraAspectTouched", timeout=30000)
+    expect(page.locator("#camera_aspect")).to_have_text(initial_text, timeout=30000)
+    expect(page.locator("#swapped_camera_aspect")).to_have_text(
+        initial_text, timeout=30000
+    )
+
+    # Later resizes update the replacement camera's aspect ...
+    page.set_viewport_size({"width": 600, "height": 900})
+    page.wait_for_function(CANVAS_FILLS_OUTPUT_JS, timeout=30000)
+    expect(page.locator("#camera_aspect")).not_to_have_text(initial_text, timeout=30000)
+    resized = float(page.locator("#camera_aspect").inner_text())
+    out_w, out_h = canvas_size(page, "#fill_scene")
+    assert abs(resized - out_w / out_h) < 0.05
+
+    # ... while the swapped-out camera's aspect stays where it was (resize
+    # management moved to the replacement rather than the stale camera). Give
+    # a stale update a chance to round-trip before reading.
+    page.wait_for_timeout(1500)
+    assert page.locator("#swapped_camera_aspect").inner_text() == initial_text
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_pythreejs_cached_renderer_keeps_filling_after_rerender(
+    page: Page, local_app
+) -> None:
+    # Regression: a default-sized Renderer cached with session_lifetime() and
+    # returned on a later render must keep filling -- the container size the
+    # browser synced back to Python is not an explicit user size
+    errors, failed_requests = collect_errors(page)
+    page.set_viewport_size({"width": 900, "height": 900})
+    page.goto(local_app.url)
+    canvas = page.locator("#cached_scene canvas")
+    expect(canvas).to_have_count(1, timeout=30000)
+    page.wait_for_function(canvas_fills_output_js("#cached_scene"), timeout=30000)
+    wide_w, _ = canvas_size(page, "#cached_scene canvas")
+
+    # Resize the browser, which syncs the container size back to the Python
+    # Renderer's width/height traits
+    page.set_viewport_size({"width": 600, "height": 900})
+    page.wait_for_function(canvas_fills_output_js("#cached_scene"), timeout=30000)
+
+    # The re-render returns the same cached Renderer; it must still fill.
+    # Identify the old view by its root element, not its <canvas>: pythreejs's
+    # RendererPool recycles freed canvas elements into new views (e.g. the
+    # fill_scene view re-rendered by the same click), so a canvas can stay
+    # connected forever under a different output.
+    old_view = page.locator("#cached_scene > .jupyter-threejs").first.element_handle()
+    page.click("#rerender")
+    page.wait_for_function("(el) => !el.isConnected", arg=old_view, timeout=30000)
+    expect(canvas).to_have_count(1, timeout=30000)
+    page.wait_for_function(canvas_fills_output_js("#cached_scene"), timeout=30000)
+
+    # ... and keep tracking the container afterwards
+    page.set_viewport_size({"width": 900, "height": 900})
+    page.wait_for_function(canvas_fills_output_js("#cached_scene"), timeout=30000)
+    final_w, _ = canvas_size(page, "#cached_scene canvas")
+    assert final_w > wide_w - 10
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_pythreejs_rerender_lifecycle(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
@@ -183,10 +283,14 @@ def test_pythreejs_rerender_lifecycle(page: Page, local_app) -> None:
     expect(page.locator("#render_count")).to_have_text("0")
 
     for i in range(1, 4):
-        old_canvas = page.locator("#fill_scene canvas").first.element_handle()
+        # Identify the old view by its root element, not its <canvas>:
+        # pythreejs's RendererPool recycles freed canvas elements into new
+        # views (e.g. cached_scene's, re-rendered by the same click), so a
+        # canvas can stay connected forever under a different output.
+        old_view = page.locator("#fill_scene > .jupyter-threejs").first.element_handle()
         page.click("#rerender")
         expect(page.locator("#render_count")).to_have_text(str(i))
-        page.wait_for_function("(el) => !el.isConnected", arg=old_canvas, timeout=30000)
+        page.wait_for_function("(el) => !el.isConnected", arg=old_view, timeout=30000)
         expect(page.locator("#fill_scene canvas")).to_have_count(1, timeout=30000)
 
     # The old views were all disposed, and the surviving one is the newest

@@ -103,20 +103,16 @@ function setupPythreejsResize({ el, lmWidget, model }: BehaviorContext): () => v
   const canvas = lmWidget.querySelector('canvas');
   if (canvas) canvas.style.display = 'block';
 
-  const camera = model.get('camera') as WidgetModel | undefined;
-  // Manage the aspect ratio only while it holds a value we set (or the initial
-  // one): a user-set aspect (from either side) wins.
-  const initialAspect = camera?.get('aspect');
-  let lastAspect = typeof initialAspect === 'number' ? initialAspect : undefined;
+  // Python can replace the camera in place (renderer.camera = ...), so
+  // (re)capture the active camera on change:camera rather than only here.
+  let camera: WidgetModel | undefined;
+  // Manage the aspect ratio only while it holds a value we set (or the
+  // initial one): a user-set aspect (from either side) wins.
+  let lastAspect: number | undefined;
   let lastWidth = -1;
   let lastHeight = -1;
 
-  const resizeToFit = () => {
-    const w = el.clientWidth;
-    const h = el.clientHeight;
-    if (w <= 0 || h <= 0 || (w === lastWidth && h === lastHeight)) return;
-    lastWidth = w;
-    lastHeight = h;
+  const applySize = (w: number, h: number) => {
     model.set('_width', w);
     model.set('_height', h);
     model.save_changes();
@@ -127,13 +123,37 @@ function setupPythreejsResize({ el, lmWidget, model }: BehaviorContext): () => v
     }
   };
 
+  const trackCamera = () => {
+    camera = model.get('camera') as WidgetModel | undefined;
+    const aspect = camera?.get('aspect');
+    lastAspect = typeof aspect === 'number' ? aspect : undefined;
+    // A replacement camera still holds its own (stale) aspect, so apply the
+    // current dimensions immediately. resizeToFit()'s dimension cache would
+    // suppress this when the container size hasn't changed.
+    if (lastWidth > 0 && lastHeight > 0) applySize(lastWidth, lastHeight);
+  };
+
+  const resizeToFit = () => {
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    if (w <= 0 || h <= 0 || (w === lastWidth && h === lastHeight)) return;
+    lastWidth = w;
+    lastHeight = h;
+    applySize(w, h);
+  };
+
+  trackCamera();
+  model.on('change:camera', trackCamera);
   const observer = new ResizeObserver(() => resizeToFit());
   // Observe the output container (not the widget): with the strut removed
   // above, the container tracks the canvas exactly, so resizing the canvas
   // to it doesn't change it and the observer settles.
   observer.observe(el);
   resizeToFit();
-  return () => observer.disconnect();
+  return () => {
+    model.off('change:camera', trackCamera);
+    observer.disconnect();
+  };
 }
 
 const pythreejsBehavior: WidgetBehavior = {
