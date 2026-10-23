@@ -7,9 +7,12 @@ from htmltools import Tag
 from ipywidgets.widgets.widget import Widget
 
 if TYPE_CHECKING:
+    import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
+    from ipydatagrid import DataGrid
     from ipympl.backend_nbagg import Canvas as MplCanvas
+    from jscatter.widget import JupyterScatter
     from jupyter_bokeh import BokehModel
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
     from maplibre.ipywidget import MapWidget
@@ -17,15 +20,16 @@ if TYPE_CHECKING:
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
-        object
-    )
+    JupyterChart = DataGrid = JupyterScatter = MplCanvas = BokehModel = MapWidget = (
+        FigureWidget
+    ) = DeckGLWidget = object
     LonboardMap = object
 
 from shiny.render.renderer import ValueFn
 
 from ._as_widget import PYDECK_NO_WIDGET_MESSAGE, as_widget_panel, pydeck_has_widget
 from ._bokeh import _bokeh_dependency
+from ._dependencies import widget_pkg
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
 if TYPE_CHECKING:
@@ -46,6 +50,8 @@ __all__ = (
     "render_altair",
     "render_bokeh",
     "render_holoviews",
+    "render_ipydatagrid",
+    "render_jscatter",
     "render_lonboard",
     "render_maplibre",
     "render_matplotlib",
@@ -150,6 +156,52 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     **Offline use**: `JupyterChart` loads its JavaScript from a CDN; call
     ``alt.JupyterChart.enable_offline()`` (requires ``vl-convert-python``) for apps
     that run without internet access.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+
+class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
+    """
+    Reactively render a [jupyter-scatter](https://jupyter-scatter.dev) scatter plot as a
+    Shiny output.
+
+    The decorated function may return a `jscatter.Scatter` (which is coerced to its
+    `jscatter.widget.JupyterScatter` widget; requires ``pip install 'shinywidgets[jscatter]'``)
+    or a `JupyterScatter` widget. The plot is resized to fit its output, whether the
+    output fills its layout or has an explicit ``height`` (see below), unless the plot
+    has a height of its own (e.g., from `Scatter.height()`; jupyter-scatter's default of
+    240 doesn't count).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `JupyterScatter` instance. Use `.widget` to programmatically update the rendered
+    plot in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state (e.g., the selected points via ``"selection"``) with
+    :func:`~shinywidgets.reactive_read`. The selection is an array of row *positions*
+    (use ``df.iloc[...]``), not index labels.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Large selections**: selecting more than about 3 million points sends the
+    server a message larger than the default 16 MiB websocket limit, which
+    disconnects the session. Raise the limit with ``shiny run --ws-max-size``.
 
     Parameters
     ----------
@@ -507,6 +559,84 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
         res = super().auto_output_ui()
         res.children.append(_bokeh_dependency())
         return res
+
+
+class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
+    """
+    Reactively render a pandas DataFrame as an interactive
+    [ipydatagrid](https://github.com/bloomberg/ipydatagrid) data grid Shiny output.
+
+    The decorated function may return either a `pandas.DataFrame` (which is coerced to
+    an `ipydatagrid.DataGrid`; requires ``pip install 'shinywidgets[ipydatagrid]'``) or an
+    `ipydatagrid.DataGrid` widget. Pass a `DataGrid` to customize the grid (e.g.,
+    `selection_mode`, `editable`, or cell renderers).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `DataGrid` instance. Use `.widget` to programmatically update the rendered grid
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state (e.g., `selections`) with
+    :func:`~shinywidgets.reactive_read`.
+
+    Some ipydatagrid behaviors worth knowing about:
+
+    * A returned DataFrame uses ipydatagrid's default ``selection_mode="none"``, so
+      `selections` stays empty; return ``DataGrid(df, selection_mode="row")`` (or
+      ``"cell"``/``"column"``) to let users select.
+    * `selections` index the grid as displayed (after any sort or filter), so map
+      them through ``.widget.get_visible_data()``.
+    * ``DataGrid.select()``, ``DataGrid.clear_selection()`` and cell edits modify the
+      widget's state in place, which doesn't trigger
+      :func:`~shinywidgets.reactive_read`. Assign a new list to ``.widget.selections``
+      instead, and use ``.widget.on_cell_change()`` to react to edits.
+    * Cell renderers and scales are widgets too, so create them inside the render
+      function rather than at import time.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    # A DataFrame is a generic type (several renderers accept one), so it isn't
+    # registered with as_widget()
+    def _as_widget(self, value: ValueT) -> DataGrid:
+        if is_pandas_dataframe(value):
+            return dataframe_to_datagrid(cast("pd.DataFrame", value))
+        return super()._as_widget(value)
+
+
+def is_pandas_dataframe(value: object) -> bool:
+    # Checked by name (pandas is optional) and through the MRO, so subclasses such
+    # as geopandas.GeoDataFrame count
+    return any(
+        widget_pkg(cls) == "pandas" and cls.__name__ == "DataFrame"
+        for cls in type(value).__mro__
+    )
+
+
+def dataframe_to_datagrid(df: pd.DataFrame) -> DataGrid:
+    try:
+        from ipydatagrid import DataGrid
+    except ImportError:
+        raise ImportError(
+            "Install the ipydatagrid package to use render_ipydatagrid with "
+            "shinywidgets (pip install 'shinywidgets[ipydatagrid]')."
+        )
+    return DataGrid(df)
 
 
 class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
