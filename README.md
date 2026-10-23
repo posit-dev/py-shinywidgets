@@ -23,6 +23,7 @@ everything it needs:
 | `@render_bokeh` | `pip install 'shinywidgets[bokeh]'` |
 | `@render_embedding_atlas` | `pip install 'shinywidgets[embedding_atlas]'` (Python 3.11+) |
 | `@render_holoviews` | `pip install 'shinywidgets[holoviews]'` |
+| `@render_ipyaladin` | `pip install 'shinywidgets[ipyaladin]'` |
 | `@render_ipydatagrid` | `pip install 'shinywidgets[ipydatagrid]'` |
 | `@render_jscatter` | `pip install 'shinywidgets[jscatter]'` |
 | `@render_lonboard` | `pip install 'shinywidgets[lonboard]'` (Python < 3.15) |

@@ -44,6 +44,7 @@ bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 # embedding-atlas requires Python 3.11+, so it's not installable on 3.10
 embedding_atlas = ["embedding-atlas>=0.26; python_version >= '3.11'"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
+ipyaladin = ["ipyaladin"]
 ipydatagrid = ["ipydatagrid"]
 jscatter = ["jupyter-scatter"]
 # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
@@ -65,6 +66,7 @@ test = [
   "embedding-atlas>=0.26; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipyaladin",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -98,6 +100,7 @@ dev = [
   "embedding-atlas>=0.26; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipyaladin",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -132,6 +135,7 @@ test = [
   "embedding-atlas>=0.26; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
+  "ipyaladin",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",

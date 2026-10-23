@@ -58,6 +58,11 @@ def test_render_embedding_atlas_respects_widget_layout_height(widget_session) ->
     assert res["fill"] is False
 
 
+def test_render_ipyaladin_is_render_widget_base() -> None:
+    renderer = rw.render_ipyaladin()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_ipydatagrid_is_render_widget_base() -> None:
     renderer = rw.render_ipydatagrid()
     assert isinstance(renderer, rwb.render_widget_base)
