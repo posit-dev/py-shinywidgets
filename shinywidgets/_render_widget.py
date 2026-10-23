@@ -27,7 +27,7 @@ else:
 from shiny.render.renderer import ValueFn
 
 from ._as_widget import PYDECK_NO_WIDGET_MESSAGE, as_widget_panel, pydeck_has_widget
-from ._bokeh import bokeh_dependency
+from ._bokeh import _bokeh_dependency
 from ._dependencies import widget_pkg
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
@@ -320,11 +320,25 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
     widget, or a `jupyter_bokeh.BokehModel` widget (requires ``pip install
     jupyter_bokeh``).
 
-    The decorated function also gains two read-only attributes: `.value`, the value
-    most recently returned by the render function, and `.widget`, the rendered
-    `BokehModel` instance. Use `.widget` to programmatically update the rendered
-    plot in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    A `figure` fills its output by default (i.e., it gets
+    ``sizing_mode="stretch_both"``), unless you give it a ``width``, ``height``,
+    ``sizing_mode``, or ``aspect_ratio``, in which case bokeh's own sizing applies.
+    Other models (e.g., a `column` or `row` layout) fill only if their
+    ``sizing_mode`` stretches vertically (e.g., ``sizing_mode="stretch_both"`` on the
+    layout and its children).
+
+    The decorated function also gains two read-only attributes: `.value`, the bokeh
+    object most recently returned by the render function, and `.widget`, the rendered
+    `BokehModel` instance. Bokeh model properties are not widget traits, so instead
+    of :func:`~shinywidgets.reactive_read`, use bokeh's own callbacks to react to user
+    interaction (e.g., ``source.selected.on_change("indices", lambda attr, old, new:
+    selected.set(new))``, or ``fig.on_event(Tap, ...)``). These callbacks may set
+    `reactive.value`s. To update the plot without re-rendering, modify the bokeh
+    models in place (e.g., ``source.data = ...``). Plots that share a
+    `ColumnDataSource` (e.g., for linked selection) must be returned together, in
+    one layout, from a single render function. Create bokeh models per session
+    (e.g., inside the render function), not at the top level of a Shiny Core app,
+    where every visitor would share them.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -347,7 +361,7 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
 
     def auto_output_ui(self) -> Tag:
         res = super().auto_output_ui()
-        res.children.append(bokeh_dependency())
+        res.children.append(_bokeh_dependency())
         return res
 
 
@@ -407,7 +421,7 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
 
     def auto_output_ui(self) -> Tag:
         res = super().auto_output_ui()
-        res.children.append(bokeh_dependency())
+        res.children.append(_bokeh_dependency())
         return res
 
     def _as_widget(self, value: ValueT) -> BokehModel:
@@ -421,13 +435,15 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
 
 class render_holoviews(render_widget_base[ValueT, BokehModel]):
     """
-    Reactively render a [holoviews](https://holoviews.org) or
-    [hvPlot](https://hvplot.holoviz.org) object as a Shiny output.
+    Reactively render a [holoviews](https://holoviews.org),
+    [hvPlot](https://hvplot.holoviz.org), or [geoviews](https://geoviews.org) object
+    as a Shiny output.
 
-    The decorated function may return either a holoviews/hvplot object (which is
-    rendered through panel; requires ``pip install panel jupyter_bokeh``) or the
-    underlying `jupyter_bokeh.BokehModel` widget. If you call ``.opts()`` without
-    importing hvplot, call ``hv.extension("bokeh")`` first. Plots rasterized with
+    The decorated function may return either a holoviews/hvplot/geoviews object
+    (which is rendered through panel; requires ``pip install panel jupyter_bokeh``)
+    or the underlying `jupyter_bokeh.BokehModel` widget. geoviews 1.15 requires
+    ``cartopy<0.26``. If you call ``.opts()`` without importing hvplot, call
+    ``hv.extension("bokeh")`` first. Plots rasterized with
     [datashader](https://datashader.org) are supported too (e.g., hvPlot's
     ``rasterize=True`` or holoviews' ``rasterize()`` operation; requires
     ``pip install datashader``): they re-aggregate the data on the server for the
@@ -438,10 +454,19 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
     event loop, so a slow aggregation delays every session served by that
     process.
 
+    Linked streams (e.g., ``holoviews.streams.Tap`` or ``BoundsXY``) run their
+    callbacks outside Shiny's reactive cycle: with shiny < 1.9, the updates they
+    trigger only reach the browser after the next unrelated input. And because
+    ``.opts()`` styles shared objects such as ``gv.tile_sources.OSM`` or
+    ``gv.feature.coastline`` in place, use ``.opts(..., clone=True)`` on them, or
+    one session's styling will show up in every session.
+
     HoloViews and hvPlot plots have a fixed size by default (and get clipped by a
     smaller container). To make a plot fill its output, pass ``responsive=True``
     (e.g., ``df.hvplot.line(..., responsive=True)`` or ``.opts(responsive=True)``),
-    optionally with a fixed ``height``.
+    optionally with a fixed ``height``. If you give the output a fixed height, set
+    ``fillable=True`` too (e.g., ``output_widget("map", height="400px",
+    fillable=True)``); otherwise a responsive plot collapses to a thin strip.
 
     The decorated function also gains two read-only attributes: `.value`, the
     holoviews/hvplot object most recently returned by the render function, and
@@ -481,7 +506,7 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
 
     def auto_output_ui(self) -> Tag:
         res = super().auto_output_ui()
-        res.children.append(bokeh_dependency())
+        res.children.append(_bokeh_dependency())
         return res
 
 
