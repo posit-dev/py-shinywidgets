@@ -1,4 +1,3 @@
 shiny
-shinywidgets
-pyvista[jupyter]
+shinywidgets[pyvista]
 numpy
