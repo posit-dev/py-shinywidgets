@@ -3,7 +3,16 @@ from __future__ import annotations
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from typing import Callable, Generic, Iterator, Optional, Tuple, TypeVar, cast
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Generic,
+    Iterator,
+    Optional,
+    Tuple,
+    TypeVar,
+    cast,
+)
 from weakref import WeakSet
 
 from htmltools import Tag
@@ -21,6 +30,9 @@ from ._comm import OrphanedShinyComm
 from ._dependencies import widget_pkg
 from ._output_widget import output_widget
 from ._widget_registry import WIDGET_INSTANCE_MAP
+
+if TYPE_CHECKING:
+    from itables.widget import ITable
 
 __all__ = (
     "render_widget_base",
@@ -332,6 +344,47 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def itables_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # DataTables only gets a scrollable body (which is what lets the table fill
+    # its container instead of growing past it) when scrollY is set, so default it
+    # unless the user chose their own. shinywidgets.css does the actual filling for
+    # widgets with the marker class.
+    from itables import options as itables_options
+
+    # ITable has no public API for these traits, so the private attributes are used
+    table = cast("ITable", widget)
+    dt_args = table._dt_args
+    if "scrollY" in dt_args:
+        return fill
+
+    table._dt_args = {**dt_args, "scrollY": "100%"}
+    table.add_class("shinywidgets-itables-fill")
+
+    # An in-place `update(scrollY=...)` after rendering supersedes the scrollY
+    # defaulted above, so drop the marker class whose CSS forces the scroll body
+    # to fill its container (it would override the requested height). Anything
+    # but the defaulted "100%" counts as a user choice.
+    def sync_fill_marker(change: dict[str, object]) -> None:
+        new_args = cast("dict[str, object]", change["new"])
+        if new_args.get("scrollY") != "100%":
+            table.remove_class("shinywidgets-itables-fill")
+            table.unobserve(sync_fill_marker, "_dt_args")
+
+    table.observe(sync_fill_marker, "_dt_args")
+
+    # itables' default `width:auto` leaves a scrolling table's header and body
+    # columns misaligned (a style the user chose is left alone). With scrollX,
+    # itables rewrites the default margin:auto to margin:0 before we see it, so
+    # normalize the default before comparing.
+    # (itables_types declares options.style as a dict, but at runtime it is a str)
+    default_style = cast("str", itables_options.style)
+    if dt_args.get("scrollX"):
+        default_style = default_style.replace("margin:auto", "margin:0")
+    if table._style == default_style:
+        table._style = table._style.replace("width:auto", "width:100%")
+    return fill
+
+
 def keplergl_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # KeplerGl sizes itself from a pixel `height` trait (default 400), so the only
     # way to tell the user asked for a specific height is that it isn't the default.
@@ -491,6 +544,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "altair": _altair_layout_defaults,
     "ipyaladin": ipyaladin_layout_defaults,
     "ipycanvas": ipycanvas_layout_defaults,
+    "itables": itables_layout_defaults,
     "jscatter": jscatter_layout_defaults,
     "keplergl": keplergl_layout_defaults,
     "lonboard": lonboard_layout_defaults,

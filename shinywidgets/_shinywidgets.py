@@ -150,6 +150,11 @@ def init_shiny_widget(w: Widget):
         # BokehModel.close() is not idempotent; guard against double close.
         guard_widget_close(w)
 
+    if any(widget_pkg(cls) == "itables" for cls in type(w).__mro__):
+        # itables' bundle replaces the global `$` when its module is evaluated (see
+        # protectPageJQuery() in js/src/utils.ts), which happens after this open
+        open_keys["protect_jquery"] = True
+
     # Since the actual ShinyComm() is initialized _after_ the Widget is initialized,
     # and Widget.__init__() includes a call to Widget.open() which opens an unnecessary
     # comm, we just set the comm to a dummy comm for now (to avoid unnecessary work)
