@@ -376,6 +376,11 @@ def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 
 
 def pyvista_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from trame_pyvista.jupyter import EmbeddableWidget
+
+    if not isinstance(widget, EmbeddableWidget):
+        return fill
+
     # as_widget_pyvista() sets layout height to "100%" (sizing the iframe to
     # the container), which the generic check above mistakes for a
     # user-specified height. A height the user set themselves is still

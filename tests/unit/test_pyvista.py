@@ -8,7 +8,10 @@ pv.OFF_SCREEN = True
 
 from shiny.session import session_context  # noqa: E402
 from shinywidgets._as_widget import as_widget, as_widget_pyvista  # noqa: E402
-from shinywidgets._render_widget_base import set_layout_defaults  # noqa: E402
+from shinywidgets._render_widget_base import (  # noqa: E402
+    pyvista_layout_defaults,
+    set_layout_defaults,
+)
 
 
 def coerce_plotter(widget_session, pl: "pv.Plotter") -> Widget:
@@ -81,6 +84,15 @@ def test_pyvista_layout_defaults_fill(widget_session) -> None:
     w = coerce_plotter(widget_session, make_plotter())
     _, fill = set_layout_defaults(w)
     assert fill is True
+
+
+def test_pyvista_layout_defaults_ignores_other_widgets(widget_session) -> None:
+    # The handler is keyed on the widget's package; a foreign widget reaching
+    # it must pass the fill decision through untouched
+    with session_context(widget_session):
+        w = HTML()
+        w.layout.height = "50px"
+        assert pyvista_layout_defaults(w, True) is True
 
 
 def test_pyvista_layout_defaults_respects_user_height(widget_session) -> None:
