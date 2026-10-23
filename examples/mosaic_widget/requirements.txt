@@ -1,0 +1,6 @@
+shiny
+shinywidgets[mosaic_widget]
+# mosaic-widget needs a newer narwhals than it declares
+narwhals>=2.22
+pandas
+numpy
