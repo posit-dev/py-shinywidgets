@@ -27,10 +27,12 @@ everything it needs:
 | `@render_ipycanvas` | `pip install 'shinywidgets[ipycanvas]'` |
 | `@render_ipycytoscape` | `pip install 'shinywidgets[ipycytoscape]'` |
 | `@render_ipydatagrid` | `pip install 'shinywidgets[ipydatagrid]'` |
+| `@render_ipyleaflet` | `pip install 'shinywidgets[ipyleaflet]'` |
 | `@render_ipysigma` | `pip install 'shinywidgets[ipysigma]'` |
 | `@render_itables` | `pip install 'shinywidgets[itables]'` |
 | `@render_jscatter` | `pip install 'shinywidgets[jscatter]'` |
 | `@render_keplergl` | `pip install 'shinywidgets[keplergl]'` |
+| `@render_leafmap` | `pip install 'shinywidgets[leafmap]'` |
 | `@render_lonboard` | `pip install 'shinywidgets[lonboard]'` (Python < 3.15) |
 | `@render_maplibre` | `pip install 'shinywidgets[maplibre]'` |
 | `@render_matplotlib` | `pip install 'shinywidgets[matplotlib]'` |

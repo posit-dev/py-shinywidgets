@@ -551,6 +551,51 @@ def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+# leafmap's widget backends all default to a 600px height, in whichever way the
+# backend sizes itself: `Layout.height` for the ipyleaflet backend, a `height`
+# trait for maplibre, `layout.height` for plotly.
+_LEAFMAP_DEFAULT_HEIGHT = 600
+
+
+def leafmap_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # That 600px is leafmap's default rather than user intent, so treat it as
+    # unset and let the map fill its container like other map widgets do. (As
+    # with maplibre's own 400px default, a user-specified 600 can't be told
+    # apart from it.) Anything else is a height the user asked for, which the
+    # backend's own handler deals with.
+    from ipyleaflet import Map as LeafletMap
+
+    if isinstance(widget, LeafletMap):
+        if widget.layout.height != f"{_LEAFMAP_DEFAULT_HEIGHT}px":
+            return fill
+        # Fill via CSS, as if the map hadn't set a height at all
+        # (shinywidgets.css lays a leaflet map out as a flex column sized to
+        # its output)
+        widget.layout.height = "100%"
+        return True
+
+    from maplibre.ipywidget import MapWidget
+
+    if isinstance(widget, MapWidget):
+        if widget.height != f"{_LEAFMAP_DEFAULT_HEIGHT}px":
+            return maplibre_layout_defaults(widget, fill)
+        # maplibre sizes its root element from its own `height` trait, which
+        # shinywidgets.css in turn sizes to the widget container
+        widget.height = "100%"
+        return True
+
+    from plotly.basewidget import BaseFigureWidget
+
+    if isinstance(widget, BaseFigureWidget):
+        if getattr(widget.layout, "height", None) == _LEAFMAP_DEFAULT_HEIGHT:
+            widget.layout.height = None  # pyright: ignore[reportAttributeAccessIssue]
+        return _plotly_layout_defaults(widget, fill)
+
+    # Anything else (e.g., the kepler.gl backend, whose 600 is leafmap's default
+    # but which already fills its container) keeps the generic decision
+    return fill
+
+
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
 # (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
 # in js/src/fill.ts). A handler receives the widget and the current fill
@@ -570,6 +615,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "keplergl": keplergl_layout_defaults,
     "lonboard": lonboard_layout_defaults,
     "jupyter_bokeh": bokeh_layout_defaults,
+    "leafmap": leafmap_layout_defaults,
     "maplibre": maplibre_layout_defaults,
 }
 
