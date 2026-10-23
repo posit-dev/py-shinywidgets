@@ -26,6 +26,7 @@ everything it needs:
 | `@render_holoviews` | `pip install 'shinywidgets[holoviews]'` |
 | `@render_ipyaladin` | `pip install 'shinywidgets[ipyaladin]'` |
 | `@render_ipycanvas` | `pip install 'shinywidgets[ipycanvas]'` |
+| `@render_ipycytoscape` | `pip install 'shinywidgets[ipycytoscape]'` |
 | `@render_ipydatagrid` | `pip install 'shinywidgets[ipydatagrid]'` |
 | `@render_itables` | `pip install 'shinywidgets[itables]'` |
 | `@render_jscatter` | `pip install 'shinywidgets[jscatter]'` |

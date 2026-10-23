@@ -47,6 +47,7 @@ bqplot = ["bqplot"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
+ipycytoscape = ["ipycytoscape"]
 ipydatagrid = ["ipydatagrid"]
 itables = ["itables[widget]"]
 jscatter = ["jupyter-scatter"]
@@ -79,6 +80,7 @@ test = [
   "hvplot",
   "ipyaladin",
   "ipycanvas",
+  "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -92,6 +94,7 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "networkx",
   "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
@@ -121,6 +124,7 @@ dev = [
   "hvplot",
   "ipyaladin",
   "ipycanvas",
+  "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -134,6 +138,7 @@ dev = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "networkx",
   "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
@@ -166,6 +171,7 @@ test = [
   "hvplot",
   "ipyaladin",
   "ipycanvas",
+  "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
   "holoviews",
@@ -179,6 +185,7 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "networkx",
   "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
