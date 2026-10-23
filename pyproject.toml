@@ -156,12 +156,15 @@ version-file = "shinywidgets/__version.py"
 
 [tool.uv]
 # embedding_atlas.widget never imports these; only embedding_atlas.projection and the
-# CLI do. Skipping them keeps torch (and CUDA wheels on Linux) out of the dev/CI env.
+# CLI do (litellm is a lazy import inside _create_litellm_embedder). Skipping them
+# keeps torch (and CUDA wheels on Linux) out of the dev/CI env, and keeps litellm's
+# fastuuid dependency (no cp315 wheels) from breaking Python 3.15 installs.
 # uv-only: the published package metadata is unaffected.
 override-dependencies = [
   "torch; python_version < '0'",
   "sentence-transformers; python_version < '0'",
   "umap-learn; python_version < '0'",
+  "litellm; python_version < '0'",
 ]
 
 [tool.pyright]
