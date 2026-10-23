@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from typing import Any
 
 import networkx as nx
 import pytest
@@ -22,7 +23,7 @@ def test_render_ipysigma_coerces_networkx_graph(widget_session: Session) -> None
     with session_context(widget_session):
         res = asyncio.run(r._render())
 
-    assert res is not None
+    assert isinstance(res, dict)
     assert isinstance(r.widget, Sigma)
     assert len(r.widget.data["nodes"]) == 34
     assert res["widget_pkg"] == "ipysigma"
@@ -86,7 +87,7 @@ def test_default_height_fills(widget_session: Session) -> None:
     [({"height": 300}, "300px"), ({"raw_height": "40vh"}, "40vh")],
 )
 def test_explicit_height_is_respected(
-    widget_session: Session, kwargs: dict[str, object], expected_height: str
+    widget_session: Session, kwargs: dict[str, Any], expected_height: str
 ) -> None:
     with session_context(widget_session):
         sigma = Sigma(nx.path_graph(3), **kwargs)
