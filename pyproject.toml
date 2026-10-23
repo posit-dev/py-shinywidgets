@@ -57,6 +57,7 @@ maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
 plotly = ["plotly>=5.0.0"]
+plotnine = ["plotnine", "ipympl"]
 test = [
   "altair",
   "bokeh",
@@ -87,6 +88,7 @@ test = [
   "perspective-python>=3.0",
   "playwright>=1.40.0",
   "plotly>=5.0.0",
+  "plotnine",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
@@ -123,6 +125,7 @@ dev = [
   "perspective-python>=3.0",
   "playwright>=1.40.0",
   "plotly>=5.0.0",
+  "plotnine",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
@@ -162,6 +165,7 @@ test = [
   "perspective-python>=3.0",
   "playwright>=1.40.0",
   "plotly>=5.0.0",
+  "plotnine",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
