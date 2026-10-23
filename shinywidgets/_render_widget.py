@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from ipydatagrid import DataGrid
     from ipyleaflet import Map as LeafletMap
     from ipympl.backend_nbagg import Canvas as MplCanvas
+    from itables.widget import ITable
     from jscatter.widget import JupyterScatter
     from jupyter_bokeh import BokehModel
     from keplergl import KeplerGl
@@ -26,9 +27,9 @@ if TYPE_CHECKING:
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
 else:
-    JupyterChart = DataGrid = JupyterScatter = KeplerGl = MplCanvas = BokehModel = (
-        MapWidget
-    ) = FigureWidget = DeckGLWidget = object
+    JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = (
+        BokehModel
+    ) = MapWidget = FigureWidget = DeckGLWidget = object
     Aladin = LeafletMap = LonboardMap = object
 
 from shiny.render.renderer import ValueFn
@@ -59,6 +60,7 @@ __all__ = (
     "render_ipyaladin",
     "render_ipydatagrid",
     "render_ipyleaflet",
+    "render_itables",
     "render_jscatter",
     "render_keplergl",
     "render_lonboard",
@@ -291,6 +293,68 @@ class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
     """
 
 
+class render_itables(render_widget_base[ValueT, ITable]):
+    """
+    Reactively render a [pandas](https://pandas.pydata.org) or
+    [polars](https://pola.rs) data frame as an interactive
+    [itables](https://itables.org) (DataTables) Shiny output.
+
+    The decorated function may return either a data frame (which is coerced to an
+    `itables.widget.ITable`) or an `itables.widget.ITable` widget, which is how to
+    pass itables options such as ``select=True`` (requires ``pip install
+    'shinywidgets[itables]'``).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `ITable` instance. Use `.widget` to programmatically update the rendered table
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state (e.g., `selected_rows`) with
+    :func:`~shinywidgets.reactive_read`.
+
+    In a filling layout, the table fills its container and scrolls its rows; give it
+    roughly 350px or more of height, since smaller containers leave no room for rows
+    below DataTables' controls. Some itables defaults worth knowing about:
+
+    * Columns sort when their arrow icon is clicked (header text is selectable); pass
+      ``text_in_header_can_be_selected=False`` to sort on any header click.
+    * Data frames larger than itables' ``maxBytes`` (64KB by default) are downsampled;
+      pass ``maxBytes=0`` to send all rows.
+    * `selected_rows` holds row positions in the current data frame.
+      ``ITable.update(df)`` keeps those positions as-is, and drops options such as
+      ``columnDefs`` and ``buttons`` unless they are passed again.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    def _as_widget(self, value: ValueT) -> ITable:
+        if isinstance(value, Widget):
+            return super()._as_widget(value)
+        try:
+            from itables.widget import ITable
+        except ImportError:
+            raise ImportError(
+                "Install the itables package to use data frames with shinywidgets "
+                "(pip install 'shinywidgets[itables]')."
+            )
+        return ITable(value)
+
+
 class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
     """
     Reactively render a [jupyter-scatter](https://jupyter-scatter.dev) scatter plot as a
@@ -500,15 +564,36 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     widget. Figures and axes are coerced to a `Canvas` (requires ``pip install
     'shinywidgets[matplotlib]'``),
     so this also works with libraries built on matplotlib (e.g., seaborn or
-    ``pandas.DataFrame.plot()``). Figures created through pyplot are closed (via
-    ``plt.close()``) when their widget is retired. In a filling layout, the figure is
-    resized to fit its container.
+    ``pandas.DataFrame.plot()``). In a filling layout, the figure is resized to fit its
+    container. With an explicit ``height``, the figure keeps its ``figsize`` unless the
+    output is also ``fillable=True``.
+
+    Unlike `@render.plot`, which draws a static image, the figure stays alive on the
+    server for as long as it is displayed, so it can respond to the user. Like
+    `@render.plot`, a figure created through pyplot is closed (as by ``plt.close()``)
+    once it's rendered. Still, prefer creating figures explicitly (e.g.,
+    ``Figure(layout="constrained")`` or ``plt.subplots()``) over pyplot's implicit
+    current figure or axes (``plt.plot()``, ``plt.gca()``, or seaborn functions without
+    ``ax=``), which are shared by every output and session in the process.
+
+    Create figures with a non-interactive backend: ``matplotlib.figure.Figure()``
+    directly, or pyplot under the ``agg`` backend (the default when no display is
+    available, as on a server; select it locally with ``matplotlib.use("agg")``
+    before creating figures). A figure created under a GUI backend (Qt, Tk, macOS,
+    ...) can still be rendered -- its window is destroyed and ipympl's canvas
+    replaces its own -- but that path depends on platform-specific behavior that
+    automated tests can't exercise, so it is supported on a best-effort basis and
+    warns at render time.
+
+    Browser interactions reach Python through matplotlib's own callbacks, e.g.,
+    ``fig.canvas.mpl_connect("button_press_event", f)`` or
+    ``ax.callbacks.connect("xlim_changed", f)`` (which fires on every zoom and pan). To
+    make other outputs respond, set a `reactive.value` from the callback.
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `Canvas` instance. Use `.widget` to programmatically update the rendered figure
-    in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    `Canvas` instance. To update the rendered figure without losing the user's zoom,
+    modify the artists of ``.widget.figure`` and call ``.widget.draw_idle()``.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -527,6 +612,40 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    from matplotlib.figure import Figure
+    from shiny import App, reactive, render, ui
+    from shinywidgets import output_widget, render_matplotlib
+
+    app_ui = ui.page_fluid(
+        ui.input_slider("n", "Points", 10, 100, 50),
+        output_widget("plot"),
+        ui.output_text("visible"),
+    )
+
+
+    def server(input, output, session):
+        xlim = reactive.value((0.0, 0.0))
+
+        @render_matplotlib
+        def plot():
+            fig = Figure(layout="constrained")
+            ax = fig.subplots()
+            ax.plot(range(input.n()))
+            ax.callbacks.connect("xlim_changed", lambda ax: xlim.set(ax.get_xlim()))
+            return fig
+
+        @render.text
+        def visible():
+            lo, hi = xlim()
+            return f"Showing x from {lo:.1f} to {hi:.1f}"
+
+
+    app = App(app_ui, server)
+    ```
     """
 
 

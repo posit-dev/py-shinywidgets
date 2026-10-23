@@ -88,4 +88,103 @@ class Throttler {
 }
 
 
-export { base64EncodeBuffers, jsonParse, Throttler };
+// itables' widget bundle assigns its own jQuery to the global `$` when its module is
+// evaluated (which can happen at any point after page load, e.g., for an ITable nested
+// in another widget). That breaks code that expects the page's jQuery (e.g., bslib's
+// resize handling reads `$(el).data("shinyOutputBinding")`). `window.jQuery` is left
+// alone by the bundle, so make `$` mirror it, but refuse jQuery instances assigned to
+// `$` (anything else, e.g., `var $ = ...`, is honored). The server asks for this
+// (`protect_jquery`) only when opening an itables model, before its module loads.
+let pageJQueryProtected = false;
+let restoreWatchdogId: number | undefined;
+
+function protectPageJQuery(): void {
+  if (pageJQueryProtected) return;
+
+  const win = window as Window & { $?: unknown; jQuery?: unknown };
+  // Keep a non-jQuery `$` that is already in place (e.g., after noConflict())
+  const current = win.$;
+  let hasOverride = current !== win.jQuery && !isJQuery(current);
+  let override: unknown = hasOverride ? current : undefined;
+
+  const descriptor = Object.getOwnPropertyDescriptor(win, '$');
+  if (descriptor && !descriptor.configurable) {
+    // A classic script that ran `var $` before jQuery loaded leaves `$`
+    // non-configurable, so no accessor can be installed on it (and freezing it
+    // would make itables' own strict-mode `window.$ = ...` write throw, breaking
+    // its model). itables' bundle assigns `$` when its module evaluates, which
+    // can happen outside any hook we own (anywidget imports its `_esm` blob in
+    // a reactive effect), so repair the binding on a low-frequency watchdog
+    // instead of intercepting the write.
+    if (restoreWatchdogId === undefined) {
+      restoreWatchdogId = window.setInterval(restorePageJQuery, 250);
+    }
+    return;
+  }
+
+  try {
+    Object.defineProperty(win, '$', {
+      configurable: true,
+      enumerable: true,
+      get: () => (hasOverride ? override : win.jQuery),
+      set: (value: unknown) => {
+        if (isJQuery(value)) {
+          if (value === win.jQuery) {
+            // Restoring the page jQuery (e.g., after noConflict()) clears the override
+            hasOverride = false;
+            override = undefined;
+            return;
+          }
+          // itables evaluates JavascriptCode options against the global `$` (e.g., its
+          // documented `$.fn.dataTable.render.number(...)`), so lend the refused jQuery's
+          // DataTables plugin to the page jQuery
+          lendDataTables(value as JQueryLike, win.jQuery as JQueryLike | undefined);
+          // Refused: keep the current binding (a pre-existing non-jQuery `$`, e.g.,
+          // one established before itables loaded, survives the refused write)
+          return;
+        }
+        hasOverride = true;
+        override = value;
+      },
+    });
+  } catch {
+    // An unprotectable `$` must not abort model initialization
+    return;
+  }
+  pageJQueryProtected = true;
+}
+
+type JQueryLike = { fn: { dataTable?: unknown; DataTable?: unknown } };
+
+function lendDataTables(from: JQueryLike, to: JQueryLike | undefined): void {
+  if (!to || !to.fn || !from.fn.dataTable || to.fn.dataTable) return;
+  to.fn.dataTable = from.fn.dataTable;
+  to.fn.DataTable = from.fn.DataTable;
+}
+
+function isJQuery(value: unknown): boolean {
+  const fn = (value as { fn?: { jquery?: unknown } } | undefined)?.fn;
+  return typeof value === 'function' && typeof fn?.jquery === 'string';
+}
+
+// Repair pass for when protectPageJQuery() couldn't install its accessor (a
+// non-configurable `$`): lend the DataTables plugin from a foreign jQuery that
+// took over `$` (i.e., itables' bundle) to the page jQuery, then put the page
+// jQuery back.
+function restorePageJQuery(): void {
+  const win = window as Window & { $?: unknown; jQuery?: unknown };
+  const current = win.$;
+  if (!isJQuery(current) || current === win.jQuery) return;
+  lendDataTables(current as JQueryLike, win.jQuery as JQueryLike | undefined);
+  win.$ = win.jQuery;
+}
+
+export {
+  base64EncodeBuffers,
+  isJQuery,
+  jsonParse,
+  lendDataTables,
+  protectPageJQuery,
+  restorePageJQuery,
+  Throttler,
+};
