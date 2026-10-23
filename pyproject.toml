@@ -45,6 +45,7 @@ holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
 ipydatagrid = ["ipydatagrid"]
+ipyleaflet = ["ipyleaflet>=0.20.0"]
 itables = ["itables[widget]"]
 jscatter = ["jupyter-scatter"]
 # An explicit pre-release specifier, so uv/pip accept it without --pre.
