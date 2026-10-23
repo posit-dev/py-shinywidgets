@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Browser, Page, expect
 from tests.playwright.conftest import (
     CANVAS_HAS_PIXELS_JS,
     assert_no_unexpected_errors,
@@ -187,6 +187,53 @@ def test_ipycanvas_image_transport(page: Page, local_app) -> None:
     print(f"\nput_image_data (300x200 RGBA noise) click-to-pixels: {elapsed_ms:.0f} ms")
 
     assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_ipycanvas_draw_commands_stay_in_own_session(
+    browser: Browser, local_app
+) -> None:
+    # The per-canvas draw-command manager exists to keep one session's draws
+    # from leaking into another's canvas (ipycanvas's own manager is a
+    # module-level singleton shared by every session). Two pages on the same
+    # app = two Shiny sessions.
+    page_a = browser.new_page()
+    try:
+        errors_a, failed_a = collect_errors(page_a)
+        page_a.goto(local_app.url)
+        expect(page_a.locator(CANVAS)).to_have_count(1, timeout=30000)
+        page_a.wait_for_function(CANVAS_HAS_PIXELS_JS, arg="#canvas", timeout=30000)
+
+        page_b = browser.new_page()
+        try:
+            errors_b, failed_b = collect_errors(page_b)
+            page_b.goto(local_app.url)
+            expect(page_b.locator(CANVAS)).to_have_count(1, timeout=30000)
+            page_b.wait_for_function(CANVAS_HAS_PIXELS_JS, arg="#canvas", timeout=30000)
+
+            a_before = page_a.evaluate(TOP_LEFT_PIXELS_JS, CANVAS)
+            b_before = page_b.evaluate(TOP_LEFT_PIXELS_JS, CANVAS)
+
+            # Draw (a full-canvas random-noise image) in session A and wait
+            # for it to land on A's canvas
+            page_a.click("#draw_image")
+            page_a.wait_for_function(
+                f"(sel) => {{ const f = {TOP_LEFT_PIXELS_JS}; return f(sel) !== null && f(sel) !== {a_before}; }}",
+                arg=CANVAS,
+                timeout=30000,
+            )
+
+            # Give any leaked command ample time to arrive, then assert B's
+            # canvas is untouched (the animation strip is excluded from the
+            # fingerprint, so B's own animation can't trip this)
+            time.sleep(2)
+            assert page_b.evaluate(TOP_LEFT_PIXELS_JS, CANVAS) == b_before
+
+            assert_no_unexpected_errors(errors_b, failed_b)
+        finally:
+            page_b.close()
+        assert_no_unexpected_errors(errors_a, failed_a)
+    finally:
+        page_a.close()
 
 
 def test_ipycanvas_rerender_lifecycle(page: Page, local_app) -> None:
