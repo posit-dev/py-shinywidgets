@@ -1,3 +1,2 @@
 shiny
-shinywidgets
-ipyleaflet
+shinywidgets[ipyleaflet]
