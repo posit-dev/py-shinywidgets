@@ -1,0 +1,4 @@
+shiny
+shinywidgets[jscatter]
+numpy
+pandas

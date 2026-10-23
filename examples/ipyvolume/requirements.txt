@@ -1,5 +1,3 @@
 shiny
-shinywidgets
-ipyvolume
-ipython_genutils
+shinywidgets[ipyvolume]
 numpy

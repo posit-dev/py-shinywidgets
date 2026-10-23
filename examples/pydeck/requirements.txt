@@ -1,6 +1,5 @@
 shiny
-shinywidgets
+shinywidgets[maplibre]
 pydeck
-maplibre[anywidget]
 numpy
 pandas
