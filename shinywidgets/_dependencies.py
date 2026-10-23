@@ -5,7 +5,7 @@ import re
 import tempfile
 import warnings
 from types import ModuleType
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import packaging.version
 from htmltools import HTMLDependency, tags
@@ -108,7 +108,9 @@ def require_dependency(
     for sibling, global_name in SIBLING_REQUIRE_MODULES.get(module_name, {}).items():
         paths[sibling] = os.path.join(href, sibling)
         shim[sibling] = {"exports": global_name}
-    config = {"paths": paths, "shim": shim}
+    config: Dict[str, Any] = {"paths": paths}
+    if shim:
+        config["shim"] = shim
     # Basically our equivalent of the extension.js file provided by the cookiecutter
     # https://github.com/jupyter-widgets/widget-cookiecutter/blob/master/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js
     return HTMLDependency(
@@ -127,6 +129,10 @@ def require_dependency(
 # <baseUrl>/<id>.js (a 404). The sibling is a UMD bundle, and shiny's
 # define-shim leaves define.amd falsy, so it only sets a window global; the
 # require.js shim config adopts that global as the module's value.
+# N.B. require.config() is global to the page, so once such a widget renders,
+# any other widget require()ing the bare sibling id gets this module's bundle
+# (e.g., pythreejs's three.js r97) -- fine today, since every shipped renderer
+# that needs three.js bundles its own.
 SIBLING_REQUIRE_MODULES = {
     "jupyter-threejs": {"three": "THREE"},
 }

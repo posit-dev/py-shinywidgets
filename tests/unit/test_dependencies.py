@@ -200,6 +200,8 @@ def test_require_dependency_extension_found_returns_dependency(
     assert "window.require.config(" in head
     assert "some-widget-module" in head
     assert "/lib/some-widget-module-1.2.3/index" in head
+    # No sibling modules to shim (see SIBLING_REQUIRE_MODULES)
+    assert '"shim"' not in head
 
 
 def test_require_dependency_maps_sibling_modules(
