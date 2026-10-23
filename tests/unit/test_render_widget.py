@@ -215,6 +215,11 @@ def test_render_matplotlib_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_perspective_is_render_widget_base() -> None:
+    renderer = rw.render_perspective()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_quak_is_render_widget_base() -> None:
     renderer = rw.render_quak()
     assert isinstance(renderer, rwb.render_widget_base)
@@ -385,6 +390,7 @@ def test_import_shinywidgets_without_optional_deps() -> None:
         "matplotlib",
         "mosaic_widget",
         "panel",
+        "perspective",
         "plotly",
         "plotnine",
         "pydeck",

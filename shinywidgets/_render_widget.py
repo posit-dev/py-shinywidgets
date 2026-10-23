@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from maplibre.ipywidget import MapWidget
     from maplibre.map import Map as MaplibreMap
     from mosaic_widget import MosaicWidget
+    from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
     from quak import Widget as QuakWidget
@@ -41,7 +42,7 @@ else:
     ) = base = LeafletMap = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
-    ) = QuakWidget = object
+    ) = QuakWidget = PerspectiveWidget = object
 
 from shiny.render.renderer import ValueFn
 
@@ -49,6 +50,7 @@ from ._as_widget import (
     PYDECK_NO_WIDGET_MESSAGE,
     as_widget_panel,
     networkx_to_sigma,
+    perspective_widget,
     pydeck_has_widget,
 )
 from ._bokeh import _bokeh_dependency
@@ -96,6 +98,7 @@ __all__ = (
     "render_matplotlib",
     "render_mosaic_widget",
     "render_panel",
+    "render_perspective",
     "render_plotly",
     "render_plotnine",
     "render_pydeck",
@@ -1284,6 +1287,74 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
         res = super().auto_output_ui()
         res.children.append(_bokeh_dependency())
         return res
+
+
+class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
+    """
+    Reactively render a [perspective](https://perspective-dev.github.io) viewer as a
+    Shiny output.
+
+    The decorated function may return a `pandas` or `polars` DataFrame or a
+    `perspective.Table` (both are coerced to a `perspective.widget.PerspectiveWidget`;
+    requires ``pip install 'shinywidgets[perspective]'``), or a
+    `perspective.widget.PerspectiveWidget` widget. A pandas index becomes an ``index``
+    column.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `PerspectiveWidget` instance. Use `.widget` to programmatically update the rendered
+    viewer in place (e.g., `.widget.update()` streams new rows, and trait changes are
+    synced to the browser), or to reactively read widget state (e.g., `plugin`,
+    `group_by`, `sort`, or `filter`) with :func:`~shinywidgets.reactive_read`.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    Perspective keeps every table it hosts in memory for the life of the process, so a
+    table created from a DataFrame is not freed when the output re-renders. To change
+    the data, prefer updating the existing viewer in place: `.widget.update(df)`
+    appends rows (or upserts them, for a table with an ``index``), and
+    `.widget.clear()` followed by `.widget.update(df)` swaps them out.
+    (`.widget.replace()` also swaps rows, but as of perspective-python 5.6 it only
+    accepts records, a dict of columns, or Arrow IPC bytes, not a DataFrame.)
+
+    A viewer's browser can list, read, and write every table on its widget's
+    Perspective server. A DataFrame gets a server of its own, so other sessions
+    can't reach its data. Tables made with ``perspective.table()`` (and widgets made
+    with ``PerspectiveWidget(df)``) live on Perspective's process-wide server,
+    which every session's viewer can reach, so only use them for data that every
+    user may see and edit. For per-user data, create the table on a private server
+    instead: ``perspective.Server().new_local_client().table(df)``.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    def _as_widget(self, value: ValueT) -> PerspectiveWidget:
+        # DataFrames are generic types that other renderers accept too, so
+        # they can't be registered in AS_WIDGET_MAP. Checked by name (pandas and
+        # polars are optional) and through the MRO, so subclasses (e.g.,
+        # geopandas.GeoDataFrame, or an app-defined subclass) count too.
+        if any(
+            widget_pkg(cls) in ("pandas", "polars") and cls.__name__ == "DataFrame"
+            for cls in type(value).__mro__
+        ):
+            return perspective_widget(value)
+        return super()._as_widget(value)
 
 
 class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):

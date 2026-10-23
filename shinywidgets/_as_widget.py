@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from jupyter_bokeh import BokehModel
     from matplotlib.figure import Figure
     from panel.viewable import Viewable
+    from perspective.widget import PerspectiveWidget
 
     class PlotnineDrawable(Protocol):
         def draw(self, *, show: bool = False) -> Figure: ...
@@ -50,6 +51,7 @@ def as_widget(x: object) -> Widget:
     * matplotlib `Figure` or `Axes` (or a seaborn figure-level grid) ->
       `ipympl.backend_nbagg.Canvas`
     * panel pane/viewable -> bokeh model
+    * perspective `Table` -> `perspective.widget.PerspectiveWidget`
     * plotly `Figure` -> `plotly.graph_objects.FigureWidget`
     * plotnine `ggplot` (or plot composition) -> `ipympl.backend_nbagg.Canvas`
     * pydeck `Deck` -> `pydeck.widget.DeckGLWidget` (pydeck <= 0.8 only; pydeck
@@ -224,6 +226,38 @@ def as_widget_maplibre(x: object) -> Widget:
     res.map_options = dict(state["mapOptions"])
     res._message_queue = list(state["calls"])
     return res
+
+
+def as_widget_perspective(x: object) -> Optional[Widget]:
+    # perspective is guaranteed to be installed here since this function is only
+    # called when x comes from the perspective package
+    from perspective import Table
+
+    if not isinstance(x, Table):
+        raise TypeError(
+            f"Don't know how to coerce {x} into a perspective.widget.PerspectiveWidget object."
+        )
+
+    return perspective_widget(x)
+
+
+def perspective_widget(data: object) -> "PerspectiveWidget":
+    try:
+        from perspective.widget import PerspectiveWidget
+    except ImportError:
+        raise ImportError(
+            "Install the perspective-python package to use perspective with shinywidgets (pip install 'shinywidgets[perspective]')."
+        )
+    from perspective import Server, Table
+
+    if not isinstance(data, Table):
+        # PerspectiveWidget(data) would host the table on perspective.GLOBAL_SERVER,
+        # and the browser can open any table on its widget's server, so every
+        # session's viewer could read and write it. A server per widget keeps
+        # sessions' data apart.
+        data = Server().new_local_client().table(data)
+
+    return PerspectiveWidget(data)
 
 
 def networkx_to_sigma(x: object) -> Sigma:
@@ -601,6 +635,7 @@ AS_WIDGET_MAP = {
     "maplibre": as_widget_maplibre,
     "matplotlib": as_widget_mpl,
     "panel": as_widget_panel,
+    "perspective": as_widget_perspective,
     "plotly": as_widget_plotly,
     "plotnine": as_widget_plotnine,
     "pydeck": as_widget_pydeck,
