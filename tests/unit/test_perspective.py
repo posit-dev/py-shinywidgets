@@ -8,7 +8,7 @@ import shinywidgets._render_widget as rw
 from htmltools import HTMLDependency, TagChild, TagList
 from shiny import reactive
 from shiny.session import Session, session_context
-from shiny.session._session import RenderedDeps
+from shiny.session._utils import RenderedDeps
 from shinywidgets._as_widget import as_widget
 
 perspective = pytest.importorskip("perspective")
@@ -43,8 +43,10 @@ def test_render_perspective_accepts_dataframe(widget_session) -> None:
 
     assert res is not None
     assert isinstance(r.widget, PerspectiveWidget)
-    assert r.widget.table.size() == 3
-    assert {"a", "b"} <= set(r.widget.table.columns())
+    table = r.widget.table
+    assert table is not None
+    assert table.size() == 3
+    assert {"a", "b"} <= set(table.columns())
 
 
 def test_render_perspective_dataframes_are_private_to_their_widget(
@@ -60,11 +62,15 @@ def test_render_perspective_dataframes_are_private_to_their_widget(
 
     assert isinstance(a.widget, PerspectiveWidget)
     assert isinstance(b.widget, PerspectiveWidget)
-    a_name, b_name = a.widget.table.get_name(), b.widget.table.get_name()
+    a_table, b_table = a.widget.table, b.widget.table
+    assert a_table is not None and b_table is not None
+    a_name, b_name = a_table.get_name(), b_table.get_name()
     global_names = perspective.GLOBAL_CLIENT.get_hosted_table_names()
     assert a_name not in global_names and b_name not in global_names
-    assert a.widget.client.get_hosted_table_names() == [a_name]
-    assert b.widget.client.get_hosted_table_names() == [b_name]
+    a_client, b_client = a.widget.client, b.widget.client
+    assert a_client is not None and b_client is not None
+    assert a_client.get_hosted_table_names() == [a_name]
+    assert b_client.get_hosted_table_names() == [b_name]
 
 
 def test_render_perspective_accepts_polars_dataframe(widget_session) -> None:
@@ -73,7 +79,9 @@ def test_render_perspective_accepts_polars_dataframe(widget_session) -> None:
     with session_context(widget_session):
         assert render(r, pl.DataFrame({"a": [1, 2, 3]})) is not None
     assert isinstance(r.widget, PerspectiveWidget)
-    assert r.widget.table.size() == 3
+    table = r.widget.table
+    assert table is not None
+    assert table.size() == 3
 
 
 def test_render_perspective_accepts_table(widget_session) -> None:
