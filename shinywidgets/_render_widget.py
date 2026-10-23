@@ -196,6 +196,23 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
     ``.target``/``.fov`` properties (an astropy `SkyCoord`/`Angle`) parse these
     traits, but are not themselves traits, so they can't be read reactively.
 
+    **Updating in place**: ipyaladin queues method calls (e.g.,
+    ``.widget.add_table()``) until the viewer has loaded in the browser, but
+    property assignments (e.g., ``.widget.fov = 5``) are not queued, so gate
+    effects that set them on ``reactive_read(sky.widget, "_is_loaded")``. Don't
+    gate on the ``_ready`` trait instead: ipyaladin 0.8.1 never sets it.
+
+    **Interacting with catalogs**: clicking a catalog source syncs it to the
+    ``clicked_object`` trait, and box-selecting
+    (``.widget.selection("rectangle")``) syncs the sources inside to
+    ``_selected_objects`` — both work with
+    :func:`~shinywidgets.reactive_read`. Prefer these traits over
+    ``.widget.set_listener()``: in ipyaladin 0.8.x listener callbacks are
+    shared across all `Aladin` instances, so they are not session-safe in a
+    multi-user Shiny app. When setting ``.widget.target`` in place, use a
+    ``"ra dec"`` string or an astropy `SkyCoord` (a plain float tuple raises
+    in ipyaladin's setter).
+
     **Network access**: the viewer loads its JavaScript from a CDN and its sky
     imagery (HiPS tiles) from CDS servers at render time, so it requires an
     internet connection.
