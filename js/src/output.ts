@@ -360,7 +360,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
             : behavior;
         const setupSize = resolved?.[setupHook];
         if (!setupSize) return;
-        const cleanup = setupSize({ el, lmWidget, view, model });
+        const cleanup = setupSize({ el, lmWidget, view, model, widgetWantsFill: data.fill });
         if (cleanup) view.once("remove", cleanup);
       });
     }
@@ -370,6 +370,7 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
         lmWidget,
         view,
         model,
+        widgetWantsFill: data.fill,
         isStale: () => !this._isCurrentRenderToken(el, renderToken),
         dispatchResize: () => this._doResize(),
         reveal: () => {
