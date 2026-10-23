@@ -35,6 +35,7 @@ if TYPE_CHECKING:
         from embedding_atlas.widget import EmbeddingAtlasWidget
     else:
         from ipywidgets import Widget as EmbeddingAtlasWidget
+    from quak import Widget as QuakWidget
 else:
     JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = (
         BokehModel
@@ -43,7 +44,7 @@ else:
     ) = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
-    ) = object
+    ) = QuakWidget = object
 
 from shiny.render.renderer import ValueFn
 
@@ -93,6 +94,7 @@ __all__ = (
     "render_plotly",
     "render_plotnine",
     "render_pydeck",
+    "render_quak",
 )
 
 
@@ -1425,6 +1427,61 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
         if not pydeck_has_widget():
             raise TypeError(PYDECK_NO_WIDGET_MESSAGE)
         return super()._as_widget(value)
+
+
+class render_quak(render_widget_base[ValueT, QuakWidget]):
+    """
+    Reactively render a [quak](https://github.com/manzt/quak) data table as a Shiny
+    output.
+
+    The decorated function may return either a DataFrame-like object (e.g., a pandas
+    or polars `DataFrame`, or a pyarrow `Table`), which is coerced to a `quak.Widget`
+    (requires ``pip install 'shinywidgets[quak]'``), or a `quak.Widget`. In a filling
+    layout, the table grows to fit its container.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `quak.Widget` instance. Use `.widget` to reactively read the table's state with
+    :func:`~shinywidgets.reactive_read`: `reactive_read(table.widget, "sql")` is the
+    SQL query for the table's current sort and filter state, and
+    `table.widget.data()` runs it, returning a DuckDB relation of the matching rows.
+    The query is an empty string while the table starts up (so guard with
+    ``req(reactive_read(table.widget, "sql"))``), and it's read-only: setting it from
+    Python doesn't change the table.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    # DataFrames are a generic type that several renderers accept, so rather than
+    # registering them in AS_WIDGET_MAP, coerce them here
+    def _as_widget(self, value: ValueT) -> QuakWidget:
+        if isinstance(value, Widget):
+            return super()._as_widget(value)
+
+        try:
+            import quak
+        except ImportError:
+            raise ImportError(
+                "Install the quak package to use render_quak with shinywidgets (pip install 'shinywidgets[quak]')."
+            )
+
+        return quak.Widget(value)
 
 
 def dataframe_to_keplergl(df: pd.DataFrame) -> KeplerGl:
