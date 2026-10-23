@@ -9,6 +9,7 @@ from ipywidgets.widgets.widget import Widget
 if TYPE_CHECKING:
     import plotly.graph_objects as go
     from altair import JupyterChart
+    from ipyaladin import Aladin
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from jupyter_bokeh import BokehModel
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
@@ -20,7 +21,7 @@ else:
     JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
         object
     )
-    LonboardMap = object
+    Aladin = LonboardMap = object
 
 from shiny.render.renderer import ValueFn
 
@@ -46,6 +47,7 @@ __all__ = (
     "render_altair",
     "render_bokeh",
     "render_holoviews",
+    "render_ipyaladin",
     "render_lonboard",
     "render_maplibre",
     "render_matplotlib",
@@ -149,6 +151,56 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     **Offline use**: `JupyterChart` loads its JavaScript from a CDN; call
     ``alt.JupyterChart.enable_offline()`` (requires ``vl-convert-python``) for apps
     that run without internet access.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+
+class render_ipyaladin(render_widget_base[ValueT, Aladin]):
+    """
+    Reactively render an [ipyaladin](https://cds-astro.github.io/ipyaladin/) sky
+    viewer (Aladin Lite) as a Shiny output.
+
+    The decorated function should return an `ipyaladin.Aladin` widget (requires
+    ``pip install ipyaladin``). In a filling layout, the viewer fills its
+    container unless the `Aladin` has an explicit ``height`` (or its ``layout``
+    has an explicit height).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `Aladin` instance. Use `.widget` to programmatically update the rendered
+    viewer in place (e.g., ``.widget.target = "M31"`` or ``.widget.fov = 5``;
+    trait changes on the widget are synced to the browser), or to reactively read
+    viewer state with :func:`~shinywidgets.reactive_read`.
+
+    Note
+    ---
+    **Reactive state**: the viewer's center and field of view are synced from the
+    browser to the ``_target`` (a ``"ra dec"`` string, in degrees) and ``_fov``
+    (degrees) traits, so panning or zooming the sky can drive a reactive
+    calculation (e.g., ``reactive_read(sky.widget, "_target")``). The public
+    ``.target``/``.fov`` properties (an astropy `SkyCoord`/`Angle`) parse these
+    traits, but are not themselves traits, so they can't be read reactively.
+
+    **Network access**: the viewer loads its JavaScript from a CDN and its sky
+    imagery (HiPS tiles) from CDS servers at render time, so it requires an
+    internet connection.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Parameters
     ----------

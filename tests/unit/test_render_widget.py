@@ -9,6 +9,11 @@ from htmltools import HTMLDependency, div
 from shiny.session import session_context
 
 
+def test_render_ipyaladin_is_render_widget_base() -> None:
+    renderer = rw.render_ipyaladin()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_lonboard_is_render_widget_base() -> None:
     renderer = rw.render_lonboard()
     assert isinstance(renderer, rwb.render_widget_base)

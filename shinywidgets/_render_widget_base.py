@@ -331,6 +331,24 @@ def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def ipyaladin_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from ipyaladin import Aladin
+
+    if not isinstance(widget, Aladin):
+        return fill
+
+    # The viewer's root is styled `height: <_height>px` (400 by default), which
+    # shinywidgets.css sizes to the widget container instead, so a user-specified
+    # height has to go on the container. The default can't be told apart from an
+    # explicit 400, so treat it as unset (as maplibre_layout_defaults() does).
+    if widget._height != 400:  # pyright: ignore[reportAttributeAccessIssue]
+        fill = False
+        if widget.layout.height in (None, "auto"):
+            widget.layout.height = f"{widget._height}px"  # pyright: ignore[reportAttributeAccessIssue]
+
+    return fill
+
+
 def bokeh_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # Covers render_bokeh(), render_panel() and render_holoviews(): a bokeh root
     # that doesn't stretch vertically has a height of its own, so filling would
@@ -380,6 +398,7 @@ def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
+    "ipyaladin": ipyaladin_layout_defaults,
     "lonboard": lonboard_layout_defaults,
     "jupyter_bokeh": bokeh_layout_defaults,
     "maplibre": maplibre_layout_defaults,
