@@ -32,6 +32,7 @@ from ._render_widget import (
     render_mosaic_widget,
     render_panel,
     render_plotly,
+    render_plotnine,
     render_pydeck,
     render_widget,
 )
@@ -54,6 +55,7 @@ __all__ = (
     "render_mosaic_widget",
     "render_panel",
     "render_plotly",
+    "render_plotnine",
     "render_pydeck",
     # Reactive read second
     "reactive_read",

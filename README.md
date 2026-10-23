@@ -32,6 +32,7 @@ everything it needs:
 | `@render_mosaic_widget` | `pip install 'shinywidgets[mosaic_widget]'` |
 | `@render_panel` | `pip install 'shinywidgets[panel]'` |
 | `@render_plotly` | `pip install 'shinywidgets[plotly]'` |
+| `@render_plotnine` | `pip install 'shinywidgets[plotnine]'` |
 
 ## Development
 
