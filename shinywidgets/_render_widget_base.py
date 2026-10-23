@@ -299,7 +299,8 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 
     # Since as_widget() has already happened, we only need to handle JupyterChart
     if isinstance(widget, alt.JupyterChart):
-        chart = cast(alt.JupyterChart, widget).chart  # type: ignore
+        jchart = cast(alt.JupyterChart, widget)
+        chart = cast("alt.typing.ChartType | None", jchart.chart)
         if isinstance(chart, alt.ConcatChart):
             # Throw warning to use ui.layout_column_wrap() instead
             warnings.warn(
@@ -309,17 +310,30 @@ def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
             )
         else:
             UndefinedType = alt.utils.schemapi.UndefinedType  # type: ignore
+            sizing: dict[str, str] = {}
             if hasattr(chart, "width") and isinstance(chart.width, UndefinedType):  # type: ignore[reportMissingTypeStubs]
-                chart = chart.properties(width="container")  # type: ignore
+                sizing["width"] = "container"
             if hasattr(chart, "height") and isinstance(chart.height, UndefinedType):  # type: ignore[reportMissingTypeStubs]
-                chart = chart.properties(height="container")  # type: ignore
-        widget.chart = chart
+                sizing["height"] = "container"
+            if sizing and chart is not None:
+                # Reassigning `.chart` makes JupyterChart rebuild `.selections` and
+                # `.params`, orphaning observers the user attached before returning
+                # it, so patch the (vega-lite) spec instead. Check the spec itself
+                # (not the active transformer): a chart assigned under the
+                # vegafusion transformer has `.spec` set to None until the browser
+                # reports its timezone, and a pre-transformed vega spec afterwards,
+                # neither of which can be patched like this.
+                spec = cast("dict[str, object] | None", jchart.spec)
+                if isinstance(spec, dict) and "vega-lite" in str(spec.get("$schema")):
+                    jchart.spec = {**spec, **sizing}
+                else:
+                    jchart.chart = chart.properties(**sizing)
 
     return fill
 
 
 def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
-    from lonboard import Map
+    from lonboard import Map  # pyright: ignore[reportMissingImports]
 
     if not isinstance(widget, Map):
         return fill
@@ -335,10 +349,31 @@ def lonboard_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # user-specified height, on the other hand, gets overridden by that
     # min-height, so size the widget container to the map rather than to its
     # parent.
-    if widget.height not in (widget.trait_defaults("height"), "100%"):
+    # pyright can't narrow via isinstance() when lonboard isn't installed
+    # (e.g., Python 3.15)
+    if widget.height not in (widget.trait_defaults("height"), "100%"):  # pyright: ignore[reportAttributeAccessIssue]
         fill = False
         if widget.layout.height == "100%":
             widget.layout.height = "auto"
+
+    return fill
+
+
+def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from maplibre.ipywidget import MapWidget
+
+    if not isinstance(widget, MapWidget):
+        return fill
+
+    # The map's root element is styled `height: <height>` (shinywidgets.css
+    # sizes it to the widget container instead), so a user-specified height has
+    # to go on the container. The default (MapWidget.__init__()'s 400) can't be
+    # told apart from an explicit 400, so treat it as unset, as with a
+    # percentage (which is relative to the container anyway).
+    if widget.height != "400px" and not str(widget.height).endswith("%"):
+        fill = False
+        if widget.layout.height in (None, "auto"):
+            widget.layout.height = widget.height
 
     return fill
 
@@ -357,6 +392,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "altair": _altair_layout_defaults,
     "jscatter": jscatter_layout_defaults,
     "lonboard": lonboard_layout_defaults,
+    "maplibre": maplibre_layout_defaults,
 }
 
 

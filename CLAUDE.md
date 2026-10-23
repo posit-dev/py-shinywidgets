@@ -17,9 +17,9 @@ cd js && yarn install && yarn watch
 
 ## Common Commands
 
-- **Type checking**: `make pyright` (or `make py-check-types`)
-- **Linting/formatting check**: `make py-check-format`
-- **Auto-format**: `make py-format`
+- **Type checking**: `make pyright` (or `make check-types`)
+- **Linting/formatting check**: `make check-format`
+- **Auto-format**: `make format`
 - **Full quality check**: `make check` (format + types + unit tests)
 - **Unit tests**: `make test` (or `make test-unit`)
 - **Run a single test**: `uv run pytest tests/unit/test_foo.py::test_name`
@@ -61,7 +61,7 @@ Not all visualization objects are ipywidgets. `as_widget()` converts:
 - **altair**: Chart -> `altair.JupyterChart`
 - **bokeh**: Figure -> `jupyter_bokeh.BokehModel`
 - **plotly**: `go.Figure` -> `go.FigureWidget`
-- **pydeck**: Deck -> `DeckGLWidget` (via `.show()`)
+- **pydeck**: Deck -> `DeckGLWidget` (via `.show()`), pydeck <= 0.8 only. pydeck >= 0.9 has no widget, so `as_widget_pydeck` raises a `TypeError` pointing to `render_maplibre` + `pdk.Layer`, and `init_shiny_widget` ignores the `DeckGLWidget`s pydeck still constructs. `render_pydeck` is deprecated.
 
 ### Dependencies (`_dependencies.py`)
 

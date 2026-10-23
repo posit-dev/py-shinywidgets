@@ -5,9 +5,15 @@ import json
 import subprocess
 import sys
 
+import pytest
+
+pytest.importorskip(
+    "lonboard",
+    reason="lonboard isn't installed (e.g., it lacks wheels for this Python version)",
+)
+
 import geoarrow.rust.core as gr
 import numpy as np
-import pytest
 from arro3.core import Table
 from lonboard import Map, ScatterplotLayer
 from lonboard.controls import FullscreenControl
