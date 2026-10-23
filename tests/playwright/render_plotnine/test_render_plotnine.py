@@ -12,27 +12,31 @@ from tests.playwright.conftest import (
 )
 
 # Sizes (CSS px) of an output, its ipympl figure canvas, and the widget's
-# chrome below the canvas (the footer, which shows cursor coordinates)
+# chrome around the canvas: the footer (which shows cursor coordinates) and
+# the canvas div's vertical margins (which mpl auto-resize subtracts from the
+# space it gives the figure, so they're part of the output's height budget)
 BOXES_JS = """(sel) => {
   const out = document.querySelector(sel);
   const canvas = out && out.querySelector('.jupyter-matplotlib-canvas-div canvas');
   if (!canvas) return null;
   const footer = out.querySelector('.jupyter-matplotlib-footer');
+  const style = getComputedStyle(canvas.closest('.jupyter-matplotlib-canvas-div'));
   const o = out.getBoundingClientRect();
   const c = canvas.getBoundingClientRect();
   return {
     output: [o.width, o.height],
     canvas: [c.width, c.height],
     footer: footer ? footer.getBoundingClientRect().height : 0,
+    vmargin: parseFloat(style.marginTop) + parseFloat(style.marginBottom),
   };
 }"""
 
-# True once the figure canvas spans the output (less the footer) within 2px
+# True once the figure canvas spans the output (less the chrome) within 2px
 FILLS_JS = f"""(sel) => {{
   const b = ({BOXES_JS})(sel);
   return !!b
     && Math.abs(b.canvas[0] - b.output[0]) <= 2
-    && Math.abs(b.canvas[1] + b.footer - b.output[1]) <= 2;
+    && Math.abs(b.canvas[1] + b.footer + b.vmargin - b.output[1]) <= 2;
 }}"""
 
 
@@ -108,7 +112,8 @@ def test_plotnine_hover_does_not_clip_plot(page: Page, local_app) -> None:
 
     boxes = page.evaluate(BOXES_JS, "#plot")
     assert boxes["footer"] == 0, boxes
-    assert abs(boxes["canvas"][1] - boxes["output"][1]) <= 2, boxes
+    canvas_bottom = boxes["canvas"][1] + boxes["vmargin"]
+    assert abs(canvas_bottom - boxes["output"][1]) <= 2, boxes
 
     assert_no_unexpected_errors(errors, failed_requests)
 
