@@ -21,6 +21,7 @@ from ._output_widget import output_widget
 from ._render_widget import (
     render_altair,
     render_bokeh,
+    render_bqplot,
     render_embedding_atlas,
     render_holoviews,
     render_ipyaladin,
@@ -48,6 +49,7 @@ __all__ = (
     "render_altair",
     "render_bokeh",
     "render_embedding_atlas",
+    "render_bqplot",
     "render_holoviews",
     "render_ipyaladin",
     "render_ipycanvas",

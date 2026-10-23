@@ -43,6 +43,7 @@ altair = ["altair>=5.1"]
 bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 # embedding-atlas requires Python 3.11+, so it's not installable on 3.10
 embedding_atlas = ["embedding-atlas>=0.26; python_version >= '3.11'"]
+bqplot = ["bqplot"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
@@ -65,6 +66,7 @@ plotnine = ["plotnine", "ipympl"]
 test = [
   "altair",
   "bokeh",
+  "bqplot",
   "coverage>=7",
   # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
   # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
@@ -105,6 +107,7 @@ test = [
 dev = [
   "altair",
   "bokeh",
+  "bqplot",
   "coverage>=7",
   # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
   # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
@@ -148,6 +151,7 @@ dev = [
 test = [
   "altair",
   "bokeh",
+  "bqplot",
   "coverage>=7",
   # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
   # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
