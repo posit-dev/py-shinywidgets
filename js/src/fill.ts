@@ -3,6 +3,7 @@ import { setupJscatterAutoHeight, setupJscatterFixedHeight } from './jscatter';
 import { setupKeplerAutoHeight } from './keplergl';
 import { setupMplAutoResize } from './mpl';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
+import { setupQuakFit } from './quak';
 
 /**
  * Per-package fill/resize behavior for widget outputs, keyed by `widget_pkg`
@@ -81,17 +82,9 @@ const plotlyBehavior: WidgetBehavior = {
   },
 };
 
-// In most cases, we can get widgets to fill through Python/CSS, but quak
-// doesn't have a Python API and uses shadow DOM, which can only be accessed
-// from JS
 const quakBehavior: WidgetBehavior = {
-  setupFill: ({ lmWidget }) => {
-    const impl = lmWidget.children[0] as HTMLElement | undefined;
-    const quakWidget = impl?.shadowRoot?.querySelector('.quak') as HTMLElement | null;
-    if (!impl || !quakWidget) return;
-    impl.classList.add('html-fill-container', 'html-fill-item');
-    quakWidget.style.maxHeight = 'unset';
-  },
+  setupFill: ({ el, lmWidget }) => setupQuakFit(el, lmWidget, true),
+  setupFixedSize: ({ el, lmWidget }) => setupQuakFit(el, lmWidget, false),
 };
 
 // kepler.gl's size comes from a pixel `height` trait, so it needs to be driven
@@ -104,10 +97,30 @@ const keplerglBehavior: WidgetBehavior = {
   },
 };
 
+// shinywidgets.css sizes an ipyleaflet map to its (non-filling) output's
+// definite height via flex layout, unless the map has an explicit
+// `Layout(height=...)` (an inline style), which takes precedence. A CSS
+// attribute selector can't tell an inline `height:` apart from `min-height:`/
+// `max-height:`, so track the explicit height with a class instead. Exported
+// so output.ts can also apply it to Map subclasses (their widget_pkg is the
+// subclass's package, not "ipyleaflet").
+export const ipyleafletBehavior: WidgetBehavior = {
+  setupFixedSize: ({ lmWidget }) => {
+    if (!lmWidget.classList.contains('leaflet-widgets')) return;
+    const sync = () =>
+      lmWidget.classList.toggle('shinywidgets-explicit-height', lmWidget.style.height !== '');
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(lmWidget, { attributes: true, attributeFilter: ['style'] });
+    return () => observer.disconnect();
+  },
+};
+
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
   jscatter: jscatterBehavior,
   keplergl: keplerglBehavior,
   plotly: plotlyBehavior,
   quak: quakBehavior,
+  ipyleaflet: ipyleafletBehavior,
 };
