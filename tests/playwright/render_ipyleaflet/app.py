@@ -48,41 +48,41 @@ def server(input, output, session):
     @render_ipyleaflet
     def lmap():
         n = counter.get()
-        m = L.Map(center=(52 + n, 360 - n), zoom=4)
-        m.add(L.Marker(location=(52 + n, 360 - n)))
+        m = L.Map(center=(52 + n, -n), zoom=4)
+        m.add(L.Marker(location=(52 + n, -n)))
         return m
 
     @render_ipyleaflet
     def map_output_height():
-        return L.Map(center=(52, 360), zoom=4)
+        return L.Map(center=(52, 0), zoom=4)
 
     @render_ipyleaflet
     def map_small_card():
-        return L.Map(center=(52, 360), zoom=4)
+        return L.Map(center=(52, 0), zoom=4)
 
     @render_ipyleaflet
     def map_tall():
-        return L.Map(center=(52, 360), zoom=4)
+        return L.Map(center=(52, 0), zoom=4)
 
     @render_ipyleaflet
     def map_layout_height():
-        return L.Map(center=(52, 360), zoom=4, layout=Layout(height="250px"))
+        return L.Map(center=(52, 0), zoom=4, layout=Layout(height="250px"))
 
     @render_ipyleaflet
     def map_auto_height():
-        return L.Map(center=(52, 360), zoom=4)
+        return L.Map(center=(52, 0), zoom=4)
 
     @render_ipyleaflet
     def map_layout_in_output_height():
-        return L.Map(center=(52, 360), zoom=4, layout=Layout(height="250px"))
+        return L.Map(center=(52, 0), zoom=4, layout=Layout(height="250px"))
 
     @render_ipyleaflet
     def map_min_height_in_output():
-        return L.Map(center=(52, 360), zoom=4, layout=Layout(min_height="100px"))
+        return L.Map(center=(52, 0), zoom=4, layout=Layout(min_height="100px"))
 
     @render_ipyleaflet
     def map_subclass_layout_height():
-        return MyMap(center=(52, 360), zoom=4, layout=Layout(height="250px"))
+        return MyMap(center=(52, 0), zoom=4, layout=Layout(height="250px"))
 
     @render.text
     def zoom_text():

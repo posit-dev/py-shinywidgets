@@ -11,7 +11,7 @@ with ui.sidebar():
 
 @render_ipyleaflet
 def lmap():
-    return L.Map(center=(52, 360), zoom=4)
+    return L.Map(center=(52, 0), zoom=4)
 
 # When the slider changes, update the map's zoom attribute
 @reactive.Effect
