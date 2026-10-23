@@ -47,6 +47,11 @@ export function setupIpyvolumeAutoResize(
       model.set('width', w);
       model.set('height', h);
       model.save_changes();
+      // The toolbar's height can still be settling when a container resize
+      // fires (e.g., the transition out of a card's fullscreen mode), and no
+      // further event corrects a measurement taken mid-transition --
+      // re-measure once after such transitions have finished
+      setTimeout(resizeToFit, 350);
     });
   };
 
