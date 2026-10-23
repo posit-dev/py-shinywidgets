@@ -370,6 +370,40 @@ def test_as_widget_maplibre_real_map_widget(monkeypatch: pytest.MonkeyPatch) -> 
     assert res._message_queue == m.to_dict()["calls"]
 
 
+def test_as_widget_maplibre_does_not_share_state_with_map(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A module-level Map is coerced once per session/render, so widget calls
+    # (queued until the browser renders the map) must not leak back into it.
+    pytest.importorskip("maplibre")
+    pytest.importorskip("anywidget")
+
+    import shinywidgets._shinywidgets as sw
+
+    monkeypatch.setattr(sw, "get_current_session", lambda: StubSession())
+
+    from maplibre import Map
+    from maplibre.ipywidget import MapWidget
+
+    m = Map()
+    m.add_source(
+        "src",
+        {"type": "geojson", "data": {"type": "FeatureCollection", "features": []}},
+    )
+    calls_before = list(m._message_queue)
+    options_before = dict(m.map_options)
+
+    res = as_widget(m)
+    assert isinstance(res, MapWidget)
+    assert res._message_queue is not m._message_queue
+    assert res.map_options is not m.map_options
+
+    res.add_call("flyTo", {"zoom": 3})
+    res.map_options["zoom"] = 3
+    assert m._message_queue == calls_before
+    assert m.map_options == options_before
+
+
 def test_as_widget_mpl_real_ipympl_canvas(monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("matplotlib")
     pytest.importorskip("ipympl")
@@ -437,6 +471,13 @@ def test_as_widget_mpl_non_pyplot_figure_retirement_is_noop(
         context.invalidate()
 
 
+@pytest.fixture
+def pydeck_08(monkeypatch: pytest.MonkeyPatch) -> None:
+    pydeck = pytest.importorskip("pydeck")
+    monkeypatch.setattr(pydeck, "__version__", "0.8.0")
+
+
+@pytest.mark.usefixtures("pydeck_08")
 def test_as_widget_pydeck_missing_show_errors() -> None:
     class NoShow:
         __module__ = "pydeck.mod"
@@ -445,20 +486,19 @@ def test_as_widget_pydeck_missing_show_errors() -> None:
         as_widget_pydeck(NoShow())
 
 
-def test_as_widget_pydeck_show_returning_non_widget_explains() -> None:
+@pytest.mark.usefixtures("pydeck_08")
+def test_as_widget_pydeck_show_returning_non_widget_errors() -> None:
     class Deck:
         __module__ = "pydeck.mod"
 
         def show(self):
             return "not-a-widget"
 
-    with pytest.raises(TypeError) as excinfo:
+    with pytest.raises(TypeError, match=r"Deck\.show\(\) to return an ipywidget"):
         as_widget_pydeck(Deck())
-    msg = str(excinfo.value)
-    assert "pydeck v0.9 removed ipywidgets support" in msg
-    assert "@render.ui" in msg
 
 
+@pytest.mark.usefixtures("pydeck_08")
 def test_as_widget_pydeck_show_returning_widget_succeeds() -> None:
     class Deck:
         __module__ = "pydeck.mod"
