@@ -63,7 +63,7 @@ def init_shiny_widget(w: Widget):
         return
     session = get_current_session()
     if session is None:
-        if importing_lonboard():
+        if importing_lonboard() or importing_ipycanvas():
             return
         raise RuntimeError(
             "shinywidgets requires that all ipywidgets be constructed within an active Shiny session"
@@ -211,6 +211,8 @@ def init_shiny_widget(w: Widget):
             **open_keys,
         )
 
+        flush_ipycanvas_manager(w)
+
     # If the widget initialized in a reactive _output_ context, then cleanup the widget
     # when the context gets invalidated. Use the render output's Context (captured by
     # WidgetRenderContext) rather than the current Context, because the widget may be
@@ -239,6 +241,16 @@ def init_shiny_widget(w: Widget):
     # Keep track of what session this widget belongs to (so we can close it when the
     # session ends)
     SESSION_WIDGET_ID_MAP.setdefault(session.id, []).append(id)
+
+    # ipycanvas canvases route their draw commands through a module-level
+    # manager widget (shared by every canvas in the process), so swap in a
+    # per-canvas one before anything walks or serializes the widget tree. This
+    # must happen after _open_shiny_comm was registered above: the manager's
+    # own comm then opens after this widget's (effects flush FIFO within a
+    # priority), so the manager's initial commands can safely reference this
+    # widget's model.
+    if any(widget_pkg(cls) == "ipycanvas" for cls in type(w).__mro__):
+        own_ipycanvas_manager(w)
 
     # Some widget's JS make external requests for static files (e.g.,
     # ipyleaflet markers) under this resource path. Note that this assumes that
@@ -271,6 +283,67 @@ def importing_lonboard() -> bool:
     lonboard = sys.modules.get("lonboard")
     # lonboard.Map is only bound once its class body has finished executing
     return lonboard is not None and not hasattr(lonboard, "Map")
+
+
+def importing_ipycanvas() -> bool:
+    """
+    Is ipycanvas's `canvas` module executing (i.e., is ipycanvas mid-import)?
+
+    Importing ipycanvas constructs a module-level `_CanvasManager` widget
+    (which relays every canvas's draw commands to the browser) outside any
+    session. It's shared by every canvas, so it can't belong to a session
+    anyway: `own_ipycanvas_manager()` swaps it for a per-canvas copy before
+    display.
+    """
+    canvas_mod = sys.modules.get("ipycanvas.canvas")
+    # _CANVAS_MANAGER is only bound once canvas.py has finished executing
+    return canvas_mod is not None and not hasattr(canvas_mod, "_CANVAS_MANAGER")
+
+
+def own_ipycanvas_manager(w: Widget) -> None:
+    """
+    Give an ipycanvas canvas its own draw-command manager.
+
+    Every canvas's `_canvas_manager` trait defaults to a module-level
+    `_CanvasManager`, constructed when ipycanvas was imported (outside any
+    session, so it has no comm, and it would leak one session's draw commands
+    into another's browser). Replace it with a fresh manager, constructed here
+    (inside the session, so it gets a comm of its own) before the canvas's
+    initial state is serialized. The manager caches commands until its comm
+    opens (see flush_ipycanvas_manager()), since drawing commands sent before
+    then (e.g., while the render function is still running) would otherwise
+    be silently dropped.
+
+    Note this means `ipycanvas.hold_canvas()` (which batches commands by
+    toggling the shared manager) has no effect under shinywidgets: drawing
+    still works, but each command is sent individually.
+    """
+    canvas_mod = sys.modules.get("ipycanvas.canvas")
+    shared = getattr(canvas_mod, "_CANVAS_MANAGER", None) if canvas_mod else None
+    if shared is None:
+        return
+    if getattr(w, "_canvas_manager", None) is not shared:
+        return
+    setattr(w, "_canvas_manager", type(shared)(caching=True))
+
+
+def flush_ipycanvas_manager(w: Widget) -> None:
+    """
+    Flush an ipycanvas draw-command manager whose comm just opened.
+
+    Managers made by own_ipycanvas_manager() cache their commands (so drawing
+    that happens before the comm opens isn't lost); now that the browser can
+    receive them, send the backlog and go back to sending each command as it
+    comes.
+    """
+    if widget_pkg(w) != "ipycanvas":
+        return
+    if not getattr(w, "_caching", False):
+        return
+    # flush() is a no-op unless _caching is set, so flush the backlog before
+    # turning caching off (the order hold_canvas() uses)
+    w.flush()  # type: ignore
+    setattr(w, "_caching", False)
 
 
 def is_unused_pydeck_widget(w: Widget) -> bool:

@@ -9,6 +9,11 @@ from htmltools import HTMLDependency, div
 from shiny.session import session_context
 
 
+def test_render_ipycanvas_is_render_widget_base() -> None:
+    renderer = rw.render_ipycanvas()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_lonboard_is_render_widget_base() -> None:
     renderer = rw.render_lonboard()
     assert isinstance(renderer, rwb.render_widget_base)
@@ -94,6 +99,7 @@ def test_import_shinywidgets_without_optional_deps() -> None:
         "bokeh",
         "holoviews",
         "hvplot",
+        "ipycanvas",
         "jupyter_bokeh",
         "ipympl",
         "maplibre",

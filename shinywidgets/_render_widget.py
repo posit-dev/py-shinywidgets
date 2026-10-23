@@ -9,6 +9,8 @@ from ipywidgets.widgets.widget import Widget
 if TYPE_CHECKING:
     import plotly.graph_objects as go
     from altair import JupyterChart
+    from ipycanvas import Canvas as IpycanvasCanvas
+    from ipycanvas import MultiCanvas, MultiRoughCanvas, RoughCanvas
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from jupyter_bokeh import BokehModel
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
@@ -20,7 +22,9 @@ else:
     JupyterChart = MplCanvas = BokehModel = MapWidget = FigureWidget = DeckGLWidget = (
         object
     )
-    LonboardMap = object
+    IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = LonboardMap = (
+        object
+    )
 
 from shiny.render.renderer import ValueFn
 
@@ -40,12 +44,20 @@ if TYPE_CHECKING:
 PlotlyValueT = TypeVar("PlotlyValueT", bound="PlotlyValue")
 # MapWidget subclasses maplibre.Map, so this bound covers both.
 MaplibreValueT = TypeVar("MaplibreValueT", bound="MaplibreMap")
+# String bound for the same reason as PlotlyValueT (ipycanvas is optional).
+# The canvas classes are all widgets and there's no coercion, so this bounds
+# both the render function's value and the rendered widget.
+IpycanvasCanvasT = TypeVar(
+    "IpycanvasCanvasT",
+    bound="Union[IpycanvasCanvas, MultiCanvas, RoughCanvas, MultiRoughCanvas]",
+)
 
 __all__ = (
     "render_widget",
     "render_altair",
     "render_bokeh",
     "render_holoviews",
+    "render_ipycanvas",
     "render_lonboard",
     "render_maplibre",
     "render_matplotlib",
@@ -224,6 +236,70 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         else:
             m = lonboard.viz(value)
         return super()._as_widget(cast(ValueT, m))
+
+
+class render_ipycanvas(render_widget_base[IpycanvasCanvasT, IpycanvasCanvasT]):
+    """
+    Reactively render an [ipycanvas](https://ipycanvas.readthedocs.io) canvas as a
+    Shiny output.
+
+    The decorated function may return an `ipycanvas.Canvas`, `ipycanvas.MultiCanvas`,
+    `ipycanvas.RoughCanvas`, or `ipycanvas.MultiRoughCanvas` widget (requires ``pip
+    install ipycanvas``). The canvas keeps its pixel ``width``/``height`` (which are
+    drawing-buffer sizes, not layout sizes): in a filling layout the output fills its
+    container and the canvas is centered within it (shrinking to fit, aspect
+    preserved), never stretched.
+
+    The decorated function also gains two read-only attributes: `.value` and
+    `.widget`, both the rendered canvas. Draw on `.widget` from anywhere (e.g., a
+    `reactive.effect` or an `asyncio` task) and the browser canvas updates in
+    place. Use `.widget` to reactively read widget state with
+    :func:`~shinywidgets.reactive_read`, or register event callbacks like
+    ``on_mouse_down()``/``on_mouse_move()`` that set `reactive.value`s. With
+    shiny < 1.9, canvas updates made from a background task may not reach the
+    browser until the next input event. Note that ``ipycanvas.hold_canvas()``
+    has no effect under shinywidgets (each draw command is sent individually).
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    from ipycanvas import Canvas
+    from shiny import App, ui
+    from shinywidgets import output_widget, render_ipycanvas
+
+    app_ui = ui.page_fluid(output_widget("canvas"))
+
+
+    def server(input, output, session):
+        @render_ipycanvas
+        def canvas():
+            c = Canvas(width=300, height=200)
+            c.fill_style = "steelblue"
+            c.fill_rect(20, 20, 100, 100)
+            return c
+
+
+    app = App(app_ui, server)
+    ```
+    """
 
 
 class render_maplibre(render_widget_base[MaplibreValueT, MapWidget]):
