@@ -126,6 +126,9 @@ def require_dependency(
 # That's unsuitable outside Jupyter for widgets with multi-MB inline ESM
 # bundles (keplergl's `_esm` is ~13MB), which can't compile within 2s on
 # slower hardware. Serve a patched copy with a more generous budget instead.
+# Interim workaround for https://github.com/manzt/anywidget/issues/1030 --
+# remove this (and serve anywidget's files unmodified) once upstream makes
+# the init budget configurable or stops gating comm messages on it.
 ANYWIDGET_INIT_TIMEOUT_MS = 60000
 
 
