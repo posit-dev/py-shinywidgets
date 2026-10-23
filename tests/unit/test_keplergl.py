@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,9 @@ from shiny import Session
 from shiny.session import session_context
 from shinywidgets._render_widget_base import set_layout_defaults
 from shinywidgets._serialization import json_packer
+
+if TYPE_CHECKING:
+    from keplergl import KeplerGl
 
 keplergl = pytest.importorskip("keplergl")
 gpd = pytest.importorskip("geopandas")
@@ -26,7 +30,7 @@ def points() -> pd.DataFrame:
     return pd.DataFrame({"lat": [37.7, 37.8], "lon": [-122.4, -122.3], "n": [1, 2]})
 
 
-def as_widget(widget_session: Session, value: object) -> keplergl.KeplerGl:
+def as_widget(widget_session: Session, value: object) -> KeplerGl:
     with session_context(widget_session):
         return rw.render_keplergl()._as_widget(value)
 
