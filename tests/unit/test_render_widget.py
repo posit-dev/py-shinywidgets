@@ -19,6 +19,11 @@ def test_render_k3d_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_itables_is_render_widget_base() -> None:
+    renderer = rw.render_itables()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_ipydatagrid_is_render_widget_base() -> None:
     renderer = rw.render_ipydatagrid()
     assert isinstance(renderer, rwb.render_widget_base)

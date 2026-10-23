@@ -24,6 +24,7 @@ everything it needs:
 | `@render_holoviews` | `pip install 'shinywidgets[holoviews]'` |
 | `@render_ipyaladin` | `pip install 'shinywidgets[ipyaladin]'` |
 | `@render_ipydatagrid` | `pip install 'shinywidgets[ipydatagrid]'` |
+| `@render_itables` | `pip install 'shinywidgets[itables]'` |
 | `@render_jscatter` | `pip install 'shinywidgets[jscatter]'` |
 | `@render_k3d` | `pip install 'shinywidgets[k3d]'` |
 | `@render_keplergl` | `pip install 'shinywidgets[keplergl]'` |
