@@ -31,6 +31,7 @@ everything it needs:
 | `@render_matplotlib` | `pip install 'shinywidgets[matplotlib]'` |
 | `@render_panel` | `pip install 'shinywidgets[panel]'` |
 | `@render_plotly` | `pip install 'shinywidgets[plotly]'` |
+| `@render_plotnine` | `pip install 'shinywidgets[plotnine]'` |
 | `@render_pygwalker` | `pip install 'shinywidgets[pygwalker]'` |
 
 ## Development
