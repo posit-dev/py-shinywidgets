@@ -21,9 +21,11 @@ from ._dependencies import widget_pkg
 if TYPE_CHECKING:
     from bokeh.models import LayoutDOM
     from ipympl.backend_nbagg import Canvas
+    from ipysigma import Sigma
     from jupyter_bokeh import BokehModel
     from matplotlib.figure import Figure
     from panel.viewable import Viewable
+    from perspective.widget import PerspectiveWidget
 
     class PlotnineDrawable(Protocol):
         def draw(self, *, show: bool = False) -> Figure: ...
@@ -45,11 +47,14 @@ def as_widget(x: object) -> Widget:
     * bokeh model (e.g., `bokeh.plotting.figure`) -> `jupyter_bokeh.BokehModel`
     * holoviews/hvplot/geoviews object -> bokeh model (via panel)
     * jupyter-scatter `Scatter` -> `jscatter.widget.JupyterScatter`
+    * leafmap's folium and deck backends raise a `TypeError` (leafmap's other
+      backends are already ipywidgets)
     * lonboard layer -> `lonboard.Map`
     * maplibre `Map` -> `maplibre.ipywidget.MapWidget`
     * matplotlib `Figure` or `Axes` (or a seaborn figure-level grid) ->
       `ipympl.backend_nbagg.Canvas`
     * panel pane/viewable -> bokeh model
+    * perspective `Table` -> `perspective.widget.PerspectiveWidget`
     * plotly `Figure` -> `plotly.graph_objects.FigureWidget`
     * plotnine `ggplot` (or plot composition) -> `ipympl.backend_nbagg.Canvas`
     * pydeck `Deck` -> `pydeck.widget.DeckGLWidget` (pydeck <= 0.8 only; pydeck
@@ -226,6 +231,52 @@ def as_widget_maplibre(x: object) -> Widget:
     res.map_options = dict(state["mapOptions"])
     res._message_queue = list(state["calls"])
     return res
+
+
+def as_widget_perspective(x: object) -> Optional[Widget]:
+    # perspective is guaranteed to be installed here since this function is only
+    # called when x comes from the perspective package
+    from perspective import Table
+
+    if not isinstance(x, Table):
+        raise TypeError(
+            f"Don't know how to coerce {x} into a perspective.widget.PerspectiveWidget object."
+        )
+
+    return perspective_widget(x)
+
+
+def perspective_widget(data: object) -> "PerspectiveWidget":
+    try:
+        from perspective.widget import PerspectiveWidget
+    except ImportError:
+        raise ImportError(
+            "Install the perspective-python package to use perspective with shinywidgets (pip install 'shinywidgets[perspective]')."
+        )
+    from perspective import Server, Table
+
+    if not isinstance(data, Table):
+        # PerspectiveWidget(data) would host the table on perspective.GLOBAL_SERVER,
+        # and the browser can open any table on its widget's server, so every
+        # session's viewer could read and write it. A server per widget keeps
+        # sessions' data apart.
+        data = Server().new_local_client().table(data)
+
+    return PerspectiveWidget(data)
+
+
+def networkx_to_sigma(x: object) -> Sigma:
+    # Not in AS_WIDGET_MAP: a networkx graph is generic (ipycytoscape accepts one
+    # too), so only @render_ipysigma coerces it.
+    try:
+        from ipysigma import Sigma
+    except ImportError:
+        raise ImportError(
+            "Install the ipysigma package to use render_ipysigma with shinywidgets (pip install 'shinywidgets[ipysigma]')."
+        )
+
+    # Sigma validates the graph itself (raising a TypeError for non-graphs)
+    return Sigma(x)
 
 
 def as_widget_mpl(x: object, *, context: str = "matplotlib") -> Widget:
@@ -652,6 +703,36 @@ def forget_drawn_figure(plot: object) -> None:
         forget_drawn_figure(item)
 
 
+LEAFMAP_FOLIUM_MESSAGE = (
+    "leafmap's folium backend (leafmap.foliumap.Map) isn't an ipywidget, so it "
+    "can't be rendered with a shinywidgets render decorator. For a static map, "
+    "use shiny's @render.ui decorator and return ui.HTML(m._repr_html_()) — not "
+    "m.to_html(), which is a whole HTML document. For a reactive map, use one of "
+    "leafmap's widget backends instead: leafmap.Map (ipyleaflet) or "
+    "leafmap.maplibregl.Map."
+)
+
+
+def as_widget_leafmap(x: object) -> Widget:
+    """
+    Coerce a leafmap map into a Widget (see `as_widget()`).
+
+    leafmap's ipyleaflet (`leafmap.Map`), maplibre (`leafmap.maplibregl.Map`), and
+    kepler.gl (`leafmap.kepler.Map`) backends are already ipywidgets, so they
+    never reach this function (``as_widget()`` returns those as-is). Its folium
+    and deck backends aren't widgets, so this raises a `TypeError` that points to
+    an alternative.
+    """
+    # The deck backend subclasses pydeck's Deck, so give it pydeck's advice
+    if any(widget_pkg(base) == "pydeck" for base in type(x).__mro__):
+        raise TypeError(
+            PYDECK_NO_WIDGET_MESSAGE
+            + " With leafmap, that's leafmap.maplibregl.Map and its add_deck_layers()."
+        )
+
+    raise TypeError(LEAFMAP_FOLIUM_MESSAGE)
+
+
 def as_widget_pydeck(x: object) -> Widget:
     # Check before calling show(): on pydeck >= 0.9 it serializes the whole deck
     # into HTML for nothing, and that can fail with a cryptic error of its own
@@ -694,10 +775,12 @@ AS_WIDGET_MAP = {
     "holoviews": as_widget_holoviews,
     "hvplot": as_widget_holoviews,
     "jscatter": as_widget_jscatter,
+    "leafmap": as_widget_leafmap,
     "lonboard": as_widget_lonboard,
     "maplibre": as_widget_maplibre,
     "matplotlib": as_widget_mpl,
     "panel": as_widget_panel,
+    "perspective": as_widget_perspective,
     "plotly": as_widget_plotly,
     "plotnine": as_widget_plotnine,
     "pydeck": as_widget_pydeck,
