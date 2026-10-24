@@ -2,6 +2,7 @@ import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
 import { setupJscatterAutoHeight, setupJscatterFixedHeight } from './jscatter';
 import { setupKeplerAutoHeight } from './keplergl';
 import { setupMplAutoResize } from './mpl';
+import { setupNglviewAutoSize } from './nglview';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { setupQuakFit } from './quak';
 
@@ -97,6 +98,15 @@ const keplerglBehavior: WidgetBehavior = {
   },
 };
 
+// nglview sizes its stage with fixed inline pixels (300px tall by default) and
+// never re-measures its parent, so drive the stage size from the output: both
+// dimensions when the output has a height of its own (a filling layout or an
+// explicit output_widget(height=)), otherwise just the width.
+const nglviewBehavior: WidgetBehavior = {
+  setupFill: ({ el, view }) => setupNglviewAutoSize(el, view),
+  setupFixedSize: ({ el, view }) => setupNglviewAutoSize(el, view, !!el.style.height),
+};
+
 // shinywidgets.css sizes an ipyleaflet map to its (non-filling) output's
 // definite height via flex layout, unless the map has an explicit
 // `Layout(height=...)` (an inline style), which takes precedence. A CSS
@@ -120,6 +130,7 @@ export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
   jscatter: jscatterBehavior,
   keplergl: keplerglBehavior,
+  nglview: nglviewBehavior,
   plotly: plotlyBehavior,
   quak: quakBehavior,
   ipyleaflet: ipyleafletBehavior,

@@ -44,6 +44,7 @@ from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_clos
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
 from ._dependencies import custom_elements_dependency, require_dependency, widget_pkg
+from ._nglview import importing_nglview, stop_nglview_threads
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -69,7 +70,7 @@ def init_shiny_widget(w: Widget):
         raise RuntimeError(PLOTLY_VERSION_MESSAGE.format(version=plotly_version))
     session = get_current_session()
     if session is None:
-        if importing_lonboard() or importing_ipycanvas():
+        if importing_nglview() or importing_lonboard() or importing_ipycanvas():
             return
         raise RuntimeError(
             "shinywidgets requires that all ipywidgets be constructed within an active Shiny session"
@@ -534,6 +535,16 @@ def close_widget(w: Widget) -> None:
     """Close a widget, the same way whether its render was invalidated or its session ended."""
     model_id = w.model_id
     w.close()
+    # An app-defined NGLWidget subclass gets widget_pkg() of the app's module,
+    # so recognize NGLWidget through the MRO (same as set_layout_defaults()).
+    # Restrict to actual NGLWidget instances: non-viewer nglview widgets (e.g.
+    # the global _ColormakerRegistry) also match a package-wide MRO check but
+    # have no background threads (or `_event`) to stop.
+    if any(
+        cls.__name__ == "NGLWidget" and widget_pkg(cls) == "nglview"
+        for cls in type(w).__mro__
+    ):
+        stop_nglview_threads(w)
     # By closing the widget, we also close the comm, which sets w.comm to
     # None. Unfortunately, the w.model_id property looks up w.comm.comm_id
     # at runtime, and some packages like ipyleaflet want to use this id

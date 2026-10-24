@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from maplibre.ipywidget import MapWidget
     from maplibre.map import Map as MaplibreMap
     from mosaic_widget import MosaicWidget
+    from nglview import NGLWidget
     from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
@@ -39,7 +40,7 @@ else:
         BokehModel
     ) = MapWidget = FigureWidget = DeckGLWidget = MosaicWidget = BqplotFigure = (
         CytoscapeWidget
-    ) = base = LeafletMap = object
+    ) = base = LeafletMap = NGLWidget = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
     ) = QuakWidget = PerspectiveWidget = object
@@ -97,6 +98,7 @@ __all__ = (
     "render_maplibre",
     "render_matplotlib",
     "render_mosaic_widget",
+    "render_nglview",
     "render_panel",
     "render_perspective",
     "render_plotly",
@@ -980,6 +982,51 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
 
     app = App(app_ui, server)
     ```
+    """
+
+
+class render_nglview(render_widget_base[ValueT, NGLWidget]):
+    """
+    Reactively render an [nglview](https://nglviewer.org/nglview/latest/) molecular
+    structure viewer as a Shiny output.
+
+    The decorated function should return an `nglview.NGLWidget` (e.g., from
+    `nglview.show_file()`, `nglview.show_text()`, or `nglview.show_url()`; requires
+    ``pip install 'shinywidgets[nglview]'``).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `NGLWidget` instance. Use `.widget` to programmatically update the rendered viewer
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read` (e.g., the
+    picked atom via ``"picked"``).
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Shiny version**: nglview sends the changes its methods make (e.g.,
+    `add_representation()`, `center()`, `clear_representations()`) from a
+    background thread, which Shiny before 1.9 doesn't send to the browser until
+    the next input arrives. So with older Shiny, those changes can be delayed,
+    and calling them in the render function can leave the viewer blank when it
+    first loads.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
     """
 
 
