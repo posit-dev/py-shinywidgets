@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
+    from pythreejs import Renderer as PythreejsRenderer
     from quak import Widget as QuakWidget
 else:
     JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
@@ -42,7 +43,7 @@ else:
     ) = base = LeafletMap = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
-    ) = QuakWidget = PerspectiveWidget = object
+    ) = QuakWidget = PerspectiveWidget = PythreejsRenderer = object
 
 from shiny.render.renderer import ValueFn
 
@@ -102,6 +103,7 @@ __all__ = (
     "render_plotly",
     "render_plotnine",
     "render_pydeck",
+    "render_pythreejs",
     "render_quak",
 )
 
@@ -1551,6 +1553,58 @@ def _split_config(value: object) -> tuple[object, Optional[Dict[str, Any]]]:
         "config is a dict of Plotly.js config options (e.g., {'displayModeBar': False}), "
         f"but got {problem}."
     )
+
+
+class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
+    """
+    Reactively render a [pythreejs](https://pythreejs.readthedocs.io) 3D scene as a
+    Shiny output.
+
+    The decorated function should return a `pythreejs.Renderer` widget (i.e., a
+    `Scene` plus a camera, with meshes/lights added to the scene; requires ``pip
+    install 'shinywidgets[pythreejs]'``). By default, the scene fills its container (the canvas and
+    camera aspect resize with it); give the `Renderer` an explicit ``width`` or
+    ``height`` (or a `layout` height) to use a fixed pixel size instead.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `Renderer` instance. Use `.widget` to programmatically update the rendered scene
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`. With
+    `pythreejs.OrbitControls` (or `TrackballControls`), the camera's ``position``,
+    ``quaternion``, and ``zoom`` sync back to Python each time the user finishes
+    orbiting, so e.g. ``reactive_read(scene.widget.camera, "position")`` picks up
+    every interaction.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Notes
+    -----
+    * Scene background: set `pythreejs.Scene(background=...)` (it defaults to
+      white and overrides ``Renderer(background=...)``).
+    * Give `pythreejs.DirectionalLight`/`pythreejs.SpotLight` an explicit
+      ``target`` (added to the scene) and ``shadow`` (with a camera) to avoid
+      server-side warnings -- pythreejs creates them browser-side otherwise,
+      and browser-created widgets don't sync to Python.
+    * Rotate objects via ``mesh.quaternion``; pythreejs's ``rotation`` (Euler)
+      updates don't render (an upstream pythreejs bug).
+    """
 
 
 class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):

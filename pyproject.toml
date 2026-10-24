@@ -69,6 +69,7 @@ panel = ["panel", "jupyter_bokeh>=4.1"]
 perspective = ["perspective-python>=3.0", "pyarrow"]
 plotly = ["plotly>=5.12.0"]
 plotnine = ["plotnine", "ipympl"]
+pythreejs = ["pythreejs"]
 quak = ["quak"]
 test = [
   "altair",
@@ -113,6 +114,7 @@ test = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "pythreejs",
   "quak",
   "tox-uv>=1",
 ]
@@ -159,6 +161,7 @@ dev = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "pythreejs",
   "quak",
   "ruff>=0.6.5",
   "tox-uv>=1",
@@ -208,6 +211,7 @@ test = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "pythreejs",
   "quak",
   "tox-uv>=1",
 ]

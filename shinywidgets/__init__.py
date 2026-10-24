@@ -42,6 +42,7 @@ from ._render_widget import (
     render_plotly,
     render_plotnine,
     render_pydeck,
+    render_pythreejs,
     render_quak,
     render_widget,
 )
@@ -74,6 +75,7 @@ __all__ = (
     "render_plotly",
     "render_plotnine",
     "render_pydeck",
+    "render_pythreejs",
     "render_quak",
     # Reactive read second
     "reactive_read",

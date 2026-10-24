@@ -5,7 +5,7 @@ import re
 import tempfile
 import warnings
 from types import ModuleType
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import packaging.version
 from htmltools import HTMLDependency, tags
@@ -138,7 +138,14 @@ def require_dependency(
     # Get the location where the dependency files will be mounted by the shiny app
     # and use that to inform the requirejs import path
     href = dep.source_path_map(lib_prefix=session.app.lib_prefix)["href"]
-    config = {"paths": {module_name: os.path.join(href, "index")}}
+    paths = {module_name: os.path.join(href, "index")}
+    shim = {}
+    for sibling, global_name in SIBLING_REQUIRE_MODULES.get(module_name, {}).items():
+        paths[sibling] = os.path.join(href, sibling)
+        shim[sibling] = {"exports": global_name}
+    config: Dict[str, Any] = {"paths": paths}
+    if shim:
+        config["shim"] = shim
     # Basically our equivalent of the extension.js file provided by the cookiecutter
     # https://github.com/jupyter-widgets/widget-cookiecutter/blob/master/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js
     return HTMLDependency(
@@ -148,6 +155,22 @@ def require_dependency(
         all_files=True,
         head=tags.script(f"window.require.config({json.dumps(config)})"),
     )
+
+
+# Some nbextensions ship more than one script: their index.js require()s a
+# sibling AMD module by bare id, which classic Jupyter maps via the
+# extension's extension.js (e.g., pythreejs's bundle require()s "three").
+# Map them the same way, or require.js resolves the bare id to
+# <baseUrl>/<id>.js (a 404). The sibling is a UMD bundle, and shiny's
+# define-shim leaves define.amd falsy, so it only sets a window global; the
+# require.js shim config adopts that global as the module's value.
+# N.B. require.config() is global to the page, so once such a widget renders,
+# any other widget require()ing the bare sibling id gets this module's bundle
+# (e.g., pythreejs's three.js r97) -- fine today, since every shipped renderer
+# that needs three.js bundles its own.
+SIBLING_REQUIRE_MODULES = {
+    "jupyter-threejs": {"three": "THREE"},
+}
 
 
 # anywidget's front-end rejects a model's `ready` promise if initialization
