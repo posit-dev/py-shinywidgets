@@ -33,13 +33,19 @@ if TYPE_CHECKING:
     from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
+
+    # embedding-atlas requires Python 3.11+, so it's absent from 3.10 environments
+    if sys.version_info >= (3, 11):
+        from embedding_atlas.widget import EmbeddingAtlasWidget
+    else:
+        from ipywidgets import Widget as EmbeddingAtlasWidget
     from quak import Widget as QuakWidget
 else:
     JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
         BokehModel
     ) = MapWidget = FigureWidget = DeckGLWidget = MosaicWidget = BqplotFigure = (
         CytoscapeWidget
-    ) = base = LeafletMap = object
+    ) = base = EmbeddingAtlasWidget = LeafletMap = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
     ) = QuakWidget = PerspectiveWidget = object
@@ -81,6 +87,7 @@ __all__ = (
     "render_widget",
     "render_altair",
     "render_bokeh",
+    "render_embedding_atlas",
     "render_bqplot",
     "render_holoviews",
     "render_ipyaladin",
@@ -201,6 +208,73 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     **Offline use**: `JupyterChart` loads its JavaScript from a CDN; call
     ``alt.JupyterChart.enable_offline()`` (requires ``vl-convert-python``) for apps
     that run without internet access.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+
+class render_embedding_atlas(
+    render_widget_base[EmbeddingAtlasWidget, EmbeddingAtlasWidget]
+):
+    """
+    Reactively render an [Embedding Atlas](https://apple.github.io/embedding-atlas/)
+    explorer as a Shiny output.
+
+    The decorated function should return an `embedding_atlas.widget.EmbeddingAtlasWidget`
+    (requires ``pip install 'shinywidgets[embedding_atlas]'``, which needs Python 3.11
+    or newer).
+    Unlike the other decorators, a bare data frame isn't enough to build the widget, so
+    construct it yourself, passing the data frame along with the columns that describe
+    the embedding (e.g., ``EmbeddingAtlasWidget(df, x="x", y="y", text="text")``).
+    The embedding (scatter) view itself requires a browser with WebGPU and its
+    ``shader-f16`` feature (e.g., recent Chrome, Edge, or Firefox); elsewhere, the
+    rest of the explorer still works. The explorer needs room: in a non-filling
+    layout, give the output a height of at least ``"600px"``.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `EmbeddingAtlasWidget` instance. The filter a user builds in the browser is
+    synced to the widget's (upstream-internal) `_predicate` trait, so
+    ``reactive_read(my_atlas.widget, "_predicate")`` followed by
+    ``my_atlas.widget.selection()`` gives the selected rows reactively. The explorer
+    doesn't respond to trait changes made from Python; to change it, re-render.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Security**: the explorer runs its queries by sending SQL from the browser to
+    the widget's DuckDB connection, and any visitor can send arbitrary SQL,
+    including SQL that reads or writes files on the server. In deployed apps,
+    construct the widget on a new connection (connections can't be shared between
+    widgets) and lock it down afterwards, so that only the data you gave the widget
+    is reachable:
+
+    ```python
+    con = duckdb.connect()
+    widget = EmbeddingAtlasWidget(df, x="x", y="y", connection=con)
+    con.execute("SET enable_external_access = false")
+    con.execute("SET lock_configuration = true")
+    return widget
+    ```
+
+    Disabling external access when connecting instead breaks the widget, which
+    needs it while loading the data frame. A visitor can still send expensive
+    queries, which block the Python process while they run.
 
     Parameters
     ----------

@@ -41,6 +41,8 @@ Issues = "https://github.com/rstudio/py-shinywidgets/issues"
 # anywidget is already a core dependency, so extras don't need to repeat it.
 altair = ["altair>=5.1"]
 bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
+# embedding-atlas requires Python 3.11+, so it's not installable on 3.10
+embedding_atlas = ["embedding-atlas>=0.26; python_version >= '3.11'"]
 bqplot = ["bqplot"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
@@ -84,6 +86,7 @@ test = [
   # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "embedding-atlas>=0.26; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
@@ -130,6 +133,7 @@ dev = [
   # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "embedding-atlas>=0.26; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
@@ -179,6 +183,7 @@ test = [
   # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "embedding-atlas>=0.26; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
@@ -224,6 +229,17 @@ dev = [
 # mosaic-widget 0.33.0 declares narwhals>=2.8 but imports is_into_lazyframe,
 # which was added in narwhals 2.22. Drop this once upstream fixes its metadata.
 constraint-dependencies = ["narwhals>=2.22"]
+# embedding_atlas.widget never imports these; only embedding_atlas.projection and the
+# CLI do (litellm is a lazy import inside _create_litellm_embedder). Skipping them
+# keeps torch (and CUDA wheels on Linux) out of the dev/CI env, and keeps litellm's
+# fastuuid dependency (no cp315 wheels) from breaking Python 3.15 installs.
+# uv-only: the published package metadata is unaffected.
+override-dependencies = [
+  "torch; python_version < '0'",
+  "sentence-transformers; python_version < '0'",
+  "umap-learn; python_version < '0'",
+  "litellm; python_version < '0'",
+]
 
 [build-system]
 requires = ["hatchling>=1.26.0", "hatch-vcs>=0.4.0"]
