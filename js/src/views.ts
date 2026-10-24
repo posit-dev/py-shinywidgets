@@ -116,7 +116,10 @@ interface NativeLeafletMap {
 // NGL stage (nglview 4.0.1), so every removed viewer keeps its render loop and
 // WebGL context -- browsers cap the number of live contexts, so repeated
 // re-renders can exhaust them. `view.stage` is loosely typed because NGL
-// isn't a dependency of this bundle.
+// isn't a dependency of this bundle. Note the `stage` reference is left in
+// place after disposal: nglview's own pending callbacks (e.g. its deferred
+// camera-orientation sync) still read `this.stage.viewerControls` after the
+// view is gone, and would throw on a deleted stage.
 interface NativeNglStage {
   dispose(): void;
 }
@@ -138,7 +141,6 @@ function disposeNglviewStage(view: WidgetView): void {
   }
   tracked.__shinywidgetsNativeDisposed = true;
   stage.dispose();
-  delete tracked.stage;
 }
 
 function disposeLeafletMap(view: WidgetView): void {
