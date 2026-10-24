@@ -47,6 +47,8 @@ ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
 ipycytoscape = ["ipycytoscape"]
 ipydatagrid = ["ipydatagrid"]
+ipyleaflet = ["ipyleaflet>=0.20.0"]
+ipysigma = ["ipysigma"]
 itables = ["itables[widget]"]
 jscatter = ["jupyter-scatter"]
 k3d = ["k3d"]
@@ -54,6 +56,8 @@ k3d = ["k3d"]
 # keplergl 0.3.x imports pkg_resources (removed in setuptools 82), so 0.4
 # (an anywidget rewrite) is the first version that imports there.
 keplergl = ["keplergl>=0.4.0rc4"]
+# leafmap.plotlymap uses Plotly's Mapbox API, removed in Plotly 7.
+leafmap = ["leafmap", "plotly>=5.12.0,<7"]
 # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
 # Python 3.15+ yet, so lonboard can't be installed there
 lonboard = ["lonboard; python_version < '3.15'"]
@@ -61,7 +65,10 @@ maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
 mosaic_widget = ["mosaic-widget"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
-plotly = ["plotly>=5.0.0"]
+# pyarrow is required for pandas DataFrame conversion (perspective-python
+# doesn't depend on it)
+perspective = ["perspective-python>=3.0", "pyarrow"]
+plotly = ["plotly>=5.12.0"]
 plotnine = ["plotnine", "ipympl"]
 quak = ["quak"]
 test = [
@@ -81,6 +88,7 @@ test = [
   "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
+  "ipysigma",
   "holoviews",
   "ipympl",
   "itables[widget]",
@@ -93,14 +101,16 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "pandas",
   "networkx",
   "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
-  "plotly>=5.0.0",
+  "plotly>=5.12.0",
   "plotnine",
   "polars",
+  "pyarrow",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
@@ -125,6 +135,7 @@ dev = [
   "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
+  "ipysigma",
   "holoviews",
   "ipympl",
   "itables[widget]",
@@ -137,14 +148,16 @@ dev = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "pandas",
   "networkx",
   "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
-  "plotly>=5.0.0",
+  "plotly>=5.12.0",
   "plotnine",
   "polars",
+  "pyarrow",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
@@ -172,6 +185,7 @@ test = [
   "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
+  "ipysigma",
   "holoviews",
   "ipympl",
   "itables[widget]",
@@ -184,14 +198,16 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "pandas",
   "networkx",
   "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
-  "plotly>=5.0.0",
+  "plotly>=5.12.0",
   "plotnine",
   "polars",
+  "pyarrow",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
