@@ -23,6 +23,31 @@
 }
 
 /*
+* Perspective's stylesheet gives its container a fixed 520px height, which overflows
+* (and gets clipped by) an output with an explicit height. [style*="height:"] matches the
+* inline `height:` style that output_widget(height=...) emits (keep in sync with
+* _output_widget.py); otherwise the container is sized by the widget's layout (or by
+* filling). Intrinsic heights (`auto`, `fit-content`, ...; the browser may reserialize
+* the style with a space after the colon) aren't definite, so 100% of them would
+* collapse the viewer; the exclusions name the height declaration specifically so an
+* intrinsic width (e.g., `width: fit-content`) doesn't disable the override.
+*/
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .PSPContainer {
+  height: 100%;
+  min-height: 0;
+}
+
+/*
 * An explicit output height (e.g., output_widget(height="300px")) makes the output
 * non-fillable, so nothing stretches the widget to it. A chart without its own
 * width/height gets `"container"` sizing (see set_layout_defaults()), which
@@ -361,4 +386,40 @@
   --dt-row-stripe: 255, 255, 255;
   --dt-row-hover: 255, 255, 255;
   --dt-column-ordering: 255, 255, 255;
+}
+
+/*
+* jupyter-leaflet styles map controls (zoom buttons, attribution, layers, legend, ...)
+* with JupyterLab theme variables, which don't exist outside of JupyterLab (unless
+* some other widget happens to define them), leaving the controls transparent. Derive
+* them from Bootstrap so controls follow Shiny's light/dark theme. They're scoped to
+* the map so other widgets aren't restyled.
+*/
+.jupyter-widgets.leaflet-widgets {
+  --jp-layout-color1: var(--bs-body-bg, white);
+  --jp-layout-color2: var(--bs-secondary-bg, #eeeeee);
+  --jp-layout-color3: var(--bs-tertiary-bg, #bdbdbd);
+  --jp-ui-font-color1: var(--bs-body-color, rgba(0, 0, 0, 0.87));
+  --jp-ui-font-color2: var(--bs-secondary-color, rgba(0, 0, 0, 0.54));
+  --jp-ui-font-color3: var(--bs-tertiary-color, rgba(0, 0, 0, 0.38));
+  --jp-border-color1: var(--bs-border-color, #bdbdbd);
+  --jp-border-width: 1px;
+}
+
+/*
+* ipyleaflet hard-codes `height: 400px` (and `flex: 1 1 auto`) on the map container,
+* which ignores an output's explicit height (it overflows or underfills it). Laying the
+* output out as a flex column lets the map grow or shrink to a definite output height,
+* while an output without one (e.g., `height="auto"`) still gets the 400px default.
+* Filling outputs are already flex containers.
+*/
+.shiny-ipywidget-output:not(.html-fill-container):has(> .jupyter-widgets.leaflet-widgets) {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A Layout(height=...) on the map takes precedence (js/src/fill.ts adds the
+ * class; an attribute selector can't tell `height:` from `min-height:`) */
+.shiny-ipywidget-output:not(.html-fill-container) > .jupyter-widgets.leaflet-widgets.shinywidgets-explicit-height {
+  flex: none;
 }

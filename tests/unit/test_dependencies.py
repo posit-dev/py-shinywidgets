@@ -2,6 +2,7 @@ import json
 import os
 import types
 import warnings
+from pathlib import Path
 from types import ModuleType
 
 import pytest
@@ -72,6 +73,24 @@ def test_jupyter_extension_path_returns_none_when_no_index_js(
 
     monkeypatch.setattr(deps, "jupyter_path", lambda: [str(tmp_path)])
     assert jupyter_extension_path(module_name) is None
+
+
+def test_jupyter_extension_path_prefers_first_matching_data_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_name = "priority-test-widget"
+    first_dir = tmp_path / "first" / "nbextensions" / module_name
+    later_dir = tmp_path / "later" / "nbextensions" / module_name
+    for directory in (first_dir, later_dir):
+        directory.mkdir(parents=True)
+        (directory / "index.js").write_text("// widget", encoding="utf-8")
+
+    monkeypatch.setenv(
+        "JUPYTER_PATH",
+        os.pathsep.join(str(tmp_path / root) for root in ("first", "later")),
+    )
+
+    assert jupyter_extension_path(module_name) == str(first_dir)
 
 
 def test_jupyter_extension_destination_prefers_nbextension_paths(

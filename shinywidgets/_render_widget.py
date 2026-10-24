@@ -19,7 +19,9 @@ if TYPE_CHECKING:
     from ipycanvas import MultiCanvas, MultiRoughCanvas, RoughCanvas
     from ipycytoscape import CytoscapeWidget
     from ipydatagrid import DataGrid
+    from ipyleaflet import Map as LeafletMap
     from ipympl.backend_nbagg import Canvas as MplCanvas
+    from ipysigma import Sigma
     from ipyvolume.widgets import Figure as IpyvolumeFigure
     from itables.widget import ITable
     from jscatter.widget import JupyterScatter
@@ -29,22 +31,29 @@ if TYPE_CHECKING:
     from maplibre.ipywidget import MapWidget
     from maplibre.map import Map as MaplibreMap
     from mosaic_widget import MosaicWidget
+    from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
     from quak import Widget as QuakWidget
 else:
-    JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = (
+    JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
         BokehModel
     ) = MapWidget = FigureWidget = DeckGLWidget = MosaicWidget = BqplotFigure = (
         CytoscapeWidget
-    ) = base = object
+    ) = base = LeafletMap = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
-    ) = QuakWidget = IpyvolumeFigure = object
+    ) = QuakWidget = PerspectiveWidget = IpyvolumeFigure = object
 
 from shiny.render.renderer import ValueFn
 
-from ._as_widget import PYDECK_NO_WIDGET_MESSAGE, as_widget_panel, pydeck_has_widget
+from ._as_widget import (
+    PYDECK_NO_WIDGET_MESSAGE,
+    as_widget_panel,
+    networkx_to_sigma,
+    perspective_widget,
+    pydeck_has_widget,
+)
 from ._bokeh import _bokeh_dependency
 from ._dependencies import widget_pkg
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
@@ -79,15 +88,19 @@ __all__ = (
     "render_ipycanvas",
     "render_ipycytoscape",
     "render_ipydatagrid",
+    "render_ipyleaflet",
+    "render_ipysigma",
     "render_ipyvolume",
     "render_itables",
     "render_jscatter",
     "render_keplergl",
+    "render_leafmap",
     "render_lonboard",
     "render_maplibre",
     "render_matplotlib",
     "render_mosaic_widget",
     "render_panel",
+    "render_perspective",
     "render_plotly",
     "render_plotnine",
     "render_pydeck",
@@ -369,6 +382,96 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
     """
 
 
+class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
+    """
+    Reactively render an [ipyleaflet](https://ipyleaflet.readthedocs.io) map as a Shiny
+    output.
+
+    The decorated function should return an `ipyleaflet.Map` (requires ``pip install
+    ipyleaflet``) or a subclass of it, such as a `leafmap.leafmap.Map`.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `Map` instance. Use `.widget` to programmatically update the rendered map in
+    place (e.g., change its `zoom` or `center`, or add layers; trait changes on the
+    widget are synced to the browser), or to reactively read map state (e.g., `zoom`,
+    `center`, `bounds`) with :func:`~shinywidgets.reactive_read`.
+
+    In a filling layout, the map fills its container unless it has its own height
+    (e.g., ``Layout(height="300px")``). Default heights set by a subclass (e.g.,
+    leafmap's 600px) are treated as unset.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+
+class render_ipysigma(render_widget_base[ValueT, Sigma]):
+    """
+    Reactively render a graph with [ipysigma](https://github.com/medialab/ipysigma)
+    (sigma.js) as a Shiny output.
+
+    The decorated function may return either a networkx graph (which is coerced to an
+    `ipysigma.Sigma` widget with default options; requires ``pip install
+    'shinywidgets[ipysigma]'``) or an `ipysigma.Sigma` widget, which is the way to
+    customize node and edge appearance (e.g., `Sigma(G, node_size=G.degree,
+    node_color="community")`). This is also the answer for
+    [pyvis](https://pyvis.readthedocs.io) users: ipysigma renders larger
+    networks more smoothly and, being a widget, can report the selected node back to
+    Python. In a filling layout, the graph fills its container, unless the widget has
+    an explicit `height` or `raw_height` (a height of 500px, sigma's default, or one set
+    globally with `Sigma.set_defaults(height=...)`, counts as unset and fills).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `Sigma` instance. Use `.widget` to reactively read the user's interactions with
+    :func:`~shinywidgets.reactive_read` (e.g., ``reactive_read(sigma.widget,
+    "selected_node")``; also ``"selected_edge"``, ``"camera_state"`` and
+    ``"layout"``). Note that ipysigma only reads its options when the graph is
+    first drawn, so setting traits on `.widget` afterwards does not update the
+    browser. To change what's shown, re-render, passing any state you want to keep
+    (e.g., ``layout=``, ``camera_state=``) to the new `Sigma`.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    def _as_widget(self, value: ValueT) -> Sigma:
+        if isinstance(value, Widget):
+            return super()._as_widget(value)
+        return networkx_to_sigma(value)
+
+
 class render_itables(render_widget_base[ValueT, ITable]):
     """
     Reactively render a [pandas](https://pandas.pydata.org) or
@@ -647,6 +750,69 @@ class render_keplergl(render_widget_base[ValueT, KeplerGl]):
             if isinstance(value, pd.DataFrame):
                 return dataframe_to_keplergl(value)
         return super()._as_widget(value)
+
+
+class render_leafmap(render_widget_base[ValueT, LeafletMap]):
+    """
+    Reactively render a [leafmap](https://leafmap.org) map as a Shiny output.
+
+    leafmap (requires ``pip install 'shinywidgets[leafmap]'``) is a high-level API
+    over several mapping engines. Return any of its widget-backed backends:
+
+    * `leafmap.leafmap.Map` (the default; an `ipyleaflet.Map`) -- includes
+      leafmap's toolbar, basemap gallery, legends, and its other tools. This is
+      the backend to start with.
+    * `leafmap.maplibregl.Map` (a maplibre `MapWidget`) -- vector tiles, globe
+      projection, and deck.gl layers via `add_deck_layers()`.
+    * `leafmap.plotlymap.Map` (a Plotly `FigureWidget`) -- Plotly map traces
+      and in-place updates through `set_center()` and `update_traces()`.
+      Requires Plotly >=5.12 and <7, included in the leafmap extra.
+    * `leafmap.kepler.Map` (a kepler.gl widget) -- kepler.gl's layer/filter UI,
+      including time playback. Keep in mind that its `config` trait nests
+      kepler's own config (e.g., ``config["config"]["mapState"]``).
+
+    leafmap's folium (``leafmap.foliumap.Map``) and pydeck (``leafmap.deck.Map``)
+    backends aren't ipywidgets, so they raise a `TypeError` that points to
+    alternatives.
+
+    Maps fill their container, including in a non-filling ``page_*()``, unless the
+    map has a height of its own (e.g., ``leafmap.Map(height=400)``, or
+    ``Layout(height="300px")``). leafmap's 600px default is treated as unset.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    widget. Use `.widget` to programmatically update the rendered map in place
+    (e.g., change its `zoom` or `center`, or add layers; trait changes on the
+    widget are synced to the browser), or to reactively read map state with
+    :func:`~shinywidgets.reactive_read`, e.g. ``zoom``/``center``/``bounds`` for
+    the ipyleaflet backend, or ``view_state``/``clicked`` for the maplibre one.
+    The Plotly backend is already a `FigureWidget`, so it is rendered directly;
+    `.value` retains the original map and its leafmap methods.
+
+    Note
+    ----
+    **Typing**: `.widget` is typed as an `ipyleaflet.Map` (the default backend,
+    and what `leafmap.leafmap.Map` subclasses), so it type-checks best with that
+    backend. For another backend, `.widget` is that backend's widget at runtime.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
 
 
 class render_lonboard(render_widget_base[ValueT, LonboardMap]):
@@ -1216,6 +1382,74 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
         res = super().auto_output_ui()
         res.children.append(_bokeh_dependency())
         return res
+
+
+class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
+    """
+    Reactively render a [perspective](https://perspective-dev.github.io) viewer as a
+    Shiny output.
+
+    The decorated function may return a `pandas` or `polars` DataFrame or a
+    `perspective.Table` (both are coerced to a `perspective.widget.PerspectiveWidget`;
+    requires ``pip install 'shinywidgets[perspective]'``), or a
+    `perspective.widget.PerspectiveWidget` widget. A pandas index becomes an ``index``
+    column.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `PerspectiveWidget` instance. Use `.widget` to programmatically update the rendered
+    viewer in place (e.g., `.widget.update()` streams new rows, and trait changes are
+    synced to the browser), or to reactively read widget state (e.g., `plugin`,
+    `group_by`, `sort`, or `filter`) with :func:`~shinywidgets.reactive_read`.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    Perspective keeps every table it hosts in memory for the life of the process, so a
+    table created from a DataFrame is not freed when the output re-renders. To change
+    the data, prefer updating the existing viewer in place: `.widget.update(df)`
+    appends rows (or upserts them, for a table with an ``index``), and
+    `.widget.clear()` followed by `.widget.update(df)` swaps them out.
+    (`.widget.replace()` also swaps rows, but as of perspective-python 5.6 it only
+    accepts records, a dict of columns, or Arrow IPC bytes, not a DataFrame.)
+
+    A viewer's browser can list, read, and write every table on its widget's
+    Perspective server. A DataFrame gets a server of its own, so other sessions
+    can't reach its data. Tables made with ``perspective.table()`` (and widgets made
+    with ``PerspectiveWidget(df)``) live on Perspective's process-wide server,
+    which every session's viewer can reach, so only use them for data that every
+    user may see and edit. For per-user data, create the table on a private server
+    instead: ``perspective.Server().new_local_client().table(df)``.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    def _as_widget(self, value: ValueT) -> PerspectiveWidget:
+        # DataFrames are generic types that other renderers accept too, so
+        # they can't be registered in AS_WIDGET_MAP. Checked by name (pandas and
+        # polars are optional) and through the MRO, so subclasses (e.g.,
+        # geopandas.GeoDataFrame, or an app-defined subclass) count too.
+        if any(
+            widget_pkg(cls) in ("pandas", "polars") and cls.__name__ == "DataFrame"
+            for cls in type(value).__mro__
+        ):
+            return perspective_widget(value)
+        return super()._as_widget(value)
 
 
 class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):

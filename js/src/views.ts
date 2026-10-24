@@ -137,3 +137,66 @@ function disposeLeafletMap(view: WidgetView): void {
     }
   });
 }
+
+// Patches for ipysigma's SigmaView. These patch the module in the loader (unlike
+// the create_view-time patches above) because setLayout() runs as soon as the view
+// is displayed, before any create_view() callback could intervene. `widgetModule`
+// is the module's untyped export object.
+//
+// - ipysigma reuses the `layout` trait (normally an ipywidgets Layout model) for
+//   its node positions, so a plain object reaches DOMWidgetView.setLayout(), which
+//   tries to create a child view for it and rejects. The view never has a Layout
+//   to apply, so make setLayout() a no-op.
+// - shinywidgets rewrites sigma's default height to 100% so the graph fills (see
+//   ipysigma_layout_defaults()), but the output container's height may not be
+//   definite (e.g. output_widget(fillable=False)), so it collapses to 0 and sigma
+//   throws. Python can't see the container, so fall back to sigma's default height
+//   once displayed.
+// - sigma's kill() drops its canvases but not their WebGL contexts, which keep
+//   counting against the browser's per-page cap (~16) until GC. Past the cap the
+//   browser evicts the oldest contexts, so re-rendering one graph a few times
+//   blanks the other graphs on the page. Release them before the view goes.
+interface SigmaView {
+  el: HTMLElement;
+  container: HTMLElement;
+  model: { set(key: 'height', value: string): void };
+  displayed: Promise<unknown>;
+  render(): unknown;
+  remove(): void;
+}
+
+const SIGMA_DEFAULT_HEIGHT = '500px';
+
+export function patchSigmaView(widgetModule: { SigmaView?: { prototype: SigmaView } }): void {
+  const proto = widgetModule.SigmaView?.prototype;
+  if (!proto) {
+    return;
+  }
+  const nativeRender = proto.render;
+  const nativeRemove = proto.remove;
+  Object.assign(proto, {
+    setLayout: () => {},
+    render(this: SigmaView) {
+      // Registered before the native render() registers the handler that creates
+      // the sigma renderer, so this runs first
+      void this.displayed.then(() => {
+        if (this.el.style.height.endsWith('%') && this.el.clientHeight === 0) {
+          // ipysigma's fullscreen exit restores the model's height
+          this.model.set('height', SIGMA_DEFAULT_HEIGHT);
+          this.el.style.height = SIGMA_DEFAULT_HEIGHT;
+          this.container.style.height = SIGMA_DEFAULT_HEIGHT;
+        }
+      });
+      return nativeRender.call(this);
+    },
+    remove(this: SigmaView) {
+      // getContext() returns the canvas' existing context (or null for sigma's 2D
+      // canvases), so this never creates one
+      for (const canvas of this.el.querySelectorAll('canvas')) {
+        const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
+        gl?.getExtension('WEBGL_lose_context')?.loseContext();
+      }
+      return nativeRemove.call(this);
+    },
+  });
+}

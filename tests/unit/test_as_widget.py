@@ -733,3 +733,33 @@ def test_as_widget_jscatter_real_scatter(monkeypatch: pytest.MonkeyPatch) -> Non
     res = as_widget(scatter)
     assert isinstance(res, JupyterScatter)
     assert res is scatter.widget
+
+
+def test_as_widget_leafmap_folium_errors_with_static_recipe() -> None:
+    # leafmap's folium backend isn't an ipywidget, so point at the working
+    # static recipe (folium's to_html() is a whole HTML document)
+    class FoliumMap:
+        __module__ = "leafmap.foliumap"
+
+    with pytest.raises(TypeError) as excinfo:
+        as_widget(FoliumMap())
+    msg = str(excinfo.value)
+    assert "_repr_html_" in msg
+    assert "to_html()" in msg
+    assert "@render.ui" in msg
+
+
+def test_as_widget_leafmap_deck_errors_with_pydeck_advice() -> None:
+    # leafmap's deck backend subclasses pydeck's Deck, so it should get pydeck's
+    # guidance (plus a leafmap-specific pointer) rather than a generic error
+    class FakeDeck:
+        __module__ = "pydeck.bindings.deck"
+
+    class LeafmapDeck(FakeDeck):
+        __module__ = "leafmap.deck"
+
+    with pytest.raises(TypeError) as excinfo:
+        as_widget(LeafmapDeck())
+    msg = str(excinfo.value)
+    assert "pydeck v0.9 removed its Jupyter widget" in msg
+    assert "leafmap.maplibregl.Map" in msg

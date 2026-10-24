@@ -117,6 +117,25 @@ const keplerglBehavior: WidgetBehavior = {
   },
 };
 
+// shinywidgets.css sizes an ipyleaflet map to its (non-filling) output's
+// definite height via flex layout, unless the map has an explicit
+// `Layout(height=...)` (an inline style), which takes precedence. A CSS
+// attribute selector can't tell an inline `height:` apart from `min-height:`/
+// `max-height:`, so track the explicit height with a class instead. Exported
+// so output.ts can also apply it to Map subclasses (their widget_pkg is the
+// subclass's package, not "ipyleaflet").
+export const ipyleafletBehavior: WidgetBehavior = {
+  setupFixedSize: ({ lmWidget }) => {
+    if (!lmWidget.classList.contains('leaflet-widgets')) return;
+    const sync = () =>
+      lmWidget.classList.toggle('shinywidgets-explicit-height', lmWidget.style.height !== '');
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(lmWidget, { attributes: true, attributeFilter: ['style'] });
+    return () => observer.disconnect();
+  },
+};
+
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
   ipyvolume: ipyvolumeBehavior,
@@ -124,4 +143,5 @@ export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   keplergl: keplerglBehavior,
   plotly: plotlyBehavior,
   quak: quakBehavior,
+  ipyleaflet: ipyleafletBehavior,
 };
