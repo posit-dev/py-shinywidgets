@@ -46,7 +46,11 @@ holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
 ipycytoscape = ["ipycytoscape"]
-ipydatagrid = ["ipydatagrid"]
+# ipydatagrid 1.2.0 is the first release that doesn't construct widgets while
+# the package is imported (1.1.x builds `Expr()` widgets in class bodies), so
+# older versions raise "shinywidgets requires that all ipywidgets be
+# constructed within an active Shiny session" on `import ipydatagrid`. (#99)
+ipydatagrid = ["ipydatagrid>=1.2.0"]
 ipyleaflet = ["ipyleaflet>=0.20.0"]
 ipysigma = ["ipysigma"]
 itables = ["itables[widget]"]
@@ -85,7 +89,7 @@ test = [
   "ipyaladin",
   "ipycanvas",
   "ipycytoscape",
-  "ipydatagrid",
+  "ipydatagrid>=1.2.0",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
@@ -131,7 +135,7 @@ dev = [
   "ipyaladin",
   "ipycanvas",
   "ipycytoscape",
-  "ipydatagrid",
+  "ipydatagrid>=1.2.0",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
@@ -180,7 +184,7 @@ test = [
   "ipyaladin",
   "ipycanvas",
   "ipycytoscape",
-  "ipydatagrid",
+  "ipydatagrid>=1.2.0",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
