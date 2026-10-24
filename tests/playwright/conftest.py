@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import io
 from typing import Any
 
+import numpy as np
+from PIL import Image
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, Route, expect
 from shiny.run import ShinyAppProc
 
@@ -113,6 +117,39 @@ def collect_errors(page: Page) -> tuple[list[str], list[str]]:
         lambda res: failed_requests.append(res.url) if res.status >= 400 else None,
     )
     return errors, failed_requests
+
+
+# The red-pixel count that counts as "the scene was drawn" for
+# wait_for_red_pixels() (e.g., a scatter of pure-red markers on white)
+MIN_RED_PIXELS = 50
+
+
+def count_red_pixels(page: Page, selector: str) -> int:
+    try:
+        # Short timeout: a missing/detached canvas (e.g., mid re-render)
+        # counts as "not drawn yet" rather than failing the poll
+        png = page.locator(selector).first.screenshot(timeout=1000)
+    except PlaywrightError:
+        return 0
+    rgb = np.asarray(Image.open(io.BytesIO(png)).convert("RGB")).astype(int)
+    # Marker shading darkens pure red to ~rgb(198,0,0), so don't demand >200
+    red = (rgb[..., 0] > 150) & (rgb[..., 1] < 80) & (rgb[..., 2] < 80)
+    return int(red.sum())
+
+
+def wait_for_red_pixels(page: Page, selector: str, timeout_ms: int = 30000) -> None:
+    """Wait until a WebGL canvas shows its (red) scene, via screenshot pixels.
+
+    WebGL pixels can't be read back from the canvas itself (no
+    preserveDrawingBuffer), so check the composited pixels instead. The first
+    drawn frame is also a good "the widget finished initializing" signal:
+    until then, the page's main thread may still be busy with WebGL setup.
+    """
+    waited = 0
+    while count_red_pixels(page, selector) <= MIN_RED_PIXELS:
+        assert waited < timeout_ms, f"no scene pixels drawn in {selector}"
+        page.wait_for_timeout(250)
+        waited += 250
 
 
 def assert_no_unexpected_errors(

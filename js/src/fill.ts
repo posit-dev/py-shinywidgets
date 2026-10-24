@@ -1,4 +1,5 @@
 import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
+import { setupIpyvolumeAutoResize } from './ipyvolume';
 import { setupJscatterAutoHeight, setupJscatterFixedHeight } from './jscatter';
 import { setupKeplerAutoHeight } from './keplergl';
 import { setupMplAutoResize } from './mpl';
@@ -82,6 +83,25 @@ const plotlyBehavior: WidgetBehavior = {
   },
 };
 
+// ipyvolume figures render at a fixed pixel size and need their canvas
+// resized to the container (see setupIpyvolumeAutoResize). The same applies
+// when the output (or the widget's own Layout) has an explicit height;
+// otherwise the figure's intrinsic size applies, so leave it alone.
+const ipyvolumeBehavior: WidgetBehavior = {
+  setupFill: ({ el, view, model }) => setupIpyvolumeAutoResize(el, view, model),
+  setupFixedSize: ({ el, lmWidget, view, model }) =>
+    // Only resize when the output (or the widget's own Layout, which lands on
+    // the widget element) has an explicit height; otherwise the figure's
+    // intrinsic pixel size applies. Checked at resize time: the Layout style
+    // may only be applied after setup runs.
+    setupIpyvolumeAutoResize(
+      el,
+      view,
+      model,
+      () => !!(el.style.height || lmWidget.style.height || (view.el as HTMLElement).style.height)
+    ),
+};
+
 const quakBehavior: WidgetBehavior = {
   setupFill: ({ el, lmWidget }) => setupQuakFit(el, lmWidget, true),
   setupFixedSize: ({ el, lmWidget }) => setupQuakFit(el, lmWidget, false),
@@ -118,6 +138,7 @@ export const ipyleafletBehavior: WidgetBehavior = {
 
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
+  ipyvolume: ipyvolumeBehavior,
   jscatter: jscatterBehavior,
   keplergl: keplerglBehavior,
   plotly: plotlyBehavior,

@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from ipyleaflet import Map as LeafletMap
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from ipysigma import Sigma
+    from ipyvolume.widgets import Figure as IpyvolumeFigure
     from itables.widget import ITable
     from jscatter.widget import JupyterScatter
     from jupyter_bokeh import BokehModel
@@ -42,7 +43,7 @@ else:
     ) = base = LeafletMap = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
-    ) = QuakWidget = PerspectiveWidget = object
+    ) = QuakWidget = PerspectiveWidget = IpyvolumeFigure = object
 
 from shiny.render.renderer import ValueFn
 
@@ -89,6 +90,7 @@ __all__ = (
     "render_ipydatagrid",
     "render_ipyleaflet",
     "render_ipysigma",
+    "render_ipyvolume",
     "render_itables",
     "render_jscatter",
     "render_keplergl",
@@ -217,6 +219,99 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    """
+
+
+class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
+    """
+    Reactively render an [ipyvolume](https://ipyvolume.readthedocs.io) 3D plot as
+    a Shiny output.
+
+    The decorated function may return an `ipyvolume.Figure` widget (requires
+    ``pip install 'shinywidgets[ipyvolume]'``; ipyvolume 0.6.3 also needs
+    ``ipython_genutils``, which it doesn't declare, so the extra installs it
+    for you). For any output that can re-render, construct the figure directly
+    (`ipyvolume.Figure`, with `ipyvolume.widgets.Scatter` and friends added to
+    ``fig.scatters``) rather than using the pylab API (`ipv.figure()`,
+    `ipv.scatter()`, `ipv.quickscatter()`): pylab also constructs a (never
+    rendered) Container whose shared template widgets get closed by the first
+    re-render, leaving dangling model waiters in the browser -- in practice,
+    every other pylab re-render stalls for ~30 seconds waiting on them, while
+    directly constructed figures re-render in well under a second. The pylab
+    API is still accepted (return `ipv.gcf()` after drawing, or the container
+    returned by `ipv.quickscatter()`/`ipv.gcc()`, which is unwrapped to its
+    figure) and is fine for static outputs; call the pylab functions inside
+    the render function, since they draw on a module-level "current figure",
+    so figures created elsewhere can end up shared across sessions. With
+    direct construction, set ``size_selected``/``color_selected`` explicitly
+    on scatters -- their trait defaults are 0-d numpy arrays, which don't
+    JSON-serialize -- and set ``fig.xlim``/``fig.ylim``/``fig.zlim``, since
+    directly constructed figures default to a [0, 1]^3 axis box with no
+    auto-fit. In a filling layout, the figure's WebGL canvas is resized to
+    fill its container (and tracks container resizes) unless the figure has
+    an explicit ``width`` or ``height``.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `ipyvolume.Figure` instance. Use `.widget` to programmatically update the
+    rendered figure in place (trait changes on the widget are synced to the
+    browser), or to reactively read widget state with
+    :func:`~shinywidgets.reactive_read` (e.g., ``reactive_read(plot.widget,
+    "camera")``). For selections, register a callback with
+    ``plot.widget.on_selection(fn)`` (selections arrive as custom messages, not
+    trait changes) and set a `reactive.value` inside it.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    import ipyvolume as ipv
+    import numpy as np
+    from shiny import App, ui
+    from shinywidgets import output_widget, render_ipyvolume
+
+    app_ui = ui.page_fillable(output_widget("plot"))
+
+
+    def server(input, output, session):
+        @render_ipyvolume
+        def plot():
+            x, y, z = np.random.normal(size=(3, 1000))
+            fig = ipv.Figure()
+            fig.xlim = fig.ylim = fig.zlim = (-4, 4)
+            fig.scatters = [
+                ipv.widgets.Scatter(
+                    x=x,
+                    y=y,
+                    z=z,
+                    size=1,
+                    marker="sphere",
+                    size_selected=1,
+                    color_selected="red",
+                )
+            ]
+            return fig
+
+
+    app = App(app_ui, server)
+    ```
     """
 
 
