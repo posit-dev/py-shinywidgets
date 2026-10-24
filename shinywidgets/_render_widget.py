@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 import warnings
 from importlib.metadata import version as package_version
@@ -60,6 +61,7 @@ if TYPE_CHECKING:
     from maplibre.ipywidget import MapWidget
     from maplibre.map import Map as MaplibreMap
     from matplotlib.backend_bases import MouseEvent, PickEvent
+    from mols2grid.molgrid import MolGrid
     from mosaic_widget import MosaicWidget  # pyright: ignore[reportMissingImports]
     from narwhals.typing import IntoDataFrameT
     from nglview import NGLWidget
@@ -111,12 +113,14 @@ else:
         PythreejsRenderer
     ) = PyvistaPlotter = PyvistaHtmlWidget = ObsplotWidget = VizarrViewer = (
         RerunViewer
-    ) = RerunNotebookViewer = NiiVue = object
+    ) = RerunNotebookViewer = NiiVue = MolGrid = object
     Reactable = ReactableWidget = object
     MouseEvent = PickEvent = SelectionChangeEvent = object
     Angle = Latitude = Longitude = SkyCoord = Table = Camera = object
 
-from shiny.render.renderer import ValueFn
+from ipywidgets.widgets import HTML, Box, Layout
+from shiny.render.renderer import Jsonifiable, ValueFn
+from shiny.session import get_current_session
 
 from ._accessors import RatePolicy
 from ._altair import ALTAIR_ACCESSORS, chart_frame, filter_selection, pick_selection
@@ -186,6 +190,8 @@ if TYPE_CHECKING:
     # a pyvista Plotter or the pre-exported html-backend widget itself.
     PyvistaValue = Union[PyvistaPlotter, PyvistaHtmlWidget]
 PyvistaValueT = TypeVar("PyvistaValueT", bound="PyvistaValue")
+# String bound: mols2grid (and pandas) are optional dependencies.
+Mols2GridValueT = TypeVar("Mols2GridValueT", bound="Union[MolGrid, pd.DataFrame]")
 
 __all__ = (
     "render_widget",
@@ -212,6 +218,7 @@ __all__ = (
     "render_lonboard",
     "render_maplibre",
     "render_matplotlib",
+    "render_mols2grid",
     "render_mosaic_widget",
     "render_nglview",
     "render_niivue",
@@ -3870,6 +3877,292 @@ class render_vizarr(render_widget_base[ValueT, VizarrViewer]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     """
+
+
+class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
+    """
+    Reactively render a [mols2grid](https://mols2grid.readthedocs.io) molecule
+    grid as a Shiny output.
+
+    The decorated function may return either a `mols2grid.MolGrid`, or a
+    `pandas.DataFrame` with a SMILES column (``smiles_col``, ``"SMILES"`` by
+    default) or an RDKit molecule column (``mol_col``), which is coerced to a
+    `MolGrid` (requires ``pip install 'shinywidgets[mols2grid]'``). Don't return
+    the object returned by ``mols2grid.display()`` -- it's an IPython HTML
+    object, not a grid.
+
+    Extra keyword arguments are forwarded to mols2grid, split the way
+    ``mols2grid.display()`` splits them: data/drawing options (``size``,
+    ``useSVG``, ``prerender``, ``cache_selection``, ``removeHs``,
+    ``use_coords``, ``coordGen``, ``MolDrawOptions``, ``name``, ``rename``) go
+    to `MolGrid()`, and the visual options (``subset``, ``tooltip``,
+    ``sort_by``, ``n_items_per_page``, ``selection``, ``custom_css``,
+    ``transform``, ``callback``, ...) go to the grid's rendering. The grid is
+    always displayed in an iframe (``use_iframe=True``), which keeps its
+    jQuery/Bootstrap globals out of your app's page.
+
+    The decorated function also gains three read-only attributes: `.value`, the
+    value most recently returned by the render function, `.widget`, the rendered
+    `ipywidgets.Box` holding the output, and `.grid`, the `MolGrid` instance
+    backing it. The `MolGridWidget` that syncs selection state is
+    `.grid.widget`.
+
+    * **Selection (browser -> Python):**
+      ``ast.literal_eval(reactive_read(grid.grid.widget, "selection"))`` gives a
+      dict of selected rows, e.g. ``{0: "CCO"}`` (the trait is a repr string
+      with unquoted keys, not JSON, so parse it with `ast.literal_eval`, as
+      mols2grid itself does). ``grid.grid.get_selection()`` returns the selected
+      rows as a DataFrame.
+    * **Filtering (Python -> browser):** ``grid.grid.filter(mask)`` (a boolean
+      mask, Series, or list) hides non-matching molecules in the already
+      rendered grid, without re-rendering. Call it in response to user input:
+      a filter issued while the grid is still loading is recorded on the
+      widget's ``filter_mask`` trait but not applied by mols2grid's frontend
+      (upstream limitation), so re-issue it once the grid is visible.
+    * **Grid name**: mols2grid keys selections in a process-global registry, so
+      grids coerced from a DataFrame get a name unique to the session and the
+      output (a stable ``"shiny-<session>-<output>"`` slug). A `MolGrid` you
+      construct keeps its own
+      ``name`` -- give it a unique one (the default ``"default"`` collides
+      across sessions and across multiple grids on a page), and note that a
+      `MolGrid` is itself process-global state, so construct it inside the
+      render function, not at the top level of the app.
+    * **Network access**: the grid's JavaScript (list.js, jQuery, RDKit
+      MinimalLib, Bootstrap) loads from CDNs at render time, so the grid needs
+      an internet connection (it renders empty, without an error, when the CDNs
+      are unreachable).
+    * **Sizing**: the grid sizes its own height to fit its contents (mols2grid's
+      ``fitIframe``), so it scrolls with the page rather than stretching to a
+      filling container; an explicit ``height`` on the output acts as a viewport
+      that clips the grid. Grid data is inlined into the iframe document
+      (~1.2 KB per molecule), so very large grids (roughly 5k+ molecules) can
+      approach Shiny's websocket message limit.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    smiles_col
+        The DataFrame column holding SMILES strings. Set to ``None`` when
+        using ``mol_col`` instead.
+    mol_col
+        The DataFrame column holding RDKit molecules (e.g., from
+        ``mols2grid.sdf_to_dataframe()``, which produces both). With
+        ``smiles_col=None``, a SMILES column named ``"SMILES"`` is generated
+        from the molecules (mols2grid itself mis-renders a ``None`` SMILES
+        column).
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    kwargs
+        Extra keyword arguments forwarded to mols2grid (split between
+        `MolGrid()` and its rendering, as described above).
+
+    Examples
+    --------
+    ```python
+    import ast
+
+    import mols2grid
+    from shiny import App, reactive, render, ui
+    from shinywidgets import output_widget, reactive_read, render_mols2grid
+
+    mols = mols2grid.sdf_to_dataframe(mols2grid.datafiles.SOLUBILITY_SDF)
+
+    app_ui = ui.page_fluid(
+        output_widget("grid"),
+        ui.output_text("n_selected"),
+    )
+
+
+    def server(input, output, session):
+        @render_mols2grid(subset=["ID"], tooltip=["ID", "SOL"])
+        def grid():
+            return mols
+
+        @render.text
+        def n_selected():
+            selection = ast.literal_eval(reactive_read(grid.grid.widget, "selection"))
+            return f"{len(selection)} molecule(s) selected"
+
+
+    app = App(app_ui, server)
+    ```
+    """
+
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[Mols2GridValueT]] = None,
+        *,
+        smiles_col: Optional[str] = "SMILES",
+        mol_col: Optional[str] = None,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+        **kwargs: Any,
+    ):
+        super().__init__(_fn, width=width, height=height, fill=fill, fillable=fillable)
+        self.smiles_col = smiles_col
+        self.mol_col = mol_col
+        # MolGrid() takes the data/drawing options, while the visual ones
+        # (subset, tooltip, sort_by, ...) belong to its rendering; split them
+        # the way mols2grid's own dispatch wrapper does, so that e.g.
+        # render_mols2grid(subset=[...]) just works.
+        self.grid_kwargs: Dict[str, Any] = {}
+        self.render_kwargs: Dict[str, Any] = {}
+        for key, val in kwargs.items():
+            target = self.grid_kwargs if key in _MOLGRID_KWARGS else self.render_kwargs
+            target[key] = val
+        self._grid: Optional[MolGrid] = None
+
+    @property
+    def grid(self) -> Optional[MolGrid]:
+        """
+        The `mols2grid.MolGrid` most recently rendered (read-only). Read it
+        reactively like `.value`/`.widget`; use `.grid.widget` (the
+        `MolGridWidget`) for `reactive_read()`.
+        """
+        return self._get_reactive_obj(self._grid)
+
+    @grid.setter
+    def grid(self, grid: object):
+        raise RuntimeError(
+            "The `grid` attribute of a @render_mols2grid function is read only."
+        )
+
+    async def _render(self) -> Jsonifiable | None:
+        # Reset before rendering, so `.grid` mirrors `.value`/`.widget` (readers
+        # are invalidated by the base render before a new grid is set)
+        self._grid = None
+        return await super()._render()
+
+    def as_grid(self, value: Mols2GridValueT) -> MolGrid:
+        try:
+            from mols2grid import MolGrid
+        except ImportError:
+            raise ImportError(
+                "Install the mols2grid package to use render_mols2grid with shinywidgets (pip install 'shinywidgets[mols2grid]')."
+            )
+
+        if isinstance(value, MolGrid):
+            # A user-supplied MolGrid keeps its own name; mols2grid's default
+            # name lives in a process-global selection registry, so it collides
+            # across sessions (and across multiple grids on one page)
+            if value.widget.grid_id == "default":
+                warnings.warn(
+                    "This mols2grid.MolGrid uses the default grid name ('default'), "
+                    "which mols2grid stores in a process-global selection registry: "
+                    "other sessions and grids using the same name will overwrite its "
+                    "selection. Construct it with a unique `name=...` instead.",
+                    stacklevel=3,
+                )
+            return value
+        if not is_pandas_dataframe(value):
+            raise TypeError(
+                "A @render_mols2grid render function should return a "
+                f"mols2grid.MolGrid or a pandas.DataFrame, not an object of type "
+                f"'{type(value).__name__}'. (Note that mols2grid.display() returns "
+                "an IPython HTML object, which can't be rendered; return the "
+                "MolGrid or DataFrame instead.)"
+            )
+        # A name passed to the decorator overrides the default, which is
+        # unique per session *and* output: two grids in the same session share
+        # the window, so a shared name would cross-wire their selections
+        # (mols2grid keys models and lists by name on window)
+        # (output_id is only set once the renderer decorates a function)
+        output_id = getattr(self, "output_id", "grid")
+        name = _MOLS2GRID_NAME_SLUG.sub("-", f"{grid_name()}-{output_id}")
+        grid_kwargs = {"name": name, **self.grid_kwargs}
+        smiles_col = self.smiles_col
+        if smiles_col is None:
+            if self.mol_col is None:
+                raise ValueError(
+                    "One of `smiles_col` or `mol_col` must be set for "
+                    "@render_mols2grid."
+                )
+            # mols2grid 2.2.0 creates a column named NaN (which its rendering
+            # then chokes on) when smiles_col is None, so name the SMILES it
+            # generates from the molecules instead
+            smiles_col = "SMILES"
+        return MolGrid(
+            value,
+            smiles_col=smiles_col,
+            mol_col=self.mol_col,
+            **grid_kwargs,
+        )
+
+    def _as_widget(self, value: Mols2GridValueT) -> Widget:
+        grid = self.as_grid(value)
+        self._grid = grid
+
+        render_kwargs = dict(self.render_kwargs)
+        if not render_kwargs.pop("use_iframe", True):
+            warnings.warn(
+                "@render_mols2grid always renders the grid in an iframe "
+                "(use_iframe=True), so the `use_iframe` argument is ignored.",
+                stacklevel=3,
+            )
+
+        # MolGridWidget's own frontend is a 0x0 element that only bridges
+        # selection/filter state; the grid itself is a separate HTML document.
+        # mols2grid's marimo integration displays the two stacked, and an
+        # ipywidgets Box does the same here. display() (rather than render())
+        # escapes the document for the iframe's srcdoc attribute.
+        iframe = grid.display(use_iframe=True, **render_kwargs)
+        # The inner width hint is load-bearing: ipywidgets renders HTML as an
+        # inline-flex container, so without it the iframe collapses to its
+        # 300px replaced-element default instead of filling the output
+        html = HTML(str(iframe.data), layout=Layout(width="100%"))
+        return Box(
+            [grid.widget, html],
+            layout=Layout(width="100%", height="auto"),
+        )
+
+
+# Kwargs that belong to MolGrid()'s constructor (everything else a
+# render_mols2grid() call accepts is a rendering option, as split by
+# mols2grid's own dispatch._prepare_kwargs)
+_MOLGRID_KWARGS = frozenset(
+    {
+        "size",
+        "useSVG",
+        "prerender",
+        "cache_selection",
+        "removeHs",
+        "use_coords",
+        "coordGen",
+        "MolDrawOptions",
+        "name",
+        "rename",
+    }
+)
+
+_MOLS2GRID_NAME_SLUG = re.compile(r"[^0-9a-zA-Z_-]+")
+
+
+def grid_name() -> str:
+    """
+    A stable, session-unique mols2grid grid name.
+
+    mols2grid keys selections by a process-global registry, so two sessions
+    using the default name (``"default"``) clobber each other's selection.
+    Keying on the Shiny session keeps sessions isolated while staying stable
+    across re-renders, so that registry doesn't grow without bound.
+    """
+    session = get_current_session()
+    raw = "shiny" if session is None else f"shiny-{session.id}"
+    return _MOLS2GRID_NAME_SLUG.sub("-", raw).strip("-")
 
 
 def dataframe_to_keplergl(df: pd.DataFrame) -> KeplerGl:
