@@ -536,8 +536,14 @@ def close_widget(w: Widget) -> None:
     model_id = w.model_id
     w.close()
     # An app-defined NGLWidget subclass gets widget_pkg() of the app's module,
-    # so recognize nglview through the MRO (same as set_layout_defaults()).
-    if any(widget_pkg(cls) == "nglview" for cls in type(w).__mro__):
+    # so recognize NGLWidget through the MRO (same as set_layout_defaults()).
+    # Restrict to actual NGLWidget instances: non-viewer nglview widgets (e.g.
+    # the global _ColormakerRegistry) also match a package-wide MRO check but
+    # have no background threads (or `_event`) to stop.
+    if any(
+        cls.__name__ == "NGLWidget" and widget_pkg(cls) == "nglview"
+        for cls in type(w).__mro__
+    ):
         stop_nglview_threads(w)
     # By closing the widget, we also close the comm, which sets w.comm to
     # None. Unfortunately, the w.model_id property looks up w.comm.comm_id

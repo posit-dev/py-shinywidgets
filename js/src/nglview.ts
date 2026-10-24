@@ -19,6 +19,12 @@ export function setupNglviewAutoSize(
   view: DOMWidgetView,
   trackHeight = true
 ): () => void {
+  // Package-based dispatch also routes non-viewer nglview widgets here (e.g.
+  // RepresentationControl, which renders as an ordinary ipywidgets Box).
+  // Those views have no NGL stage or setSize(), so don't observe them.
+  if (view.model.get('_view_name') !== 'NGLView') {
+    return () => {};
+  }
   const stage = view as unknown as NglviewView;
   const observer = new ResizeObserver(() => {
     const height = trackHeight

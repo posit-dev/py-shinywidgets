@@ -128,6 +128,21 @@ def test_retired_nglview_widget_stops_its_threads(
     assert not any(t.is_alive() for t in threads)
 
 
+def test_close_widget_ignores_non_viewer_nglview_widgets(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # Non-viewer nglview widgets (e.g. the global _ColormakerRegistry, or a
+    # RepresentationControl) match a package-wide MRO check but have no
+    # background threads (or `_event`); closing them must not raise.
+    from nglview.color import _ColormakerRegistry
+    from shinywidgets._shinywidgets import close_widget
+
+    with session_context(widget_session):
+        widget = _ColormakerRegistry()
+    close_widget(widget)  # would raise AttributeError on w._event pre-fix
+    assert widget.comm is not None
+
+
 def test_session_end_stops_nglview_threads(
     nglview: ModuleType, widget_session: Session
 ) -> None:
