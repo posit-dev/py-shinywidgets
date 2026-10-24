@@ -5,6 +5,8 @@ import os
 import sys
 from base64 import b64decode
 from contextlib import contextmanager
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from typing import (
     Any,
     Dict,
@@ -20,6 +22,7 @@ from uuid import uuid4
 from weakref import WeakSet, ref
 
 import ipywidgets
+from packaging.version import Version
 
 from ._render_widget import render_widget
 
@@ -40,7 +43,7 @@ from ._as_widget import as_widget, pydeck_has_widget
 from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
-from ._dependencies import require_dependency, widget_pkg
+from ._dependencies import custom_elements_dependency, require_dependency, widget_pkg
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -61,6 +64,9 @@ def init_shiny_widget(w: Widget):
     if is_unused_pydeck_widget(w):
         retire_unused_widget(w)
         return
+    plotly_version = unsupported_plotly_version(w)
+    if plotly_version is not None:
+        raise RuntimeError(PLOTLY_VERSION_MESSAGE.format(version=plotly_version))
     session = get_current_session()
     if session is None:
         if importing_lonboard() or importing_ipycanvas():
@@ -134,6 +140,8 @@ def init_shiny_widget(w: Widget):
     id = cast(str, w._model_id)
 
     widget_deps: List[Optional[HTMLDependency]] = [widget_dep]
+    if any(widget_pkg(cls) == "perspective" for cls in type(w).__mro__):
+        widget_deps.append(custom_elements_dependency())
     open_keys: Dict[str, object] = {}
     if getattr(w, "_model_module", None) == "@bokeh/jupyter_bokeh":
         widget_deps.append(_bokeh_dependency())
@@ -361,6 +369,62 @@ def is_unused_pydeck_widget(w: Widget) -> bool:
     for Jupyter support) but can never display?
     """
     return widget_pkg(w) == "pydeck" and not pydeck_has_widget()
+
+
+PLOTLY_VERSION_MESSAGE = (
+    "shinywidgets requires plotly >= 5.12, but plotly {version} is installed. "
+    "Older plotly versions' FigureWidget is incompatible with the widget "
+    "manager shinywidgets uses (it renders as a blank output with no error; "
+    "see https://github.com/posit-dev/py-shinywidgets/issues/332). "
+    "Upgrade plotly (`pip install -U plotly`), or pin shinywidgets to 0.8.2 "
+    "to keep using an older plotly."
+)
+
+
+def unsupported_plotly_version(w: Widget) -> Optional[Version]:
+    """
+    The plotly version, if `w` is a plotly widget and that version is too old
+    to render (< 5.12, the first release whose FigureWidget
+    frontend supports ipywidgets 8); otherwise None.
+    """
+    if not any(widget_pkg(cls) == "plotly" for cls in type(w).__mro__):
+        return None
+    version = _plotly_version()
+    if version is not None and version < Version("5.12"):
+        return version
+    return None
+
+
+def _plotly_version() -> Optional[Version]:
+    """
+    The version of the imported plotly, or of the installed one if that can't be
+    determined.
+
+    The imported module is the one that renders, and it isn't necessarily the
+    one whose metadata is installed (e.g., a source checkout on `PYTHONPATH`
+    shadowing an installed wheel).
+    """
+    versions: List[Optional[str]] = []
+    try:
+        import plotly
+
+        versions.append(getattr(plotly, "__version__", None))
+    except Exception:
+        pass
+    try:
+        versions.append(package_version("plotly"))
+    except PackageNotFoundError:
+        pass
+
+    for version in versions:
+        if not version:
+            continue
+        try:
+            return Version(version)
+        except Exception:
+            continue
+
+    return None
 
 
 def retire_unused_widget(w: Widget) -> None:
