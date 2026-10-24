@@ -33,13 +33,14 @@ if TYPE_CHECKING:
     from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
+    from pygwalker.api.anywidget import _WalkerWidget as WalkerWidget
     from quak import Widget as QuakWidget
 else:
     JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
         BokehModel
     ) = MapWidget = FigureWidget = DeckGLWidget = MosaicWidget = BqplotFigure = (
         CytoscapeWidget
-    ) = base = LeafletMap = object
+    ) = base = LeafletMap = WalkerWidget = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
     ) = QuakWidget = PerspectiveWidget = object
@@ -102,6 +103,7 @@ __all__ = (
     "render_plotly",
     "render_plotnine",
     "render_pydeck",
+    "render_pygwalker",
     "render_quak",
 )
 
@@ -1665,6 +1667,97 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
         if not pydeck_has_widget():
             raise TypeError(PYDECK_NO_WIDGET_MESSAGE)
         return super()._as_widget(value)
+
+
+class render_pygwalker(render_widget_base[ValueT, WalkerWidget]):
+    """
+    Reactively render a [PyGWalker](https://docs.kanaries.net/pygwalker) data
+    exploration app as a Shiny output.
+
+    The decorated function may return either a pandas `DataFrame` (which is coerced to
+    a PyGWalker widget; requires ``pip install 'shinywidgets[pygwalker]'``) or a widget created by
+    `pygwalker.api.anywidget.walk()` (use this to pass options like ``theme_key``).
+    Don't use the top-level `pygwalker.walk()`: outside of Jupyter, it starts a
+    blocking web server instead of returning a widget.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    PyGWalker widget. The widget has no traits that track the explorer's state, so
+    there's nothing to :func:`~shinywidgets.reactive_read`, and changing the explorer
+    means re-rendering it. Each render sends PyGWalker's JavaScript (about 10 MB) to
+    the browser, so avoid unnecessary re-renders.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output. Outside of
+    filling layouts, give it a height (e.g., ``"800px"``) that fits PyGWalker's UI.
+
+    Note
+    ----
+    **Privacy**: by default, PyGWalker sends usage events and checks for updates,
+    from both the Python process and each visitor's browser. Call
+    ``pygwalker.GlobalVarManager.set_privacy("offline")`` (before rendering) to
+    disable both.
+
+    **Security**: PyGWalker computes charts by running SQL that the browser sends on
+    DuckDB's process-wide default connection, and any visitor can send arbitrary SQL,
+    including SQL that reads or writes files on the server. In deployed apps, lock
+    that connection down when the app starts (this also applies to any other code in
+    the process that uses ``duckdb.sql()`` and friends without a connection):
+
+    ```python
+    import duckdb
+
+    # Set first: PyGWalker sets it per query, which a locked configuration refuses
+    duckdb.execute("SET TimeZone = 'UTC'")
+    duckdb.execute("SET enable_external_access = false")
+    duckdb.execute("SET lock_configuration = true")
+    ```
+
+    Even then, the explorer is best suited to trusted users: a visitor can still send
+    expensive queries, which block the Python process while they run.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    # DataFrames are generic (several renderers accept them), so they can't be
+    # registered in AS_WIDGET_MAP
+    def _as_widget(self, value: ValueT) -> WalkerWidget:
+        if is_dataframe(value, "polars"):
+            raise TypeError(
+                "PyGWalker's polars support is broken with polars >= 1.0. "
+                "Pass a pandas DataFrame instead (e.g., df.to_pandas())."
+            )
+        if not is_dataframe(value, "pandas"):
+            return super()._as_widget(value)
+
+        try:
+            from pygwalker.api.anywidget import walk
+        except ImportError:
+            raise ImportError(
+                "Install the pygwalker package to use render_pygwalker with shinywidgets (pip install 'shinywidgets[pygwalker]')."
+            )
+
+        return walk(value)
+
+
+def is_dataframe(x: object, pkg: str) -> bool:
+    return any(
+        widget_pkg(cls) == pkg and cls.__name__ == "DataFrame"
+        for cls in type(x).__mro__
+    )
 
 
 class render_quak(render_widget_base[ValueT, QuakWidget]):

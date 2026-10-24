@@ -364,6 +364,22 @@ def ipysigma_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill and sigma.height == "100%"
 
 
+def pygwalker_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # PyGWalker's UI is ~750px tall regardless of its container, so rather than
+    # being clipped by a shorter container (or explicit height), let it scroll.
+    # Sizing to 100% of the container is what makes an output_widget(height=...)
+    # (which, unlike fill, doesn't constrain the child) apply to the widget.
+    layout = widget.layout  # type: ignore
+    if layout.overflow is None:
+        layout.overflow = "auto"
+    if layout.height in (None, "auto"):
+        layout.height = "100%"
+    # This runs on every render, so a widget that's rendered again (e.g., one
+    # reused via session_lifetime()) already has the "100%" written above, which
+    # set_layout_defaults() reads as an explicit height.
+    return fill or layout.height == "100%"
+
+
 def itables_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # DataTables only gets a scrollable body (which is what lets the table fill
     # its container instead of growing past it) when scrollY is set, so default it
@@ -612,6 +628,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "ipysigma": ipysigma_layout_defaults,
     "itables": itables_layout_defaults,
     "jscatter": jscatter_layout_defaults,
+    "pygwalker": pygwalker_layout_defaults,
     "keplergl": keplergl_layout_defaults,
     "lonboard": lonboard_layout_defaults,
     "jupyter_bokeh": bokeh_layout_defaults,

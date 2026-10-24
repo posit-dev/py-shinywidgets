@@ -69,6 +69,7 @@ panel = ["panel", "jupyter_bokeh>=4.1"]
 perspective = ["perspective-python>=3.0", "pyarrow"]
 plotly = ["plotly>=5.12.0"]
 plotnine = ["plotnine", "ipympl"]
+pygwalker = ["pygwalker>=0.4.9.13"]
 quak = ["quak"]
 test = [
   "altair",
@@ -110,6 +111,7 @@ test = [
   "polars",
   "pyarrow",
   "pydeck",
+  "pygwalker>=0.4.9.13",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
@@ -156,6 +158,7 @@ dev = [
   "polars",
   "pyarrow",
   "pydeck",
+  "pygwalker>=0.4.9.13",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
@@ -205,6 +208,7 @@ test = [
   "polars",
   "pyarrow",
   "pydeck",
+  "pygwalker>=0.4.9.13",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",

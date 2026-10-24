@@ -210,6 +210,11 @@ def test_render_jscatter_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_pygwalker_is_render_widget_base() -> None:
+    renderer = rw.render_pygwalker()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_matplotlib_is_render_widget_base() -> None:
     renderer = rw.render_matplotlib()
     assert isinstance(renderer, rwb.render_widget_base)
