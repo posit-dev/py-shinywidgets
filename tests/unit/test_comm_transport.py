@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import pytest
 
@@ -228,6 +228,137 @@ def test_msg_and_close_callbacks(monkeypatch):
     assert seen["close"] == {"bye": "world"}
 
 
+def test_update_messages_are_coalesced(monkeypatch):
+    """Multiple method='update' sends for the same comm_id produce one flushed callback."""
+    import shinywidgets._comm as comm
+
+    session = FakeSession()
+
+    mgr = comm.ShinyCommManager()
+    c = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
+    session._flush_handlers.clear()
+    session._flushed_handlers.clear()
+
+    c.send(data={"method": "update", "state": {"a": 1}, "buffer_paths": []})
+    c.send(data={"method": "update", "state": {"a": 2, "b": 3}, "buffer_paths": []})
+
+    # Only one flushed callback despite two sends
+    assert len(session._flushed_handlers) == 1
+
+    # The pending entry should have the merged state
+    pending = comm._get_pending_updates(session)
+    assert "c1" in pending
+    assert pending["c1"]["data"]["state"] == {"a": 2, "b": 3}
+
+
+def test_coalesced_state_merges_across_traits(monkeypatch):
+    """Updates to different traits are merged, not replaced."""
+    import shinywidgets._comm as comm
+
+    session = FakeSession()
+
+    mgr = comm.ShinyCommManager()
+    c = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
+    session._flush_handlers.clear()
+    session._flushed_handlers.clear()
+
+    c.send(data={"method": "update", "state": {"x": 10}, "buffer_paths": []})
+    c.send(data={"method": "update", "state": {"y": 20}, "buffer_paths": []})
+
+    pending = comm._get_pending_updates(session)
+    assert pending["c1"]["data"]["state"] == {"x": 10, "y": 20}
+
+
+def test_coalescing_handles_buffers(monkeypatch):
+    """Buffer paths for overridden keys are replaced; others are preserved."""
+    import shinywidgets._comm as comm
+
+    session = FakeSession()
+
+    mgr = comm.ShinyCommManager()
+    c = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
+    session._flush_handlers.clear()
+    session._flushed_handlers.clear()
+
+    c.send(
+        data={
+            "method": "update",
+            "state": {"img": None, "label": "old"},
+            "buffer_paths": [["img"]],
+        },
+        buffers=[b"\x00\x01"],
+    )
+    # Override "img" with new buffer; "label" stays from first message
+    c.send(
+        data={
+            "method": "update",
+            "state": {"img": None},
+            "buffer_paths": [["img"]],
+        },
+        buffers=[b"\x02\x03"],
+    )
+
+    pending = comm._get_pending_updates(session)
+    entry = pending["c1"]
+    assert entry["data"]["state"] == {"img": None, "label": "old"}
+    assert entry["data"]["buffer_paths"] == [["img"]]
+    assert entry["buffers"] == [b"\x02\x03"]
+
+
+def test_non_update_messages_are_not_coalesced(monkeypatch):
+    """Custom-method messages bypass coalescing and get their own callbacks."""
+    import shinywidgets._comm as comm
+
+    session = FakeSession()
+
+    mgr = comm.ShinyCommManager()
+    c = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
+    session._flush_handlers.clear()
+    session._flushed_handlers.clear()
+
+    c.send(data={"method": "custom", "content": {"event": "click"}})
+    c.send(data={"method": "custom", "content": {"event": "hover"}})
+
+    # Each non-update message gets its own flushed callback
+    assert len(session._flushed_handlers) == 2
+
+
+def test_different_comm_ids_coalesce_independently(monkeypatch):
+    """Updates for different models each get their own coalesced entry."""
+    import shinywidgets._comm as comm
+
+    session = FakeSession()
+
+    mgr = comm.ShinyCommManager()
+    c1 = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
+    c2 = comm.ShinyComm(
+        comm_id="c2", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
+    session._flush_handlers.clear()
+    session._flushed_handlers.clear()
+
+    c1.send(data={"method": "update", "state": {"a": 1}, "buffer_paths": []})
+    c2.send(data={"method": "update", "state": {"a": 2}, "buffer_paths": []})
+    c1.send(data={"method": "update", "state": {"a": 3}, "buffer_paths": []})
+
+    # Two flushed callbacks (one per comm_id)
+    assert len(session._flushed_handlers) == 2
+
+    pending = comm._get_pending_updates(session)
+    assert pending["c1"]["data"]["state"] == {"a": 3}
+    assert pending["c2"]["data"]["state"] == {"a": 2}
+
+
 def test_orphaned_shiny_comm_methods_are_noops() -> None:
     import shinywidgets._comm as comm
 
@@ -260,9 +391,17 @@ def test_messages_sent_while_handling_a_client_msg_carry_its_header():
     against the id of its latest send; without a parent_header every echo is
     applied, so an older value can overwrite a newer one.
     """
+    import asyncio
+
     import shinywidgets._comm as comm
 
     session = FakeSession()
+    sent: List[tuple[str, str]] = []
+
+    async def record(msg_type: str, msg_txt: str) -> None:
+        sent.append((msg_type, msg_txt))
+
+    session.send_custom_message = record  # type: ignore[method-assign]
     mgr = comm.ShinyCommManager()
     c = comm.ShinyComm(
         comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
@@ -272,13 +411,17 @@ def test_messages_sent_while_handling_a_client_msg_carry_its_header():
 
     header = {"msg_id": "c1:7"}
     c.handle_msg({"header": header, "content": {"comm_id": "c1", "data": {}}})
-    c.send(data={"method": "update"})
+    # a state update, which is coalesced and so only built when the flush ends
+    c.send(data={"method": "update", "state": {"x": 1}, "buffer_paths": []})
 
-    echo, later = (
-        json.loads(closure_map(fn)["msg_txt"]) for fn in session._flushed_handlers
-    )
+    echo_handler, update_handler = session._flushed_handlers
+    echo = json.loads(closure_map(echo_handler)["msg_txt"])
     assert echo["parent_header"] == header
-    assert "parent_header" not in later
+
+    asyncio.run(update_handler())
+    ((msg_type, msg_txt),) = sent
+    assert msg_type == "shinywidgets_comm_msg"
+    assert "parent_header" not in json.loads(msg_txt)
 
 
 def test_widget_echo_update_carries_the_client_msg_id(
