@@ -56,6 +56,38 @@ def output_binding_dependency() -> HTMLDependency:
     )
 
 
+def custom_elements_dependency() -> HTMLDependency:
+    # Perspective's anywidget ES module calls customElements.define() at module
+    # scope, and anywidget evaluates that module once per model, so a second model
+    # in the page (e.g., after a re-render) throws "the name ... has already been
+    # used" and never initializes. Perspective guards its own registrations
+    # against this, but these three elements (registered at module scope by its
+    # bundled regular-layout dependency) are unguarded. Ignoring just their
+    # redefinition leaves the elements registered by the first evaluation in
+    # place, while duplicate registration of any other element still throws, as
+    # the platform intends.
+    return HTMLDependency(
+        name="shinywidgets-custom-elements",
+        version=__version__,
+        head=tags.script(
+            """
+(function () {
+  const PERSPECTIVE_ELEMENTS = new Set([
+    "regular-layout",
+    "regular-layout-frame",
+    "regular-layout-tab",
+  ]);
+  const define = customElements.define;
+  customElements.define = function (name, constructor, options) {
+    if (PERSPECTIVE_ELEMENTS.has(name) && customElements.get(name)) return;
+    define.call(customElements, name, constructor, options);
+  };
+})();
+"""
+        ),
+    )
+
+
 # TODO: this function might have to be recursive since it's technically
 # possible for a Widget to have traits that are themselves Widgets
 # (which could have their own npm module), but in practice, I haven't seen any cases
@@ -186,17 +218,15 @@ _anywidget_patched_dirs: dict[tuple[str, float], str] = {}
 
 def jupyter_extension_path(module_name: str) -> Optional[str]:
     paths: List[str] = jupyter_path()
-    module_dir = None
     for x in paths:
         dir = os.path.join(x, "nbextensions", module_name)
         if not os.path.exists(dir):
             continue
         for f in os.listdir(dir):
             if f.startswith("index") and f.endswith(".js"):
-                module_dir = dir
-                break
+                return dir
 
-    return module_dir
+    return None
 
 
 # Approximates what `jupyter nbextension install` does to discover and copy source files

@@ -6,11 +6,22 @@ import pytest
 import shinywidgets._render_widget as rw
 import shinywidgets._render_widget_base as rwb
 from htmltools import HTMLDependency, div
+from ipywidgets import Layout
 from shiny.session import session_context
+
+
+def test_render_bqplot_is_render_widget_base() -> None:
+    renderer = rw.render_bqplot()
+    assert isinstance(renderer, rwb.render_widget_base)
 
 
 def test_render_ipyaladin_is_render_widget_base() -> None:
     renderer = rw.render_ipyaladin()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
+def test_render_ipycanvas_is_render_widget_base() -> None:
+    renderer = rw.render_ipycanvas()
     assert isinstance(renderer, rwb.render_widget_base)
 
 
@@ -128,6 +139,16 @@ def test_render_ipydatagrid_missing_package_error(
             asyncio.run(r._render())
 
 
+def test_render_ipysigma_is_render_widget_base() -> None:
+    renderer = rw.render_ipysigma()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
+def test_render_ipycytoscape_is_render_widget_base() -> None:
+    renderer = rw.render_ipycytoscape()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_keplergl_is_render_widget_base() -> None:
     renderer = rw.render_keplergl()
     assert isinstance(renderer, rwb.render_widget_base)
@@ -136,6 +157,47 @@ def test_render_keplergl_is_render_widget_base() -> None:
 def test_render_lonboard_is_render_widget_base() -> None:
     renderer = rw.render_lonboard()
     assert isinstance(renderer, rwb.render_widget_base)
+
+
+def test_render_ipyleaflet_is_render_widget_base() -> None:
+    renderer = rw.render_ipyleaflet()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
+def test_render_ipyleaflet_renders_map_and_exposes_widget(widget_session) -> None:
+    ipyleaflet = pytest.importorskip("ipyleaflet")
+
+    r = rw.render_ipyleaflet()
+
+    @r
+    def _():  # noqa: ANN202
+        return ipyleaflet.Map(center=(52, 360), zoom=4)
+
+    with session_context(widget_session):
+        assert asyncio.run(r._render()) is not None
+    assert isinstance(r.widget, ipyleaflet.Map)
+    assert r.widget.zoom == 4
+
+
+def test_render_ipyleaflet_fills_unless_map_height_is_set(widget_session) -> None:
+    ipyleaflet = pytest.importorskip("ipyleaflet")
+    r = rw.render_ipyleaflet()
+
+    with session_context(widget_session):
+
+        @r
+        def _():  # noqa: ANN202
+            return ipyleaflet.Map()
+
+        res = asyncio.run(r._render())
+        assert res is not None and res["fill"] is True
+
+        @r
+        def _():  # noqa: ANN202
+            return ipyleaflet.Map(layout=Layout(height="300px"))
+
+        res = asyncio.run(r._render())
+        assert res is not None and res["fill"] is False
 
 
 def test_render_maplibre_is_render_widget_base() -> None:
@@ -150,6 +212,94 @@ def test_render_jscatter_is_render_widget_base() -> None:
 
 def test_render_matplotlib_is_render_widget_base() -> None:
     renderer = rw.render_matplotlib()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
+def test_render_perspective_is_render_widget_base() -> None:
+    renderer = rw.render_perspective()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
+def test_render_quak_is_render_widget_base() -> None:
+    renderer = rw.render_quak()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
+def test_render_quak_coerces_dataframe(widget_session) -> None:
+    quak = pytest.importorskip("quak")
+    pd = pytest.importorskip("pandas")
+
+    r = rw.render_quak()
+
+    @r
+    def _():  # noqa: ANN202
+        return pd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+
+    with session_context(widget_session):
+        assert asyncio.run(r._render()) is not None
+
+    assert r.widget is not None
+    assert isinstance(r.widget, quak.Widget)
+    assert r.widget.sql == 'SELECT * FROM "df"'
+
+
+def test_render_quak_coerces_arrow_table(widget_session) -> None:
+    quak = pytest.importorskip("quak")
+    pa = pytest.importorskip("pyarrow")
+
+    r = rw.render_quak()
+
+    @r
+    def _():  # noqa: ANN202
+        return pa.table({"a": [1, 2, 3]})
+
+    with session_context(widget_session):
+        assert asyncio.run(r._render()) is not None
+    assert isinstance(r.widget, quak.Widget)
+
+
+def test_render_quak_passes_widget_through(widget_session) -> None:
+    quak = pytest.importorskip("quak")
+    pa = pytest.importorskip("pyarrow")
+
+    r = rw.render_quak()
+    created = []
+
+    @r
+    def _():  # noqa: ANN202
+        w = quak.Widget(pa.table({"a": [1]}), table="mytable")
+        created.append(w)
+        return w
+
+    with session_context(widget_session):
+        assert asyncio.run(r._render()) is not None
+    assert r.widget is created[0]
+
+
+def test_render_quak_rejects_unsupported_value(widget_session) -> None:
+    pytest.importorskip("quak")
+
+    r = rw.render_quak()
+
+    @r
+    def _():  # noqa: ANN202
+        return 42
+
+    with session_context(widget_session):
+        with pytest.raises(ValueError):
+            asyncio.run(r._render())
+
+
+def test_render_quak_missing_quak_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "quak", None)
+
+    r = rw.render_quak()
+    with pytest.raises(ImportError, match=r"pip install 'shinywidgets\[quak\]'"):
+        r._as_widget(object())
+
+
+def test_render_mosaic_widget_is_render_widget_base() -> None:
+    renderer = rw.render_mosaic_widget()
     assert isinstance(renderer, rwb.render_widget_base)
 
 
@@ -226,19 +376,25 @@ def test_import_shinywidgets_without_optional_deps() -> None:
     pkgs = [
         "altair",
         "bokeh",
+        "bqplot",
         "holoviews",
         "hvplot",
+        "ipycanvas",
         "jscatter",
         "jupyter_bokeh",
         "ipydatagrid",
         "ipympl",
         "keplergl",
+        "ipyleaflet",
         "maplibre",
         "matplotlib",
+        "mosaic_widget",
         "panel",
+        "perspective",
         "plotly",
         "plotnine",
         "pydeck",
+        "quak",
     ]
     script = f"""
 import sys
@@ -318,3 +474,66 @@ def test_render_panel_and_hvplot_auto_output_ui_append_bokeh_dependency(
         res = renderer.auto_output_ui()
 
         assert any(dep.name == "bokeh-inline" for dep in res.get_dependencies()), cls
+
+
+def test_render_leafmap_is_render_widget_base() -> None:
+    renderer = rw.render_leafmap()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
+def _leafmap_backend_map(base, module: str, **kwargs):
+    # leafmap's backends are subclasses of another package's widget, defined in
+    # leafmap, so mimic one without needing leafmap installed
+    return type("Map", (base,), {"__module__": module})(**kwargs)
+
+
+def test_render_leafmap_treats_leafmaps_default_height_as_unset(widget_session) -> None:
+    ipyleaflet = pytest.importorskip("ipyleaflet")
+    r = rw.render_leafmap()
+
+    with session_context(widget_session):
+        # leafmap.Map sets Layout.height to 600px itself, which is leafmap's
+        # default rather than user intent, so the map should still fill
+        @r
+        def _():  # noqa: ANN202
+            return _leafmap_backend_map(
+                ipyleaflet.Map,
+                "leafmap.leafmap",
+                layout=Layout(height="600px"),
+            )
+
+        res = asyncio.run(r._render())
+        assert res is not None and res["fill"] is True
+        assert r.widget.layout.height == "100%"
+
+        # A height the user actually asked for is respected
+        @r
+        def _():  # noqa: ANN202
+            return _leafmap_backend_map(
+                ipyleaflet.Map,
+                "leafmap.leafmap",
+                layout=Layout(height="300px"),
+            )
+
+        res = asyncio.run(r._render())
+        assert res is not None and res["fill"] is False
+        assert r.widget.layout.height == "300px"
+
+
+def test_render_leafmap_maplibre_backend_default_height_is_unset(
+    widget_session,
+) -> None:
+    pytest.importorskip("maplibre")
+    from maplibre.ipywidget import MapWidget
+
+    r = rw.render_leafmap()
+
+    with session_context(widget_session):
+
+        @r
+        def _():  # noqa: ANN202
+            return _leafmap_backend_map(MapWidget, "leafmap.maplibregl", height="600px")
+
+        res = asyncio.run(r._render())
+        assert res is not None and res["fill"] is True
+        assert r.widget.height == "100%"

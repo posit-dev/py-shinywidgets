@@ -5,6 +5,8 @@ import os
 import sys
 from base64 import b64decode
 from contextlib import contextmanager
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from typing import (
     Any,
     Dict,
@@ -20,6 +22,7 @@ from uuid import uuid4
 from weakref import WeakSet, ref
 
 import ipywidgets
+from packaging.version import Version
 
 from ._render_widget import render_widget
 
@@ -40,7 +43,7 @@ from ._as_widget import as_widget, pydeck_has_widget
 from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
-from ._dependencies import require_dependency, widget_pkg
+from ._dependencies import custom_elements_dependency, require_dependency, widget_pkg
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -61,9 +64,12 @@ def init_shiny_widget(w: Widget):
     if is_unused_pydeck_widget(w):
         retire_unused_widget(w)
         return
+    plotly_version = unsupported_plotly_version(w)
+    if plotly_version is not None:
+        raise RuntimeError(PLOTLY_VERSION_MESSAGE.format(version=plotly_version))
     session = get_current_session()
     if session is None:
-        if importing_lonboard():
+        if importing_lonboard() or importing_ipycanvas():
             return
         raise RuntimeError(
             "shinywidgets requires that all ipywidgets be constructed within an active Shiny session"
@@ -134,6 +140,8 @@ def init_shiny_widget(w: Widget):
     id = cast(str, w._model_id)
 
     widget_deps: List[Optional[HTMLDependency]] = [widget_dep]
+    if any(widget_pkg(cls) == "perspective" for cls in type(w).__mro__):
+        widget_deps.append(custom_elements_dependency())
     open_keys: Dict[str, object] = {}
     if getattr(w, "_model_module", None) == "@bokeh/jupyter_bokeh":
         widget_deps.append(_bokeh_dependency())
@@ -220,6 +228,8 @@ def init_shiny_widget(w: Widget):
             **open_keys,
         )
 
+        flush_ipycanvas_manager(w)
+
     # If the widget initialized in a reactive _output_ context, then cleanup the widget
     # when the context gets invalidated. Use the render output's Context (captured by
     # WidgetRenderContext) rather than the current Context, because the widget may be
@@ -248,6 +258,16 @@ def init_shiny_widget(w: Widget):
     # Keep track of what session this widget belongs to (so we can close it when the
     # session ends)
     SESSION_WIDGET_ID_MAP.setdefault(session.id, []).append(id)
+
+    # ipycanvas canvases route their draw commands through a module-level
+    # manager widget (shared by every canvas in the process), so swap in a
+    # per-canvas one before anything walks or serializes the widget tree. This
+    # must happen after _open_shiny_comm was registered above: the manager's
+    # own comm then opens after this widget's (effects flush FIFO within a
+    # priority), so the manager's initial commands can safely reference this
+    # widget's model.
+    if any(widget_pkg(cls) == "ipycanvas" for cls in type(w).__mro__):
+        own_ipycanvas_manager(w)
 
     # Some widget's JS make external requests for static files (e.g.,
     # ipyleaflet markers) under this resource path. Note that this assumes that
@@ -282,12 +302,129 @@ def importing_lonboard() -> bool:
     return lonboard is not None and not hasattr(lonboard, "Map")
 
 
+def importing_ipycanvas() -> bool:
+    """
+    Is ipycanvas's `canvas` module executing (i.e., is ipycanvas mid-import)?
+
+    Importing ipycanvas constructs a module-level `_CanvasManager` widget
+    (which relays every canvas's draw commands to the browser) outside any
+    session. It's shared by every canvas, so it can't belong to a session
+    anyway: `own_ipycanvas_manager()` swaps it for a per-canvas copy before
+    display.
+    """
+    canvas_mod = sys.modules.get("ipycanvas.canvas")
+    # _CANVAS_MANAGER is only bound once canvas.py has finished executing
+    return canvas_mod is not None and not hasattr(canvas_mod, "_CANVAS_MANAGER")
+
+
+def own_ipycanvas_manager(w: Widget) -> None:
+    """
+    Give an ipycanvas canvas its own draw-command manager.
+
+    Every canvas's `_canvas_manager` trait defaults to a module-level
+    `_CanvasManager`, constructed when ipycanvas was imported (outside any
+    session, so it has no comm, and it would leak one session's draw commands
+    into another's browser). Replace it with a fresh manager, constructed here
+    (inside the session, so it gets a comm of its own) before the canvas's
+    initial state is serialized. The manager caches commands until its comm
+    opens (see flush_ipycanvas_manager()), since drawing commands sent before
+    then (e.g., while the render function is still running) would otherwise
+    be silently dropped.
+
+    Note this means `ipycanvas.hold_canvas()` (which batches commands by
+    toggling the shared manager) has no effect under shinywidgets: drawing
+    still works, but each command is sent individually.
+    """
+    canvas_mod = sys.modules.get("ipycanvas.canvas")
+    shared = getattr(canvas_mod, "_CANVAS_MANAGER", None) if canvas_mod else None
+    if shared is None:
+        return
+    if getattr(w, "_canvas_manager", None) is not shared:
+        return
+    setattr(w, "_canvas_manager", type(shared)(caching=True))
+
+
+def flush_ipycanvas_manager(w: Widget) -> None:
+    """
+    Flush an ipycanvas draw-command manager whose comm just opened.
+
+    Managers made by own_ipycanvas_manager() cache their commands (so drawing
+    that happens before the comm opens isn't lost); now that the browser can
+    receive them, send the backlog and go back to sending each command as it
+    comes.
+    """
+    if widget_pkg(w) != "ipycanvas":
+        return
+    if not getattr(w, "_caching", False):
+        return
+    # flush() is a no-op unless _caching is set, so flush the backlog before
+    # turning caching off (the order hold_canvas() uses)
+    w.flush()  # type: ignore
+    setattr(w, "_caching", False)
+
+
 def is_unused_pydeck_widget(w: Widget) -> bool:
     """
     Is `w` one of the `DeckGLWidget`s that pydeck >= 0.9 constructs (e.g., to probe
     for Jupyter support) but can never display?
     """
     return widget_pkg(w) == "pydeck" and not pydeck_has_widget()
+
+
+PLOTLY_VERSION_MESSAGE = (
+    "shinywidgets requires plotly >= 5.12, but plotly {version} is installed. "
+    "Older plotly versions' FigureWidget is incompatible with the widget "
+    "manager shinywidgets uses (it renders as a blank output with no error; "
+    "see https://github.com/posit-dev/py-shinywidgets/issues/332). "
+    "Upgrade plotly (`pip install -U plotly`), or pin shinywidgets to 0.8.2 "
+    "to keep using an older plotly."
+)
+
+
+def unsupported_plotly_version(w: Widget) -> Optional[Version]:
+    """
+    The plotly version, if `w` is a plotly widget and that version is too old
+    to render (< 5.12, the first release whose FigureWidget
+    frontend supports ipywidgets 8); otherwise None.
+    """
+    if not any(widget_pkg(cls) == "plotly" for cls in type(w).__mro__):
+        return None
+    version = _plotly_version()
+    if version is not None and version < Version("5.12"):
+        return version
+    return None
+
+
+def _plotly_version() -> Optional[Version]:
+    """
+    The version of the imported plotly, or of the installed one if that can't be
+    determined.
+
+    The imported module is the one that renders, and it isn't necessarily the
+    one whose metadata is installed (e.g., a source checkout on `PYTHONPATH`
+    shadowing an installed wheel).
+    """
+    versions: List[Optional[str]] = []
+    try:
+        import plotly
+
+        versions.append(getattr(plotly, "__version__", None))
+    except Exception:
+        pass
+    try:
+        versions.append(package_version("plotly"))
+    except PackageNotFoundError:
+        pass
+
+    for version in versions:
+        if not version:
+            continue
+        try:
+            return Version(version)
+        except Exception:
+            continue
+
+    return None
 
 
 def retire_unused_widget(w: Widget) -> None:

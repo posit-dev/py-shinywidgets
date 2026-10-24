@@ -112,12 +112,19 @@ js/node_modules
 typings/
 Untitled*.ipynb
 
+# Local scratch space (already excluded from ruff/pyright)
+sandbox/
+
 rsconnect-python/
 
 # Deploy to Connect Cloud Button
 examples/*/README_FILES/*
 examples/*/README.html
 .claude/
+
+# Local scratch space for one-off repro/reprex scripts (already excluded from
+# ruff and pyright in pyproject.toml)
+sandbox/
 
 # uv lockfile: library CI resolves fresh against PyPI (see #319)
 uv.lock

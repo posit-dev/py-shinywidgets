@@ -41,26 +41,39 @@ Issues = "https://github.com/rstudio/py-shinywidgets/issues"
 # anywidget is already a core dependency, so extras don't need to repeat it.
 altair = ["altair>=5.1"]
 bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
+bqplot = ["bqplot"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
+ipycanvas = ["ipycanvas"]
+ipycytoscape = ["ipycytoscape"]
 ipydatagrid = ["ipydatagrid"]
+ipyleaflet = ["ipyleaflet>=0.20.0"]
+ipysigma = ["ipysigma"]
 itables = ["itables[widget]"]
 jscatter = ["jupyter-scatter"]
 # An explicit pre-release specifier, so uv/pip accept it without --pre.
 # keplergl 0.3.x imports pkg_resources (removed in setuptools 82), so 0.4
 # (an anywidget rewrite) is the first version that imports there.
 keplergl = ["keplergl>=0.4.0rc4"]
+# leafmap.plotlymap uses Plotly's Mapbox API, removed in Plotly 7.
+leafmap = ["leafmap", "plotly>=5.12.0,<7"]
 # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
 # Python 3.15+ yet, so lonboard can't be installed there
 lonboard = ["lonboard; python_version < '3.15'"]
 maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
+mosaic_widget = ["mosaic-widget"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
-plotly = ["plotly>=5.0.0"]
+# pyarrow is required for pandas DataFrame conversion (perspective-python
+# doesn't depend on it)
+perspective = ["perspective-python>=3.0", "pyarrow"]
+plotly = ["plotly>=5.12.0"]
 plotnine = ["plotnine", "ipympl"]
+quak = ["quak"]
 test = [
   "altair",
   "bokeh",
+  "bqplot",
   "coverage>=7",
   # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
   # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
@@ -70,8 +83,11 @@ test = [
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
+  "ipycanvas",
+  "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
+  "ipysigma",
   "holoviews",
   "ipympl",
   "itables[widget]",
@@ -83,21 +99,27 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "pandas",
+  "networkx",
+  "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
-  "plotly>=5.0.0",
+  "plotly>=5.12.0",
   "plotnine",
   "polars",
+  "pyarrow",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "quak",
   "tox-uv>=1",
 ]
 dev = [
   "altair",
   "bokeh",
+  "bqplot",
   "coverage>=7",
   # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
   # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
@@ -107,8 +129,11 @@ dev = [
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
+  "ipycanvas",
+  "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
+  "ipysigma",
   "holoviews",
   "ipympl",
   "itables[widget]",
@@ -120,16 +145,21 @@ dev = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "pandas",
+  "networkx",
+  "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
-  "plotly>=5.0.0",
+  "plotly>=5.12.0",
   "plotnine",
   "polars",
+  "pyarrow",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "quak",
   "ruff>=0.6.5",
   "tox-uv>=1",
 ]
@@ -138,6 +168,7 @@ dev = [
 test = [
   "altair",
   "bokeh",
+  "bqplot",
   "coverage>=7",
   # geoviews 1.15 breaks with cartopy 0.26 (KeyError 'lon_0' in project_extents);
   # cartopy 0.25 has no Python 3.14 wheels. Drop the pin and the markers once
@@ -147,8 +178,11 @@ test = [
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
+  "ipycanvas",
+  "ipycytoscape",
   "ipydatagrid",
   "ipyleaflet>=0.20.0",
+  "ipysigma",
   "holoviews",
   "ipympl",
   "itables[widget]",
@@ -160,22 +194,32 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "pandas",
+  "networkx",
+  "mosaic-widget",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
-  "plotly>=5.0.0",
+  "plotly>=5.12.0",
   "plotnine",
   "polars",
+  "pyarrow",
   "pydeck",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "quak",
   "tox-uv>=1",
 ]
 dev = [
   "ruff>=0.6.5",
   { include-group = "test" },
 ]
+
+[tool.uv]
+# mosaic-widget 0.33.0 declares narwhals>=2.8 but imports is_into_lazyframe,
+# which was added in narwhals 2.22. Drop this once upstream fixes its metadata.
+constraint-dependencies = ["narwhals>=2.22"]
 
 [build-system]
 requires = ["hatchling>=1.26.0", "hatch-vcs>=0.4.0"]
