@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from perspective.widget import PerspectiveWidget
+import pandas as pd
 from shiny import App, reactive, render, ui
-from shinywidgets import output_widget, render_widget
+from shinywidgets import output_widget, reactive_read, render_perspective
 
 
 def make_row(i: int) -> dict[str, object]:
@@ -13,7 +13,9 @@ app_ui = ui.page_fluid(
     ui.input_action_button("rerender", "Rerender"),
     ui.input_action_button("add_row", "Add row"),
     ui.output_text("render_count"),
+    ui.output_text("sort_state"),
     output_widget("viewer"),
+    output_widget("second_viewer"),
 )
 
 
@@ -30,9 +32,18 @@ def server(input, output, session):
     def render_count():
         return str(counter.get())
 
-    @render_widget
+    @render_perspective
     def viewer():
-        return PerspectiveWidget([make_row(i) for i in range(3)], plugin="Datagrid")
+        counter.get()
+        return pd.DataFrame([make_row(i) for i in range(3)])
+
+    @render_perspective
+    def second_viewer():
+        return pd.DataFrame({"name": ["other-0", "other-1"]})
+
+    @render.text
+    def sort_state():
+        return str(reactive_read(viewer.widget, "sort"))
 
     @reactive.effect
     @reactive.event(input.add_row)
