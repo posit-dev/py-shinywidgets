@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### New features
 
+* Added `@render_mols2grid` for [mols2grid](https://mols2grid.readthedocs.io) molecule grids (`pip install 'shinywidgets[mols2grid]'`). The render function returns a `mols2grid.MolGrid` or a `pandas.DataFrame` with a SMILES/mol column; read the browser selection with `ast.literal_eval(reactive_read(grid.grid.widget, "selection"))` (or `grid.grid.get_selection()`), and filter the grid from Python with `grid.grid.filter(mask)`. Note the grid's JavaScript loads from CDNs, so it requires an internet connection. (#55)
 * Added per-renderer extras, so each `@render_*` decorator's widget dependencies can be installed in one command (e.g., `pip install 'shinywidgets[plotly]'` or `'shinywidgets[maplibre,bokeh]'`). See the README for the full list.
 
 ### Bug fixes
