@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from maplibre.ipywidget import MapWidget
     from maplibre.map import Map as MaplibreMap
     from mapwidget.cesium import Map as CesiumMap
-    from mapwidget.leaflet import Map as LeafletMap
+    from mapwidget.leaflet import Map as MapwidgetLeafletMap
     from mapwidget.mapbox import Map as MapboxMap
     from mapwidget.maplibre import Map as MapwidgetMaplibreMap
     from mapwidget.openlayers import Map as OpenLayersMap
@@ -40,7 +40,11 @@ if TYPE_CHECKING:
     from pydeck.widget import DeckGLWidget
 
     MapwidgetMap = Union[
-        CesiumMap, LeafletMap, MapboxMap, MapwidgetMaplibreMap, OpenLayersMap
+        CesiumMap,
+        MapboxMap,
+        MapwidgetLeafletMap,
+        MapwidgetMaplibreMap,
+        OpenLayersMap,
     ]
     from quak import Widget as QuakWidget
 else:
