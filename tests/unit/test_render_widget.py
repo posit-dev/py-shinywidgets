@@ -220,6 +220,11 @@ def test_render_perspective_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_pyvista_is_render_widget_base() -> None:
+    renderer = rw.render_pyvista()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_quak_is_render_widget_base() -> None:
     renderer = rw.render_quak()
     assert isinstance(renderer, rwb.render_widget_base)

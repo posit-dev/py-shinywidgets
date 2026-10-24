@@ -69,6 +69,9 @@ panel = ["panel", "jupyter_bokeh>=4.1"]
 perspective = ["perspective-python>=3.0", "pyarrow"]
 plotly = ["plotly>=5.12.0"]
 plotnine = ["plotnine", "ipympl"]
+# vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
+# so pyvista can't be installed there
+pyvista = ["pyvista[jupyter]; python_version < '3.15'"]
 quak = ["quak"]
 test = [
   "altair",
@@ -113,6 +116,9 @@ test = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
+  # so pyvista can't be installed there
+  "pyvista[jupyter]; python_version < '3.15'",
   "quak",
   "tox-uv>=1",
 ]
@@ -159,6 +165,9 @@ dev = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
+  # so pyvista can't be installed there
+  "pyvista[jupyter]; python_version < '3.15'",
   "quak",
   "ruff>=0.6.5",
   "tox-uv>=1",
@@ -208,6 +217,9 @@ test = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
+  # so pyvista can't be installed there
+  "pyvista[jupyter]; python_version < '3.15'",
   "quak",
   "tox-uv>=1",
 ]

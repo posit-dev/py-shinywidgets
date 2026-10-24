@@ -227,8 +227,14 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
     if not isinstance(widget, DOMWidget):
         return (widget, fill)
 
-    # Do nothing for "input-like" widgets (e.g., ipywidgets.IntSlider())
-    if getattr(widget, "_model_module", None) == "@jupyter-widgets/controls":
+    # Do nothing for "input-like" widgets (e.g., ipywidgets.IntSlider()),
+    # unless a package-specific handler below applies (e.g., trame_pyvista's
+    # html-backend widget is an ipywidgets HTML output, not an input)
+    if getattr(
+        widget, "_model_module", None
+    ) == "@jupyter-widgets/controls" and not any(
+        widget_pkg(cls) in _LAYOUT_DEFAULTS for cls in type(widget).__mro__
+    ):
         return (widget, False)
 
     layout = widget.layout  # type: ignore
@@ -596,6 +602,19 @@ def leafmap_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def pyvista_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from trame_pyvista.jupyter import EmbeddableWidget  # pyright: ignore[reportMissingImports]
+
+    if not isinstance(widget, EmbeddableWidget):
+        return fill
+
+    # as_widget_pyvista() sets layout height to "100%" (sizing the iframe to
+    # the container), which the generic check above mistakes for a
+    # user-specified height. A height the user set themselves is still
+    # respected (they don't get fill).
+    return widget.layout.height in (None, "auto", "100%")
+
+
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
 # (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
 # in js/src/fill.ts). A handler receives the widget and the current fill
@@ -617,6 +636,8 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "jupyter_bokeh": bokeh_layout_defaults,
     "leafmap": leafmap_layout_defaults,
     "maplibre": maplibre_layout_defaults,
+    # pyvista's html jupyter backend widget lives in the trame_pyvista package
+    "trame_pyvista": pyvista_layout_defaults,
 }
 
 
