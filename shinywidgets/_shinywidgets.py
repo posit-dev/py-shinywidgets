@@ -153,7 +153,10 @@ def init_shiny_widget(w: Widget):
     if any(widget_pkg(cls) == "perspective" for cls in type(w).__mro__):
         widget_deps.append(custom_elements_dependency())
     open_keys: Dict[str, object] = {}
-    if getattr(w, "_model_module", None) == "jupyter-vuetify":
+    if (
+        not SHINYWIDGETS_CDN_ONLY
+        and getattr(w, "_model_module", None) == "jupyter-vuetify"
+    ):
         # jupyter-vuetify's bundle externally requires('jupyter-vue'), which
         # otherwise has no require.js path config (and 404s to a CDN fallback)
         widget_deps.append(jupyter_vue_dependency(session))
