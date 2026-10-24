@@ -24,6 +24,13 @@ def stop_nglview_threads(w: Widget) -> None:
             # The thread runs queued callbacks in order, so it exits (silently:
             # threads swallow SystemExit) once it has sent anything pending
             t.q.append(exit_thread)
+    # A thread may be blocked in `_wait_until_finished()` (e.g. mid-`loadFile`
+    # after a structure was loaded, replaced, or an image exported), waiting on
+    # a browser acknowledgement that can't arrive once the widget's comm is
+    # closed. Setting the event releases that wait so the thread can reach the
+    # queued exit_thread. (This doesn't cover a thread that enters the wait
+    # only after we set the event -- a race inherent to nglview's design.)
+    w._event.set()  # type: ignore[attr-defined]
 
 
 def importing_nglview() -> bool:

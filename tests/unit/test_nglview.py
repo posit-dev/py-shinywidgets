@@ -64,6 +64,41 @@ def test_render_nglview_renders_widget_that_fills(
     assert isinstance(r.widget, nglview.NGLWidget)
 
 
+def test_constructor_height_opts_out_of_fill(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    from shinywidgets._render_widget_base import set_layout_defaults
+
+    with session_context(widget_session):
+        filling = nglview.show_text(TINY_PDB, ext="pdb")
+        fixed = nglview.NGLWidget(height="200px")
+
+    assert set_layout_defaults(filling)[1] is True
+    assert set_layout_defaults(fixed)[1] is False
+
+
+def test_nglview_subclass_stops_its_threads(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # widget_pkg() of an app-defined subclass is the app's module, not
+    # "nglview", but retirement must still stop its background threads
+    class MyNGLWidget(nglview.NGLWidget):
+        pass
+
+    with session_context(widget_session):
+        context = Context()
+        with context(), WidgetRenderContext():
+            widget = MyNGLWidget()
+        threads = remote_call_threads(widget)
+        assert threads
+
+        context.invalidate()
+
+    for t in threads:
+        t.join(timeout=2)
+    assert not any(t.is_alive() for t in threads)
+
+
 def remote_call_threads(widget: Widget) -> list[threading.Thread]:
     from nglview.remote_thread import RemoteCallThread
 
