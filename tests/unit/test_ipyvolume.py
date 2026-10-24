@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 import pytest
+import shinywidgets._shinywidgets as sw
 from shiny import Session, reactive
 from shiny.session import session_context
 from shinywidgets import render_ipyvolume
@@ -68,7 +69,10 @@ def test_vuetify_widget_open_serves_jupyter_vue(
     # The quickscatter() Container is a jupyter-vuetify widget, whose AMD
     # bundle externally requires('jupyter-vue'); its comm open must carry a
     # require.js path config for jupyter-vue or the browser 404s requesting
-    # jupyter-vue.js at the app root (then falls back to a CDN)
+    # jupyter-vue.js at the app root (then falls back to a CDN). The mapping
+    # is only served in local-dependency mode, so disable the fixture's
+    # CDN-only mode for this test.
+    monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", False)
     ipv = pytest.importorskip("ipyvolume")
 
     messages: list[dict] = []
