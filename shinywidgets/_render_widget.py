@@ -227,7 +227,9 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     """
 
 
-class render_embedding_atlas(render_widget_base[ValueT, EmbeddingAtlasWidget]):
+class render_embedding_atlas(
+    render_widget_base[EmbeddingAtlasWidget, EmbeddingAtlasWidget]
+):
     """
     Reactively render an [Embedding Atlas](https://apple.github.io/embedding-atlas/)
     explorer as a Shiny output.
