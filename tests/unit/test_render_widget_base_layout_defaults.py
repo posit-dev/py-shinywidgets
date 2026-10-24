@@ -209,6 +209,37 @@ def test_altair_concat_chart_emits_warning(monkeypatch) -> None:
         rwb.set_layout_defaults(w)
 
 
+def test_k3d_default_height_fills() -> None:
+    k3d = pytest.importorskip("k3d")
+
+    _, fill = rwb.set_layout_defaults(k3d.plot())
+    assert fill is True
+
+
+def test_k3d_explicit_height_disables_fill() -> None:
+    k3d = pytest.importorskip("k3d")
+
+    _, fill = rwb.set_layout_defaults(k3d.plot(height=300))
+    assert fill is False
+
+
+def test_k3d_layout_height_disables_fill() -> None:
+    k3d = pytest.importorskip("k3d")
+    import ipywidgets as widgets
+
+    plot = k3d.plot()
+    plot.layout = widgets.Layout(height="300px")
+    _, fill = rwb.set_layout_defaults(plot)
+    assert fill is False
+
+
+def test_k3d_height_512_is_treated_as_unset_and_fills() -> None:
+    k3d = pytest.importorskip("k3d")
+
+    _, fill = rwb.set_layout_defaults(k3d.plot(height=512))
+    assert fill is True
+
+
 def test_ipydatagrid_fills_unless_widget_height_is_set() -> None:
     pytest.importorskip("ipydatagrid")
     import pandas as pd

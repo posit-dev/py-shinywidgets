@@ -51,6 +51,7 @@ ipyleaflet = ["ipyleaflet>=0.20.0"]
 ipysigma = ["ipysigma"]
 itables = ["itables[widget]"]
 jscatter = ["jupyter-scatter"]
+k3d = ["k3d"]
 # An explicit pre-release specifier, so uv/pip accept it without --pre.
 # keplergl 0.3.x imports pkg_resources (removed in setuptools 82), so 0.4
 # (an anywidget rewrite) is the first version that imports there.
@@ -94,6 +95,7 @@ test = [
   "matplotlib",
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
+  "k3d",
   "keplergl>=0.4.0rc4",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
@@ -140,6 +142,7 @@ dev = [
   "matplotlib",
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
+  "k3d",
   "keplergl>=0.4.0rc4",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
@@ -189,6 +192,7 @@ test = [
   "matplotlib",
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
+  "k3d",
   "keplergl>=0.4.0rc4",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
