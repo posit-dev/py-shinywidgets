@@ -522,6 +522,45 @@ def bokeh_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     )
 
 
+def mapwidget_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # mapwidget's backends style the map's root (or an inner container) with an
+    # inline `height` (600px by default), which would ignore the output's size.
+    # shinywidgets.css sizes a .shinywidgets-mapwidget-fill map to the widget
+    # container instead (falling back to the inline height when the container
+    # has no definite height), so mark maps that don't have a user-specified
+    # height. The default can't be told apart from an explicit one of the same
+    # value, so treat it as unset, as with a percentage (which is relative to
+    # the container anyway). The mark must also be removed whenever the
+    # recalculated decision is not to fill (e.g., a session-lifetime map
+    # returned again with an explicit height), since its CSS would otherwise
+    # keep clamping the new view to the output height.
+    height = getattr(widget, "height", None)
+    if not isinstance(height, str):
+        return fill
+    if height == widget.trait_defaults("height") or height.endswith("%"):
+        layout_height = widget.layout.height
+        if (
+            not fill
+            and isinstance(layout_height, str)
+            and layout_height != "auto"
+            and not layout_height.endswith("%")
+        ):
+            # The no-fill decision came from an explicit Layout height (see
+            # set_layout_defaults()), but the backend sizes the map from its
+            # own `height` trait, which would still be the 600px default --
+            # propagate the layout height so the map itself is sized to it
+            # (a percentage is relative to the container, so it stays on the
+            # layout).
+            setattr(widget, "height", layout_height)
+        if fill:
+            widget.add_class("shinywidgets-mapwidget-fill")
+        else:
+            widget.remove_class("shinywidgets-mapwidget-fill")
+        return fill
+    widget.remove_class("shinywidgets-mapwidget-fill")
+    return False
+
+
 def ipycanvas_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # A canvas has fixed pixel dimensions (its width/height traits), which
     # aren't layout sizes: stretching the element to fill would scale the
@@ -617,6 +656,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "jupyter_bokeh": bokeh_layout_defaults,
     "leafmap": leafmap_layout_defaults,
     "maplibre": maplibre_layout_defaults,
+    "mapwidget": mapwidget_layout_defaults,
 }
 
 

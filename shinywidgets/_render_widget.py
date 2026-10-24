@@ -29,10 +29,23 @@ if TYPE_CHECKING:
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
     from maplibre.ipywidget import MapWidget
     from maplibre.map import Map as MaplibreMap
+    from mapwidget.cesium import Map as CesiumMap
+    from mapwidget.leaflet import Map as MapwidgetLeafletMap
+    from mapwidget.mapbox import Map as MapboxMap
+    from mapwidget.maplibre import Map as MapwidgetMaplibreMap
+    from mapwidget.openlayers import Map as OpenLayersMap
     from mosaic_widget import MosaicWidget
     from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
+
+    MapwidgetMap = Union[
+        CesiumMap,
+        MapboxMap,
+        MapwidgetLeafletMap,
+        MapwidgetMaplibreMap,
+        OpenLayersMap,
+    ]
     from quak import Widget as QuakWidget
 else:
     JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
@@ -42,7 +55,7 @@ else:
     ) = base = LeafletMap = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
-    ) = QuakWidget = PerspectiveWidget = object
+    ) = QuakWidget = PerspectiveWidget = MapwidgetMap = object
 
 from shiny.render.renderer import ValueFn
 
@@ -95,6 +108,7 @@ __all__ = (
     "render_leafmap",
     "render_lonboard",
     "render_maplibre",
+    "render_mapwidget",
     "render_matplotlib",
     "render_mosaic_widget",
     "render_panel",
@@ -867,6 +881,67 @@ class render_maplibre(render_widget_base[MaplibreValueT, MapWidget]):
     bearing, and pitch), `clicked` (the longitude and latitude of the last click), or
     the MapboxDraw ``draw_*`` traits. Feature-level click and hover events aren't
     synced.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+
+class render_mapwidget(render_widget_base[ValueT, MapwidgetMap]):
+    """
+    Reactively render a [mapwidget](https://github.com/opengeos/mapwidget) map as a
+    Shiny output.
+
+    The decorated function may return any of mapwidget's anywidget-based backends:
+    `mapwidget.maplibre.Map`, `mapwidget.leaflet.Map`, `mapwidget.openlayers.Map`,
+    `mapwidget.mapbox.Map`, or `mapwidget.cesium.Map` (requires ``pip install
+    'shinywidgets[mapwidget]'``; the mapbox and cesium backends additionally
+    require an API token).
+    Consider this decorator over :func:`~shinywidgets.render_maplibre` or
+    `render_ipyleaflet` when you want to switch between map backends (or 3D globes)
+    with a single, lightweight dependency -- the trade-off is a much smaller API:
+    mapwidget exposes little more than basemaps and method forwarding, so for
+    layers, sources, and controls use the dedicated packages. In a filling layout,
+    the map fills its container unless it has an explicit ``height``.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `Map` instance. To reactively read map state, use
+    :func:`~shinywidgets.reactive_read` with `center`, `zoom`, `bounds`, or
+    `clicked_latlng` (all synced from the browser). Assigning those traits from
+    Python doesn't move the rendered map; the maplibre backend can invoke any
+    MapLibre GL JS map method via `.widget.add_call()` (e.g.,
+    `.widget.add_call("flyTo", [{"center": [-74, 40.7], "zoom": 11}])` or
+    `.widget.add_call("setStyle", [style_url])`), and the leaflet backend can
+    add tile layers via `.widget.add_basemap()`/`.widget.add_layer()`.
+    Note that calls made *before* the map's first render (e.g., inside the
+    render function itself) are silently dropped by mapwidget -- issue them
+    from a `@reactive.effect` that reads `.widget`, which also re-applies them
+    if a re-render replaces the map. Be aware, though, that reading `.widget`
+    tracks widget *replacement*, not browser readiness: the effect runs as
+    soon as the Python-side widget exists, but the browser view (and the
+    message listener the backend installs while rendering, possibly after its
+    CDN imports load) may not exist yet, so a call issued the moment the
+    effect runs can still be silently dropped -- including right after a
+    replacement. mapwidget currently provides no client-side readiness signal,
+    so for reliably timed initialization, gate calls on state that only the
+    browser can produce (e.g., a :func:`~shinywidgets.reactive_read` of map
+    state synced back from the browser, or user input).
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 

@@ -35,6 +35,7 @@ everything it needs:
 | `@render_leafmap` | `pip install 'shinywidgets[leafmap]'` |
 | `@render_lonboard` | `pip install 'shinywidgets[lonboard]'` (Python < 3.15) |
 | `@render_maplibre` | `pip install 'shinywidgets[maplibre]'` |
+| `@render_mapwidget` | `pip install 'shinywidgets[mapwidget]'` |
 | `@render_matplotlib` | `pip install 'shinywidgets[matplotlib]'` |
 | `@render_mosaic_widget` | `pip install 'shinywidgets[mosaic_widget]'` |
 | `@render_panel` | `pip install 'shinywidgets[panel]'` |

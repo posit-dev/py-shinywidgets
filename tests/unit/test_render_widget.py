@@ -205,6 +205,31 @@ def test_render_maplibre_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_mapwidget_is_render_widget_base() -> None:
+    renderer = rw.render_mapwidget()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
+def test_render_mapwidget_accepts_any_backend(widget_session) -> None:
+    pytest.importorskip("mapwidget")
+    import mapwidget.leaflet
+    import mapwidget.maplibre
+
+    for Map in (mapwidget.maplibre.Map, mapwidget.leaflet.Map):
+        r = rw.render_mapwidget()
+
+        @r
+        def _():  # noqa: ANN202
+            return Map()
+
+        with session_context(widget_session):
+            res = asyncio.run(r._render())
+
+        assert res is not None
+        assert res["fill"] is True
+        assert r.widget is not None and r.widget.model_id == res["model_id"]
+
+
 def test_render_jscatter_is_render_widget_base() -> None:
     renderer = rw.render_jscatter()
     assert isinstance(renderer, rwb.render_widget_base)
