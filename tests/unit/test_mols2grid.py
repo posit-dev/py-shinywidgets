@@ -77,12 +77,12 @@ def test_render_mols2grid_passes_through_molgrid(widget_session: Session) -> Non
     assert grid.widget.grid_id == "my-grid"
 
 
-def test_render_mols2grid_warns_on_default_grid_name(widget_session: Session) -> None:
+def test_render_mols2grid_errors_on_default_grid_name(widget_session: Session) -> None:
     with session_context(widget_session):
         grid = mols2grid.MolGrid(DF)
 
     r = rw.render_mols2grid()
-    with pytest.warns(UserWarning, match="default grid name"):
+    with pytest.raises(ValueError, match="default grid name"):
         render(r, lambda: grid, widget_session)
 
 
