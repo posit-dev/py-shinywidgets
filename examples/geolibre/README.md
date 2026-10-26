@@ -16,9 +16,10 @@ back in Python.
 
 Two limitations to know about:
 
-* The widget embeds the bundled app from a localhost server inside the Python
-  process, so the browser must run on (or be able to reach) that host -- it
-  works with a local `shiny run`, not with a deployed app.
+* Layers read from files on the server's disk (e.g., `add_raster()` of a
+  local GeoTIFF) are served from a localhost server inside the Python process,
+  so they only render for browsers on that host -- they don't work in deployed
+  apps (URL-based layers like this example's are unaffected).
 * geolibre's blocking command methods (`fly_to()`, `fit_bounds()`,
   `get_center()`, ...) don't work in Shiny -- they wait for the app's reply
   by pumping a Jupyter kernel event loop that doesn't exist. Use the

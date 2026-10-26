@@ -124,10 +124,24 @@ export const ipyleafletBehavior: WidgetBehavior = {
 // indefinite output leaves the app at its flex-basis height.
 export const geolibreBehavior: WidgetBehavior = {
   setupFixedSize: ({ lmWidget }) => {
-    const iframe = lmWidget.querySelector(':scope > iframe');
-    if (iframe instanceof HTMLIFrameElement && iframe.style.height.endsWith('%')) {
-      lmWidget.classList.add('shinywidgets-geolibre');
-    }
+    const mark = () => {
+      const iframe = lmWidget.querySelector(':scope > iframe');
+      if (iframe instanceof HTMLIFrameElement && iframe.style.height.endsWith('%')) {
+        lmWidget.classList.add('shinywidgets-geolibre');
+        return true;
+      }
+      return false;
+    };
+    // In geolibre's "remote" mode (which shinywidgets uses so the bundled app
+    // loads same-origin), the <iframe> is only created after an async probe,
+    // so it may not exist yet when this runs (the probe's placeholder text
+    // already counts as "rendered").
+    if (mark()) return;
+    const mo = new MutationObserver(() => {
+      if (mark()) mo.disconnect();
+    });
+    mo.observe(lmWidget, { childList: true });
+    return () => mo.disconnect();
   },
 };
 

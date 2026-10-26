@@ -12,6 +12,21 @@ import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shi
  * Define a custom HTMLManager for use with Shiny
  ******************************************************************************/
 
+// Inject the jupyter-config-data element geolibre's front-end reads its
+// server base URL from (JupyterLab/Notebook 7 inject one; Shiny doesn't).
+// The base URL is the page's own directory, so URLs built from it stay
+// same-origin even when the app is served under a path prefix.
+function ensureJupyterConfigData(): void {
+  if (document.getElementById('jupyter-config-data')) return;
+  const el = document.createElement('script');
+  el.id = 'jupyter-config-data';
+  el.type = 'application/json';
+  el.textContent = JSON.stringify({
+    baseUrl: new URL('.', window.location.href).pathname,
+  });
+  document.head.appendChild(el);
+}
+
 interface ModelWaiter {
   resolve: (p: Promise<WidgetModel>) => void;
   reject: (e: Error) => void;
@@ -289,6 +304,16 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
 
     // Package-specific fill/resize behavior (see js/src/fill.ts)
     const behavior = WIDGET_BEHAVIORS[data.widget_pkg];
+
+    // geolibre's front-end probes for the app bundle that shinywidgets serves
+    // at {baseUrl}geolibre/app/ (see geolibre_app_mount() in _dependencies.py),
+    // reading baseUrl from the page's jupyter-config-data element (defaulting
+    // to "/"). Inject one derived from the page URL, so the probe also
+    // resolves when the app is served under a path prefix (e.g., Posit
+    // Connect or shinyapps.io).
+    if (data.widget_pkg === 'geolibre') {
+      ensureJupyterConfigData();
+    }
 
     // Shiny removes the output's `.recalculating` class (which is what hides
     // stale content via CSS, see shinywidgets.css) synchronously, before this

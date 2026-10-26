@@ -43,7 +43,12 @@ from ._as_widget import as_widget, pydeck_has_widget
 from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
-from ._dependencies import custom_elements_dependency, require_dependency, widget_pkg
+from ._dependencies import (
+    custom_elements_dependency,
+    geolibre_app_mount,
+    require_dependency,
+    widget_pkg,
+)
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -210,6 +215,13 @@ def init_shiny_widget(w: Widget):
                 w._repr_mimebundle_()
             if any(widget_pkg(cls) == "lonboard" for cls in type(w).__mro__):
                 own_lonboard_controls(w)
+            # Serve geolibre's bundled app from the Shiny app and switch the
+            # widget to the mode that probes that route. This must happen here
+            # (not in init_shiny_widget()): that hook runs inside
+            # Widget.__init__(), and geolibre's Map.__init__() sets
+            # _remote_mode after super().__init__() returns, overwriting it.
+            if any(widget_pkg(cls) == "geolibre" for cls in type(w).__mro__):
+                geolibre_app_mount(w, session)
 
             # Now, get the state
             state, buffer_paths, buffers = _remove_buffers(w.get_state())

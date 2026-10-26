@@ -10,6 +10,7 @@ pytest.importorskip(
 from geolibre import Map
 from shiny import Session
 from shiny.session import session_context
+from shinywidgets._dependencies import geolibre_app_mount
 from shinywidgets._render_widget_base import set_layout_defaults
 
 
@@ -32,6 +33,23 @@ def test_explicit_widget_height_disables_fill(widget_session: Session) -> None:
     _, fill = set_layout_defaults(w)
     assert fill is False
     assert w.height == "600px"
+
+
+def test_app_mount_switches_to_remote_mode(widget_session: Session) -> None:
+    # shinywidgets serves geolibre's bundled app from the Shiny app itself (so
+    # the <iframe> loads same-origin, locally and deployed) and switches the
+    # widget to the mode that probes that route
+    w = geolibre_map(widget_session)
+    geolibre_app_mount(w, widget_session)
+    assert w._remote_mode == "remote"
+    routes = widget_session.app._dependency_handler.routes  # type: ignore[attr-defined]
+    geolibre_mounts = [r for r in routes if getattr(r, "name", None) == "geolibre-app"]
+    assert len(geolibre_mounts) == 1
+    assert geolibre_mounts[0].path == "/geolibre/app"
+    # Mounting again (e.g., a second Map) doesn't duplicate the route
+    geolibre_app_mount(geolibre_map(widget_session), widget_session)
+    routes = widget_session.app._dependency_handler.routes  # type: ignore[attr-defined]
+    assert len([r for r in routes if getattr(r, "name", None) == "geolibre-app"]) == 1
 
 
 def test_layout_trait_is_geolibres_own(widget_session: Session) -> None:

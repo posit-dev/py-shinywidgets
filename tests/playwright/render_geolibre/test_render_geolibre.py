@@ -6,7 +6,10 @@ from tests.playwright.conftest import assert_no_unexpected_errors, collect_error
 # The widget embeds the bundled GeoLibre app, which fetches its basemap style
 # and tiles from remote hosts; tolerate failed requests to those (e.g., tile
 # 404s), along with the "Failed to load resource" console errors they produce.
-ALLOWED_REQUEST_FAILURES = ("openfreemap", "openstreetmap", "arcgis")
+# The /proxy/{port}/ 404 is geolibre's front-end probing for jupyter-server-proxy
+# before falling back to the bundle shinywidgets serves at /geolibre/app/ (by
+# design; see geolibre_app_mount() in _dependencies.py).
+ALLOWED_REQUEST_FAILURES = ("openfreemap", "openstreetmap", "arcgis", "/proxy/")
 
 # geolibre shadows ipywidgets' `layout` trait with its own (the app chrome
 # layout: "embed"/"full"/"maponly"), so the client's DOMWidgetView hands a

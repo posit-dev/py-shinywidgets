@@ -18,6 +18,7 @@ from jupyter_core.paths import jupyter_path
 from shiny import Session
 
 from . import __version__
+from ._utils import package_dir
 
 
 # TODO: scripts/static_download.R should produce/update these
@@ -148,6 +149,43 @@ def require_dependency(
         all_files=True,
         head=tags.script(f"window.require.config({json.dumps(config)})"),
     )
+
+
+def geolibre_app_mount(w: Widget, session: Session) -> None:
+    """
+    Serve geolibre's bundled app from the Shiny app and use it for the widget's
+    <iframe> (works locally *and* deployed).
+
+    geolibre's widget renders the full GeoLibre SPA in an <iframe>. By default
+    the app is served by a localhost server in the Python process, which a
+    remote browser (i.e., any deployed app) can't reach. For remote Jupyter
+    servers, geolibre's front-end instead probes two same-origin routes, one
+    of which (used by its Jupyter Server extension) is
+    `{base_url}geolibre/app/`. Mount the same bundle at that route on the
+    Shiny app and switch the widget to its "remote" mode, so the probe finds
+    it. (geolibre reads `base_url` from the page's jupyter-config-data
+    element, defaulting to "/"; js/src/output.ts injects one so the route
+    also resolves when the app is served under a path prefix.)
+    """
+    # Mount once per App (init_shiny_widget() runs for every widget)
+    for route in session.app._dependency_handler.routes:
+        if getattr(route, "name", None) == "geolibre-app":
+            break
+    else:
+        from starlette.staticfiles import StaticFiles
+
+        app_dir = os.path.join(package_dir("geolibre"), "static", "app")
+        if os.path.isdir(app_dir):
+            session.app._dependency_handler.mount(
+                "/geolibre/app/",
+                StaticFiles(directory=app_dir),
+                name="geolibre-app",
+            )
+
+    # Remote mode probes the mount above (and ignores the localhost `_app_url`).
+    # The localhost server keeps running, so geolibre's local-file routes
+    # (e.g. add_raster() of a local GeoTIFF) still work for same-host browsers.
+    w._remote_mode = "remote"  # type: ignore[attr-defined]
 
 
 # anywidget's front-end rejects a model's `ready` promise if initialization

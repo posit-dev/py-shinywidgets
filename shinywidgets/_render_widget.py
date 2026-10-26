@@ -652,12 +652,16 @@ class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
     ``on_selection_change()``, or ``on_layer_change()`` inside the render
     function and have the callback set a `reactive.value`.
 
-    **Local network access**: the widget embeds the bundled GeoLibre app from
-    a localhost server that geolibre starts in the Python process, so the
-    browser must be able to reach that server's host -- fine for local
-    ``shiny run`` and same-host access, but a deployed app (shinyapps.io,
-    Posit Connect, a remote server) shows an empty output. Basemap tiles and
-    remote data URLs also require internet access from the browser.
+    **Network access**: shinywidgets serves the bundled GeoLibre app from the
+    Shiny app itself, so the widget works in deployed apps (shinyapps.io,
+    Posit Connect, ...) as well as locally. The exception is layers read from
+    files on the server's disk (e.g., ``add_raster()`` of a local GeoTIFF):
+    geolibre serves those from a localhost server that only a same-host
+    browser can reach, so they don't render in deployed apps (URL-based
+    layers are unaffected). Basemap tiles and remote data URLs require
+    internet access from the browser, and geolibre's front-end fires one
+    expected 404 (a ``/proxy/{port}`` probe for jupyter-server-proxy) before
+    settling on the bundled app.
 
     **The ``layout`` parameter**: `geolibre.Map(layout=...)` chooses the
     app's chrome (``"embed"``, ``"full"``, or ``"maponly"``); it is *not*

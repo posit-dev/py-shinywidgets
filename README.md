@@ -22,7 +22,7 @@ everything it needs:
 | `@render_altair` | `pip install 'shinywidgets[altair]'` |
 | `@render_bokeh` | `pip install 'shinywidgets[bokeh]'` |
 | `@render_bqplot` | `pip install 'shinywidgets[bqplot]'` |
-| `@render_geolibre` | `pip install 'shinywidgets[geolibre]'` (Python ≥ 3.11; local browser only) |
+| `@render_geolibre` | `pip install 'shinywidgets[geolibre]'` (Python ≥ 3.11) |
 | `@render_holoviews` | `pip install 'shinywidgets[holoviews]'` |
 | `@render_ipyaladin` | `pip install 'shinywidgets[ipyaladin]'` |
 | `@render_ipycanvas` | `pip install 'shinywidgets[ipycanvas]'` |
