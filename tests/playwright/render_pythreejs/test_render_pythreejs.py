@@ -291,9 +291,7 @@ def test_pythreejs_cached_renderer_keeps_user_camera_aspect(
     # The container-driven aspect is nowhere near 1.5 (the card is much wider
     # than tall), so this is unambiguously a user-set value
     page.click("#set_aspect")
-    expect(page.locator("#cached_camera_aspect")).to_have_text(
-        "1.5000", timeout=30000
-    )
+    expect(page.locator("#cached_camera_aspect")).to_have_text("1.5000", timeout=30000)
 
     # The re-render returns the same cached Renderer; its new view must leave
     # the user's aspect alone
