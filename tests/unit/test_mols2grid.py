@@ -324,6 +324,40 @@ def test_session_end_prunes_the_mols2grid_selection_registry(
     assert name not in register.SELECTIONS
 
 
+def test_grid_names_are_namespaced_per_module(widget_session: Session) -> None:
+    # Output ids are only unique within their namespace: two module instances in one
+    # session can each register an output named "grid", and they share a browser
+    # window, so a name built from the bare output id would cross-wire them
+    from shiny import module
+
+    renderers: dict[str, rw.render_mols2grid] = {}
+
+    @module.server
+    def mod_server(input: Any, output: Any, session: Session) -> None:
+        @rw.render_mols2grid()
+        def grid():  # noqa: ANN202
+            return DF
+
+        renderers[str(session.ns)] = grid
+
+    with session_context(widget_session):
+        mod_server("mod_a")
+        mod_server("mod_b")
+
+    names: dict[str, str] = {}
+    for mod, r in renderers.items():
+        # Not the render() helper: re-decorating would recapture the output id
+        # from the root session, rather than the module's namespace
+        with session_context(widget_session):
+            asyncio.run(r._render())
+        assert isinstance(r.grid, MolGrid)
+        names[mod] = r.grid.widget.grid_id
+
+    assert names["mod_a"] != names["mod_b"]
+    assert "mod_a" in names["mod_a"]
+    assert "mod_b" in names["mod_b"]
+
+
 def test_grid_name_stable_within_and_unique_across_sessions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
