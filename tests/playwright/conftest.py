@@ -42,6 +42,13 @@ def client_models(page: Page) -> list[dict[str, Any]]:
 
 _LIVE_VIEWS_JS = "() => window.widgetManager._liveViews.size"
 
+# Each kepler.gl/lonboard map bundles its own copy of luma.gl, which logs this
+# (harmless) console error when a page shows more than one map. How many of them
+# have logged it by the time a test asserts depends on how fast the bundle loads
+# (on a fast runner every map on the page initializes before the first is even
+# visible), so it can't be left to timing.
+LUMA_REINIT = "luma.gl: This version of luma.gl has already been initialized"
+
 
 def settled_live_views(page: Page, timeout: int = 10000, quiet_ms: int = 500) -> int:
     """Return the manager's live-view count, once it has stopped changing.
@@ -150,12 +157,15 @@ def assert_no_unexpected_errors(
     errors: list[str],
     failed_requests: list[str],
     allowed_404s: tuple[str, ...] = (),
+    allowed_errors: tuple[str, ...] = (),
 ) -> None:
     """Assert no unexpected browser errors.
 
     Failed requests whose URL contains one of `allowed_404s` are tolerated, along
     with the generic "Failed to load resource" console error they produce (the
     console message doesn't include the URL, so it can't be matched precisely).
+    `allowed_errors` are console messages that come from a third-party bundle
+    rather than from shinywidgets (see LUMA_REINIT).
     """
     assert all(
         any(allowed in url for allowed in allowed_404s) for url in failed_requests
@@ -165,5 +175,6 @@ def assert_no_unexpected_errors(
         err
         for err in errors
         if not (tolerate_resource_errors and "Failed to load resource" in err)
+        and not any(allowed in err for allowed in allowed_errors)
     ]
     assert not unexpected
