@@ -3930,14 +3930,13 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       grid can't start out filtered: re-issue it once the grid is visible, and
       filter the DataFrame in the render function for a grid that is filtered
       from the start.
-    * **Grid name**: mols2grid keys selections in a process-global registry, so
-      grids coerced from a DataFrame get a name unique to the session and the
-      output (a stable ``"shiny-<session>-<id>"`` slug, where the id is the
-      output's *namespaced* id, so two module instances' ``grid`` outputs don't
-      collide). A `MolGrid` you
-      construct keeps its own
-      ``name`` -- give it a unique one (the default ``"default"`` collides
-      across sessions and across multiple grids on a page), and note that a
+    * **Grid name**: mols2grid keys selections in a process-global registry,
+      so grids coerced from a DataFrame get a name unique to the session and
+      the output (a stable ``"shiny-<session>-<id>"`` slug, where the id is
+      the output's *namespaced* id, so two module instances' ``grid`` outputs
+      don't collide). A `MolGrid` you construct keeps its own ``name`` --
+      give it a unique one (the default ``"default"`` collides across
+      sessions and across multiple grids on a page), and note that a
       `MolGrid` is itself process-global state, so construct it inside the
       render function, not at the top level of the app.
     * **Network access**: the grid's JavaScript (list.js, jQuery, RDKit
@@ -3950,8 +3949,10 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       ``fitIframe``), so it scrolls with the page rather than stretching to a
       filling container; an explicit ``height`` on the output acts as a viewport
       that clips the grid. Grid data is inlined into the iframe document
-      (~1.2 KB per molecule), so very large grids (roughly 5k+ molecules) can
-      approach Shiny's websocket message limit. To bound the *grid* rather than
+      (roughly 0.5-1 KB per molecule, depending on how many columns are
+      shown), so grids in the tens of thousands of molecules can approach
+      Shiny's default 16 MiB websocket message limit (raise it with ``shiny
+      run --ws-max-size``). To bound the *grid* rather than
       its container, pass ``iframe_height`` (e.g.
       ``render_mols2grid(iframe_height="400px")``): it sets the iframe element's
       height, which switches off mols2grid's auto-fit so the grid scrolls
