@@ -1,5 +1,15 @@
 import { base64EncodeBuffers, Throttler } from "./utils";
 
+type CommMsgType = "comm_open" | "comm_msg" | "comm_close";
+
+// Once Shiny disconnects there's nothing to send to; clear_state() then closes
+// every model (and so every comm), which must not try.
+let connected = true;
+
+export function setConnected(value: boolean): void {
+  connected = value;
+}
+
 // This class is a striped down version of Comm from @jupyter-widgets/base
 // https://github.com/jupyter-widgets/ipywidgets/blob/88cec8/packages/base/src/services-shim.ts#L192-L335
 // Note that the Kernel.IComm implementation is located here
@@ -10,6 +20,7 @@ export class ShinyComm {
   comm_id: string;
   throttler: Throttler;
   private msgCount = 0;
+  private closed = false;
   constructor(model_id: string) {
     this.comm_id = model_id;
     // TODO: make this configurable (see comments in send() below)?
@@ -30,19 +41,7 @@ export class ShinyComm {
     metadata?: any,
     buffers?: ArrayBuffer[] | ArrayBufferView[]
   ): string {
-    // The model remembers the returned id for the attributes it just sent, and
-    // ignores Python's echo_updates until one names this id in its
-    // parent_header (which Python copies from this header), so stale echoes
-    // can't overwrite newer browser-side values.
-    const msg_id = `${this.comm_id}-${++this.msgCount}`;
-    const msg = {
-      content: {comm_id: this.comm_id, data: data},
-      metadata: metadata,
-      buffers: base64EncodeBuffers(buffers || []),
-      header: {msg_id: msg_id}
-    };
-
-    const msg_txt = JSON.stringify(msg);
+    const [msg_id, msg_txt] = this._message("comm_msg", {data: data}, metadata, buffers);
 
     // Since ipyleaflet can send mousemove events very quickly when hovering over the map,
     // we throttle them to ensure that the server doesn't get overwhelmed. Said events
@@ -84,14 +83,19 @@ export class ShinyComm {
     return msg_id;
   }
 
+  // The browser created this model (e.g. bqplot's toolbar PanZoom): ask Python
+  // to construct its counterpart, as a kernel's jupyter.widget target would.
   open(
     data: any,
     callbacks: any,
     metadata?: any,
     buffers?: ArrayBuffer[] | ArrayBufferView[]
   ): string {
-    // I don't think we need to do anything here?
-    return this.comm_id;
+    const [msg_id, msg_txt] = this._message(
+      "comm_open", {target_name: this.target_name, data: data}, metadata, buffers
+    );
+    Shiny.setInputValue("shinywidgets_comm_send", msg_txt, {priority: "event"});
+    return msg_id;
   }
 
   close(
@@ -100,8 +104,20 @@ export class ShinyComm {
     metadata?: any,
     buffers?: ArrayBuffer[] | ArrayBufferView[]
   ): string {
-    // I don't think we need to do anything here?
-    return this.comm_id;
+    if (this.closed) {
+      return this.comm_id;
+    }
+    this.closed = true;
+    this.throttler.flush();
+    const content = {data: data || {}};
+    const [msg_id, msg_txt] = this._message("comm_close", content, metadata, buffers);
+    if (connected) {
+      Shiny.setInputValue("shinywidgets_comm_send", msg_txt, {priority: "event"});
+    }
+    // Like JupyterLab's CommHandler.close(): the model's own close handler runs
+    // too, which is what makes it fire comm:close so the manager drops it.
+    this.handle_close({content: {comm_id: this.comm_id, ...content}});
+    return msg_id;
   }
 
   on_msg(callback: (x: any) => void): void {
@@ -118,5 +134,25 @@ export class ShinyComm {
 
   handle_close(msg: any) {
     if (this._close_callback) this._close_callback(msg);
+  }
+
+  private _message(
+    msg_type: CommMsgType,
+    content: Record<string, any>,
+    metadata?: any,
+    buffers?: ArrayBuffer[] | ArrayBufferView[]
+  ): [string, string] {
+    // The model remembers the returned id for the attributes it just sent, and
+    // ignores Python's echo_updates until one names this id in its
+    // parent_header (which Python copies from this header), so stale echoes
+    // can't overwrite newer browser-side values.
+    const msg_id = `${this.comm_id}-${++this.msgCount}`;
+    const msg = {
+      content: {comm_id: this.comm_id, ...content},
+      metadata: metadata,
+      buffers: base64EncodeBuffers(buffers || []),
+      header: {msg_id: msg_id, msg_type: msg_type}
+    };
+    return [msg_id, JSON.stringify(msg)];
   }
 }

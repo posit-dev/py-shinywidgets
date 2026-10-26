@@ -1,8 +1,9 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
-import { ShinyComm } from './comm';
+import { setConnected, ShinyComm } from './comm';
 import { ipyleafletBehavior, WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
 import { isJQuery, jsonParse, lendDataTables, protectPageJQuery } from './utils';
 import { disposeNative, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
+import { uuid } from '@jupyter-widgets/base';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
@@ -36,6 +37,21 @@ class OutputManager extends HTMLManager {
   // resolves after its ancestor was removed can tear itself down. Weak so
   // removed views can still be garbage collected.
   private _removedViews = new WeakSet<WidgetView>();
+
+  // new_widget() calls this for a model the widget's own JS creates (bqplot's
+  // toolbar PanZoom, pythreejs light targets); HTMLManager's placeholder comm
+  // would leave it without a Python counterpart.
+  _create_comm(
+    comm_target_name: string,
+    model_id?: string,
+    data?: any,
+    metadata?: any,
+    buffers?: ArrayBuffer[] | ArrayBufferView[]
+  ): Promise<ShinyComm> {
+    const comm = new ShinyComm(model_id ?? uuid());
+    comm.open(data, undefined, metadata, buffers);
+    return Promise.resolve(comm);
+  }
 
   create_view<VT extends DOMWidgetView = DOMWidgetView>(model: DOMWidgetModel, options?: any): Promise<VT>;
   create_view<VT extends WidgetView = WidgetView>(model: WidgetModel, options?: any): Promise<VT>;
@@ -585,9 +601,11 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
     // save_changes() does not try to send those updates after the comm is gone.
     m.comm_live = false;
 
-    // Close model after all views are cleaned up.
+    // Close model after all views are cleaned up. Python closed the comm, so
+    // tell the model (as its own _handle_comm_closed would) not to close it
+    // again, which would send a comm_close back.
     try {
-      await m.close();
+      await m.close(true);
     } catch (closeErr) {
       if (!isIgnorableTeardownError(closeErr)) {
         console.error("Unexpected error while closing model:", closeErr);
@@ -608,6 +626,7 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
 });
 
 $(document).on("shiny:disconnected", () => {
+  setConnected(false);
   manager.clear_state();
 });
 
