@@ -120,6 +120,13 @@ export const ipyleafletBehavior: WidgetBehavior = {
   },
 };
 
+// Aspect-management ownership per camera, persisted across view lifetimes
+// (a cached Renderer gets a fresh view, and a fresh setupPythreejsResize()
+// closure, on every render): the aspect value we last set on each camera.
+// Without it, a re-render's new view would adopt a user-set aspect as the
+// managed baseline and overwrite it on the first resize.
+const managedCameraAspects = new WeakMap<WidgetModel, number>();
+
 // A pythreejs Renderer draws into a canvas fixed to its _width/_height pixel
 // traits (and three.js doesn't update the camera's aspect ratio when the
 // canvas resizes), so drive both from the container's size. The traits are
@@ -151,13 +158,22 @@ function setupPythreejsResize({ el, lmWidget, model }: BehaviorContext): () => v
       lastAspect = w / h;
       camera.set('aspect', lastAspect);
       camera.save_changes();
+      managedCameraAspects.set(camera, lastAspect);
     }
   };
 
   const trackCamera = () => {
     camera = model.get('camera') as WidgetModel | undefined;
-    const aspect = camera?.get('aspect');
-    lastAspect = typeof aspect === 'number' ? aspect : undefined;
+    // A camera we've managed before keeps the aspect we last set as the
+    // baseline, so a user-set aspect (from either side) still wins after a
+    // re-render; a never-managed camera adopts its current (initial) aspect.
+    const managed = camera ? managedCameraAspects.get(camera) : undefined;
+    if (managed !== undefined) {
+      lastAspect = managed;
+    } else {
+      const aspect = camera?.get('aspect');
+      lastAspect = typeof aspect === 'number' ? aspect : undefined;
+    }
     // A replacement camera still holds its own (stale) aspect, so apply the
     // current dimensions immediately. resizeToFit()'s dimension cache would
     // suppress this when the container size hasn't changed.
@@ -189,11 +205,14 @@ function setupPythreejsResize({ el, lmWidget, model }: BehaviorContext): () => v
 
 const pythreejsBehavior: WidgetBehavior = {
   setupFill: (ctx) => setupPythreejsResize(ctx),
-  // A fixed-size output (e.g., output_widget(height="250px")) gets the canvas
-  // sized to it too, unless the Renderer opted out of filling (its own
-  // explicit width/height), in which case its pixel size is respected.
+  // A fixed-size output with an explicit height (e.g.,
+  // output_widget(height="250px", fillable=False)) gets the canvas sized to
+  // it too, unless the Renderer opted out of filling (its own explicit
+  // width/height), in which case its pixel size is respected. An unsized
+  // non-fillable output keeps the widget's own size rather than stretching
+  // the canvas to the output's full width.
   setupFixedSize: (ctx) =>
-    ctx.widgetWantsFill ? setupPythreejsResize(ctx) : undefined,
+    ctx.widgetWantsFill && ctx.el.style.height ? setupPythreejsResize(ctx) : undefined,
 };
 
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {

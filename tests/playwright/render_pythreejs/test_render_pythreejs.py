@@ -275,6 +275,72 @@ def test_pythreejs_cached_renderer_keeps_filling_after_rerender(
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_pythreejs_cached_renderer_keeps_user_camera_aspect(
+    page: Page, local_app
+) -> None:
+    # Regression: an explicit camera aspect must survive a re-render of a
+    # cached Renderer -- the new view must not adopt the user's aspect as the
+    # managed baseline and overwrite it with the container ratio on resize
+    errors, failed_requests = collect_errors(page)
+    page.set_viewport_size({"width": 900, "height": 900})
+    page.goto(local_app.url)
+    canvas = page.locator("#cached_scene canvas")
+    expect(canvas).to_have_count(1, timeout=30000)
+    page.wait_for_function(canvas_fills_output_js("#cached_scene"), timeout=30000)
+
+    # The container-driven aspect is nowhere near 1.5 (the card is much wider
+    # than tall), so this is unambiguously a user-set value
+    page.click("#set_aspect")
+    expect(page.locator("#cached_camera_aspect")).to_have_text(
+        "1.5000", timeout=30000
+    )
+
+    # The re-render returns the same cached Renderer; its new view must leave
+    # the user's aspect alone
+    old_view = page.locator("#cached_scene > .jupyter-threejs").first.element_handle()
+    page.click("#rerender")
+    page.wait_for_function("(el) => !el.isConnected", arg=old_view, timeout=30000)
+    expect(canvas).to_have_count(1, timeout=30000)
+    page.wait_for_function(canvas_fills_output_js("#cached_scene"), timeout=30000)
+
+    # Give a (buggy) aspect overwrite a chance to round-trip to Python
+    page.wait_for_timeout(1500)
+    expect(page.locator("#cached_camera_aspect")).to_have_text("1.5000")
+
+    # Later resizes still fill the container, but keep the user's aspect
+    page.set_viewport_size({"width": 600, "height": 900})
+    page.wait_for_function(canvas_fills_output_js("#cached_scene"), timeout=30000)
+    page.wait_for_timeout(1500)
+    expect(page.locator("#cached_camera_aspect")).to_have_text("1.5000")
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_pythreejs_respects_non_fillable_output(page: Page, local_app) -> None:
+    # Regression: output_widget(fillable=False) without an explicit height
+    # leaves a default-sized Renderer at its own (200x200) size instead of
+    # stretching the canvas to the output's full width; an explicit height
+    # still sizes the canvas to the output
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    expect(page.locator("#nonfillable_scene canvas")).to_have_count(1, timeout=30000)
+    expect(page.locator("#sized_nonfillable canvas")).to_have_count(1, timeout=30000)
+
+    expect(page.locator("#nonfillable_scene canvas")).to_have_js_property(
+        "clientWidth", 200, timeout=30000
+    )
+    expect(page.locator("#nonfillable_scene canvas")).to_have_js_property(
+        "clientHeight", 200, timeout=30000
+    )
+
+    expect(page.locator("#sized_nonfillable canvas")).to_have_js_property(
+        "clientHeight", 250, timeout=30000
+    )
+    assert canvas_size(page, "#sized_nonfillable")[1] == 250
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_pythreejs_rerender_lifecycle(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
