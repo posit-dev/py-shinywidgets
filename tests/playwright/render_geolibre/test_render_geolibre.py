@@ -6,10 +6,7 @@ from tests.playwright.conftest import assert_no_unexpected_errors, collect_error
 # The widget embeds the bundled GeoLibre app, which fetches its basemap style
 # and tiles from remote hosts; tolerate failed requests to those (e.g., tile
 # 404s), along with the "Failed to load resource" console errors they produce.
-# The /proxy/{port}/ 404 is geolibre's front-end probing for jupyter-server-proxy
-# before falling back to the bundle shinywidgets serves at /geolibre/app/ (by
-# design; see geolibre_app_mount() in _dependencies.py).
-ALLOWED_REQUEST_FAILURES = ("openfreemap", "openstreetmap", "arcgis", "/proxy/")
+ALLOWED_REQUEST_FAILURES = ("openfreemap", "openstreetmap", "arcgis")
 
 # geolibre shadows ipywidgets' `layout` trait with its own (the app chrome
 # layout: "embed"/"full"/"maponly"), so the client's DOMWidgetView hands a
@@ -112,6 +109,34 @@ def test_geolibre_interaction(page: Page, local_app) -> None:
     page.mouse.move(box["x"] + 550, box["y"] + 350, steps=10)
     page.mouse.up()
     expect(page.locator("#view")).not_to_contain_text("-98.5", timeout=LOAD_TIMEOUT)
+
+
+def test_geolibre_local_cog_via_proxy(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    wait_for_app(page, "map")
+
+    # The embedded app loads through shinywidgets' /proxy/{port}/ mount (the
+    # jupyter-server-proxy equivalent geolibre's front-end probes for first,
+    # and the only mode in which it rewrites loopback local-file URLs onto a
+    # same-origin base)
+    src = page.locator("#map iframe").get_attribute("src")
+    assert src is not None and "/proxy/" in src
+
+    # A layer backed by a file on the server's disk is fetched by the browser
+    # through the proxy (same-origin), not from geolibre's loopback address
+    with page.expect_response(
+        lambda r: "/_geolibre_local/" in r.url, timeout=LOAD_TIMEOUT
+    ) as resp_info:
+        page.click("#add_local")
+    resp = resp_info.value
+    assert resp.ok
+    # The request goes to the Shiny app's own origin (via the proxy mount),
+    # not to geolibre's loopback server (a different port on the same host)
+    assert resp.url.startswith(local_app.url)
+    assert "/proxy/" in resp.url
+
+    check_errors(errors, failed_requests)
 
 
 def test_geolibre_rerender(page: Page, local_app) -> None:
