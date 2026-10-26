@@ -40,6 +40,37 @@ def client_models(page: Page) -> list[dict[str, Any]]:
     return page.evaluate(_MODELS_JS)
 
 
+_LIVE_VIEWS_JS = "() => window.widgetManager._liveViews.size"
+
+
+def settled_live_views(page: Page, timeout: int = 10000, quiet_ms: int = 500) -> int:
+    """Return the manager's live-view count, once it has stopped changing.
+
+    Child views (e.g. bqplot's scales, axes and marks, or the ipywidgets nglview
+    builds for its GUI) are created asynchronously, so the count keeps changing
+    for a moment after the DOM first looks right -- a container may even drop a
+    previous render's children before the new ones are registered. Wait for a
+    quiet period rather than sampling once, so comparisons are made between
+    settled counts.
+    """
+    step = 50
+    count = page.evaluate(_LIVE_VIEWS_JS)
+    stable_for = 0
+    waited = 0
+    while waited < timeout:
+        page.wait_for_timeout(step)
+        waited += step
+        latest = page.evaluate(_LIVE_VIEWS_JS)
+        if latest == count:
+            stable_for += step
+            if stable_for >= quiet_ms:
+                return count
+        else:
+            count = latest
+            stable_for = 0
+    return count
+
+
 def assert_rerender_cleanup(
     page: Page,
     local_app: ShinyAppProc,

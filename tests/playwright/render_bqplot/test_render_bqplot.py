@@ -8,6 +8,7 @@ from tests.playwright.conftest import (
     assert_no_unexpected_errors,
     collect_errors,
     expose_manager,
+    settled_live_views,
 )
 
 # Resolves --bs-body-bg to an rgb() string (a custom property's raw value could be
@@ -47,8 +48,6 @@ HEIGHT_JS = """(sel) => {
     fig: out.querySelector('.bqplot').getBoundingClientRect().height,
   };
 }"""
-
-LIVE_VIEWS_JS = "() => window.widgetManager._liveViews.size"
 
 local_app_tooltip = create_app_fixture(Path(__file__).parent / "app_tooltip.py")
 
@@ -146,7 +145,7 @@ def test_bqplot_rerender_lifecycle(page: Page, local_app) -> None:
 
     expect(page.locator("#fig .dot")).to_have_count(4, timeout=30000)
     expect(page.locator("#render_count")).to_have_text("0")
-    initial = page.evaluate(LIVE_VIEWS_JS)
+    initial = settled_live_views(page)
 
     for i in range(1, 4):
         page.click("#rerender")
@@ -155,7 +154,7 @@ def test_bqplot_rerender_lifecycle(page: Page, local_app) -> None:
 
     # Re-rendering replaces the figure; the old views must be disposed
     expect(page.locator("#fig .bqplot")).to_have_count(1)
-    assert page.evaluate(LIVE_VIEWS_JS) == initial
+    assert settled_live_views(page) == initial
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
