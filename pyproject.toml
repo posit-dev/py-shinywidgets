@@ -42,6 +42,8 @@ Issues = "https://github.com/rstudio/py-shinywidgets/issues"
 altair = ["altair>=5.1"]
 bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 bqplot = ["bqplot"]
+# geolibre requires Python 3.11+
+geolibre = ["geolibre>=3.0; python_version >= '3.11'"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
@@ -84,6 +86,7 @@ test = [
   # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
@@ -130,6 +133,7 @@ dev = [
   # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
@@ -179,6 +183,7 @@ test = [
   # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",

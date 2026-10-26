@@ -116,6 +116,21 @@ export const ipyleafletBehavior: WidgetBehavior = {
   },
 };
 
+// geolibre embeds its app in an <iframe> whose height comes from the widget's
+// `height` trait; when that's left at the default, geolibre_layout_defaults()
+// sets it to "100%", which only resolves against a sized view root. Mark the
+// view root so shinywidgets.css can size it to the output (which is definite
+// in the fixed-size cases that matter, e.g. output_widget(height=)); an
+// indefinite output leaves the app at its flex-basis height.
+export const geolibreBehavior: WidgetBehavior = {
+  setupFixedSize: ({ lmWidget }) => {
+    const iframe = lmWidget.querySelector(':scope > iframe');
+    if (iframe instanceof HTMLIFrameElement && iframe.style.height.endsWith('%')) {
+      lmWidget.classList.add('shinywidgets-geolibre');
+    }
+  },
+};
+
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
   jscatter: jscatterBehavior,
@@ -123,4 +138,5 @@ export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   plotly: plotlyBehavior,
   quak: quakBehavior,
   ipyleaflet: ipyleafletBehavior,
+  geolibre: geolibreBehavior,
 };

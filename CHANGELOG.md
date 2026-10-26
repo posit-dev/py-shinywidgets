@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Added per-renderer extras, so each `@render_*` decorator's widget dependencies can be installed in one command (e.g., `pip install 'shinywidgets[plotly]'` or `'shinywidgets[maplibre,bokeh]'`). See the README for the full list.
 
+* Added `@render_geolibre` for [GeoLibre](https://geolibre.app) maps, which embeds the full GeoLibre GIS app as a Shiny output (`pip install 'shinywidgets[geolibre]'`). Project-mutation methods (`add_geojson()`, `set_center()`, layer styling, ...) and event callbacks (`on_click()`, ...) work as in Jupyter, and UI edits sync back to the `project` trait for `reactive_read()`; geolibre's blocking command methods (e.g., `fly_to()`, `get_center()`) don't work in Shiny (they pump a Jupyter kernel event loop that doesn't exist) — use the project-mutation alternatives instead (e.g., `set_center()` for `fly_to()`). Note the widget serves the bundled app from a localhost server in the Python process, so it requires a browser that can reach that host (a local or same-host `shiny run`; not a deployed app).
+
 ### Bug fixes
 
 * Improved error messages when an object can't be rendered as a widget: subclasses defined in another package (e.g., `leafmap.deck.Map`, which subclasses pydeck's `Deck`) now route to the coercer for their base class's package, so they get that package's specific guidance instead of the generic "Don't know how to coerce" error. Error messages also no longer dump enormous object reprs (e.g., a pydeck `Deck`'s entire JSON spec) into the output.

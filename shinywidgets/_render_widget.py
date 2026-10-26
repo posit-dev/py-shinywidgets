@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     import plotly.graph_objects as go
     from altair import JupyterChart
     from bqplot import Figure as BqplotFigure
+    from geolibre import Map as GeolibreMap
     from ipyaladin import Aladin
     from ipycanvas import Canvas as IpycanvasCanvas
     from ipycanvas import MultiCanvas, MultiRoughCanvas, RoughCanvas
@@ -42,7 +43,7 @@ else:
     ) = base = LeafletMap = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
-    ) = QuakWidget = PerspectiveWidget = object
+    ) = QuakWidget = PerspectiveWidget = GeolibreMap = object
 
 from shiny.render.renderer import ValueFn
 
@@ -82,6 +83,7 @@ __all__ = (
     "render_altair",
     "render_bokeh",
     "render_bqplot",
+    "render_geolibre",
     "render_holoviews",
     "render_ipyaladin",
     "render_ipycanvas",
@@ -584,6 +586,85 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
     ``display_toolbar=False`` to the figure to hide the toolbar, and set
     ``fig.interaction = bqplot.interacts.PanZoom(...)`` from Python to enable panning
     and zooming.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+
+class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
+    """
+    Reactively render a [GeoLibre](https://geolibre.app) map -- the full
+    GeoLibre GIS app embedded as a widget -- as a Shiny output.
+
+    The decorated function should return a `geolibre.Map` (requires
+    ``pip install 'shinywidgets[geolibre]'``). In a filling layout, the map
+    fills its container unless the `Map` was given a ``height`` other than
+    geolibre's default (``"800px"``). The ``height`` is read once, when the
+    embedded app loads, so changing ``.widget.height`` after rendering has no
+    effect (resize the output's container instead).
+
+    The decorated function also gains two read-only attributes: `.value` and
+    `.widget`, both the rendered `geolibre.Map` instance. Use `.widget` to
+    update the rendered map in place, or to reactively read its state.
+
+    Note
+    ---
+    **Updating the map from Python**: methods that edit the map's *project*
+    (its synced document) work as they do in Jupyter --
+    ``add_geojson()``/``add_vector()``/``add_cog()``/etc.,
+    ``set_center()``/``set_zoom()``/``fit_project_bounds()``, layer styling
+    (``get_layer(id).set_style()``/``set_opacity()``), and
+    ``set_identify()``/``show_control()``. Methods that send a command to the
+    app and block waiting for its reply do **not** work in Shiny: the wait
+    pumps a Jupyter kernel event loop that doesn't exist (raising
+    `AttributeError` from `jupyter_ui_poll`), and even on a worker thread the
+    send needs Shiny's event loop. These include ``fly_to()``,
+    ``fit_bounds()``, ``zoom_to_layer()``, ``identify()``,
+    ``get_center()``/``get_view()``/``get_bounds()``,
+    ``get_selected_features()``/``get_drawn_features()``, ``run_algorithm()``,
+    and ``to_image()``. Prefer the project-mutation alternatives (e.g.,
+    ``set_center()`` for ``fly_to()``, ``fit_project_bounds()`` for
+    ``fit_bounds()``), and read state from the synced ``project`` trait
+    instead of the query methods.
+
+    **Reading map state**: user edits in the app (panning, zooming, adding or
+    restyling layers) sync back to the ``project`` trait, so
+    ``reactive_read(map.widget, "project")`` gives you the live project --
+    but note it invalidates on every pan and zoom, and carries the whole
+    project (including inlined layer data), so prefer the event callbacks for
+    high-frequency interactions: register ``map.widget.on_click()``,
+    ``on_selection_change()``, or ``on_layer_change()`` inside the render
+    function and have the callback set a `reactive.value`.
+
+    **Local network access**: the widget embeds the bundled GeoLibre app from
+    a localhost server that geolibre starts in the Python process, so the
+    browser must be able to reach that server's host -- fine for local
+    ``shiny run`` and same-host access, but a deployed app (shinyapps.io,
+    Posit Connect, a remote server) shows an empty output. Basemap tiles and
+    remote data URLs also require internet access from the browser.
+
+    **The ``layout`` parameter**: `geolibre.Map(layout=...)` chooses the
+    app's chrome (``"embed"``, ``"full"``, or ``"maponly"``); it is *not*
+    an `ipywidgets.Layout`, so ipywidgets layout styling (e.g.,
+    ``Layout(border=...)``) isn't available on this widget. (geolibre
+    reuses the ``layout`` trait name, which also causes a harmless
+    "Cannot read properties of undefined" error in the browser console.)
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 

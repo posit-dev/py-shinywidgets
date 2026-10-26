@@ -405,6 +405,25 @@ def itables_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def geolibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from geolibre import Map
+
+    if not isinstance(widget, Map):
+        return fill
+
+    # The embedded app reads the `height` trait once, when it loads (styling
+    # its <iframe>), so changing it after rendering has no effect. The
+    # default ("800px") can't be told apart from an explicit one, so treat it
+    # as unset (as ipyaladin_layout_defaults() does): in a filling layout,
+    # size the iframe to its container; any other height opts out of filling
+    # (the front-end applies it to the iframe directly).
+    if widget.height != "800px":
+        return False
+    if fill:
+        widget.height = "100%"
+    return fill
+
+
 def keplergl_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # KeplerGl sizes itself from a pixel `height` trait (default 400), so the only
     # way to tell the user asked for a specific height is that it isn't the default.
@@ -607,6 +626,7 @@ def leafmap_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
+    "geolibre": geolibre_layout_defaults,
     "ipyaladin": ipyaladin_layout_defaults,
     "ipycanvas": ipycanvas_layout_defaults,
     "ipysigma": ipysigma_layout_defaults,
