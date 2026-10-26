@@ -1799,7 +1799,12 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       filling container; an explicit ``height`` on the output acts as a viewport
       that clips the grid. Grid data is inlined into the iframe document
       (~1.2 KB per molecule), so very large grids (roughly 5k+ molecules) can
-      approach Shiny's websocket message limit.
+      approach Shiny's websocket message limit. To bound the *grid* rather than
+      its container, pass ``iframe_height`` (e.g.
+      ``render_mols2grid(iframe_height="400px")``): it sets the iframe element's
+      height, which switches off mols2grid's auto-fit so the grid scrolls
+      inside the iframe. (``iframe_width``, ``iframe_allow``, and
+      ``iframe_sandbox`` are forwarded to the iframe the same way.)
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
