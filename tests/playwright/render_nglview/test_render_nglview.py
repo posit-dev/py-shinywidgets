@@ -8,6 +8,7 @@ from tests.playwright.conftest import (
     assert_no_unexpected_errors,
     collect_errors,
     expose_manager,
+    settled_live_views,
 )
 
 # Size (in CSS px) of an element and the canvas nglview drew inside it
@@ -20,8 +21,6 @@ SIZES_JS = """(id) => {
 }"""
 
 MIN_DRAWN_PIXELS = 100
-
-LIVE_VIEWS_JS = "() => window.widgetManager._liveViews.size"
 
 # True once nglview's canvas matches the size of its output element
 CANVAS_FILLS_OUTPUT_JS = """(id) => {
@@ -183,7 +182,7 @@ def test_nglview_rerender_releases_old_views(page: Page, local_app) -> None:
 
     expect(page.locator("#view canvas")).to_have_count(1, timeout=30000)
     expect(page.locator("#render_count")).to_have_text("0")
-    initial = page.evaluate(LIVE_VIEWS_JS)
+    initial = settled_live_views(page)
 
     for i in range(1, 4):
         page.click("#rerender")
@@ -191,7 +190,94 @@ def test_nglview_rerender_releases_old_views(page: Page, local_app) -> None:
         expect(page.locator("#view canvas")).to_have_count(1, timeout=30000)
 
     expect(page.locator("#view > .lm-Widget")).to_have_count(1)
-    assert page.evaluate(LIVE_VIEWS_JS) == initial
+    assert settled_live_views(page) == initial
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_nglview_subclass_tracks_its_container(page: Page, local_app) -> None:
+    # An app-defined NGLWidget subclass reports the app's module as its
+    # widget_pkg, so the browser has to recognize it by what it inherits (its
+    # inherited NGLView, i.e. the sizing hooks nglview gets). nglview measures
+    # itself once on render, so only tracking a resize shows whether the hooks
+    # ran.
+    errors, failed_requests = collect_errors(page)
+    page.set_viewport_size({"width": 900, "height": 1400})
+    page.goto(local_app.url)
+    expect(page.locator("#subclassed canvas")).to_have_count(1, timeout=30000)
+    page.wait_for_function(CANVAS_FILLS_OUTPUT_JS, arg="subclassed", timeout=30000)
+    wide = sizes(page, "subclassed")
+    container = page.locator("#subclass_container").bounding_box()
+    assert container is not None
+    assert abs(wide["out"][1] - (container["height"] - 2)) <= 1
+
+    page.set_viewport_size({"width": 600, "height": 1400})
+    page.wait_for_function(
+        f"""(w) => {{
+          const s = ({SIZES_JS})('subclassed');
+          return s.out[0] < w && Math.abs(s.canvas[0] - s.out[0]) <= 1;
+        }}""",
+        arg=wide["out"][0] - 100,
+        timeout=10000,
+    )
+    narrow = sizes(page, "subclassed")
+    assert abs(narrow["canvas"][1] - narrow["out"][1]) <= 1
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_nglview_respects_constructor_width(page: Page, local_app) -> None:
+    # NGLWidget(width=...) sizes the stage itself, so the output must not widen it
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    expect(page.locator("#width_view canvas")).to_have_count(1, timeout=30000)
+
+    page.wait_for_function(
+        """() => document.getElementById('width_view').querySelector('canvas')
+            .getBoundingClientRect().width === 200""",
+        timeout=30000,
+    )
+    s = sizes(page, "width_view")
+    assert s["canvas"] == [200, 200]
+
+    # ... and keeps it when the output narrows
+    page.set_viewport_size({"width": 500, "height": 720})
+    page.wait_for_function(
+        """() => document.getElementById('width_view').getBoundingClientRect().width < 500""",
+        timeout=30000,
+    )
+    assert sizes(page, "width_view")["canvas"] == [200, 200]
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_nglview_child_removal_disposes_stage(page: Page, local_app) -> None:
+    # A container dropping a child calls view.remove() directly, which doesn't go
+    # through the output binding's teardown; the stage must still be disposed
+    errors, failed_requests = collect_errors(page)
+    page.route("**/output.js", expose_manager)
+    page.goto(local_app.url)
+    expect(page.locator("#boxed canvas")).to_have_count(1, timeout=30000)
+
+    # Spy on the stage's dispose() so the removal's effect is observable
+    page.wait_for_function(
+        """() => {
+          const view = Array.from(window.widgetManager._liveViews).find(
+            (v) => v.model && v.model.get('_view_name') === 'NGLView' &&
+              document.getElementById('boxed').contains(v.el)
+          );
+          if (!view || !view.stage) return false;
+          window.__nglDisposed = 0;
+          const dispose = view.stage.dispose.bind(view.stage);
+          view.stage.dispose = () => { window.__nglDisposed += 1; dispose(); };
+          return true;
+        }""",
+        timeout=30000,
+    )
+
+    page.click("#remove_child")
+    expect(page.locator("#boxed canvas")).to_have_count(0, timeout=30000)
+    assert page.evaluate("() => window.__nglDisposed") == 1
+
     assert_no_unexpected_errors(errors, failed_requests)

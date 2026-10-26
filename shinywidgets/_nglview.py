@@ -5,6 +5,46 @@ import threading
 
 from ipywidgets import Widget
 
+from ._dependencies import widget_pkg
+
+
+def is_nglview_widget(w: object) -> bool:
+    """
+    Is `w` an `nglview.NGLWidget` (or a subclass defined by an application)?
+
+    An app-defined subclass reports the app's own module as its `widget_pkg()`,
+    so recognize NGLWidget through the MRO (same as `set_layout_defaults()`)
+    rather than by module. Restricted to actual NGLWidget instances: non-viewer
+    nglview widgets (e.g. the global `_ColormakerRegistry`, or a
+    `RepresentationControl`) also match a package-wide MRO check, but have no
+    background threads to stop.
+    """
+    return any(
+        cls.__name__ == "NGLWidget" and widget_pkg(cls) == "nglview"
+        for cls in type(w).__mro__
+    )
+
+
+def stop_threads_on_close(w: Widget) -> None:
+    """
+    Stop an NGLWidget's background threads when the widget is closed.
+
+    Hooking the widget's own `close()` (rather than only the cleanup paths in
+    `close_widget()`) covers a user calling `widget.close()` directly: render
+    cleanup skips already-closed widgets, and session cleanup only sees widgets
+    still in the registry, so a directly-closed viewer would otherwise keep its
+    (idle, polling) threads -- and itself -- alive for the rest of the process.
+    """
+    close = w.close
+
+    def close_and_stop_threads() -> None:
+        try:
+            stop_nglview_threads(w)
+        finally:
+            close()
+
+    w.close = close_and_stop_threads  # type: ignore[method-assign]
+
 
 def stop_nglview_threads(w: Widget) -> None:
     """
@@ -15,22 +55,32 @@ def stop_nglview_threads(w: Widget) -> None:
     reference to the widget, and `close()` doesn't stop them. A notebook leaks a
     pair per displayed viewer; Shiny constructs a new viewer per render, so the
     leak would grow for the life of the process.
+
+    This is safe to call more than once (e.g. an explicit `close()` followed by
+    cleanup of the same widget).
     """
     # nglview is optional, and this only runs for nglview widgets
     from nglview.remote_thread import RemoteCallThread
 
+    # Release any wait on a browser acknowledgement that can no longer arrive
+    # (the widget's comm is closed): a thread blocked in
+    # `_wait_until_finished()` (e.g. mid-`loadFile` after a structure was
+    # loaded/replaced, or an image exported) would otherwise never reach the
+    # queued exit_thread. nglview's `_wait_until_finished()` clears `_event`
+    # *before* waiting, so setting the event only releases a wait already in
+    # progress; overriding the method on the instance also makes waits that
+    # start afterwards return immediately.
+    w._wait_until_finished = lambda *args, **kwargs: None  # type: ignore[attr-defined]
+    w._event.set()  # type: ignore[attr-defined]
+
     for t in threading.enumerate():
         if isinstance(t, RemoteCallThread) and t.view is w:
-            # The thread runs queued callbacks in order, so it exits (silently:
-            # threads swallow SystemExit) once it has sent anything pending
+            # Drop work that hasn't started (its messages would only go to a
+            # closed comm) and let the thread exit once it next reaches its
+            # queue. The thread runs queued callbacks in order, so it exits
+            # (silently: threads swallow SystemExit) on reaching exit_thread.
+            t.q.clear()
             t.q.append(exit_thread)
-    # A thread may be blocked in `_wait_until_finished()` (e.g. mid-`loadFile`
-    # after a structure was loaded, replaced, or an image exported), waiting on
-    # a browser acknowledgement that can't arrive once the widget's comm is
-    # closed. Setting the event releases that wait so the thread can reach the
-    # queued exit_thread. (This doesn't cover a thread that enters the wait
-    # only after we set the event -- a race inherent to nglview's design.)
-    w._event.set()  # type: ignore[attr-defined]
 
 
 def importing_nglview() -> bool:

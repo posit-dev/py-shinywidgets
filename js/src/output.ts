@@ -1,8 +1,8 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { ShinyComm } from './comm';
-import { ipyleafletBehavior, WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
+import { behaviorForModel, ipyleafletBehavior, WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
 import { isJQuery, jsonParse, lendDataTables, protectPageJQuery } from './utils';
-import { disposeNative, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
+import { disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
 import type { ErrorsMessageValue } from 'rstudio-shiny/srcts/types/src/shiny/shinyapp';
@@ -58,6 +58,9 @@ class OutputManager extends HTMLManager {
         }
         this._liveViews.add(view);
         view.once('remove', () => this._liveViews.delete(view));
+        // Disposes the NGL stage however this view goes away, including a
+        // container dropping it as a child (see disposeNglviewStageOnRemove)
+        disposeNglviewStageOnRemove(view);
       },
       () => {
         // View creation failed; create_view's own promise chain already logs it.
@@ -287,9 +290,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       return;
     }
 
-    // Package-specific fill/resize behavior (see js/src/fill.ts)
-    const behavior = WIDGET_BEHAVIORS[data.widget_pkg];
-
     // Shiny removes the output's `.recalculating` class (which is what hides
     // stale content via CSS, see shinywidgets.css) synchronously, before this
     // function runs -- i.e. before `create_view()`/`display_view()` below have
@@ -306,6 +306,11 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // At this time point, we should've already handled an 'open' message, and so
     // the model should be ready to use
     const model = await manager.get_model(data.model_id);
+
+    // Package-specific fill/resize behavior (see js/src/fill.ts). Falls back to
+    // matching on the model itself, for widget classes defined in app code (a
+    // subclass reports the app's module as its widget_pkg).
+    const behavior = WIDGET_BEHAVIORS[data.widget_pkg] ?? behaviorForModel(model);
 
     // N.B. no `{ el }` option: base-manager just passes options through to
     // `view.options`, which nothing reads; attachment happens in display_view

@@ -143,6 +143,18 @@ function disposeNglviewStage(view: WidgetView): void {
   stage.dispose();
 }
 
+// Removing a view directly -- an ipywidgets container whose children change
+// calls remove() on the dropped child views itself -- never reaches
+// removeViewTree(), so hook the stage disposal into the view's own removal too.
+// disposeNglviewStage() is idempotent, so the teardown path may also dispose
+// before removing (as it does for plotly and leaflet).
+export function disposeNglviewStageOnRemove(view: WidgetView): void {
+  if (!view.model || view.model.get('_view_name') !== 'NGLView') {
+    return;
+  }
+  view.once('remove', () => disposeNglviewStage(view));
+}
+
 function disposeLeafletMap(view: WidgetView): void {
   const tracked = view as WidgetView & {
     obj?: NativeLeafletMap;

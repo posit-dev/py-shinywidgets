@@ -5,6 +5,7 @@ import importlib.util
 import subprocess
 import sys
 import threading
+import time
 from types import ModuleType
 
 import pytest
@@ -126,6 +127,71 @@ def test_retired_nglview_widget_stops_its_threads(
     for t in threads:
         t.join(timeout=2)
     assert not any(t.is_alive() for t in threads)
+
+
+def test_direct_close_stops_nglview_threads(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # Closing the widget directly (rather than via render/session cleanup) must
+    # stop its threads too: cleanup never revisits an already-closed widget
+    with session_context(widget_session):
+        widget = nglview.show_text(TINY_PDB, ext="pdb")
+        threads = remote_call_threads(widget)
+        assert threads
+
+        widget.close()
+
+    for t in threads:
+        t.join(timeout=2)
+    assert not any(t.is_alive() for t in threads)
+
+
+def test_nglview_shutdown_releases_in_flight_acknowledgement_wait(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # A worker blocked in _wait_until_finished() (e.g. mid-loadFile) is waiting
+    # on a browser acknowledgement that can't arrive once the comm is closed
+    from shinywidgets._nglview import stop_nglview_threads
+
+    with session_context(widget_session):
+        widget = nglview.show_text(TINY_PDB, ext="pdb")
+    released = threading.Event()
+
+    def wait_for_acknowledgement() -> None:
+        widget._wait_until_finished()
+        released.set()
+
+    waiter = threading.Thread(target=wait_for_acknowledgement, daemon=True)
+    waiter.start()
+    time.sleep(0.05)
+    assert not released.is_set()
+
+    stop_nglview_threads(widget)
+
+    assert released.wait(timeout=2)
+    waiter.join(timeout=2)
+    assert not waiter.is_alive()
+
+
+def test_nglview_shutdown_prevents_later_acknowledgement_waits(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # nglview's _wait_until_finished() clears the event before waiting, so a
+    # worker that starts waiting *after* shutdown would block forever
+    from shinywidgets._nglview import stop_nglview_threads
+
+    with session_context(widget_session):
+        widget = nglview.show_text(TINY_PDB, ext="pdb")
+    stop_nglview_threads(widget)
+    released = threading.Event()
+    waiter = threading.Thread(
+        target=lambda: (widget._wait_until_finished(), released.set()), daemon=True
+    )
+    waiter.start()
+
+    assert released.wait(timeout=2)
+    waiter.join(timeout=2)
+    assert not waiter.is_alive()
 
 
 def test_close_widget_ignores_non_viewer_nglview_widgets(

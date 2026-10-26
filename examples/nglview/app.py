@@ -40,7 +40,10 @@ def server(input, output, session):
     @render.text
     def picked_atom():
         picked = reactive_read(structure.widget, "picked")
-        return picked["atom1"]["name"] if picked else "Nothing selected yet"
+        # A pick on a surface representation has no atom, so `picked` can be
+        # nonempty without an "atom1" entry (e.g. only "bond"/"instanceId")
+        atom = picked.get("atom1") if picked else None
+        return atom["name"] if atom else "Nothing selected yet"
 
 
 app = App(app_ui, server)

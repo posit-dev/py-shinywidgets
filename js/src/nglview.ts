@@ -1,4 +1,4 @@
-import type { DOMWidgetView } from '@jupyter-widgets/base';
+import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
 
 // nglview's view (not its model) exposes setSize(), which resizes the stage
 interface NglviewView {
@@ -17,20 +17,26 @@ interface NglviewView {
 export function setupNglviewAutoSize(
   el: HTMLElement,
   view: DOMWidgetView,
+  model: WidgetModel,
   trackHeight = true
 ): () => void {
   // Package-based dispatch also routes non-viewer nglview widgets here (e.g.
   // RepresentationControl, which renders as an ordinary ipywidgets Box).
   // Those views have no NGL stage or setSize(), so don't observe them.
-  if (view.model.get('_view_name') !== 'NGLView') {
+  if (model.get('_view_name') !== 'NGLView') {
     return () => {};
   }
   const stage = view as unknown as NglviewView;
   const observer = new ResizeObserver(() => {
+    // nglview stores an `NGLWidget(width=...)` argument on the synced
+    // `_view_width` trait (default '') and sizes the stage to it, so an
+    // explicit width opts out of tracking the output's width. Otherwise the
+    // stage's own fixed pixel width would overflow or underfill the output.
+    const width = model.get('_view_width') || `${el.clientWidth}px`;
     const height = trackHeight
       ? `${el.clientHeight}px`
       : stage.stage.viewer.container.style.height;
-    stage.setSize(`${el.clientWidth}px`, height);
+    stage.setSize(width, height);
   });
   observer.observe(el);
   return () => observer.disconnect();

@@ -38,6 +38,12 @@ export interface PostDisplayContext extends BehaviorContext {
 }
 
 export interface WidgetBehavior {
+  // Identity check, consulted when the server-reported `widget_pkg` finds no
+  // behavior. A widget class defined outside the widget package (e.g. an
+  // NGLWidget subclass in app code) reports the app's module as its
+  // widget_pkg, so package-based dispatch can't see it; these behaviors match
+  // on what the widget inherits instead (e.g. the view name).
+  matches?(model: WidgetModel): boolean;
   // Runs (once the widget's implementation has rendered) when the output is
   // inside a fill container. May return a cleanup function, which the output
   // binding calls when the view is removed.
@@ -103,8 +109,12 @@ const keplerglBehavior: WidgetBehavior = {
 // dimensions when the output has a height of its own (a filling layout or an
 // explicit output_widget(height=)), otherwise just the width.
 const nglviewBehavior: WidgetBehavior = {
-  setupFill: ({ el, view }) => setupNglviewAutoSize(el, view),
-  setupFixedSize: ({ el, view }) => setupNglviewAutoSize(el, view, !!el.style.height),
+  // An app-defined NGLWidget subclass reports the app's own module as its
+  // widget_pkg, but it inherits nglview's view
+  matches: (model) => model.get('_view_name') === 'NGLView',
+  setupFill: ({ el, view, model }) => setupNglviewAutoSize(el, view, model),
+  setupFixedSize: ({ el, view, model }) =>
+    setupNglviewAutoSize(el, view, model, !!el.style.height),
 };
 
 // shinywidgets.css sizes an ipyleaflet map to its (non-filling) output's
@@ -135,3 +145,11 @@ export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   quak: quakBehavior,
   ipyleaflet: ipyleafletBehavior,
 };
+
+// The behavior for a widget whose package key isn't in WIDGET_BEHAVIORS (see
+// WidgetBehavior.matches)
+export function behaviorForModel(model: WidgetModel): WidgetBehavior | undefined {
+  return Object.values(WIDGET_BEHAVIORS).find((behavior) =>
+    behavior.matches ? behavior.matches(model) : false
+  );
+}
