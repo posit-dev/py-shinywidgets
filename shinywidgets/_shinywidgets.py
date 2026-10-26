@@ -128,9 +128,9 @@ def init_shiny_widget(w: Widget):
     # (via handle_comm_open() -> new_model() -> loadClass() -> requireLoader())
     # actually point to directories served locally by shiny
     if SHINYWIDGETS_CDN_ONLY:
-        widget_dep = None
+        widget_deps: List[HTMLDependency] = []
     else:
-        widget_dep = require_dependency(w, session, SHINYWIDGETS_EXTENSION_WARNING)
+        widget_deps = require_dependency(w, session, SHINYWIDGETS_EXTENSION_WARNING)
 
     # By the time we get here, the user has already had an opportunity to specify a model_id,
     # so it isn't yet populated, generate a random one so we can assign the same id to the comm
@@ -139,7 +139,6 @@ def init_shiny_widget(w: Widget):
 
     id = cast(str, w._model_id)
 
-    widget_deps: List[Optional[HTMLDependency]] = [widget_dep]
     if any(widget_pkg(cls) == "perspective" for cls in type(w).__mro__):
         widget_deps.append(custom_elements_dependency())
     open_keys: Dict[str, object] = {}
@@ -276,7 +275,9 @@ def init_shiny_widget(w: Widget):
     # we're setting the data-base-url attribute on the <body> (which we should
     # be doing on load in js/src/output.ts)
     # https://github.com/jupyter-widgets/widget-cookiecutter/blob/9694718/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js#L8
-    if widget_dep and widget_dep.source:
+    for widget_dep in widget_deps:
+        if not widget_dep.source:
+            continue
         src_dir = widget_dep.source.get("subdir", "")
         if src_dir:
             session.app._dependency_handler.mount(
