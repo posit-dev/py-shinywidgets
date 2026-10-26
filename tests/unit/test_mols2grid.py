@@ -111,6 +111,64 @@ def test_grid_kwargs_reach_the_molgrid_constructor(widget_session: Session) -> N
     assert r.grid.widget.grid_id == "my-grid"
 
 
+def test_draw_options_reach_the_molgrid_constructor(widget_session: Session) -> None:
+    # mols2grid.display() hands its leftover kwargs to MolGrid(), whose remaining
+    # **kwargs are RDKit draw options; without the same split they'd be forwarded
+    # to the renderer instead (and raise a TypeError)
+    r = rw.render_mols2grid(addStereoAnnotation=True, subset=["ID"])
+    assert r.grid_kwargs == {"addStereoAnnotation": True}
+    assert r.render_kwargs == {"subset": ["ID"]}
+
+    render(r, lambda: DF, widget_session)
+
+    assert isinstance(r.grid, MolGrid)
+    draw_opts = json.loads(str(getattr(r.grid, "json_draw_opts")))
+    assert draw_opts["addStereoAnnotation"] is True
+    # A rendering option must not leak into the drawing options
+    assert "subset" not in draw_opts
+
+
+def test_prerender_draw_options_reach_rdkit(widget_session: Session) -> None:
+    # With prerender=True, MolGrid() applies its **kwargs to a real MolDrawOptions
+    r = rw.render_mols2grid(prerender=True, addAtomIndices=True)
+    render(r, lambda: DF, widget_session)
+
+    assert isinstance(r.grid, MolGrid)
+    opts = getattr(r.grid, "MolDrawOptions")
+    assert opts.addAtomIndices is True
+
+
+def test_rendering_option_wins_when_a_name_is_ambiguous(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # mols2grid pops its rendering options first, so a name that both a MolGrid()
+    # option and a rendering option would accept is treated as a rendering option
+    monkeypatch.setattr(rw, "_mols2grid_render_kwargs", lambda: frozenset({"size"}))
+    r = rw.render_mols2grid(size=(150, 100), subset=["ID"])
+
+    assert r.render_kwargs == {"size": (150, 100)}
+    assert r.grid_kwargs == {"subset": ["ID"]}
+
+
+def test_kwarg_split_follows_mols2grid_signatures() -> None:
+    # The split is derived from mols2grid's own signatures, so a mols2grid upgrade
+    # can't silently misroute an option (e.g. by adding a MolGrid() constructor
+    # option that this package still thinks is a rendering option)
+    import inspect
+
+    render_params = rw._mols2grid_render_kwargs()
+    assert {"subset", "tooltip", "sort_by", "n_items_per_page"} <= render_params
+
+    ctor_params = set(inspect.signature(MolGrid.__init__).parameters) - {
+        "self",
+        "df",
+        "smiles_col",
+        "mol_col",
+        "kwargs",
+    }
+    assert not (ctor_params & render_params)
+
+
 def test_prerender_still_renders(widget_session: Session) -> None:
     r = rw.render_mols2grid(prerender=True)
     render(r, lambda: DF, widget_session)
