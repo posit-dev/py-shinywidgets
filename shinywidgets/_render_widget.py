@@ -1782,7 +1782,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       from the start.
     * **Grid name**: mols2grid keys selections in a process-global registry, so
       grids coerced from a DataFrame get a name unique to the session and the
-      output (a stable ``"shiny-<session>-<output>"`` slug). A `MolGrid` you
+      output (a stable ``"shiny-<session>-<id>"`` slug, where the id is the
+      output's *namespaced* id, so two module instances' ``grid`` outputs don't
+      collide). A `MolGrid` you
       construct keeps its own
       ``name`` -- give it a unique one (the default ``"default"`` collides
       across sessions and across multiple grids on a page), and note that a
@@ -1906,6 +1908,23 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         # cleanup for (see _cleanup_selection_registry)
         self._selection_cleanup_names: set[str] = set()
 
+    # The session- and namespace-qualified output id, captured when the decorated
+    # function is registered (see __call__). `output_id` alone isn't unique: two
+    # module instances in one session can each have an output named "grid"
+    _grid_output_id: Optional[str] = None
+
+    def __call__(
+        self, _fn: ValueFn[Mols2GridValueT]
+    ) -> "render_mols2grid[Mols2GridValueT]":
+        super().__call__(_fn)
+        session = get_current_session()
+        if session is not None and not session.is_stub_session():
+            # A module's server function runs with its SessionProxy in context, so
+            # that's where the namespace is known; rendering runs with the root
+            # session, so this has to be captured now, not in as_grid()
+            self._grid_output_id = str(session.ns(self.output_id))
+        return self
+
     @property
     def grid(self) -> Optional[MolGrid]:
         """
@@ -1960,8 +1979,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         # unique per session *and* output: two grids in the same session share
         # the window, so a shared name would cross-wire their selections
         # (mols2grid keys models and lists by name on window)
-        # (output_id is only set once the renderer decorates a function)
-        output_id = getattr(self, "output_id", "grid")
+        # (_grid_output_id/output_id are only set once the renderer decorates a
+        # function)
+        output_id = self._grid_output_id or getattr(self, "output_id", "grid")
         name = _MOLS2GRID_NAME_SLUG.sub("-", f"{grid_name()}-{output_id}")
         self._cleanup_selection_registry(name)
         grid_kwargs = {"name": name, **self.grid_kwargs}
