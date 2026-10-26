@@ -303,6 +303,27 @@ def test_grid_names_are_unique_per_output_in_a_session(
     assert r1.grid.widget.grid_id == first
 
 
+def test_session_end_prunes_the_mols2grid_selection_registry(
+    widget_session: Session,
+) -> None:
+    from mols2grid.select import register
+
+    r = rw.render_mols2grid()
+    render(r, lambda: DF, widget_session)
+
+    assert isinstance(r.grid, MolGrid)
+    name = r.grid.widget.grid_id
+    # mols2grid records selections in a module-level dict keyed by grid name, and
+    # never prunes it; without the renderer's cleanup, one (potentially large)
+    # selection dict would survive every session a server has ever served
+    r.grid.widget.selection = str({0: "CCO"})
+    assert register.SELECTIONS[name] == {0: "CCO"}
+
+    asyncio.run(widget_session.close())
+
+    assert name not in register.SELECTIONS
+
+
 def test_grid_name_stable_within_and_unique_across_sessions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
