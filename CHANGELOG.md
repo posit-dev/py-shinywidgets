@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Bug fixes
 
 * Widgets whose JavaScript creates models in the browser (e.g., bqplot's toolbar PanZoom, pythreejs light targets and shadows) now get a Python counterpart, so their state syncs instead of raising `TraitError`s about unresolved `IPY_MODEL_` references, and models the browser closes are closed on the server too.
+* Widget updates made from a background thread (e.g., nglview's remote-call thread, or your own `threading.Thread`) are now delivered to the browser promptly instead of waiting for the next unrelated input.
 * Improved error messages when an object can't be rendered as a widget: subclasses defined in another package (e.g., `leafmap.deck.Map`, which subclasses pydeck's `Deck`) now route to the coercer for their base class's package, so they get that package's specific guidance instead of the generic "Don't know how to coerce" error. Error messages also no longer dump enormous object reprs (e.g., a pydeck `Deck`'s entire JSON spec) into the output.
 * Fixed widget asset lookup to use the first matching Jupyter data directory, respecting Jupyter's search order. Previously, a stale JavaScript bundle in a later directory (e.g., `/usr/local/share/jupyter`) could override the active environment's bundle and cause plotly 5 `FigureWidget`s to render as a blank output. (#332)
 
