@@ -100,7 +100,7 @@ def require_dependency(
     require('widget-npm-package') requests in the browser to the correct local
     paths. The first entry serves the widget's own module; any additional
     entries serve AMD externals of the widget's bundle that are themselves
-    installed nbextensions (see _amd_require_config()).
+    installed nbextensions (see amd_require_config()).
     """
 
     # The relevant npm package should be specified as an attribute on the widget
@@ -151,7 +151,7 @@ def require_dependency(
         # Get the location where the dependency files will be mounted by the shiny app
         # and use that to inform the requirejs import path
         href = dep.source_path_map(lib_prefix=session.app.lib_prefix)["href"]
-        config, nbextensions = _amd_require_config(name, dir_, href)
+        config, nbextensions = amd_require_config(name, dir_, href)
         # Basically our equivalent of the extension.js file provided by the cookiecutter
         # https://github.com/jupyter-widgets/widget-cookiecutter/blob/master/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js
         deps.append(
@@ -166,7 +166,7 @@ def require_dependency(
         for ext in nbextensions:
             ext_dir = jupyter_extension_path(ext)
             if ext_dir is not None:
-                worklist.append((ext, ext_dir, _dir_version(ext_dir)))
+                worklist.append((ext, ext_dir, dir_version(ext_dir)))
 
     return deps
 
@@ -175,7 +175,7 @@ def require_dependency(
 # its AMD bundle, but that shinywidgets' browser environment already provides:
 # the @jupyter-widgets packages come prebundled in libembed-amd.js, and the
 # rest are require.js or classic-notebook builtins
-_AMD_PREBUNDLED = {
+AMD_PREBUNDLED = {
     "module",
     "require",
     "exports",
@@ -214,12 +214,12 @@ def amd_externals(module_dir: str) -> List[str]:
     return [
         dep
         for dep in deps
-        if dep not in _AMD_PREBUNDLED
+        if dep not in AMD_PREBUNDLED
         and not dep.startswith(("@jupyter-widgets/", "base/js/", "./", "../"))
     ]
 
 
-def _amd_require_config(
+def amd_require_config(
     module_name: str, module_dir: str, href: str
 ) -> "tuple[dict[str, object], List[str]]":
     """
@@ -244,9 +244,7 @@ def _amd_require_config(
             alias = f"{module_name}/{ext}"
             paths[alias] = os.path.join(href, ext)
             map_[module_name] = {**map_.get(module_name, {}), ext: alias}
-            global_name = _AMD_UMD_GLOBAL_OVERRIDES.get(module_name, {}).get(
-                ext
-            ) or _umd_global(ext_file)
+            global_name = umd_global(ext_file)
             if global_name is not None:
                 # UMD bundles take the global-export branch (shiny's require.js
                 # wrapper keeps define.amd = false), so expose the global as
@@ -254,8 +252,8 @@ def _amd_require_config(
                 shim[alias] = {"exports": global_name}
         elif jupyter_extension_path(ext) is not None:
             nbextensions.append(ext)
-        # Otherwise the external can't be resolved locally; the CDN fallback
-        # applies (as it does for widget modules without a local extension)
+        # Otherwise leave the external unresolved. The widget-level CDN retry
+        # does not configure paths for its bare externals.
     config: dict[str, object] = {"paths": paths}
     if map_:
         config["map"] = map_
@@ -264,14 +262,7 @@ def _amd_require_config(
     return config, nbextensions
 
 
-# Override for UMD bundles whose exported global can't be sniffed from the
-# bundle wrapper by _umd_global() (module name -> external -> global name).
-# Empty so far: every UMD bundle we've encountered writes its global in one of
-# the standard shapes (e.g., pythreejs's three.js does `global.THREE = {}`)
-_AMD_UMD_GLOBAL_OVERRIDES: Dict[str, Dict[str, str]] = {}
-
-
-def _umd_global(js_file: str) -> Optional[str]:
+def umd_global(js_file: str) -> Optional[str]:
     """
     The global variable a UMD-style bundle exports, or None for a plain AMD
     bundle (which provides its module value by calling define()).
@@ -301,7 +292,7 @@ def _umd_global(js_file: str) -> Optional[str]:
     return m.group(1)
 
 
-def _dir_version(module_dir: str) -> str:
+def dir_version(module_dir: str) -> str:
     """
     A pseudo-version for an nbextension we have no widget instance to take a
     module version from (e.g., an AMD external of a widget's bundle): use the

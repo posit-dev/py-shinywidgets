@@ -279,11 +279,9 @@ def test_require_dependency_maps_bundled_amd_dependencies(
         assert config["shim"] == {alias: {"exports": shim}}
 
 
-def test_require_dependency_umd_global_override(
+def test_require_dependency_warns_for_unknown_sibling_format(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A UMD bundle whose global doesn't match a sniffable shape can still get
-    # a shim via _AMD_UMD_GLOBAL_OVERRIDES
     class DummyWidget:
         __module__ = "fakepkg.widgets"
 
@@ -314,20 +312,12 @@ def test_require_dependency_umd_global_override(
     assert config["map"] == {"some-widget": {"three": "some-widget/three"}}
     assert "shim" not in config
 
-    monkeypatch.setattr(
-        deps, "_AMD_UMD_GLOBAL_OVERRIDES", {"some-widget": {"three": "MyThree"}}
-    )
-    resolved = require_dependency(w, session)
-    head = str(resolved[0].head)
-    config = json.loads(head.split("window.require.config(", 1)[1].split(")", 1)[0])
-    assert config["shim"] == {"some-widget/three": {"exports": "MyThree"}}
-
 
 def test_require_dependency_without_bundled_amd_dependency(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # An external `three` with no three.js next to index.js and no `three`
-    # nbextension: no map config (the CDN fallback applies)
+    # nbextension: no map config, so the external remains unresolved
     class DummyWidget:
         __module__ = "ipyvolume.widgets"
 
@@ -422,7 +412,7 @@ def test_require_dependency_resolves_transitive_external_nbextensions(
     assert [d.name for d in resolved] == ["some-widget", "ext-a", "ext-b"]
 
 
-def test_require_dependency_unresolvable_external_is_left_to_cdn(
+def test_require_dependency_unresolvable_external_adds_no_config(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # An external that is neither a sibling file nor an installed nbextension
