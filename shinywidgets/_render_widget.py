@@ -1785,10 +1785,11 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       the output (a stable ``"shiny-<session>-<id>"`` slug, where the id is
       the output's *namespaced* id, so two module instances' ``grid`` outputs
       don't collide). A `MolGrid` you construct keeps its own ``name`` --
-      give it a unique one (the default ``"default"`` collides across
-      sessions and across multiple grids on a page), and note that a
-      `MolGrid` is itself process-global state, so construct it inside the
-      render function, not at the top level of the app.
+      give it a unique one (a grid still named ``"default"`` is rejected
+      with an error, since it collides across sessions and across multiple
+      grids on a page), and note that a `MolGrid` is itself process-global
+      state, so construct it inside the render function, not at the top
+      level of the app.
     * **Network access**: the grid's JavaScript (list.js, jQuery, RDKit
       MinimalLib, Bootstrap) loads from CDNs at render time, so the grid needs
       an internet connection (it renders empty, without an error, when the CDNs
@@ -1960,12 +1961,16 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             # name lives in a process-global selection registry, so it collides
             # across sessions (and across multiple grids on one page)
             if value.widget.grid_id == "default":
-                warnings.warn(
+                raise ValueError(
                     "This mols2grid.MolGrid uses the default grid name ('default'), "
                     "which mols2grid stores in a process-global selection registry: "
-                    "other sessions and grids using the same name will overwrite its "
-                    "selection. Construct it with a unique `name=...` instead.",
-                    stacklevel=3,
+                    "other sessions (and other grids on the same page) using the "
+                    "same name would overwrite its selection, and this grid would "
+                    "read theirs. Either construct it with a unique name "
+                    "(mols2grid.MolGrid(df, name='my-grid')), or return the "
+                    "DataFrame instead and pass any constructor options to the "
+                    "decorator (e.g. @render_mols2grid(name='my-grid')), which "
+                    "gives the grid a collision-free generated name."
                 )
             return value
         if not is_pandas_dataframe(value):
