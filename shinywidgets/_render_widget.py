@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import inspect
 import re
 import sys
 import warnings
+from functools import lru_cache
 from importlib.metadata import version as package_version
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, cast
 
@@ -1742,12 +1744,14 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     object, not a grid.
 
     Extra keyword arguments are forwarded to mols2grid, split the way
-    ``mols2grid.display()`` splits them: data/drawing options (``size``,
-    ``useSVG``, ``prerender``, ``cache_selection``, ``removeHs``,
-    ``use_coords``, ``coordGen``, ``MolDrawOptions``, ``name``, ``rename``) go
-    to `MolGrid()`, and the visual options (``subset``, ``tooltip``,
-    ``sort_by``, ``n_items_per_page``, ``selection``, ``custom_css``,
-    ``transform``, ``callback``, ...) go to the grid's rendering. The grid is
+    ``mols2grid.display()`` splits them: the rendering options (``subset``,
+    ``tooltip``, ``sort_by``, ``n_items_per_page``, ``selection``,
+    ``custom_css``, ``transform``, ``callback``, ...) go to the grid's
+    rendering, and everything else goes to `MolGrid()` -- its constructor
+    options (``size``, ``useSVG``, ``prerender``, ``cache_selection``,
+    ``removeHs``, ``use_coords``, ``coordGen``, ``MolDrawOptions``, ``name``,
+    ``rename``), or, for any other name, an RDKit draw option
+    (``addStereoAnnotation=True``, ``addAtomIndices=True``, ...). The grid is
     always displayed in an iframe (``use_iframe=True``), which keeps its
     jQuery/Bootstrap globals out of your app's page.
 
@@ -1765,10 +1769,17 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       rows as a DataFrame.
     * **Filtering (Python -> browser):** ``grid.grid.filter(mask)`` (a boolean
       mask, Series, or list) hides non-matching molecules in the already
-      rendered grid, without re-rendering. Call it in response to user input:
-      a filter issued while the grid is still loading is recorded on the
-      widget's ``filter_mask`` trait but not applied by mols2grid's frontend
-      (upstream limitation), so re-issue it once the grid is visible.
+      rendered grid, without re-rendering. The mask is positional against the
+      rows *as rendered* (mols2grid matches it up by each row's
+      ``mols2grid-id``), so pass it in the DataFrame's row order -- a Series
+      taken from a filtered or reordered frame hides the wrong molecules. Call
+      it in response to user input: a filter issued while the grid is still
+      loading is recorded on the widget's ``filter_mask`` trait but not applied
+      by mols2grid's frontend (upstream limitation -- it applies the mask only
+      when the trait *changes*, with no initial application and no retry), so a
+      grid can't start out filtered: re-issue it once the grid is visible, and
+      filter the DataFrame in the render function for a grid that is filtered
+      from the start.
     * **Grid name**: mols2grid keys selections in a process-global registry, so
       grids coerced from a DataFrame get a name unique to the session and the
       output (a stable ``"shiny-<session>-<output>"`` slug). A `MolGrid` you
@@ -1780,7 +1791,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     * **Network access**: the grid's JavaScript (list.js, jQuery, RDKit
       MinimalLib, Bootstrap) loads from CDNs at render time, so the grid needs
       an internet connection (it renders empty, without an error, when the CDNs
-      are unreachable).
+      are unreachable). mols2grid hardcodes those URLs inside the iframe's
+      document, so they can't be served from the app's own assets; if you need
+      an offline or air-gapped deployment, please open an issue.
     * **Sizing**: the grid sizes its own height to fit its contents (mols2grid's
       ``fitIframe``), so it scrolls with the page rather than stretching to a
       filling container; an explicit ``height`` on the output acts as a viewport
@@ -1816,7 +1829,12 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         ``height`` is not specified.
     kwargs
         Extra keyword arguments forwarded to mols2grid (split between
-        `MolGrid()` and its rendering, as described above).
+        `MolGrid()` and its rendering, as described above). The split is by
+        name and by mols2grid's own signatures: a name that the grid's
+        rendering accepts (``subset``, ``tooltip``, ``sort_by``, ...) goes to
+        the rendering, and any other name goes to `MolGrid()` -- so
+        `render_mols2grid(addStereoAnnotation=True)` sets an RDKit draw option,
+        the same passthrough ``mols2grid.display()`` provides.
 
     Examples
     --------
@@ -1865,15 +1883,19 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         super().__init__(_fn, width=width, height=height, fill=fill, fillable=fillable)
         self.smiles_col = smiles_col
         self.mol_col = mol_col
-        # MolGrid() takes the data/drawing options, while the visual ones
-        # (subset, tooltip, sort_by, ...) belong to its rendering; split them
-        # the way mols2grid's own dispatch wrapper does, so that e.g.
-        # render_mols2grid(subset=[...]) just works.
-        self.grid_kwargs: Dict[str, Any] = {}
-        self.render_kwargs: Dict[str, Any] = {}
-        for key, val in kwargs.items():
-            target = self.grid_kwargs if key in _MOLGRID_KWARGS else self.render_kwargs
-            target[key] = val
+        # The rendering options (subset, tooltip, sort_by, ...) belong to the
+        # grid's rendering, while everything else belongs to MolGrid(), whose
+        # remaining **kwargs are RDKit draw options -- split them the way
+        # mols2grid's own dispatch wrapper does, so that both
+        # render_mols2grid(subset=[...]) and
+        # render_mols2grid(addStereoAnnotation=True) just work
+        render_params = _mols2grid_render_kwargs()
+        self.render_kwargs: Dict[str, Any] = {
+            key: val for key, val in kwargs.items() if key in render_params
+        }
+        self.grid_kwargs: Dict[str, Any] = {
+            key: val for key, val in kwargs.items() if key not in render_params
+        }
         self._grid: Optional[MolGrid] = None
 
     @property
@@ -1980,23 +2002,69 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         )
 
 
-# Kwargs that belong to MolGrid()'s constructor (everything else a
-# render_mols2grid() call accepts is a rendering option, as split by
-# mols2grid's own dispatch._prepare_kwargs)
-_MOLGRID_KWARGS = frozenset(
+# What MolGrid's rendering accepts, per mols2grid 2.2.0 (the fallback for
+# _mols2grid_render_kwargs() when mols2grid isn't importable yet, e.g. because
+# the app is being rendered before the extra is installed)
+_MOLS2GRID_RENDER_KWARGS_FALLBACK = frozenset(
     {
-        "size",
-        "useSVG",
-        "prerender",
-        "cache_selection",
-        "removeHs",
-        "use_coords",
-        "coordGen",
-        "MolDrawOptions",
-        "name",
-        "rename",
+        "template",
+        "subset",
+        "tooltip",
+        "tooltip_fmt",
+        "tooltip_placement",
+        "transform",
+        "sort_by",
+        "use_iframe",
+        "truncate",
+        "n_items_per_page",
+        "selection",
+        "substruct_highlight",
+        "single_highlight",
+        "border",
+        "gap",
+        "pad",
+        "fontsize",
+        "fontfamily",
+        "textalign",
+        "background_color",
+        "hover_color",
+        "custom_css",
+        "style",
+        "custom_header",
+        "callback",
+        "iframe_width",
+        "iframe_height",
+        "iframe_allow",
+        "iframe_sandbox",
     }
 )
+
+
+@lru_cache(maxsize=1)
+def _mols2grid_render_kwargs() -> frozenset[str]:
+    """
+    The kwargs that belong to a `MolGrid`'s *rendering*, rather than to `MolGrid()`
+    itself.
+
+    Derived from mols2grid's own signatures (rather than a hardcoded list, which a
+    mols2grid upgrade would silently invalidate) so that everything else can be handed
+    to `MolGrid()`, which is where its constructor options -- and, via its remaining
+    ``**kwargs``, its RDKit draw options -- belong.
+    """
+    try:
+        from mols2grid.molgrid import MolGrid
+    except ImportError:
+        return _MOLS2GRID_RENDER_KWARGS_FALLBACK
+
+    # display() pops its own iframe options before forwarding to render(), which pops
+    # `template` before forwarding to the matching to_<template>() method
+    names: set[str] = {"template"}
+    for member in ("display", "render", "to_interactive", "to_static"):
+        fn = getattr(MolGrid, member, None)
+        if fn is not None:
+            names.update(set(inspect.signature(fn).parameters) - {"self", "kwargs"})
+    return frozenset(names)
+
 
 _MOLS2GRID_NAME_SLUG = re.compile(r"[^0-9a-zA-Z_-]+")
 
