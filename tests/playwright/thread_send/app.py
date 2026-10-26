@@ -24,7 +24,8 @@ def server(input, output, session):
         w = slider.widget
 
         def worker() -> None:
-            time.sleep(0.2)  # make sure the reactive cycle that handled the click is over
+            # Make sure the reactive cycle that handled the click is over.
+            time.sleep(0.2)
             w.value = 42  # ShinyComm.send() from a non-event-loop thread
 
         threading.Thread(target=worker, daemon=True).start()

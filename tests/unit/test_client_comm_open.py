@@ -192,6 +192,30 @@ def test_comm_open_for_registered_id_is_ignored(
     assert any(w.model_id in r.getMessage() for r in caplog.records)
 
 
+def test_comm_open_cannot_take_over_a_widget_not_yet_opened(
+    primed: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Between construction and the flush that opens its comm, a Python widget is
+    # in the global registry but not in the session's comm manager.
+    with session_context(primed):
+        w = ipywidgets.IntSlider(value=1)
+    with (
+        caplog.at_level(logging.WARNING, logger="shinywidgets"),
+        session_context(primed),
+    ):
+        sw.handle_client_comm_msg(
+            primed,
+            open_msg(
+                w.model_id, model_state("IntSliderModel", "IntSliderView", value=7)
+            ),
+        )
+    assert WIDGET_INSTANCE_MAP[w.model_id] is w
+    assert w.value == 1
+    assert any(w.model_id in r.getMessage() for r in caplog.records)
+    flush()
+    assert isinstance(w.comm, ShinyComm)
+
+
 def test_comm_open_for_other_target_is_ignored(
     primed: Session, caplog: pytest.LogCaptureFixture
 ) -> None:

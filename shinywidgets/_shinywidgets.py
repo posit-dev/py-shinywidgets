@@ -328,9 +328,12 @@ def open_client_comm(session: Session, msg: Dict[str, Any]) -> None:
         )
         return
     manager = COMM_MANAGERS[session.id]
-    if comm_id in manager.comms:
+    # The widget registry is process-wide, so this also covers widgets of other
+    # sessions and ones constructed here whose comm hasn't been opened yet.
+    if comm_id in manager.comms or comm_id in WIDGET_INSTANCE_MAP:
         logger.warning(
-            "Ignoring a browser comm_open for comm %s, which is already open", comm_id
+            "Ignoring a browser comm_open for comm %s, which is already in use",
+            comm_id,
         )
         return
     comm = ShinyComm.from_client(comm_id, manager, target, session)
