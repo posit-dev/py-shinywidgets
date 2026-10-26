@@ -12,6 +12,18 @@ from tests.playwright.conftest import (
 # kepler.gl bundles a ~12MB script and builds a WebGL map, so first paint is slow
 LOAD_TIMEOUT = 60000
 
+# keplergl 0.4.0's bundle initializes luma.gl more than once at module scope,
+# which logs "This version of luma.gl has already been initialized" (the map
+# still renders and behaves correctly). Tolerate that specific console error.
+LUMA_REINIT_ERROR = "This version of luma.gl has already been initialized"
+
+
+def check_keplergl_errors(errors: list[str], failed_requests: list[str]) -> None:
+    assert_no_unexpected_errors(
+        [e for e in errors if LUMA_REINIT_ERROR not in e], failed_requests
+    )
+
+
 # Heights (px) of the output container and of the rendered kepler.gl element
 # inside it, for the output with the given id
 HEIGHTS_JS = """(id) => {
@@ -42,7 +54,7 @@ def test_keplergl_renders_map(page: Page, local_app) -> None:
     box = canvas.bounding_box()
     assert box is not None and box["width"] > 0 and box["height"] > 0
 
-    assert_no_unexpected_errors(errors, failed_requests)
+    check_keplergl_errors(errors, failed_requests)
 
 
 def test_keplergl_fills_container_and_respects_explicit_height(
@@ -85,7 +97,7 @@ def test_keplergl_fills_container_and_respects_explicit_height(
         timeout=10000,
     )
 
-    assert_no_unexpected_errors(errors, failed_requests)
+    check_keplergl_errors(errors, failed_requests)
 
 
 def test_keplergl_config_roundtrips_to_python(page: Page, local_app) -> None:
@@ -98,7 +110,7 @@ def test_keplergl_config_roundtrips_to_python(page: Page, local_app) -> None:
         re.compile(r"layers: [1-9]"), timeout=LOAD_TIMEOUT
     )
 
-    assert_no_unexpected_errors(errors, failed_requests)
+    check_keplergl_errors(errors, failed_requests)
 
 
 def test_keplergl_renders_dataframe_with_missing_values(page: Page, local_app) -> None:
@@ -113,7 +125,7 @@ def test_keplergl_renders_dataframe_with_missing_values(page: Page, local_app) -
     page.click("#rerender")
     expect(page.locator("#render_count")).to_have_text("1")
 
-    assert_no_unexpected_errors(errors, failed_requests)
+    check_keplergl_errors(errors, failed_requests)
 
 
 def test_keplergl_rerender_lifecycle(page: Page, local_app) -> None:
@@ -140,4 +152,4 @@ def test_keplergl_rerender_lifecycle(page: Page, local_app) -> None:
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
-    assert_no_unexpected_errors(errors, failed_requests)
+    check_keplergl_errors(errors, failed_requests)
