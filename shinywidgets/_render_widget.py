@@ -4,7 +4,7 @@ import inspect
 import re
 import sys
 import warnings
-from functools import lru_cache
+from functools import lru_cache, partial
 from importlib.metadata import version as package_version
 from typing import (
     TYPE_CHECKING,
@@ -4047,6 +4047,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             key: val for key, val in kwargs.items() if key not in render_params
         }
         self._grid: Optional[MolGrid] = None
+        # Grid names this renderer has already registered a selection-registry
+        # cleanup for (see _cleanup_selection_registry)
+        self._selection_cleanup_names: set[str] = set()
 
     @property
     def grid(self) -> Optional[MolGrid]:
@@ -4105,6 +4108,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         # (output_id is only set once the renderer decorates a function)
         output_id = getattr(self, "output_id", "grid")
         name = _MOLS2GRID_NAME_SLUG.sub("-", f"{grid_name()}-{output_id}")
+        self._cleanup_selection_registry(name)
         grid_kwargs = {"name": name, **self.grid_kwargs}
         smiles_col = self.smiles_col
         if smiles_col is None:
@@ -4123,6 +4127,26 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             mol_col=self.mol_col,
             **grid_kwargs,
         )
+
+    def _cleanup_selection_registry(self, name: str) -> None:
+        """
+        Drop this grid's entry from mols2grid's process-global selection registry when
+        the session ends.
+
+        mols2grid keys selections in a module-level dict that it never prunes (and its
+        entries hold the selected rows), so a long-running server would otherwise keep
+        one selection dict per session and grid output, forever. The name is unique to
+        this session and output, so no other session can be using the entry.
+        """
+        if name in self._selection_cleanup_names:
+            return
+        self._selection_cleanup_names.add(name)
+        session = get_current_session()
+        if session is None or session.is_stub_session():
+            return
+        from mols2grid.select import register
+
+        session.on_ended(partial(register.SELECTIONS.pop, name, None))
 
     def _as_widget(self, value: Mols2GridValueT) -> Widget:
         grid = self.as_grid(value)
