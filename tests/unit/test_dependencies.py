@@ -313,6 +313,44 @@ def test_require_dependency_warns_for_unknown_sibling_format(
     assert "shim" not in config
 
 
+def test_require_dependency_umd_global_override(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A UMD bundle whose global doesn't match a sniffable shape can still get
+    # a shim via AMD_UMD_GLOBAL_OVERRIDES (and the sniffing warning is
+    # suppressed in that case)
+    class DummyWidget:
+        __module__ = "fakepkg.widgets"
+
+    w = DummyWidget()
+    w._model_module = "some-widget"
+    w._model_module_version = "^1.2.3"
+
+    module_dir = tmp_path / "nbextensions" / "some-widget"
+    module_dir.mkdir(parents=True)
+    (module_dir / "index.js").write_text(
+        'define(["three"],function(t){})', encoding="utf-8"
+    )
+    (module_dir / "three.js").write_text(
+        "!function(){ oddWrapperSyntax(); }()", encoding="utf-8"
+    )
+
+    session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
+    monkeypatch.setattr(
+        deps,
+        "jupyter_extension_path",
+        lambda name: str(module_dir) if name == "some-widget" else None,
+    )
+    monkeypatch.setattr(
+        deps, "AMD_UMD_GLOBAL_OVERRIDES", {"some-widget": {"three": "MyThree"}}
+    )
+
+    resolved = require_dependency(w, session)
+    head = str(resolved[0].head)
+    config = json.loads(head.split("window.require.config(", 1)[1].split(")", 1)[0])
+    assert config["shim"] == {"some-widget/three": {"exports": "MyThree"}}
+
+
 def test_require_dependency_without_bundled_amd_dependency(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

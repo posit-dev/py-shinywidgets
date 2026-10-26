@@ -244,7 +244,9 @@ def amd_require_config(
             alias = f"{module_name}/{ext}"
             paths[alias] = os.path.join(href, ext)
             map_[module_name] = {**map_.get(module_name, {}), ext: alias}
-            global_name = umd_global(ext_file)
+            global_name = AMD_UMD_GLOBAL_OVERRIDES.get(module_name, {}).get(
+                ext
+            ) or umd_global(ext_file)
             if global_name is not None:
                 # UMD bundles take the global-export branch (shiny's require.js
                 # wrapper keeps define.amd = false), so expose the global as
@@ -260,6 +262,13 @@ def amd_require_config(
     if shim:
         config["shim"] = shim
     return config, nbextensions
+
+
+# Override for UMD bundles whose exported global can't be sniffed from the
+# bundle wrapper by umd_global() (module name -> external -> global name).
+# Empty so far: every UMD bundle we've encountered writes its global in one of
+# the standard shapes (e.g., pythreejs's three.js does `global.THREE = {}`)
+AMD_UMD_GLOBAL_OVERRIDES: Dict[str, Dict[str, str]] = {}
 
 
 def umd_global(js_file: str) -> Optional[str]:
