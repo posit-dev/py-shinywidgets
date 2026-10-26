@@ -93,16 +93,26 @@ const plotlyBehavior: WidgetBehavior = {
 // otherwise the figure's intrinsic size applies, so leave it alone.
 const ipyvolumeBehavior: WidgetBehavior = {
   setupFill: ({ el, view, model }) => setupIpyvolumeAutoResize(el, view, model),
-  setupFixedSize: ({ el, lmWidget, view, model }) =>
+  setupFixedSize: ({ el, lmWidget, view, model, widgetWantsFill }) =>
     // Only resize when the output (or the widget's own Layout, which lands on
     // the widget element) has an explicit height; otherwise the figure's
     // intrinsic pixel size applies. Checked at resize time: the Layout style
     // may only be applied after setup runs.
+    //
+    // A Layout height on the widget is always a size to drive the canvas to,
+    // but the output's CSS height only applies when the widget itself hasn't
+    // opted out of filling (widgetWantsFill) -- an explicit figure size
+    // (e.g., ipv.Figure(width=400, height=300)) keeps its pixel size even
+    // inside an explicitly sized output.
     setupIpyvolumeAutoResize(
       el,
       view,
       model,
-      () => !!(el.style.height || lmWidget.style.height || (view.el as HTMLElement).style.height)
+      () =>
+        !!(
+          (widgetWantsFill && (el.style.height || lmWidget.style.height)) ||
+          (view.el as HTMLElement).style.height
+        )
     ),
 };
 

@@ -117,6 +117,49 @@ def test_ipyvolume_respects_explicit_heights(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_ipyvolume_explicit_size_inside_sized_output(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    expect(page.locator(f"#sized_fixed_plot {CANVAS_CONTAINER}")).to_have_count(
+        1, timeout=30000
+    )
+
+    # An explicit figure size (400x300) inside output_widget(height="250px"):
+    # the figure keeps its pixel size (the output clips it) rather than the
+    # output's CSS height overwriting it
+    expect(page.locator("#sized_fixed_plot canvas").first).to_have_js_property(
+        "clientHeight", 300, timeout=30000
+    )
+    assert canvas_size(page, "#sized_fixed_plot")[1] == 250
+    assert canvas_size(page, "#sized_fixed_plot canvas")[1] == 300
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_ipyvolume_viewport_relative_layout_height(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.set_viewport_size({"width": 800, "height": 1000})
+    page.goto(local_app.url)
+    expect(page.locator(f"#vh_layout {CANVAS_CONTAINER}")).to_have_count(
+        1, timeout=30000
+    )
+
+    # Layout(height="50vh") inside a fixed-height output: the canvas tracks
+    # the view, which is ~500px tall at a 1000px viewport ...
+    page.wait_for_function(CANVAS_FILLS_VIEW_JS, arg="#vh_layout", timeout=30000)
+    view_h = canvas_size(page, "#vh_layout .lm-Widget")[1]
+    assert 490 < view_h < 510
+
+    # ... and still tracks it when the viewport (but neither the output's
+    # size nor the view's inline style) changes
+    page.set_viewport_size({"width": 800, "height": 600})
+    page.wait_for_function(CANVAS_FILLS_VIEW_JS, arg="#vh_layout", timeout=30000)
+    view_h = canvas_size(page, "#vh_layout .lm-Widget")[1]
+    assert 290 < view_h < 310
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_ipyvolume_layout_height_inside_fillable_card(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)

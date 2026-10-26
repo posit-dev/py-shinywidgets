@@ -70,11 +70,20 @@ export function setupIpyvolumeAutoResize(
   // their resize even when it shows up late
   const styleObserver = new MutationObserver(resizeToFit);
   styleObserver.observe(view.el, { attributes: true, attributeFilter: ['style'] });
+  // A Layout size in viewport units (e.g., Layout(height="50vh")) can resize
+  // the view without changing its inline style or the output's size, which
+  // neither observer above catches, so watch the view's geometry too. When
+  // the view has no explicit Layout size it just tracks the canvas, and
+  // resizeToFit() measures the output (guarded by its size cache) in that
+  // case, so this can't feed back.
+  const viewObserver = new ResizeObserver(resizeToFit);
+  viewObserver.observe(view.el);
   resizeToFit();
 
   return () => {
     disposed = true;
     observer.disconnect();
     styleObserver.disconnect();
+    viewObserver.disconnect();
   };
 }

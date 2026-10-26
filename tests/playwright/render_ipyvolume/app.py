@@ -15,6 +15,8 @@ app_ui = ui.page_fluid(
     output_widget("fixed_plot"),
     output_widget("sized_output", height="250px"),
     output_widget("sized_layout"),
+    output_widget("sized_fixed_plot", height="250px"),
+    output_widget("vh_layout", height="400px"),
     ui.card(output_widget("sized_layout_card"), id="layout_card", height="420px"),
 )
 
@@ -60,6 +62,22 @@ def server(input, output, session):
     def sized_layout():
         fig = make_figure()
         fig.layout = widgets.Layout(height="300px")
+        return fig
+
+    @render_ipyvolume
+    def sized_fixed_plot():
+        # An explicit figure size inside an explicitly sized output: the
+        # figure's pixel size wins (the output clips it), rather than the
+        # output's CSS height overwriting the figure's size
+        return make_figure(width=400, height=300)
+
+    @render_ipyvolume
+    def vh_layout():
+        # A viewport-relative Layout height inside a fixed-height output:
+        # resizing the viewport resizes the view without changing its inline
+        # style or the output's size
+        fig = make_figure()
+        fig.layout = widgets.Layout(height="50vh")
         return fig
 
     @render_ipyvolume
