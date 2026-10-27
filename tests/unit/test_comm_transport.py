@@ -322,3 +322,80 @@ def test_widget_echo_update_carries_the_client_msg_id(
     [echo] = [m for m in sent if m["content"]["data"].get("method") == "echo_update"]
     assert echo["content"]["data"]["state"] == {"value": 5}
     assert echo["parent_header"] == {"msg_id": "browser-msg-1"}
+
+
+def build_shared_comms():
+    import shinywidgets._comm as comm
+
+    shared = comm.SharedShinyComm("shared1")
+    sessions: Dict[str, FakeSession] = {}
+    managers: Dict[str, comm.ShinyCommManager] = {}
+    comms: Dict[str, comm.ShinyComm] = {}
+    for sid in ("a", "b"):
+        sessions[sid] = FakeSession(session_id=sid)
+        managers[sid] = comm.ShinyCommManager()
+        comms[sid] = comm.ShinyComm(
+            comm_id="shared1",
+            comm_manager=managers[sid],
+            target_name="jupyter.widget",
+            session=sessions[sid],
+        )
+    return shared, sessions, managers, comms
+
+
+def test_shared_comm_sends_only_to_active_sessions():
+    shared, sessions, managers, comms = build_shared_comms()
+    shared.add(comms["a"])
+    shared.add(comms["b"])
+    managers["b"].active = False
+    for s in sessions.values():
+        s._flushed_handlers.clear()
+
+    shared.send(data={"k": 1})
+
+    assert len(sessions["a"]._flushed_handlers) == 1
+    assert len(sessions["b"]._flushed_handlers) == 0
+
+
+def test_shared_comm_applies_callbacks_to_later_comms():
+    shared, _, _, comms = build_shared_comms()
+
+    def cb(msg: Dict[str, object]) -> None: ...
+
+    def cb2(msg: Dict[str, object]) -> None: ...
+
+    shared.on_msg(cb)
+    shared.on_close(cb2)
+    shared.add(comms["a"])
+
+    assert comms["a"]._msg_callback is cb
+    assert comms["a"]._close_callback is cb2
+
+
+def test_shared_comm_drop_session():
+    shared, _, _, comms = build_shared_comms()
+    shared.add(comms["a"])
+    shared.add(comms["b"])
+
+    shared.drop_session("b")
+
+    assert shared.has_session("a")
+    assert not shared.has_session("b")
+    shared.drop_session("b")
+
+
+def test_shared_comm_close_is_noop():
+    shared, sessions, _, comms = build_shared_comms()
+    shared.add(comms["a"])
+    shared.add(comms["b"])
+    for s in sessions.values():
+        s._flushed_handlers.clear()
+        s._flush_handlers.clear()
+
+    shared.close()
+
+    assert comms["a"]._closed is False
+    assert comms["b"]._closed is False
+    for s in sessions.values():
+        assert s._flushed_handlers == []
+        assert s._flush_handlers == []

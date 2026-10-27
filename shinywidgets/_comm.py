@@ -309,6 +309,60 @@ class OrphanedShinyComm:
         pass
 
 
+class SharedShinyComm:
+    """
+    The comm of a widget that is open in several sessions at once. `send()`
+    fans out to the `ShinyComm` of every active session; incoming client
+    messages still arrive through each session's own `ShinyComm`, which runs
+    the callbacks registered here. A shared widget is never closed.
+    """
+
+    kernel = "Shiny"
+
+    def __init__(self, comm_id: str) -> None:
+        self.comm_id = comm_id
+        # Keyed by root session id
+        self.comms: Dict[str, ShinyComm] = {}
+        self._msg_callback: Optional[MsgCallback] = None
+        self._close_callback: Optional[MsgCallback] = None
+
+    def add(self, comm: ShinyComm) -> None:
+        self.comms[comm.session.id] = comm
+        if self._msg_callback is not None:
+            comm.on_msg(self._msg_callback)
+        if self._close_callback is not None:
+            comm.on_close(self._close_callback)
+
+    def has_session(self, session_id: str) -> bool:
+        return session_id in self.comms
+
+    def drop_session(self, session_id: str) -> None:
+        self.comms.pop(session_id, None)
+
+    def send(
+        self,
+        data: DataType = None,
+        metadata: MetadataType = None,
+        buffers: BufferType = None,
+    ) -> None:
+        for comm in list(self.comms.values()):
+            if comm.comm_manager.active:
+                comm.send(data=data, metadata=metadata, buffers=buffers)
+
+    def close(self, *args: object, **kwargs: object) -> None:
+        pass
+
+    def on_msg(self, callback: MsgCallback) -> None:
+        self._msg_callback = callback
+        for comm in self.comms.values():
+            comm.on_msg(callback)
+
+    def on_close(self, callback: MsgCallback) -> None:
+        self._close_callback = callback
+        for comm in self.comms.values():
+            comm.on_close(callback)
+
+
 logger = logging.getLogger("shinywidgets")
 
 traitlets_logger = logging.getLogger("traitlets")
