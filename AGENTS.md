@@ -66,7 +66,7 @@ Not all visualization objects are ipywidgets. `as_widget()` converts:
 ### Dependencies (`_dependencies.py`)
 
 Handles dynamic loading of 3rd party widget JavaScript:
-- `require_dependency()` locates widget's nbextension files and creates HTMLDependency
+- `require_dependencies()` locates widget's nbextension files and creates HTMLDependencies
 - Configures require.js paths so widgets can load their JS modules
 - Falls back to CDN (unpkg.com) if local extension not found
 
