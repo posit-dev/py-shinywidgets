@@ -800,8 +800,11 @@ def shared_lifetime() -> Iterator[None]:
 
     Don't rely on models a shared widget's JavaScript creates in the browser when
     a trait is left at its default (e.g., pythreejs's light `target` and `shadow`):
-    they belong to that one browser, and other sessions don't have them. Give such
-    traits explicit values, constructed inside `shared_lifetime()`.
+    they belong to that one browser, and other sessions don't have them. A session
+    that opens the shared widget afterwards references a model it never received,
+    waits 30 seconds for it ("Timeout waiting for widget model"), and the affected
+    outputs never render. Give such traits explicit values, constructed inside
+    `shared_lifetime()`.
     """
     with shared_construction():
         yield
