@@ -67,8 +67,7 @@ else:
     ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = WalkerWidget = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
-    ) = QuakWidget = PerspectiveWidget = object
-    PythreejsRenderer = object
+    ) = QuakWidget = PerspectiveWidget = PythreejsRenderer = object
 
 from shiny.render.renderer import ValueFn
 
@@ -131,8 +130,8 @@ __all__ = (
     "render_plotnine",
     "render_pydeck",
     "render_pygwalker",
-    "render_quak",
     "render_pythreejs",
+    "render_quak",
 )
 
 
@@ -1785,7 +1784,7 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
 
     The decorated function should return a `pythreejs.Renderer` widget (i.e., a
     `Scene` plus a camera, with meshes/lights added to the scene; requires ``pip
-    install pythreejs``). By default, the scene fills its container (the canvas and
+    install 'shinywidgets[pythreejs]'``). By default, the scene fills its container (the canvas and
     camera aspect resize with it); give the `Renderer` an explicit ``width`` or
     ``height`` (or a `layout` height) to use a fixed pixel size instead.
 

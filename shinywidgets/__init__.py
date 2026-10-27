@@ -45,8 +45,8 @@ from ._render_widget import (
     render_plotnine,
     render_pydeck,
     render_pygwalker,
-    render_quak,
     render_pythreejs,
+    render_quak,
     render_widget,
 )
 from ._shinywidgets import (
@@ -86,8 +86,8 @@ __all__ = (
     "render_plotnine",
     "render_pydeck",
     "render_pygwalker",
-    "render_quak",
     "render_pythreejs",
+    "render_quak",
     # Reactive read second
     "reactive_read",
     # UI methods third
