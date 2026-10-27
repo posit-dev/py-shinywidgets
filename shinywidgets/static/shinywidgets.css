@@ -332,11 +332,35 @@
 * container, which would overflow (and get clipped by) an output with an explicit height.
 * (`[style*="height:"]` would also match min-/max-height, but output_widget() only emits
 * width and height. Keep in sync with _output_widget.py.)
+* Intrinsic heights (`auto`, `fit-content`, ...) are excluded, as in the bqplot rule
+* above: 100% of an indefinite-height parent would replace the plot's own pixel height
+* (which the flex rules below treat as its intrinsic height) and collapse the plot.
 */
-.shiny-ipywidget-output[style*="height:"] > .k3d-plot {
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .k3d-plot {
   height: 100%;
 }
-.shiny-ipywidget-output[style*="height:"] > .k3d-plot > div {
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .k3d-plot
+  > div {
   height: 100% !important;
 }
 

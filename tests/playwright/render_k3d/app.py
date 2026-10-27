@@ -13,6 +13,7 @@ app_ui = ui.page_fluid(
     ui.card(output_widget("fill_plot"), id="fill_card", height="420px"),
     output_widget("fixed_plot"),
     output_widget("sized_output", height="250px"),
+    output_widget("intrinsic_output", height="auto"),
     output_widget("sized_layout"),
 )
 
@@ -48,6 +49,10 @@ def server(input, output, session):
 
     @render_k3d
     def sized_output():
+        return make_plot()
+
+    @render_k3d
+    def intrinsic_output():
         return make_plot()
 
     @render_k3d

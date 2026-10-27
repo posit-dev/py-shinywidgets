@@ -107,6 +107,14 @@ def test_k3d_respects_explicit_heights(page: Page, local_app) -> None:
     )
     assert canvas_size(page, "#sized_output")[1] == 250
 
+    # output_widget(height="auto"): the plot keeps k3d's intrinsic pixel height
+    # (512) rather than collapsing to 100% of an indefinite-height parent
+    expect(page.locator("#intrinsic_output canvas")).to_have_count(1, timeout=30000)
+    expect(page.locator("#intrinsic_output canvas")).to_have_js_property(
+        "clientHeight", 512, timeout=30000
+    )
+    assert canvas_size(page, "#intrinsic_output")[1] == 512
+
     # widget.layout = Layout(height="300px"): the scene is sized to the widget,
     # rather than drawn at 512px and clipped
     expect(page.locator("#sized_layout canvas")).to_have_js_property(

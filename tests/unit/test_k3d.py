@@ -37,6 +37,30 @@ def test_rerender_closes_k3d_plot_comm(widget_session: Session) -> None:
     assert comm.comm_id not in COMM_MANAGERS[widget_session.id].comms
 
 
+def test_rerender_closes_k3d_plot_subclass_comm(widget_session: Session) -> None:
+    # A user-defined Plot subclass reports its own module, but inherits k3d's
+    # non-closing close(), so the workaround must reach it through the MRO
+    pytest.importorskip("k3d")
+    from k3d.plot import Plot
+
+    class MyPlot(Plot):
+        pass
+
+    with session_context(widget_session):
+        context = Context()
+        with context(), WidgetRenderContext():
+            plot = MyPlot()
+        flush()
+        comm = plot.comm
+        assert isinstance(comm, ShinyComm)
+
+        context.invalidate()
+        flush()
+
+    assert comm._closed
+    assert comm.comm_id not in COMM_MANAGERS[widget_session.id].comms
+
+
 def test_render_k3d_puts_a_bare_drawable_on_a_plot(widget_session: Session) -> None:
     # A drawable draws nothing by itself (Jupyter displays it on a new plot)
     k3d = pytest.importorskip("k3d")

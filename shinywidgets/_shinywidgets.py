@@ -157,7 +157,7 @@ def init_shiny_widget(w: Widget):
             }
         # BokehModel.close() is not idempotent; guard against double close.
         guard_widget_close(w)
-    elif widget_pkg(w) == "k3d":
+    elif any(widget_pkg(cls) == "k3d" for cls in type(w).__mro__):
         close_comm_on_close(w)
 
     if any(widget_pkg(cls) == "itables" for cls in type(w).__mro__):
