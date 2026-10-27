@@ -44,8 +44,8 @@ bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 # embedding-atlas requires Python 3.11+, so it's not installable on 3.10
 embedding_atlas = ["embedding-atlas>=0.26; python_version >= '3.11'"]
 bqplot = ["bqplot"]
-# geolibre requires Python 3.11+
-geolibre = ["geolibre>=3.0; python_version >= '3.11'"]
+# geolibre requires Python 3.11+; >=3.5.1 for set_identify()/show_control()
+geolibre = ["geolibre>=3.5.1; python_version >= '3.11'"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]

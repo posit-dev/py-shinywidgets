@@ -20,11 +20,13 @@ event-loop thread (a render function, `reactive.calc`, or any
 `reactive.effect`/observer) -- the wait would block the very loop that must
 deliver the reply. They do work from a worker thread, e.g. inside
 `reactive.extended_task` via `run_in_executor`, with a geolibre release
-that polls for the reply instead of pumping a Jupyter kernel event loop
-(current releases raise a `jupyter_ui_poll` error; see
-https://github.com/opengeos/GeoLibre/pull/3266). Otherwise, use the
-project-mutation alternatives (`set_center()`, `fit_project_bounds()`, ...)
-shown here.
+containing https://github.com/opengeos/GeoLibre/pull/3266 (merged upstream;
+the first release after 3.5.1), which polls for the reply instead of pumping
+a Jupyter kernel event loop. On geolibre <= 3.5.1 they raise a
+`jupyter_ui_poll` error wherever they're called, so prefer the
+project-mutation alternatives (`set_center()`, `fit_project_bounds()`, ...).
+The app shows both patterns: `set_center()` on selection change, and
+`fly_to()` from an `extended_task` (the "Fly there" button).
 
 (Layers read from files on the server's disk, e.g. `add_raster()` of a local
 GeoTIFF, *do* work in deployed apps: shinywidgets proxies geolibre's
