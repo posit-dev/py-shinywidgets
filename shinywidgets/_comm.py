@@ -286,6 +286,11 @@ class OrphanedShinyComm:
 
     comm_id: str
 
+    # Cross-library contract: ipywidgets treats a comm with `kernel = None`
+    # like a `DummyComm`, and ipyvue >= 3 skips caching templates whose comm
+    # was never sent to the frontend.
+    kernel = None
+
     def send(
         self,
         *args: object,

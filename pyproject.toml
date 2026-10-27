@@ -202,6 +202,8 @@ test = [
   "ipydatagrid>=1.2.0",
   "ipyleaflet>=0.20.0",
   "ipysigma",
+  "ipyvue>=3",
+  "ipyvuetify>=3",
   "holoviews",
   "ipympl",
   "itables[widget]",
