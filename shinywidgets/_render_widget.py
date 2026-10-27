@@ -10,6 +10,7 @@ from ipywidgets.widgets.widget import Widget
 from packaging.version import Version
 
 if TYPE_CHECKING:
+    import duckdb
     import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
@@ -34,13 +35,19 @@ if TYPE_CHECKING:
     from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
+
+    # embedding-atlas requires Python 3.11+, so it's absent from 3.10 environments
+    if sys.version_info >= (3, 11):
+        from embedding_atlas.widget import EmbeddingAtlasWidget
+    else:
+        from ipywidgets import Widget as EmbeddingAtlasWidget
     from quak import Widget as QuakWidget
 else:
     JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
         BokehModel
     ) = MapWidget = FigureWidget = DeckGLWidget = MosaicWidget = BqplotFigure = (
         CytoscapeWidget
-    ) = base = K3dPlot = LeafletMap = object
+    ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
     ) = QuakWidget = PerspectiveWidget = object
@@ -82,6 +89,7 @@ __all__ = (
     "render_widget",
     "render_altair",
     "render_bokeh",
+    "render_embedding_atlas",
     "render_bqplot",
     "render_holoviews",
     "render_ipyaladin",
@@ -220,6 +228,147 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     """
+
+
+class render_embedding_atlas(
+    render_widget_base[EmbeddingAtlasWidget, EmbeddingAtlasWidget]
+):
+    """
+    Reactively render an [Embedding Atlas](https://apple.github.io/embedding-atlas/)
+    explorer as a Shiny output.
+
+    The decorated function should return an `embedding_atlas.widget.EmbeddingAtlasWidget`
+    (requires ``pip install 'shinywidgets[embedding_atlas]'``, which needs Python 3.11
+    or newer).
+    Unlike the other decorators, a bare data frame isn't enough to build the widget, so
+    construct it yourself, passing the data frame along with the columns that describe
+    the embedding (e.g., ``EmbeddingAtlasWidget(df, x="x", y="y", text="text")``).
+    The embedding (scatter) view itself requires a browser with WebGPU and its
+    ``shader-f16`` feature (e.g., recent Chrome, Edge, or Firefox); elsewhere, the
+    rest of the explorer still works. The explorer needs room: in a non-filling
+    layout, give the output a height of at least ``"600px"``.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `EmbeddingAtlasWidget` instance. The filter a user builds in the browser is
+    synced to the widget's (upstream-internal) `_predicate` trait, so
+    ``reactive_read(my_atlas.widget, "_predicate")`` followed by
+    ``my_atlas.widget.selection()`` gives the selected rows reactively. The explorer
+    doesn't respond to trait changes made from Python; to change it, re-render.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Security**: the explorer runs its queries by sending SQL from the browser to
+    the widget's DuckDB connection, and without restrictions any visitor can send
+    arbitrary SQL, including SQL that reads or writes files on the server. To
+    protect against this, the renderer locks down the widget's connection before
+    display (``SET enable_external_access = false``; ``SET lock_configuration =
+    true``), so that only the data you gave the widget is reachable. If you locked
+    the connection's configuration yourself (``SET lock_configuration = true``),
+    the renderer leaves your configuration untouched. Pass
+    ``allow_unrestricted_connection=True`` to opt out of the lockdown (e.g., for a
+    local, single-user app).
+
+    Even with the lockdown, a visitor can still send expensive queries, which
+    block the Python process while they run.
+
+    Parameters
+    ----------
+    allow_unrestricted_connection
+        When ``True``, the widget's DuckDB connection is left as the render
+        function returned it, without the lockdown described above. The default
+        (``False``) is strongly recommended for deployed apps: an unrestricted
+        connection lets any visitor run arbitrary SQL with the server process's
+        permissions.
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[EmbeddingAtlasWidget]] = None,
+        *,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+        allow_unrestricted_connection: bool = False,
+    ):
+        super().__init__(_fn, width=width, height=height, fill=fill, fillable=fillable)
+        self.allow_unrestricted_connection = allow_unrestricted_connection
+
+    def _as_widget(self, value: EmbeddingAtlasWidget) -> EmbeddingAtlasWidget:
+        widget = super()._as_widget(value)
+        if not self.allow_unrestricted_connection:
+            restrict_embedding_atlas_connection(widget)
+        return widget
+
+
+def restrict_embedding_atlas_connection(widget: EmbeddingAtlasWidget) -> None:
+    """
+    Lock down an `EmbeddingAtlasWidget`'s DuckDB connection, so the SQL the
+    browser sends can't reach server files or change the connection's
+    configuration.
+    """
+    # `_connection` is upstream-internal (like the `_predicate` trait this
+    # renderer already relies on); embedding-atlas is pre-1.0, so fail loudly if
+    # it disappears rather than silently render an unrestricted widget.
+    con = getattr(widget, "_connection", None)
+    if con is None:
+        raise RuntimeError(
+            "Couldn't find the EmbeddingAtlasWidget's DuckDB connection "
+            "(`_connection`), so its SQL access can't be restricted. If "
+            "embedding-atlas renamed this attribute, please report it. To render "
+            "anyway, pass `allow_unrestricted_connection=True` to "
+            "`@render_embedding_atlas`."
+        )
+    restrict_duckdb_connection(con)
+
+
+def duckdb_settings(
+    con: Optional[duckdb.DuckDBPyConnection] = None,
+) -> Tuple[bool, bool]:
+    """
+    DuckDB's ``(enable_external_access, lock_configuration)`` for `con`, which
+    defaults to the default connection.
+    """
+    import duckdb
+
+    target = duckdb if con is None else con
+    settings = target.execute(
+        "SELECT current_setting('enable_external_access'),"
+        " current_setting('lock_configuration')"
+    ).fetchone()
+    assert settings is not None  # the query always returns its two settings
+    external_access, locked = settings
+    return bool(external_access), bool(locked)
+
+
+def restrict_duckdb_connection(con: duckdb.DuckDBPyConnection) -> None:
+    """
+    Lock down a DuckDB connection, so SQL run on it can't reach server files or
+    change the connection's configuration. A connection whose configuration is
+    already locked is left untouched: its owner took control of its settings
+    (possibly keeping external access on deliberately), and a locked connection
+    rejects further SET commands.
+    """
+    if duckdb_settings(con)[1]:
+        return
+    con.execute("SET enable_external_access = false")
+    con.execute("SET lock_configuration = true")
 
 
 class render_ipyaladin(render_widget_base[ValueT, Aladin]):
