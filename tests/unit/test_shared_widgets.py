@@ -16,8 +16,13 @@ from shiny import App, Session, reactive, ui
 from shiny._connection import MockConnection
 from shiny.reactive._core import Context
 from shiny.session import session_context
-from shinywidgets._comm import OrphanedShinyComm, SharedShinyComm
-from shinywidgets._render_widget_base import WidgetRenderContext, is_closed_widget
+from shinywidgets import session_lifetime
+from shinywidgets._comm import OrphanedShinyComm, SharedShinyComm, ShinyComm
+from shinywidgets._render_widget_base import (
+    WidgetRenderContext,
+    is_closed_widget,
+    render_widget_base,
+)
 from shinywidgets._widget_registry import WIDGET_INSTANCE_MAP
 
 from tests.unit.conftest import widget_test_server
@@ -415,3 +420,125 @@ def test_open_shared_in_gives_canvas_its_own_manager(
     assert manager.comm.has_session(widget_session.id)
     # Its cached commands were flushed once its comm opened
     assert not manager._caching
+
+
+def render_in(session: Session, fn: Callable[[], object]) -> None:
+    renderer = render_widget_base()
+    renderer(fn)
+    with session_context(session):
+        with Context()():
+            run(renderer.render())
+
+
+@pytest.fixture
+def template_registry(monkeypatch: pytest.MonkeyPatch) -> dict[str, Widget]:
+    """A fake ipyvue template registry (see in_template_registry())."""
+    template_module = ModuleType("ipyvue.Template")
+    registry: dict[str, Widget] = {}
+    setattr(template_module, "template_registry", registry)
+    monkeypatch.setitem(sys.modules, "ipyvue.Template", template_module)
+    return registry
+
+
+@pytest.fixture
+def registered(
+    widget_session: Session, template_registry: dict[str, Widget], shared_state: None
+) -> HTML:
+    """A widget A's (since invalidated) render built and put in the registry."""
+    with session_context(widget_session):
+        context = Context()
+        with context(), WidgetRenderContext():
+            t = HTML()
+        template_registry["x.vue"] = t
+        flush()
+        context.invalidate()
+        flush()
+    return t
+
+
+def test_session_start_opens_listed_import_time_singletons(
+    widget_session: Session,
+    preimported: Callable[[type[Widget]], Widget],
+    shared_state: None,
+) -> None:
+    g = preimported(IpyvueThing)
+    o = preimported(OtherThing)
+    o_comm = o.comm
+    with session_context(widget_session):
+        HTML()
+    flush()
+    assert isinstance(g.comm, SharedShinyComm)
+    assert g.comm.has_session(widget_session.id)
+    assert o.comm is o_comm
+
+
+def test_rendering_an_unlisted_sessionless_widget_raises(
+    widget_session: Session, preimported: Callable[[type[Widget]], Widget]
+) -> None:
+    o = preimported(OtherThing)
+    with pytest.raises(RuntimeError):
+        render_in(widget_session, lambda: o)
+
+
+def test_template_registry_widget_reaches_a_second_session_on_render(
+    registered: HTML, other_session: Session
+) -> None:
+    render_in(other_session, lambda: VBox(children=(registered,)))
+    flush()
+    assert isinstance(registered.comm, SharedShinyComm)
+    assert registered.comm.has_session(other_session.id)
+
+
+def test_comm_open_opens_references_of_an_undisplayed_widget(
+    registered: HTML, other_session: Session
+) -> None:
+    with session_context(other_session), session_lifetime():
+        VBox(children=(registered,))
+    flush()
+    assert isinstance(registered.comm, SharedShinyComm)
+    assert registered.comm.has_session(other_session.id)
+
+
+def test_process_global_root_is_accepted(
+    registered: HTML, other_session: Session
+) -> None:
+    render_in(other_session, lambda: registered)
+    assert isinstance(registered.comm, SharedShinyComm)
+    assert registered.comm.has_session(other_session.id)
+
+
+def test_ipycanvas_and_lonboard_defaults_are_not_shared(
+    widget_session: Session,
+) -> None:
+    ipycanvas = pytest.importorskip("ipycanvas")
+    render_in(widget_session, lambda: ipycanvas.Canvas())
+    flush()
+    assert not isinstance(
+        sys.modules["ipycanvas.canvas"]._CANVAS_MANAGER.comm, SharedShinyComm
+    )
+
+    lonboard = pytest.importorskip("lonboard")
+    defaults = lonboard.Map.class_traits()["controls"].default()
+
+    def read_controls() -> Widget:
+        # Reading the trait materializes the defaults before the comm opens
+        m = lonboard.Map(layers=[])
+        assert list(m.controls) == defaults
+        return m
+
+    render_in(widget_session, lambda: lonboard.Map(layers=[]))
+    render_in(widget_session, read_controls)
+    flush()
+    assert not any(isinstance(c.comm, SharedShinyComm) for c in defaults)
+
+
+def test_in_session_ipyvue_module_widget_is_not_process_global(
+    widget_session: Session,
+) -> None:
+    with session_context(widget_session):
+        w = IpyvueThing()
+    assert isinstance(w.comm, OrphanedShinyComm)
+    assert not sw.is_process_global(w)
+    flush()
+    assert isinstance(w.comm, ShinyComm)
+    assert not sw.is_process_global(w)

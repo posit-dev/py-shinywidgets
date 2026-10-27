@@ -184,6 +184,13 @@ def init_shiny_widget(w: Widget):
             prepare_to_serialize(w)
             state, buffer_paths, buffers = _remove_buffers(w.get_state())
 
+        # Covers widgets that are opened but never displayed (so no render-time
+        # walk opens their references); the browser would otherwise wait for a
+        # model it never gets. Foreign references are left for the render to reject.
+        for r in direct_widget_references(w):
+            if is_process_global(r):
+                open_shared_in(r, session)
+
         # Initialize the comm -- this sends widget state to the frontend
         w.comm = ShinyComm(
             comm_id=id,
@@ -354,6 +361,19 @@ def init_session(session: Session) -> None:
         KEPT_WIDGETS.pop(session.id, None)
 
     session.on_ended(_cleanup_session_state)
+
+    # As in Jupyter, where every widget is in the one frontend's manager, since
+    # some views look models up there (e.g. ipyvuetify's finds `theme`). Snapshot
+    # both, since opening can construct widgets.
+    for w in list(SHARED_WIDGETS.values()):
+        if w.comm is not None:  # not closed by the user
+            open_shared_in(w, session)
+    for w in list(WIDGET_INSTANCE_MAP.values()):
+        if (
+            is_import_time_singleton(w)
+            and widget_pkg(type(w)) in EAGERLY_SHARED_PACKAGES
+        ):
+            open_shared_in(w, session)
 
 
 def mount_widget_deps(session: Session, widget_deps: Iterable[HTMLDependency]) -> None:
@@ -843,6 +863,21 @@ def is_sessionless(w: Widget) -> bool:
     )
 
 
+def is_swapped_out_default(w: Widget) -> bool:
+    """
+    Is `w` a module-level default that own_lonboard_controls() or
+    own_ipycanvas_manager() replace before the referencing widget is sent?
+
+    Such a widget is process-global but must never be opened: e.g. ipycanvas's
+    manager with a fan-out comm would broadcast every session's draw commands.
+    """
+    return (
+        is_import_time_singleton(w)
+        and widget_pkg(type(w)) not in EAGERLY_SHARED_PACKAGES
+        and SHARED_WIDGETS.get(w.model_id) is not w
+    )
+
+
 def in_template_registry(w: Widget) -> bool:
     """
     Is `w` cached in ipyvue's process-wide template registry?
@@ -935,25 +970,40 @@ def direct_widget_references(w: Widget) -> Iterator[Widget]:
 
 
 def referenced_widgets(roots: Iterable[Widget]) -> set[int]:
-    """ids of every widget reachable from `roots` through materialized synced traits."""
+    """ids of every widget reachable from `roots` (see walk_widget_tree)."""
     return {id(w) for w in walk_widget_tree(roots)}
 
 
 def foreign_or_closed_widget(widget: Widget, session: Session) -> Widget | None:
     """
     Find the first widget in `widget`'s tree (itself, or any descendant reachable
-    the same way `referenced_widgets` walks for the cleanup sweep) that doesn't
-    belong to `session` or has already been closed.
+    through walk_widget_tree) that isn't process-global and either doesn't belong
+    to `session` or has already been closed.
+
+    Process-global widgets (and whatever they reference) are displayable in any
+    session, so they're skipped (see open_process_global_widgets).
 
     `session` must already be normalized to its root scope, matching how
     SESSION_WIDGET_ID_MAP is keyed. Returns None if the whole tree is
     displayable in this session.
     """
     own_ids = set(SESSION_WIDGET_ID_MAP.get(session.id, ()))
-    for w in walk_widget_tree([widget]):
+    for w in walk_widget_tree([widget], prune=is_process_global):
+        if is_process_global(w):
+            continue
         if is_closed_widget(w) or w._model_id not in own_ids:
             return w
     return None
+
+
+def open_process_global_widgets(widget: Widget, session: Session) -> None:
+    """
+    Open, in `session`, the process-global widgets in `widget`'s tree (the ones
+    foreign_or_closed_widget skips).
+    """
+    for w in walk_widget_tree([widget], prune=is_process_global):
+        if is_process_global(w) and not is_swapped_out_default(w):
+            open_shared_in(w, session)
 
 
 # One comm manager per session (keyed by session id), so a client can only reach
