@@ -4,6 +4,7 @@ from pathlib import Path
 
 from playwright.sync_api import Page, expect
 from shiny.pytest import create_app_fixture
+from shiny.run import ShinyAppProc
 from tests.playwright.conftest import (
     assert_no_unexpected_errors,
     client_models,
@@ -193,6 +194,9 @@ local_app_toolbar = create_app_fixture(Path(__file__).parent / "app_toolbar.py")
 local_app_toolbar_disconnect = create_app_fixture(
     Path(__file__).parent / "app_toolbar.py", scope="function"
 )
+local_app_toolbar_reconnect = create_app_fixture(
+    Path(__file__).parent / "app_toolbar.py", scope="function"
+)
 
 PANZOOM_BUTTON = "#fig button[title='PanZoom']"
 RESET_BUTTON = "#fig button[title='Reset']"
@@ -263,8 +267,8 @@ def test_toolbar_figure_rerenders_cleanly(page: Page, local_app_toolbar) -> None
     expect(page.locator("#interaction")).to_have_text("NoneType")
     expect(page.locator("#fig .bqplot svg").first).to_be_visible()
     assert comm_closes(page) == 0
-    # The old PanZoom (browser-created, so session-lifetime) stays, and keeps
-    # the two old scales it references alive; nothing accumulates beyond that.
+    # Each PanZoom active at rerender stays until session end, keeping its two
+    # old scales alive. This test activates it only once.
     assert model_names(page).count("PanZoomModel") == 1
     after_first = len(model_names(page))
     assert after_first == before + 2
@@ -277,6 +281,37 @@ def test_toolbar_figure_rerenders_cleanly(page: Page, local_app_toolbar) -> None
     assert model_names(page).count("PanZoomModel") == 1
     assert len(model_names(page)) == after_first
 
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_toolbar_reset_closes_comm_after_reconnect(
+    page: Page, local_app_toolbar_reconnect: ShinyAppProc
+) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.route("**/output.js", expose_manager)
+    page.goto(local_app_toolbar_reconnect.url)
+    expect(page.locator("#fig .bqplot svg").first).to_be_visible(timeout=30000)
+
+    page.evaluate(
+        """async () => {
+            await Shiny.shinyapp.dispatchMessage(JSON.stringify({allowReconnect: 'force'}));
+            window.__reconnected = false;
+            $(document).one('shiny:connected', () => { window.__reconnected = true; });
+            Shiny.shinyapp.$socket.close();
+        }"""
+    )
+    page.wait_for_function("window.__reconnected", timeout=30000)
+    expect(page.locator("#fig .bqplot svg").first).to_be_visible(timeout=30000)
+    page.evaluate(COUNT_CLOSES_JS)
+
+    page.hover("#fig .bqplot")
+    page.click(PANZOOM_BUTTON)
+    expect(page.locator("#interaction")).to_have_text("PanZoom")
+    page.click(RESET_BUTTON)
+    expect(page.locator("#interaction")).to_have_text("NoneType")
+
+    assert "PanZoomModel" not in model_names(page)
+    assert comm_closes(page) == 1
     assert_no_unexpected_errors(errors, failed_requests)
 
 

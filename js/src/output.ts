@@ -625,6 +625,10 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
   }
 });
 
+$(document).on("shiny:connected", () => {
+  setConnected(true);
+});
+
 $(document).on("shiny:disconnected", () => {
   setConnected(false);
   manager.clear_state();
