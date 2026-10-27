@@ -64,6 +64,54 @@ def client_models(page: Page) -> list[dict[str, Any]]:
     return page.evaluate(_MODELS_JS)
 
 
+# Sum of live views across every model with the given class name. Views are
+# attached/detached asynchronously, so the sum can lag behind what the DOM
+# already shows.
+_MODEL_VIEWS_JS = """async (modelName) => {
+    const models = await Promise.all(
+        Object.values(window.widgetManager._models).map((p) => p.catch(() => null))
+    );
+    return models
+        .filter((m) => m && m.get('_model_name') === modelName)
+        .reduce((sum, m) => sum + Object.keys(m.views || {}).length, 0);
+}"""
+
+# True when the per-model view count matches the previous poll's (i.e., async
+# view registration/disposal has settled). Keeps the last count per model name
+# on the window between polls (and across calls, which is fine: an unchanged
+# count is the settled value we're after).
+_MODEL_VIEWS_STABLE_JS = """async (modelName) => {
+    const models = await Promise.all(
+        Object.values(window.widgetManager._models).map((p) => p.catch(() => null))
+    );
+    const n = models
+        .filter((m) => m && m.get('_model_name') === modelName)
+        .reduce((sum, m) => sum + Object.keys(m.views || {}).length, 0);
+    const last = window.__shinywidgetsLastModelViewCounts || {};
+    const stable = last[modelName] === n;
+    last[modelName] = n;
+    window.__shinywidgetsLastModelViewCounts = last;
+    return stable;
+}"""
+
+
+def wait_for_stable_model_view_count(
+    page: Page, model_name: str, timeout: int = 30000
+) -> int:
+    """Return the summed live-view count for `model_name` once it stops changing.
+
+    Per-model counterpart to `wait_for_stable_view_count()`: widget views
+    register and dispose asynchronously, so sampling `client_models()` as soon
+    as an output appears in the DOM can catch a partially populated (or not yet
+    cleaned up) registry -- and a later equality check against that sample then
+    fails spuriously. Requires the `expose_manager` route.
+    """
+    page.wait_for_function(
+        _MODEL_VIEWS_STABLE_JS, arg=model_name, polling=500, timeout=timeout
+    )
+    return page.evaluate(_MODEL_VIEWS_JS, model_name)
+
+
 def assert_rerender_cleanup(
     page: Page,
     local_app: ShinyAppProc,
