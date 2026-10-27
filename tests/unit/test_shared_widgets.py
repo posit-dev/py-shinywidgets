@@ -10,13 +10,17 @@ from typing import Any, TypeVar
 
 import pytest
 import shinywidgets._shinywidgets as sw
-from ipywidgets import HTML, Button, DOMWidget, Widget
+from ipywidgets import HTML, Button, DOMWidget, VBox, Widget
 from packaging.version import Version
-from shiny import Session, reactive
+from shiny import App, Session, reactive, ui
+from shiny._connection import MockConnection
 from shiny.reactive._core import Context
 from shiny.session import session_context
-from shinywidgets._comm import OrphanedShinyComm
+from shinywidgets._comm import OrphanedShinyComm, SharedShinyComm
 from shinywidgets._render_widget_base import WidgetRenderContext, is_closed_widget
+from shinywidgets._widget_registry import WIDGET_INSTANCE_MAP
+
+from tests.unit.conftest import widget_test_server
 
 T = TypeVar("T")
 
@@ -41,19 +45,6 @@ class OtherThing(DOMWidget):
 
 
 OtherThing.__module__ = "otherpkg.fake"
-
-
-@pytest.fixture
-def shared_state() -> Iterator[None]:
-    before = dict(sw.SHARED_WIDGETS)
-    try:
-        yield
-    finally:
-        for model_id, w in list(sw.SHARED_WIDGETS.items()):
-            if before.get(model_id) is not w:
-                w.close()
-        sw.SHARED_WIDGETS.clear()
-        sw.SHARED_WIDGETS.update(before)
 
 
 @pytest.fixture
@@ -186,3 +177,241 @@ def test_shared_construction_without_session_records_widget(
 def test_widget_outside_session_still_raises() -> None:
     with pytest.raises(RuntimeError, match="active Shiny session"):
         HTML()
+
+
+@pytest.fixture
+def other_session() -> Iterator[Session]:
+    session = App(ui.page_fluid(), widget_test_server)._create_session(MockConnection())
+    try:
+        yield session
+    finally:
+        run(session.close())
+
+
+def shared_html(session: Session) -> HTML:
+    with session_context(session), sw.shared_construction():
+        w = HTML()
+    flush()
+    return w
+
+
+def test_open_shared_in_keeps_live_comm_and_adds_session(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    a, b = widget_session, other_session
+    w = shared_html(a)
+    ca = w.comm
+    sw.open_shared_in(w, b)
+    assert isinstance(w.comm, SharedShinyComm)
+    assert w.comm.comms[a.id] is ca
+    assert w.comm.has_session(b.id)
+    assert w.model_id in sw.COMM_MANAGERS[b.id].comms
+    assert WIDGET_INSTANCE_MAP[w.model_id] is w
+    assert not is_closed_widget(w)
+
+    cb = w.comm.comms[b.id]
+    sw.open_shared_in(w, b)
+    assert w.comm.comms[b.id] is cb
+
+
+def test_open_shared_in_initializes_a_session_with_no_widgets(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    w = shared_html(widget_session)
+    assert other_session not in sw.SESSIONS
+    sw.open_shared_in(w, other_session)
+    assert other_session in sw.SESSIONS
+
+
+def test_open_shared_in_uses_root_scope(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    w = shared_html(widget_session)
+    sw.open_shared_in(w, other_session.make_scope("mod"))
+    assert isinstance(w.comm, SharedShinyComm)
+    assert w.comm.has_session(other_session.id)
+
+
+def test_open_shared_in_opens_unowned_references(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    with session_context(widget_session), sw.shared_construction():
+        child = HTML()
+        box = VBox(children=(child,))
+    flush()
+    sw.open_shared_in(box, other_session)
+    assert child.model_id in sw.COMM_MANAGERS[other_session.id].comms
+
+
+def test_session_end_drops_shared_entry_and_keeps_widget(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    a, b = widget_session, other_session
+    w = shared_html(a)
+    sw.open_shared_in(w, b)
+    run(b.close())
+    assert isinstance(w.comm, SharedShinyComm)
+    assert not w.comm.has_session(b.id)
+    assert w.comm.has_session(a.id)
+    assert not is_closed_widget(w)
+
+
+def test_browser_comm_close_keeps_shared_widget_open(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    a, b = widget_session, other_session
+    w = shared_html(a)
+    sw.open_shared_in(w, b)
+    close = {
+        "header": {"msg_type": "comm_close"},
+        "content": {"comm_id": w.model_id, "data": {}},
+        "buffers": [],
+    }
+    with session_context(b):
+        sw.handle_client_comm_msg(b, close)
+    assert not is_closed_widget(w)
+    assert WIDGET_INSTANCE_MAP[w.model_id] is w
+    assert isinstance(w.comm, SharedShinyComm)
+    assert w.comm.has_session(a.id)
+
+
+def test_wrapping_drops_an_ended_sessions_comm(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    a, b = widget_session, other_session
+    w = shared_html(a)
+    run(a.close())
+    sw.open_shared_in(w, b)
+    assert isinstance(w.comm, SharedShinyComm)
+    assert not w.comm.has_session(a.id)
+
+
+def test_lazily_created_defaults_of_shared_widget_are_shared(
+    widget_session: Session, shared_state: None
+) -> None:
+    with sw.shared_construction():
+        b = Button()
+    with session_context(widget_session):
+        context = Context()
+        with context(), WidgetRenderContext():
+            sw.open_shared_in(b, widget_session)
+        flush()
+        context.invalidate()
+        flush()
+    for d in (b.layout, b.style):
+        assert sw.SHARED_WIDGETS.get(d.model_id) is d
+        assert not is_closed_widget(d)
+
+
+def test_defaults_first_serialized_by_open_shared_in_are_shared(
+    widget_session: Session, shared_state: None
+) -> None:
+    # Unlike a widget built outside a session, one built inside a session
+    # doesn't serialize (so doesn't create its Layout) until its comm opens
+    with session_context(widget_session):
+        context = Context()
+        with context(), WidgetRenderContext():
+            with sw.shared_construction():
+                b = Button()
+            assert not b.trait_has_value("layout")
+            sw.open_shared_in(b, widget_session)
+        flush()
+        context.invalidate()
+        flush()
+    for d in (b.layout, b.style):
+        assert sw.SHARED_WIDGETS.get(d.model_id) is d
+        assert not is_closed_widget(d)
+
+
+def test_pending_open_defers_to_shared_comm(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    a, b = widget_session, other_session
+    with session_context(a):
+        with Context()(), WidgetRenderContext():
+            with sw.shared_construction():
+                w = HTML()
+            sw.open_shared_in(w, b)
+        flush()
+    assert isinstance(w.comm, SharedShinyComm)
+    assert w.comm.has_session(a.id)
+    assert w.comm.has_session(b.id)
+
+
+def test_open_shared_in_opens_sessionless_references(
+    widget_session: Session,
+    shared_state: None,
+    preimported: Callable[[type[Widget]], Widget],
+) -> None:
+    # The Layout ipyvue's ForceLoad materializes at import time is an ipywidgets
+    # widget, so it isn't process-global by package, but the browser still needs it
+    w = preimported(IpyvueThing)
+    assert isinstance(w, DOMWidget)
+    layout = w.layout
+    assert layout is not None
+    assert not sw.is_process_global(layout)
+    sw.open_shared_in(w, widget_session)
+    assert layout.model_id in sw.COMM_MANAGERS[widget_session.id].comms
+
+
+def test_open_shared_in_leaves_per_session_references_alone(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    with session_context(widget_session):
+        child = HTML()
+        with sw.shared_construction():
+            box = VBox(children=(child,))
+    flush()
+    sw.open_shared_in(box, other_session)
+    assert child.model_id not in sw.SHARED_WIDGETS
+    assert not isinstance(child.comm, SharedShinyComm)
+    assert child.model_id not in sw.COMM_MANAGERS[other_session.id].comms
+
+
+def test_open_shared_in_leaves_closed_references_closed(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    # A user-closed reference (comm None) can't get this far: ipywidgets can't
+    # serialize the referencing widget, since the reference has no model id
+    with session_context(widget_session):
+        child = HTML()
+        with sw.shared_construction():
+            box = VBox(children=(child,))
+    flush()
+    sw.close_widget(child)
+    sw.open_shared_in(box, other_session)
+    assert is_closed_widget(child)
+    assert child.model_id not in sw.SHARED_WIDGETS
+    assert child.model_id not in sw.COMM_MANAGERS[other_session.id].comms
+
+
+def test_open_shared_in_snapshots_plotly_figure(
+    widget_session: Session, shared_state: None
+) -> None:
+    go = pytest.importorskip("plotly.graph_objects")
+    with sw.shared_construction():
+        fig = go.FigureWidget()
+        fig.add_scatter(y=[1, 2])
+    assert fig._widget_data == []
+    sw.open_shared_in(fig, widget_session)
+    assert len(fig._widget_data) == 1
+
+
+def test_open_shared_in_gives_canvas_its_own_manager(
+    widget_session: Session, shared_state: None
+) -> None:
+    pytest.importorskip("ipycanvas")
+    import ipycanvas.canvas
+
+    module_manager = ipycanvas.canvas._CANVAS_MANAGER
+    with sw.shared_construction():
+        canvas = ipycanvas.Canvas()
+    assert canvas._canvas_manager is module_manager
+    sw.open_shared_in(canvas, widget_session)
+    manager = canvas._canvas_manager
+    assert manager is not module_manager
+    assert not isinstance(module_manager.comm, SharedShinyComm)
+    assert isinstance(manager.comm, SharedShinyComm)
+    assert manager.comm.has_session(widget_session.id)
+    # Its cached commands were flushed once its comm opened
+    assert not manager._caching
