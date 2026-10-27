@@ -186,7 +186,7 @@ def test_embedding_atlas_browser_sql_cannot_touch_server_files(
     )
 
     # Any visitor can send the explorer's SQL messages; with the connection
-    # locked down (as the docs recommend), they can't write or read files
+    # locked down (the renderer's default), they can't write or read files
     target = tmp_path / "written-by-browser.csv"
     reply = page.evaluate(
         BROWSER_SQL_JS, ["exec", f"COPY (SELECT 1 AS x) TO '{target}'"]

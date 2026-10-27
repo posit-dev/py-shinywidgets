@@ -258,26 +258,27 @@ class render_embedding_atlas(
     Note
     ---
     **Security**: the explorer runs its queries by sending SQL from the browser to
-    the widget's DuckDB connection, and any visitor can send arbitrary SQL,
-    including SQL that reads or writes files on the server. In deployed apps,
-    construct the widget on a new connection (connections can't be shared between
-    widgets) and lock it down afterwards, so that only the data you gave the widget
-    is reachable:
+    the widget's DuckDB connection, and without restrictions any visitor can send
+    arbitrary SQL, including SQL that reads or writes files on the server. To
+    protect against this, the renderer locks down the widget's connection before
+    display (``SET enable_external_access = false``; ``SET lock_configuration =
+    true``), so that only the data you gave the widget is reachable. If you locked
+    the connection's configuration yourself (``SET lock_configuration = true``),
+    the renderer leaves your configuration untouched. Pass
+    ``allow_unrestricted_connection=True`` to opt out of the lockdown (e.g., for a
+    local, single-user app).
 
-    ```python
-    con = duckdb.connect()
-    widget = EmbeddingAtlasWidget(df, x="x", y="y", connection=con)
-    con.execute("SET enable_external_access = false")
-    con.execute("SET lock_configuration = true")
-    return widget
-    ```
-
-    Disabling external access when connecting instead breaks the widget, which
-    needs it while loading the data frame. A visitor can still send expensive
-    queries, which block the Python process while they run.
+    Even with the lockdown, a visitor can still send expensive queries, which
+    block the Python process while they run.
 
     Parameters
     ----------
+    allow_unrestricted_connection
+        When ``True``, the widget's DuckDB connection is left as the render
+        function returned it, without the lockdown described above. The default
+        (``False``) is strongly recommended for deployed apps: an unrestricted
+        connection lets any visitor run arbitrary SQL with the server process's
+        permissions.
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -292,6 +293,55 @@ class render_embedding_atlas(
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     """
+
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[EmbeddingAtlasWidget]] = None,
+        *,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+        allow_unrestricted_connection: bool = False,
+    ):
+        super().__init__(_fn, width=width, height=height, fill=fill, fillable=fillable)
+        self.allow_unrestricted_connection = allow_unrestricted_connection
+
+    def _as_widget(self, value: EmbeddingAtlasWidget) -> EmbeddingAtlasWidget:
+        widget = super()._as_widget(value)
+        if not self.allow_unrestricted_connection:
+            _restrict_embedding_atlas_connection(widget)
+        return widget
+
+
+def _restrict_embedding_atlas_connection(widget: EmbeddingAtlasWidget) -> None:
+    """
+    Lock down an `EmbeddingAtlasWidget`'s DuckDB connection, so the SQL the
+    browser sends can't reach server files or change the connection's
+    configuration.
+    """
+    # `_connection` is upstream-internal (like the `_predicate` trait this
+    # renderer already relies on); embedding-atlas is pre-1.0, so fail loudly if
+    # it disappears rather than silently render an unrestricted widget.
+    con = getattr(widget, "_connection", None)
+    if con is None:
+        raise RuntimeError(
+            "Couldn't find the EmbeddingAtlasWidget's DuckDB connection "
+            "(`_connection`), so its SQL access can't be restricted. If "
+            "embedding-atlas renamed this attribute, please report it. To render "
+            "anyway, pass `allow_unrestricted_connection=True` to "
+            "`@render_embedding_atlas`."
+        )
+    # A connection the app author already locked is left untouched: they've taken
+    # control of its configuration (possibly keeping external access on
+    # deliberately), and a locked connection rejects further SET commands.
+    row = con.execute(
+        "SELECT value FROM duckdb_settings() WHERE name = 'lock_configuration'"
+    ).fetchone()
+    if row is not None and str(row[0]).lower() == "true":
+        return
+    con.execute("SET enable_external_access = false")
+    con.execute("SET lock_configuration = true")
 
 
 class render_ipyaladin(render_widget_base[ValueT, Aladin]):
