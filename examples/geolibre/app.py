@@ -1,8 +1,10 @@
+import asyncio
 import json
 
 from geolibre import Map
 from shiny import reactive, render
 from shiny.express import input, ui
+from shiny.reactive import extended_task
 
 from shinywidgets import reactive_read, render_geolibre
 
@@ -16,6 +18,7 @@ CITIES = {
 
 with ui.sidebar():
     ui.input_select("city", "Jump to a city", list(CITIES))
+    ui.input_action_button("fly", "Fly there (animated)")
 
 # The last map click, as a reactive value (set from geolibre's on_click event)
 clicked = reactive.value(None)
@@ -39,8 +42,27 @@ def _():
     glmap.widget.set_center(lng, lat, zoom=9)
 
 
+# fly_to() blocks waiting for a reply from the app, so -- unlike set_center()
+# above -- it can never run on Shiny's event-loop thread (the wait would
+# block the loop that delivers the reply). Run it on a worker thread inside
+# an extended_task (needs a geolibre release containing
+# https://github.com/opengeos/GeoLibre/pull/3266; see README.md).
+@extended_task
+async def fly_to_city():
+    lng, lat = CITIES[input.city()]
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, glmap.widget.fly_to, lng, lat, zoom=9)
+
+
+@reactive.effect
+@reactive.event(input.fly)
+def _():
+    fly_to_city.invoke()
+
+
 with ui.card():
     ui.card_header("Last click")
+
     @render.code
     async def click_info():
         e = clicked()
@@ -49,6 +71,7 @@ with ui.card():
 
 with ui.card():
     ui.card_header("Map view (from the synced project)")
+
     @render.code
     async def view_info():
         project = reactive_read(glmap.widget, "project")

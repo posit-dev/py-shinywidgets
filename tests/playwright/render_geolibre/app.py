@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import struct
 import tempfile
+from functools import partial
 from pathlib import Path
 
 from geolibre import Map
 from shiny import App, reactive, render, ui
+from shiny.reactive import extended_task
 from shinywidgets import output_widget, reactive_read, render_geolibre
 
 
@@ -83,9 +86,11 @@ app_ui = ui.page_fillable(
     ui.div(
         ui.input_action_button("rerender", "Rerender"),
         ui.input_action_button("add_local", "Add local COG"),
+        ui.input_action_button("fly", "Fly to SF"),
         ui.output_text("render_count", inline=True),
         ui.output_text("clicked", inline=True),
         ui.output_text("view", inline=True),
+        ui.output_text("flown", inline=True),
         style="display: flex; gap: 0.5rem; align-items: center; height: 45px; overflow: hidden;",
     ),
 )
@@ -94,6 +99,7 @@ app_ui = ui.page_fillable(
 def server(input, output, session):
     counter = reactive.value(0)
     click = reactive.value(None)
+    flown_center = reactive.value("")
 
     @reactive.effect
     @reactive.event(input.rerender)
@@ -125,6 +131,31 @@ def server(input, output, session):
     @reactive.event(input.add_local)
     def _():
         map.widget.add_cog(LOCAL_TIF, name="Local COG")
+
+    # Blocking command methods (fly_to(), get_center(), ...) must run off
+    # Shiny's event-loop thread, so the reply can be delivered while they
+    # wait. extended_task + run_in_executor puts them on a worker thread
+    # (requires a geolibre release containing opengeos/GeoLibre#3266).
+    @extended_task
+    async def fly_to_sf():
+        loop = asyncio.get_running_loop()
+        # fly_to() only waits for the app's acknowledgement, not for the
+        # camera animation to finish, so give it a beat before get_center()
+        await loop.run_in_executor(
+            None, partial(map.widget.fly_to, -122.4, 37.8, duration=1000)
+        )
+        await asyncio.sleep(2)
+        center = await loop.run_in_executor(None, map.widget.get_center)
+        flown_center.set(json.dumps(center))
+
+    @reactive.effect
+    @reactive.event(input.fly)
+    def _():
+        fly_to_sf.invoke()
+
+    @render.text
+    def flown():
+        return flown_center.get()
 
     @render.text
     def clicked():

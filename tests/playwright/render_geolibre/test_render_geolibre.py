@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import inspect
+
+import pytest
 from playwright.sync_api import Page, expect
 from tests.playwright.conftest import assert_no_unexpected_errors, collect_errors
 
@@ -137,6 +140,31 @@ def test_geolibre_local_cog_via_proxy(page: Page, local_app) -> None:
     assert "/proxy/" in resp.url
 
     check_errors(errors, failed_requests)
+
+
+def test_geolibre_blocking_methods_from_extended_task(page: Page, local_app) -> None:
+    # geolibre's blocking command methods (fly_to(), get_center(), ...) wait
+    # for a reply from the app, so they can only run off Shiny's event-loop
+    # thread -- and only with a geolibre release that sleep-polls for the
+    # reply instead of pumping a Jupyter kernel (opengeos/GeoLibre#3266,
+    # merged upstream; the first release after 3.5.1). Skip (rather than
+    # fail) on older geolibre so the suite stays green until that release.
+    geolibre = pytest.importorskip("geolibre")
+    src = inspect.getsource(geolibre.Map._wait_for_result)
+    if "No kernel pump available" not in src:
+        pytest.skip(
+            "geolibre without the worker-thread sleep-poll fallback "
+            "(needs a release containing opengeos/GeoLibre#3266)"
+        )
+
+    page.goto(local_app.url)
+    wait_for_app(page, "map")
+
+    # The app calls fly_to(-122.4, 37.8) then get_center(), both via
+    # run_in_executor inside an extended_task (see app.py)
+    page.click("#fly")
+    expect(page.locator("#flown")).to_contain_text("-122.4", timeout=LOAD_TIMEOUT)
+    expect(page.locator("#flown")).to_contain_text("37.8", timeout=LOAD_TIMEOUT)
 
 
 def test_geolibre_rerender(page: Page, local_app) -> None:
