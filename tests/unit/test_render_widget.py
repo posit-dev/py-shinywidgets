@@ -178,6 +178,11 @@ def test_render_ipycanvas_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_ipyvolume_is_render_widget_base() -> None:
+    renderer = rw.render_ipyvolume()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_itables_is_render_widget_base() -> None:
     renderer = rw.render_itables()
     assert isinstance(renderer, rwb.render_widget_base)
@@ -304,11 +309,6 @@ def test_render_ipycytoscape_is_render_widget_base() -> None:
 
 def test_render_keplergl_is_render_widget_base() -> None:
     renderer = rw.render_keplergl()
-    assert isinstance(renderer, rwb.render_widget_base)
-
-
-def test_render_ipyvolume_is_render_widget_base() -> None:
-    renderer = rw.render_ipyvolume()
     assert isinstance(renderer, rwb.render_widget_base)
 
 

@@ -34,12 +34,12 @@ if TYPE_CHECKING:
     from ipyleaflet import Map as LeafletMap
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from ipysigma import Sigma
+    from ipyvolume.widgets import Figure as IpyvolumeFigure
 
     # pygwalker 0.6 renamed its widget class (_WalkerWidget ->
     # pygwalker.services.anywidget_widget.WalkerAnyWidget), so type both by
     # their common public base
     from ipywidgets import Widget as WalkerWidget
-    from ipyvolume.widgets import Figure as IpyvolumeFigure
     from itables.widget import ITable
     from jscatter.widget import JupyterScatter
     from jupyter_bokeh import BokehModel

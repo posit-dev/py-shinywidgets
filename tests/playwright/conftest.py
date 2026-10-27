@@ -143,19 +143,6 @@ def collect_errors(page: Page) -> tuple[list[str], list[str]]:
     return errors, failed_requests
 
 
-# anywidget evaluates a widget's inline ESM once per *view* (a fresh blob
-# URL per evaluation), so a page with N keplergl maps initializes luma.gl's
-# page-global runtime N times; luma keeps the first initialization and logs
-# this (benign) message for the rest. Whether the extra inits interleave
-# badly enough to log is a timing race, so the message appears
-# intermittently (mostly on loaded CI runners). Deduping the evaluation
-# isn't an option: other anywidgets (e.g. mosaic-widget) keep per-view state
-# in their module namespace and break when views share one.
-KEPLERGL_ALLOWED_ERRORS = (
-    "luma.gl: This version of luma.gl has already been initialized",
-)
-
-
 # The red-pixel count that counts as "the scene was drawn" for
 # wait_for_red_pixels() (e.g., a scatter of pure-red markers on white)
 MIN_RED_PIXELS = 50
@@ -187,6 +174,19 @@ def wait_for_red_pixels(page: Page, selector: str, timeout_ms: int = 30000) -> N
         assert waited < timeout_ms, f"no scene pixels drawn in {selector}"
         page.wait_for_timeout(250)
         waited += 250
+
+
+# anywidget evaluates a widget's inline ESM once per *view* (a fresh blob
+# URL per evaluation), so a page with N keplergl maps initializes luma.gl's
+# page-global runtime N times; luma keeps the first initialization and logs
+# this (benign) message for the rest. Whether the extra inits interleave
+# badly enough to log is a timing race, so the message appears
+# intermittently (mostly on loaded CI runners). Deduping the evaluation
+# isn't an option: other anywidgets (e.g. mosaic-widget) keep per-view state
+# in their module namespace and break when views share one.
+KEPLERGL_ALLOWED_ERRORS = (
+    "luma.gl: This version of luma.gl has already been initialized",
+)
 
 
 def assert_no_unexpected_errors(

@@ -1,7 +1,7 @@
 import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
+import { setupIpyvolumeAutoResize } from './ipyvolume';
 import { setupJscatterAutoHeight, setupJscatterFixedHeight } from './jscatter';
 import { setupKeplerAutoHeight } from './keplergl';
-import { setupIpyvolumeAutoResize } from './ipyvolume';
 import { setupMplAutoResize } from './mpl';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { setupQuakFit } from './quak';
@@ -116,9 +116,6 @@ const ipyvolumeBehavior: WidgetBehavior = {
     ),
 };
 
-// In most cases, we can get widgets to fill through Python/CSS, but quak
-// doesn't have a Python API and uses shadow DOM, which can only be accessed
-// from JS
 const quakBehavior: WidgetBehavior = {
   setupFill: ({ el, lmWidget }) => setupQuakFit(el, lmWidget, true),
   setupFixedSize: ({ el, lmWidget }) => setupQuakFit(el, lmWidget, false),
@@ -250,9 +247,9 @@ export const ipyleafletBehavior: WidgetBehavior = {
 
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
+  ipyvolume: ipyvolumeBehavior,
   jscatter: jscatterBehavior,
   keplergl: keplerglBehavior,
-  ipyvolume: ipyvolumeBehavior,
   plotly: plotlyBehavior,
   pythreejs: pythreejsBehavior,
   quak: quakBehavior,
