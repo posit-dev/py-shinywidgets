@@ -10,6 +10,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from typing import (
     Any,
+    Callable,
     Dict,
     Iterable,
     Iterator,
@@ -638,9 +639,11 @@ def close_comm_on_close(w: Widget) -> None:
     w.close = close_with_comm  # type: ignore[method-assign]
 
 
-def walk_widget_tree(roots: Iterable[object]) -> Iterator[Widget]:
+def walk_widget_tree(
+    roots: Iterable[object], prune: Callable[[Widget], bool] | None = None
+) -> Iterator[Widget]:
     """
-    Yield every widget reachable from `roots` through materialized synced traits.
+    Yield every widget reachable from `roots` through synced traits.
 
     Recurses into traits that have a `to_json` serializer (this is how
     `children`/`layout`/`style` etc. are tagged) plus dicts/lists/tuples wrapping
@@ -648,6 +651,12 @@ def walk_widget_tree(roots: Iterable[object]) -> Iterator[Widget]:
     client. Other traits can't carry a widget reference across the wire, so
     skipping them also avoids walking large opaque payloads like GeoJSON `data`
     or Altair specs that can't hold widgets anyway.
+
+    A trait that hasn't been read yet is followed only if its static default is
+    a widget (see `synced_trait_values`), so a widget a class pins as a default
+    is found even before it's materialized.
+
+    If `prune(w)` is true, `w` is still yielded but its traits aren't followed.
     """
     visited: set[int] = set()
     pending: list[object] = list(roots)
@@ -658,15 +667,54 @@ def walk_widget_tree(roots: Iterable[object]) -> Iterator[Widget]:
         visited.add(id(item))
         if isinstance(item, Widget):
             yield item
-            pending.extend(
-                getattr(item, name)
-                for name in item.keys
-                if item.trait_has_value(name)
-                and item.trait_metadata(name, "to_json") is not None
-            )
+            if prune is None or not prune(item):
+                pending.extend(synced_trait_values(item))
         elif isinstance(item, dict):
             pending.extend(cast(dict[object, object], item).values())
         else:
+            pending.extend(cast("list[object] | tuple[object, ...]", item))
+
+
+def synced_trait_values(w: Widget) -> Iterator[object]:
+    """
+    Yield the values of `w`'s synced traits that can carry widget references
+    (those with a `to_json` serializer).
+
+    A trait that hasn't been read yet yields its default only if that default is
+    already a widget. Dynamic defaults (e.g. the Layout/Style a widget builds on
+    first access) are never evaluated here, since that would construct widgets as
+    a side effect of walking.
+    """
+    for name in w.keys:
+        if w.trait_metadata(name, "to_json") is None:
+            continue
+        if w.trait_has_value(name):
+            yield getattr(w, name)
+        else:
+            default = w.traits()[name].default_value
+            if isinstance(default, Widget):
+                yield default
+
+
+def direct_widget_references(w: Widget) -> Iterator[Widget]:
+    """
+    Yield the widgets `w` references directly, descending through dicts, lists and
+    tuples but not into the widgets it yields.
+    """
+    visited: set[int] = set()
+    pending: list[object] = list(synced_trait_values(w))
+    while pending:
+        item = pending.pop()
+        if id(item) in visited:
+            continue
+        if isinstance(item, Widget):
+            visited.add(id(item))
+            yield item
+        elif isinstance(item, dict):
+            visited.add(id(item))
+            pending.extend(cast(dict[object, object], item).values())
+        elif isinstance(item, (list, tuple)):
+            visited.add(id(item))
             pending.extend(cast("list[object] | tuple[object, ...]", item))
 
 
