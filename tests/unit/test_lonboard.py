@@ -22,8 +22,13 @@ from shiny.reactive import Context
 from shiny.session import session_context
 from shiny.session._session import AppSession
 from shinywidgets import as_widget, render_lonboard, session_lifetime
+from shinywidgets._comm import SharedShinyComm
 from shinywidgets._render_widget_base import WidgetRenderContext, set_layout_defaults
-from shinywidgets._shinywidgets import foreign_or_closed_widget
+from shinywidgets._shinywidgets import (
+    foreign_or_closed_widget,
+    open_shared_in,
+    shared_construction,
+)
 
 
 def points_table(n: int = 5) -> Table:
@@ -133,6 +138,25 @@ def test_open_replaces_shared_default_controls(
     r = render(m, widget_session)
     assert r.widget is m
     assert m.controls == controls
+
+
+def test_shared_map_gets_its_own_controls(
+    widget_session: Session,
+    comm_opens: dict[str, dict[str, object]],
+    shared_state: None,
+) -> None:
+    shared = Map.class_traits()["controls"].default()
+    with shared_construction():
+        m = Map(ScatterplotLayer(table=points_table()))
+    open_shared_in(m, widget_session)
+    flush(widget_session)
+
+    assert not any(c in shared for c in m.controls)
+    assert not any(isinstance(c.comm, SharedShinyComm) for c in shared)
+    assert comm_opens[m.model_id]["controls"] == [
+        f"IPY_MODEL_{c.model_id}" for c in m.controls
+    ]
+    assert all(c.model_id in comm_opens for c in m.controls)
 
 
 def test_session_lifetime_map_keeps_its_controls(widget_session: Session) -> None:

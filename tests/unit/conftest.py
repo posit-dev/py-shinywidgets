@@ -35,3 +35,17 @@ def widget_session(monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
         asyncio.set_event_loop(loop)
         loop.close()
         asyncio.set_event_loop(None)
+
+
+@pytest.fixture
+def shared_state() -> Iterator[None]:
+    """Close and forget the process-global widgets a test creates."""
+    before = dict(sw.SHARED_WIDGETS)
+    try:
+        yield
+    finally:
+        for model_id, w in list(sw.SHARED_WIDGETS.items()):
+            if before.get(model_id) is not w:
+                w.close()
+        sw.SHARED_WIDGETS.clear()
+        sw.SHARED_WIDGETS.update(before)
