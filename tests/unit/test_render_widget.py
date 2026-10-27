@@ -20,6 +20,11 @@ def test_render_ipyaladin_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_k3d_is_render_widget_base() -> None:
+    renderer = rw.render_k3d()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_ipycanvas_is_render_widget_base() -> None:
     renderer = rw.render_ipycanvas()
     assert isinstance(renderer, rwb.render_widget_base)
@@ -384,6 +389,7 @@ def test_import_shinywidgets_without_optional_deps() -> None:
         "jupyter_bokeh",
         "ipydatagrid",
         "ipympl",
+        "k3d",
         "keplergl",
         "ipyleaflet",
         "maplibre",

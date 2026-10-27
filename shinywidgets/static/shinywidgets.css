@@ -328,6 +328,57 @@
 }
 
 /*
+* k3d sets a fixed pixel height (its `height` trait) as an inline style on its inner
+* container, which would overflow (and get clipped by) an output with an explicit height.
+* (`[style*="height:"]` would also match min-/max-height, but output_widget() only emits
+* width and height. Keep in sync with _output_widget.py.)
+* Intrinsic heights (`auto`, `fit-content`, ...) are excluded, as in the bqplot rule
+* above: 100% of an indefinite-height parent would replace the plot's own pixel height
+* (which the flex rules below treat as its intrinsic height) and collapse the plot.
+*/
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .k3d-plot {
+  height: 100%;
+}
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .k3d-plot
+  > div {
+  height: 100% !important;
+}
+
+/*
+* Likewise, a Layout(height=...) on the plot sizes only its .lm-Widget, so let k3d's
+* inner container flex to it (its pixel height is just the flex basis, so the plot
+* keeps that height when the widget's own height is intrinsic).
+*/
+.shiny-ipywidget-output > .k3d-plot {
+  display: flex;
+  flex-direction: column;
+}
+.shiny-ipywidget-output > .k3d-plot > div {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/*
 * itables (DataTables): render_itables() adds the .shinywidgets-itables-fill class
 * (and defaults scrollY) unless the user chose their own scrollY (see
 * itables_layout_defaults). DataTables sizes the scrolling table body with an inline
