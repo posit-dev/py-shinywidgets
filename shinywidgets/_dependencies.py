@@ -106,8 +106,15 @@ def require_dependencies(
     # The relevant npm package should be specified as an attribute on the widget
     # instance. If the widget is installed as a jupyter extension, in most cases, that
     # name will registered at the extension name/directory
-    module_attr = "_view_module" if isinstance(w, DOMWidget) else "_model_module"
-    module_name: str = getattr(w, module_attr, widget_pkg(w))
+    # (ipyvue's ForceLoad is a DOMWidget with `_view_module = None`, so fall through
+    # to `_model_module` when the view module is unset)
+    module_attrs = ["_model_module"]
+    if isinstance(w, DOMWidget):
+        module_attrs.insert(0, "_view_module")
+    module_name: str = next(
+        (name for attr in module_attrs if (name := getattr(w, attr, None))),
+        widget_pkg(w),
+    )
 
     # ipywidgets (i.e., @jupyter-widgets) come pre-bundled in libembed-amd.js
     # # (i.e., _core() dependencies)
