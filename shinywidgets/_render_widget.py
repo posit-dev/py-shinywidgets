@@ -10,6 +10,7 @@ from ipywidgets.widgets.widget import Widget
 from packaging.version import Version
 
 if TYPE_CHECKING:
+    import duckdb
     import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
@@ -310,11 +311,11 @@ class render_embedding_atlas(
     def _as_widget(self, value: EmbeddingAtlasWidget) -> EmbeddingAtlasWidget:
         widget = super()._as_widget(value)
         if not self.allow_unrestricted_connection:
-            _restrict_embedding_atlas_connection(widget)
+            restrict_embedding_atlas_connection(widget)
         return widget
 
 
-def _restrict_embedding_atlas_connection(widget: EmbeddingAtlasWidget) -> None:
+def restrict_embedding_atlas_connection(widget: EmbeddingAtlasWidget) -> None:
     """
     Lock down an `EmbeddingAtlasWidget`'s DuckDB connection, so the SQL the
     browser sends can't reach server files or change the connection's
@@ -332,13 +333,37 @@ def _restrict_embedding_atlas_connection(widget: EmbeddingAtlasWidget) -> None:
             "anyway, pass `allow_unrestricted_connection=True` to "
             "`@render_embedding_atlas`."
         )
-    # A connection the app author already locked is left untouched: they've taken
-    # control of its configuration (possibly keeping external access on
-    # deliberately), and a locked connection rejects further SET commands.
-    row = con.execute(
-        "SELECT value FROM duckdb_settings() WHERE name = 'lock_configuration'"
+    restrict_duckdb_connection(con)
+
+
+def duckdb_settings(
+    con: Optional[duckdb.DuckDBPyConnection] = None,
+) -> Tuple[bool, bool]:
+    """
+    DuckDB's ``(enable_external_access, lock_configuration)`` for `con`, which
+    defaults to the default connection.
+    """
+    import duckdb
+
+    target = duckdb if con is None else con
+    settings = target.execute(
+        "SELECT current_setting('enable_external_access'),"
+        " current_setting('lock_configuration')"
     ).fetchone()
-    if row is not None and str(row[0]).lower() == "true":
+    assert settings is not None  # the query always returns its two settings
+    external_access, locked = settings
+    return bool(external_access), bool(locked)
+
+
+def restrict_duckdb_connection(con: duckdb.DuckDBPyConnection) -> None:
+    """
+    Lock down a DuckDB connection, so SQL run on it can't reach server files or
+    change the connection's configuration. A connection whose configuration is
+    already locked is left untouched: its owner took control of its settings
+    (possibly keeping external access on deliberately), and a locked connection
+    rejects further SET commands.
+    """
+    if duckdb_settings(con)[1]:
         return
     con.execute("SET enable_external_access = false")
     con.execute("SET lock_configuration = true")
