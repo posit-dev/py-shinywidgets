@@ -1,21 +1,13 @@
 from __future__ import annotations
 
 from playwright.sync_api import Page, expect
-from tests.playwright.conftest import assert_no_unexpected_errors, collect_errors
+from tests.playwright.conftest import (
+    KEPLERGL_ALLOWED_ERRORS,
+    assert_no_unexpected_errors,
+    collect_errors,
+)
 
 LOAD_TIMEOUT = 60000
-
-# keplergl 0.4.0's bundle initializes luma.gl more than once at module scope,
-# which logs "This version of luma.gl has already been initialized" (the map
-# still renders and behaves correctly). Tolerate that specific console error.
-LUMA_REINIT_ERROR = "This version of luma.gl has already been initialized"
-
-
-def check_keplergl_errors(errors: list[str], failed_requests: list[str]) -> None:
-    assert_no_unexpected_errors(
-        [e for e in errors if LUMA_REINIT_ERROR not in e], failed_requests
-    )
-
 
 HEIGHTS_JS = """(id) => {
   const out = document.getElementById(id);
@@ -52,7 +44,9 @@ def test_redisplayed_widget_keeps_filling(page: Page, local_app) -> None:
         timeout=10000,
     )
 
-    check_keplergl_errors(errors, failed_requests)
+    assert_no_unexpected_errors(
+        errors, failed_requests, allowed_errors=KEPLERGL_ALLOWED_ERRORS
+    )
 
 
 def test_widget_with_own_height_after_filling_render_is_respected(
@@ -77,4 +71,6 @@ def test_widget_with_own_height_after_filling_render_is_respected(
     assert heights["container"] > 400
     assert abs(heights["kepler"] - 250) <= 1
 
-    check_keplergl_errors(errors, failed_requests)
+    assert_no_unexpected_errors(
+        errors, failed_requests, allowed_errors=KEPLERGL_ALLOWED_ERRORS
+    )
