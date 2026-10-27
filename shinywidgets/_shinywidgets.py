@@ -43,7 +43,7 @@ from ._as_widget import as_widget, pydeck_has_widget
 from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
-from ._dependencies import custom_elements_dependency, require_dependency, widget_pkg
+from ._dependencies import custom_elements_dependency, require_dependencies, widget_pkg
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -130,7 +130,7 @@ def init_shiny_widget(w: Widget):
     if SHINYWIDGETS_CDN_ONLY:
         widget_deps: List[HTMLDependency] = []
     else:
-        widget_deps = require_dependency(w, session, SHINYWIDGETS_EXTENSION_WARNING)
+        widget_deps = require_dependencies(w, session, SHINYWIDGETS_EXTENSION_WARNING)
 
     # By the time we get here, the user has already had an opportunity to specify a model_id,
     # so it isn't yet populated, generate a random one so we can assign the same id to the comm

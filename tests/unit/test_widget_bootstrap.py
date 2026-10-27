@@ -230,7 +230,7 @@ def test_nbextensions_mount_when_widget_dep_has_subdir(
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
 
     monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", False)
-    monkeypatch.setattr(sw, "require_dependency", lambda w, session, warn: [Dep()])
+    monkeypatch.setattr(sw, "require_dependencies", lambda w, session, warn: [Dep()])
 
     w = FakeWidget()
     sw.init_shiny_widget(w)  # type: ignore[arg-type]

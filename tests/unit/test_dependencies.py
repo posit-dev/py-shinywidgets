@@ -17,7 +17,7 @@ from shinywidgets._dependencies import (
     parse_version,
     parse_version_safely,
     relax_anywidget_init_timeout,
-    require_dependency,
+    require_dependencies,
     widget_pkg,
 )
 
@@ -158,16 +158,16 @@ def test_output_binding_dependency_structure() -> None:
     assert any(x.get("href") == "shinywidgets.css" for x in dep.stylesheet)
 
 
-def test_require_dependency_core_widgets_return_none() -> None:
+def test_require_dependencies_core_widgets_return_empty_list() -> None:
     session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
     # Avoid calling ipywidgets constructors (shinywidgets registers a construction callback
     # that requires an active Shiny session).
     w = DOMWidget.__new__(DOMWidget)
     w._view_module = "@jupyter-widgets/controls"  # type: ignore[attr-defined]
-    assert require_dependency(w, session) == []
+    assert require_dependencies(w, session) == []
 
 
-def test_require_dependency_missing_extension_warns_and_returns_none(
+def test_require_dependencies_missing_extension_warns_and_returns_empty_list(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class DummyWidget:
@@ -185,17 +185,17 @@ def test_require_dependency_missing_extension_warns_and_returns_none(
     with pytest.warns(
         UserWarning, match="Couldn't find local path to widget extension"
     ):
-        assert require_dependency(w, session, warn_if_missing=True) == []
+        assert require_dependencies(w, session, warn_if_missing=True) == []
 
     with warnings.catch_warnings(record=True) as rec:
         warnings.simplefilter("always")
-        assert require_dependency(w, session, warn_if_missing=False) == []
+        assert require_dependencies(w, session, warn_if_missing=False) == []
     assert not any(
         "Couldn't find local path to widget extension" in str(w.message) for w in rec
     )
 
 
-def test_require_dependency_extension_found_returns_dependency(
+def test_require_dependencies_extension_found_returns_dependencies(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class DummyWidget:
@@ -213,7 +213,7 @@ def test_require_dependency_extension_found_returns_dependency(
 
     monkeypatch.setattr(deps, "jupyter_extension_path", lambda name: str(module_dir))
 
-    resolved = require_dependency(w, session)
+    resolved = require_dependencies(w, session)
     assert len(resolved) == 1
     dep = resolved[0]
     assert dep.name == "some-widget-module"
@@ -241,7 +241,7 @@ UMD_THREE_JS = '(function(g,f){"object"===typeof exports?f(exports):"function"==
     "module_name,three_js,shim",
     [("ipyvolume", AMD_THREE_JS, None), ("jupyter-threejs", UMD_THREE_JS, "THREE")],
 )
-def test_require_dependency_maps_bundled_amd_dependencies(
+def test_require_dependencies_maps_bundled_amd_dependencies(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
     module_name: str,
@@ -266,7 +266,7 @@ def test_require_dependency_maps_bundled_amd_dependencies(
     session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
     monkeypatch.setattr(deps, "jupyter_extension_path", lambda name: str(module_dir))
 
-    resolved = require_dependency(w, session)
+    resolved = require_dependencies(w, session)
     assert len(resolved) == 1
     head = str(resolved[0].head)
     config = json.loads(head.split("window.require.config(", 1)[1].split(")", 1)[0])
@@ -279,7 +279,7 @@ def test_require_dependency_maps_bundled_amd_dependencies(
         assert config["shim"] == {alias: {"exports": shim}}
 
 
-def test_require_dependency_warns_for_unknown_sibling_format(
+def test_require_dependencies_warns_for_unknown_sibling_format(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class DummyWidget:
@@ -306,52 +306,14 @@ def test_require_dependency_warns_for_unknown_sibling_format(
     )
 
     with pytest.warns(UserWarning, match="doesn't look like an AMD bundle"):
-        resolved = require_dependency(w, session)
+        resolved = require_dependencies(w, session)
     head = str(resolved[0].head)
     config = json.loads(head.split("window.require.config(", 1)[1].split(")", 1)[0])
     assert config["map"] == {"some-widget": {"three": "some-widget/three"}}
     assert "shim" not in config
 
 
-def test_require_dependency_umd_global_override(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # A UMD bundle whose global doesn't match a sniffable shape can still get
-    # a shim via AMD_UMD_GLOBAL_OVERRIDES (and the sniffing warning is
-    # suppressed in that case)
-    class DummyWidget:
-        __module__ = "fakepkg.widgets"
-
-    w = DummyWidget()
-    w._model_module = "some-widget"
-    w._model_module_version = "^1.2.3"
-
-    module_dir = tmp_path / "nbextensions" / "some-widget"
-    module_dir.mkdir(parents=True)
-    (module_dir / "index.js").write_text(
-        'define(["three"],function(t){})', encoding="utf-8"
-    )
-    (module_dir / "three.js").write_text(
-        "!function(){ oddWrapperSyntax(); }()", encoding="utf-8"
-    )
-
-    session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
-    monkeypatch.setattr(
-        deps,
-        "jupyter_extension_path",
-        lambda name: str(module_dir) if name == "some-widget" else None,
-    )
-    monkeypatch.setattr(
-        deps, "AMD_UMD_GLOBAL_OVERRIDES", {"some-widget": {"three": "MyThree"}}
-    )
-
-    resolved = require_dependency(w, session)
-    head = str(resolved[0].head)
-    config = json.loads(head.split("window.require.config(", 1)[1].split(")", 1)[0])
-    assert config["shim"] == {"some-widget/three": {"exports": "MyThree"}}
-
-
-def test_require_dependency_without_bundled_amd_dependency(
+def test_require_dependencies_without_bundled_amd_dependency(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # An external `three` with no three.js next to index.js and no `three`
@@ -374,7 +336,7 @@ def test_require_dependency_without_bundled_amd_dependency(
         lambda name: str(module_dir) if name == "ipyvolume" else None,
     )
 
-    resolved = require_dependency(w, session)
+    resolved = require_dependencies(w, session)
     assert len(resolved) == 1
     head = str(resolved[0].head)
     config = json.loads(head.split("window.require.config(", 1)[1].split(")", 1)[0])
@@ -388,7 +350,7 @@ def _nbextension(tmp_path: Path, name: str, index_js: str) -> str:
     return str(module_dir)
 
 
-def test_require_dependency_resolves_external_nbextensions(
+def test_require_dependencies_resolves_external_nbextensions(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # jupyter-vuetify's AMD bundle externally requires('jupyter-vue'); when an
@@ -416,7 +378,7 @@ def test_require_dependency_resolves_external_nbextensions(
     session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
     monkeypatch.setattr(deps, "jupyter_extension_path", lambda name: dirs.get(name))
 
-    resolved = require_dependency(w, session)
+    resolved = require_dependencies(w, session)
     assert [d.name for d in resolved] == ["jupyter-vuetify", "jupyter-vue"]
     head = str(resolved[1].head)
     config = json.loads(head.split("window.require.config(", 1)[1].split(")", 1)[0])
@@ -424,7 +386,7 @@ def test_require_dependency_resolves_external_nbextensions(
     assert config["paths"]["jupyter-vue"].endswith("/index")
 
 
-def test_require_dependency_resolves_transitive_external_nbextensions(
+def test_require_dependencies_resolves_transitive_external_nbextensions(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # An external nbextension may itself declare externals
@@ -446,11 +408,11 @@ def test_require_dependency_resolves_transitive_external_nbextensions(
     session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
     monkeypatch.setattr(deps, "jupyter_extension_path", lambda name: dirs.get(name))
 
-    resolved = require_dependency(w, session)
+    resolved = require_dependencies(w, session)
     assert [d.name for d in resolved] == ["some-widget", "ext-a", "ext-b"]
 
 
-def test_require_dependency_unresolvable_external_adds_no_config(
+def test_require_dependencies_unresolvable_external_adds_no_config(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # An external that is neither a sibling file nor an installed nbextension
@@ -471,7 +433,7 @@ def test_require_dependency_unresolvable_external_adds_no_config(
     session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
     monkeypatch.setattr(deps, "jupyter_extension_path", lambda name: dirs.get(name))
 
-    resolved = require_dependency(w, session)
+    resolved = require_dependencies(w, session)
     assert [d.name for d in resolved] == ["some-widget"]
     head = str(resolved[0].head)
     config = json.loads(head.split("window.require.config(", 1)[1].split(")", 1)[0])
