@@ -1,5 +1,4 @@
 shiny
 shinywidgets[embedding_atlas]
-duckdb
 pandas
 numpy
