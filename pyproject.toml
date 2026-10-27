@@ -76,6 +76,11 @@ panel = ["panel", "jupyter_bokeh>=4.1"]
 perspective = ["perspective-python>=3.0", "pyarrow"]
 plotly = ["plotly>=5.12.0"]
 plotnine = ["plotnine", "ipympl"]
+# duckdb is listed because the security model requires apps to `import duckdb`
+# and lock down the default connection themselves (see render_pygwalker's docs),
+# and sqlglot because shinywidgets validates the browser's SQL with it (see
+# validate_visitor_sql), not just transitively through pygwalker
+pygwalker = ["pygwalker>=0.4.9.13", "duckdb>=0.10.4", "sqlglot>=23.15.8"]
 quak = ["quak"]
 test = [
   "altair",
@@ -119,6 +124,7 @@ test = [
   "polars",
   "pyarrow",
   "pydeck",
+  "pygwalker>=0.4.9.13",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
@@ -167,6 +173,7 @@ dev = [
   "polars",
   "pyarrow",
   "pydeck",
+  "pygwalker>=0.4.9.13",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
@@ -218,6 +225,7 @@ test = [
   "polars",
   "pyarrow",
   "pydeck",
+  "pygwalker>=0.4.9.13",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
