@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import sys
+import warnings
 from collections.abc import Callable, Coroutine, Iterator
 from pathlib import Path
 from types import ModuleType
@@ -370,7 +371,8 @@ def test_open_shared_in_leaves_per_session_references_alone(
         with sw.shared_construction():
             box = VBox(children=(child,))
     flush()
-    sw.open_shared_in(box, other_session)
+    with pytest.warns(UserWarning, match="shared VBox references HTML"):
+        sw.open_shared_in(box, other_session)
     assert child.model_id not in sw.SHARED_WIDGETS
     assert not isinstance(child.comm, SharedShinyComm)
     assert child.model_id not in sw.COMM_MANAGERS[other_session.id].comms
@@ -387,10 +389,33 @@ def test_open_shared_in_leaves_closed_references_closed(
             box = VBox(children=(child,))
     flush()
     sw.close_widget(child)
-    sw.open_shared_in(box, other_session)
+    with pytest.warns(UserWarning, match="was closed"):
+        sw.open_shared_in(box, other_session)
     assert is_closed_widget(child)
     assert child.model_id not in sw.SHARED_WIDGETS
     assert child.model_id not in sw.COMM_MANAGERS[other_session.id].comms
+
+
+def test_open_shared_in_warns_once_on_a_session_owned_reference(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    with session_context(widget_session):
+        child = HTML()
+    with sw.shared_construction():
+        box = VBox(children=(child,))
+    flush()
+    with pytest.warns(UserWarning, match="shared VBox references HTML") as record:
+        sw.open_shared_in(box, widget_session)
+    message = str(record[0].message)
+    assert "shared_lifetime" in message
+    assert "Timeout waiting for widget model" in message
+    # The child stays session-owned...
+    assert child.model_id not in sw.SHARED_WIDGETS
+    assert not isinstance(child.comm, SharedShinyComm)
+    # ...and opening in another session doesn't repeat the warning
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        sw.open_shared_in(box, other_session)
 
 
 def test_open_shared_in_snapshots_plotly_figure(
@@ -550,7 +575,10 @@ def test_rendering_an_unlisted_sessionless_widget_raises(
 def test_template_registry_widget_reaches_a_second_session_on_render(
     registered: HTML, other_session: Session
 ) -> None:
-    render_in(other_session, lambda: VBox(children=(registered,)))
+    # The registry widget's render-owned Layout/Style survived its render, but
+    # they belong to its original session, so opening it elsewhere warns
+    with pytest.warns(UserWarning, match="belongs to one Shiny session"):
+        render_in(other_session, lambda: VBox(children=(registered,)))
     assert isinstance(registered.comm, SharedShinyComm)
     assert registered.comm.has_session(other_session.id)
 
@@ -560,7 +588,10 @@ def test_comm_open_opens_references_of_an_undisplayed_widget(
 ) -> None:
     with session_context(other_session), session_lifetime():
         VBox(children=(registered,))
-    flush()
+    # registered's Layout/Style belong to its original session (see
+    # test_template_registry_widget_reaches_a_second_session_on_render)
+    with pytest.warns(UserWarning, match="belongs to one Shiny session"):
+        flush()
     assert isinstance(registered.comm, SharedShinyComm)
     assert registered.comm.has_session(other_session.id)
 
@@ -568,7 +599,10 @@ def test_comm_open_opens_references_of_an_undisplayed_widget(
 def test_process_global_root_is_accepted(
     registered: HTML, other_session: Session
 ) -> None:
-    render_in(other_session, lambda: registered)
+    # registered's Layout/Style belong to its original session (see
+    # test_template_registry_widget_reaches_a_second_session_on_render)
+    with pytest.warns(UserWarning, match="belongs to one Shiny session"):
+        render_in(other_session, lambda: registered)
     assert isinstance(registered.comm, SharedShinyComm)
     assert registered.comm.has_session(other_session.id)
 
@@ -688,6 +722,103 @@ def test_interaction_in_one_session_reaches_the_other(
     )
     assert s.value == 5
     assert sent
+
+
+def test_ipy_model_references_finds_nested_ids() -> None:
+    data = {
+        "method": "update",
+        "state": {"children": ["IPY_MODEL_a", {"x": ("IPY_MODEL_b",)}]},
+        "buffer_paths": [],
+    }
+    assert set(sw.ipy_model_references(data)) == {"a", "b"}
+    assert list(sw.ipy_model_references(None)) == []
+    assert list(sw.ipy_model_references({"state": {"value": 5}})) == []
+
+
+def shared_box_open_in(*sessions: Session) -> VBox:
+    with shared_lifetime():
+        box = VBox()
+    for session in sessions:
+        sw.open_shared_in(box, session)
+    return box
+
+
+def test_shared_send_opens_a_lazily_shared_reference_everywhere(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    box = shared_box_open_in(widget_session, other_session)
+    # A shared child built lazily (see shared_lifetime()), after box was
+    # already open in both sessions: nothing would otherwise open it in
+    # other_session, and the children update would dangle there
+    with session_context(widget_session), sw.shared_construction():
+        child = HTML()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        box.children = (child,)
+    assert isinstance(child.comm, SharedShinyComm)
+    assert child.comm.has_session(widget_session.id)
+    assert child.comm.has_session(other_session.id)
+    box.children = ()
+    flush()
+
+
+def test_shared_send_warns_once_on_a_session_owned_reference(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    box = shared_box_open_in(widget_session, other_session)
+    with session_context(widget_session):
+        child = HTML()
+    flush()
+
+    # Capture the fan-out, so the test proves the update still reaches both
+    # sessions (the guard warns; it doesn't block the send)
+    assert isinstance(box.comm, SharedShinyComm)
+    sent: list[object] = []
+    for comm in box.comm.comms.values():
+        setattr(comm, "send", lambda *args, **kwargs: sent.append((args, kwargs)))
+
+    with pytest.warns(
+        UserWarning, match="update to the shared VBox references HTML"
+    ) as record:
+        box.children = (child,)
+    message = str(record[0].message)
+    assert "shared_lifetime" in message
+    assert len(sent) == 2
+
+    # Warn once per referenced widget, not per update
+    box.children = ()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        box.children = (child,)
+    box.children = ()
+
+
+def test_shared_send_allows_a_reference_open_in_every_session(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    box = shared_box_open_in(widget_session, other_session)
+    with shared_lifetime():
+        child = HTML()
+    for session in (widget_session, other_session):
+        sw.open_shared_in(child, session)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        box.children = (child,)
+    box.children = ()
+
+
+def test_shared_send_allows_a_reference_pending_open_in_its_own_session(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    box = shared_box_open_in(widget_session, other_session)
+    # The child's comm opens at the next flush, so widget_session's browser
+    # does get its model; only other_session can never display it
+    with session_context(widget_session):
+        child = HTML()
+    assert child.model_id not in sw.COMM_MANAGERS[widget_session.id].comms
+    with pytest.warns(UserWarning, match="references HTML"):
+        box.children = (child,)
+    box.children = ()
 
 
 # A VBox built by a rejected render still has its deferred open pending, and that
