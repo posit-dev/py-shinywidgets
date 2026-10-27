@@ -4,6 +4,7 @@ import io
 
 import numpy as np
 from PIL import Image
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, expect
 from tests.playwright.conftest import (
     assert_no_unexpected_errors,
@@ -29,7 +30,13 @@ CANVAS_FILLS_OUTPUT_JS = """() => {
 
 
 def count_red_pixels(page: Page, selector: str) -> int:
-    png = page.locator(selector).first.screenshot()
+    try:
+        png = page.locator(selector).first.screenshot()
+    except PlaywrightError:
+        # The canvas can be detached mid-screenshot while a re-render is
+        # replacing it (Playwright resolves the locator once, then errors
+        # instead of retrying); treat it as "not drawn yet" and keep polling
+        return 0
     rgb = np.asarray(Image.open(io.BytesIO(png)).convert("RGB")).astype(int)
     red = (rgb[..., 0] > 200) & (rgb[..., 1] < 60) & (rgb[..., 2] < 60)
     return int(red.sum())
