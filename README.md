@@ -32,6 +32,7 @@ everything it needs:
 | `@render_ipysigma` | `pip install 'shinywidgets[ipysigma]'` |
 | `@render_itables` | `pip install 'shinywidgets[itables]'` |
 | `@render_jscatter` | `pip install 'shinywidgets[jscatter]'` |
+| `@render_k3d` | `pip install 'shinywidgets[k3d]'` |
 | `@render_keplergl` | `pip install 'shinywidgets[keplergl]'` |
 | `@render_leafmap` | `pip install 'shinywidgets[leafmap]'` |
 | `@render_lonboard` | `pip install 'shinywidgets[lonboard]'` (Python < 3.15) |

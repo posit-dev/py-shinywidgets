@@ -48,11 +48,16 @@ holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
 ipycytoscape = ["ipycytoscape"]
-ipydatagrid = ["ipydatagrid"]
+# ipydatagrid 1.2.0 is the first release that doesn't construct widgets while
+# the package is imported (1.1.x builds `Expr()` widgets in class bodies), so
+# older versions raise "shinywidgets requires that all ipywidgets be
+# constructed within an active Shiny session" on `import ipydatagrid`. (#99)
+ipydatagrid = ["ipydatagrid>=1.2.0"]
 ipyleaflet = ["ipyleaflet>=0.20.0"]
 ipysigma = ["ipysigma"]
 itables = ["itables[widget]"]
 jscatter = ["jupyter-scatter"]
+k3d = ["k3d"]
 # An explicit pre-release specifier, so uv/pip accept it without --pre.
 # keplergl 0.3.x imports pkg_resources (removed in setuptools 82), so 0.4
 # (an anywidget rewrite) is the first version that imports there.
@@ -88,7 +93,7 @@ test = [
   "ipyaladin",
   "ipycanvas",
   "ipycytoscape",
-  "ipydatagrid",
+  "ipydatagrid>=1.2.0",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
@@ -97,6 +102,7 @@ test = [
   "matplotlib",
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
+  "k3d",
   "keplergl>=0.4.0rc4",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
@@ -135,7 +141,7 @@ dev = [
   "ipyaladin",
   "ipycanvas",
   "ipycytoscape",
-  "ipydatagrid",
+  "ipydatagrid>=1.2.0",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
@@ -144,6 +150,7 @@ dev = [
   "matplotlib",
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
+  "k3d",
   "keplergl>=0.4.0rc4",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
@@ -185,7 +192,7 @@ test = [
   "ipyaladin",
   "ipycanvas",
   "ipycytoscape",
-  "ipydatagrid",
+  "ipydatagrid>=1.2.0",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
@@ -194,6 +201,7 @@ test = [
   "matplotlib",
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
+  "k3d",
   "keplergl>=0.4.0rc4",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there

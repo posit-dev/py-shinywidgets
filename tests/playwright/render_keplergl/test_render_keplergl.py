@@ -4,9 +4,11 @@ import re
 
 from playwright.sync_api import Page, expect
 from tests.playwright.conftest import (
+    KEPLERGL_ALLOWED_ERRORS,
     assert_no_unexpected_errors,
     collect_errors,
     expose_manager,
+    wait_for_stable_view_count,
 )
 
 # kepler.gl bundles a ~12MB script and builds a WebGL map, so first paint is slow
@@ -30,8 +32,6 @@ KEPLER_MATCHES_CONTAINER_JS = """(id) => {
   return Math.abs(h - out.clientHeight) <= 1;
 }"""
 
-LIVE_VIEWS_JS = "() => window.widgetManager._liveViews.size"
-
 
 def test_keplergl_renders_map(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
@@ -42,7 +42,9 @@ def test_keplergl_renders_map(page: Page, local_app) -> None:
     box = canvas.bounding_box()
     assert box is not None and box["width"] > 0 and box["height"] > 0
 
-    assert_no_unexpected_errors(errors, failed_requests)
+    assert_no_unexpected_errors(
+        errors, failed_requests, allowed_errors=KEPLERGL_ALLOWED_ERRORS
+    )
 
 
 def test_keplergl_fills_container_and_respects_explicit_height(
@@ -85,7 +87,9 @@ def test_keplergl_fills_container_and_respects_explicit_height(
         timeout=10000,
     )
 
-    assert_no_unexpected_errors(errors, failed_requests)
+    assert_no_unexpected_errors(
+        errors, failed_requests, allowed_errors=KEPLERGL_ALLOWED_ERRORS
+    )
 
 
 def test_keplergl_config_roundtrips_to_python(page: Page, local_app) -> None:
@@ -98,7 +102,9 @@ def test_keplergl_config_roundtrips_to_python(page: Page, local_app) -> None:
         re.compile(r"layers: [1-9]"), timeout=LOAD_TIMEOUT
     )
 
-    assert_no_unexpected_errors(errors, failed_requests)
+    assert_no_unexpected_errors(
+        errors, failed_requests, allowed_errors=KEPLERGL_ALLOWED_ERRORS
+    )
 
 
 def test_keplergl_renders_dataframe_with_missing_values(page: Page, local_app) -> None:
@@ -113,7 +119,9 @@ def test_keplergl_renders_dataframe_with_missing_values(page: Page, local_app) -
     page.click("#rerender")
     expect(page.locator("#render_count")).to_have_text("1")
 
-    assert_no_unexpected_errors(errors, failed_requests)
+    assert_no_unexpected_errors(
+        errors, failed_requests, allowed_errors=KEPLERGL_ALLOWED_ERRORS
+    )
 
 
 def test_keplergl_rerender_lifecycle(page: Page, local_app) -> None:
@@ -124,7 +132,7 @@ def test_keplergl_rerender_lifecycle(page: Page, local_app) -> None:
     expect(page.locator("#map .kepler-gl")).to_have_count(1, timeout=LOAD_TIMEOUT)
     expect(page.locator("#render_count")).to_have_text("0")
     page.wait_for_function(KEPLER_MATCHES_CONTAINER_JS, arg="map", timeout=10000)
-    initial_views = page.evaluate(LIVE_VIEWS_JS)
+    initial_views = wait_for_stable_view_count(page)
 
     for i in range(1, 4):
         old = page.locator("#map .kepler-gl").element_handle()
@@ -136,8 +144,10 @@ def test_keplergl_rerender_lifecycle(page: Page, local_app) -> None:
 
     # Re-rendering replaces the widget, but old views must be disposed (no
     # accumulation of maps)
-    assert page.evaluate(LIVE_VIEWS_JS) == initial_views
+    assert wait_for_stable_view_count(page) == initial_views
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
-    assert_no_unexpected_errors(errors, failed_requests)
+    assert_no_unexpected_errors(
+        errors, failed_requests, allowed_errors=KEPLERGL_ALLOWED_ERRORS
+    )

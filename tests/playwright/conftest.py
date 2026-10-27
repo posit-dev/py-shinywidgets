@@ -24,6 +24,30 @@ def expose_manager(route: Route) -> None:
     )
 
 
+LIVE_VIEWS_JS = "() => window.widgetManager._liveViews.size"
+
+# True when the live-view count matches the previous poll's (i.e., async view
+# registration has settled). Keeps the last count on the window between polls.
+_VIEWS_STABLE_JS = """() => {
+  const n = window.widgetManager._liveViews.size;
+  const stable = window.__shinywidgetsLastViewCount === n;
+  window.__shinywidgetsLastViewCount = n;
+  return stable;
+}"""
+
+
+def wait_for_stable_view_count(page: Page, timeout: int = 30000) -> int:
+    """Return the live-view count once it stops changing between polls.
+
+    Widget views register asynchronously after first paint, so sampling
+    `_liveViews.size` as soon as an output appears can catch a partially
+    populated registry -- and a later equality check against that sample then
+    fails spuriously. Requires the `expose_manager` route.
+    """
+    page.wait_for_function(_VIEWS_STABLE_JS, polling=500, timeout=timeout)
+    return page.evaluate(LIVE_VIEWS_JS)
+
+
 _MODELS_JS = """async () => {
     const models = await Promise.all(
         Object.values(window.widgetManager._models).map((p) => p.catch(() => null))
@@ -115,16 +139,32 @@ def collect_errors(page: Page) -> tuple[list[str], list[str]]:
     return errors, failed_requests
 
 
+# anywidget evaluates a widget's inline ESM once per *view* (a fresh blob
+# URL per evaluation), so a page with N keplergl maps initializes luma.gl's
+# page-global runtime N times; luma keeps the first initialization and logs
+# this (benign) message for the rest. Whether the extra inits interleave
+# badly enough to log is a timing race, so the message appears
+# intermittently (mostly on loaded CI runners). Deduping the evaluation
+# isn't an option: other anywidgets (e.g. mosaic-widget) keep per-view state
+# in their module namespace and break when views share one.
+KEPLERGL_ALLOWED_ERRORS = (
+    "luma.gl: This version of luma.gl has already been initialized",
+)
+
+
 def assert_no_unexpected_errors(
     errors: list[str],
     failed_requests: list[str],
     allowed_404s: tuple[str, ...] = (),
+    allowed_errors: tuple[str, ...] = (),
 ) -> None:
     """Assert no unexpected browser errors.
 
     Failed requests whose URL contains one of `allowed_404s` are tolerated, along
     with the generic "Failed to load resource" console error they produce (the
     console message doesn't include the URL, so it can't be matched precisely).
+    Console errors containing one of the `allowed_errors` substrings are also
+    tolerated (for known-benign third-party messages).
     """
     assert all(
         any(allowed in url for allowed in allowed_404s) for url in failed_requests
@@ -134,5 +174,6 @@ def assert_no_unexpected_errors(
         err
         for err in errors
         if not (tolerate_resource_errors and "Failed to load resource" in err)
+        and not any(allowed in err for allowed in allowed_errors)
     ]
     assert not unexpected
