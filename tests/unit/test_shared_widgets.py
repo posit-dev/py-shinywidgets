@@ -731,3 +731,10 @@ def test_shared_lifetime_is_exported() -> None:
 
     assert exported is sw.shared_lifetime
     assert "shared_lifetime" in shinywidgets.__all__
+
+
+def test_session_lifetime_is_exported() -> None:
+    from shinywidgets import session_lifetime as exported
+
+    assert exported is sw.session_lifetime
+    assert "session_lifetime" in shinywidgets.__all__

@@ -87,8 +87,9 @@ __all__ = (
     # Other methods last
     "as_widget",
     "bokeh_dependency",
+    # Lifetime methods
+    "session_lifetime",
     "shared_lifetime",
     # Soft deprecated
     "register_widget",
-    "session_lifetime",
 )
