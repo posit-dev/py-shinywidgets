@@ -631,17 +631,23 @@ class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
     ``set_center()``/``set_zoom()``/``fit_project_bounds()``, layer styling
     (``get_layer(id).set_style()``/``set_opacity()``), and
     ``set_identify()``/``show_control()``. Methods that send a command to the
-    app and block waiting for its reply do **not** work in Shiny: the wait
-    pumps a Jupyter kernel event loop that doesn't exist (raising
-    `AttributeError` from `jupyter_ui_poll`), and even on a worker thread the
-    send needs Shiny's event loop. These include ``fly_to()``,
-    ``fit_bounds()``, ``zoom_to_layer()``, ``identify()``,
+    app and block waiting for its reply can never work on Shiny's event-loop
+    thread -- not directly inside a render function, `reactive.calc`, or a
+    `reactive.effect`/observer (sync or async) -- because the wait would
+    block the very loop that must deliver the reply. These include
+    ``fly_to()``, ``fit_bounds()``, ``zoom_to_layer()``, ``identify()``,
     ``get_center()``/``get_view()``/``get_bounds()``,
     ``get_selected_features()``/``get_drawn_features()``, ``run_algorithm()``,
-    and ``to_image()``. Prefer the project-mutation alternatives (e.g.,
-    ``set_center()`` for ``fly_to()``, ``fit_project_bounds()`` for
-    ``fit_bounds()``), and read state from the synced ``project`` trait
-    instead of the query methods.
+    and ``to_image()``. They do work from a worker thread (where the event
+    loop stays free), e.g., inside `reactive.extended_task` via
+    ``asyncio.get_running_loop().run_in_executor(None, map.widget.fly_to, ...)``
+    -- but that requires a geolibre release that polls for the reply instead
+    of pumping a Jupyter kernel event loop; current releases raise a
+    `jupyter_ui_poll` error wherever they're called (see
+    https://github.com/opengeos/GeoLibre/pull/3266). Prefer the
+    project-mutation alternatives (e.g., ``set_center()`` for ``fly_to()``,
+    ``fit_project_bounds()`` for ``fit_bounds()``), and read state from the
+    synced ``project`` trait instead of the query methods.
 
     **Reading map state**: user edits in the app (panning, zooming, adding or
     restyling layers) sync back to the ``project`` trait, so
