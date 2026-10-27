@@ -6,6 +6,7 @@ import os
 import sys
 from base64 import b64decode
 from contextlib import contextmanager
+from contextvars import ContextVar
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from typing import (
@@ -44,7 +45,13 @@ from shiny.session import get_current_session, require_active_session, session_c
 from ._as_widget import as_widget, pydeck_has_widget
 from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
-from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
+from ._comm import (
+    BufferType,
+    OrphanedShinyComm,
+    SharedShinyComm,
+    ShinyComm,
+    ShinyCommManager,
+)
 from ._dependencies import custom_elements_dependency, require_dependencies, widget_pkg
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
@@ -72,8 +79,20 @@ def init_shiny_widget(w: Widget):
     if plotly_version is not None:
         raise RuntimeError(PLOTLY_VERSION_MESSAGE.format(version=plotly_version))
     session = get_current_session()
+    shared = constructing_shared.get()
     if session is None:
-        if importing_lonboard() or importing_ipycanvas():
+        if shared:
+            # Widget.open() then gives it an inert DummyComm with this id
+            if getattr(w, "_model_id", None) is None:
+                w._model_id = uuid4().hex
+            SHARED_WIDGETS[cast(str, w._model_id)] = w
+            return
+        if (
+            importing_lonboard()
+            or importing_ipycanvas()
+            or importing_ipyvue()
+            or importing_ipyvuetify()
+        ):
             return
         raise RuntimeError(
             "shinywidgets requires that all ipywidgets be constructed within an active Shiny session"
@@ -118,7 +137,7 @@ def init_shiny_widget(w: Widget):
             # this widget as a child) may still read it.
             for id in SESSION_WIDGET_ID_MAP[session.id]:
                 widget = WIDGET_INSTANCE_MAP.get(id)
-                if widget:
+                if widget and not is_process_global(widget):
                     close_widget(widget)
             del SESSION_WIDGET_ID_MAP[session.id]
             KEPT_WIDGETS.pop(session.id, None)
@@ -145,6 +164,11 @@ def init_shiny_widget(w: Widget):
         w._model_id = uuid4().hex
 
     id = cast(str, w._model_id)
+    # The import's module-level widgets are process-global even when the first
+    # import runs inside a session (e.g. a lazy import in a render function)
+    shared = shared or importing_ipyvue() or importing_ipyvuetify()
+    if shared:
+        SHARED_WIDGETS[id] = w
 
     if any(widget_pkg(cls) == "perspective" for cls in type(w).__mro__):
         widget_deps.append(custom_elements_dependency())
@@ -179,7 +203,7 @@ def init_shiny_widget(w: Widget):
     # then get the same cleanup as this widget instead of living until session end.
     render_ctx = (
         WidgetRenderContext.get_render_context()
-        if WidgetRenderContext.is_rendering_widget()
+        if WidgetRenderContext.is_rendering_widget() and not shared
         else None
     )
 
@@ -202,7 +226,10 @@ def init_shiny_widget(w: Widget):
         if w is None or WIDGET_INSTANCE_MAP.get(id) is not w:
             return
 
-        with WidgetRenderContext.resumed(render_ctx):
+        # A shared widget's lazily created defaults (e.g. its Layout) are shared too
+        with (
+            shared_construction() if shared else WidgetRenderContext.resumed(render_ctx)
+        ):
             # Plotly's display hook snapshots the data and layout for get_state().
             # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
             # ipympl's sets _data_url, the image the frontend first paints
@@ -388,6 +415,32 @@ def importing_ipycanvas() -> bool:
     return canvas_mod is not None and not hasattr(canvas_mod, "_CANVAS_MANAGER")
 
 
+def importing_ipyvue() -> bool:
+    """
+    Is ipyvue's `ForceLoad` module executing (i.e., is ipyvue mid-import)?
+
+    Importing ipyvue constructs a module-level `ForceLoad` widget (which every
+    ipyvue widget references, to make the frontend load jupyter-vue), usually
+    outside any session. It's process-global, shared by every session.
+    """
+    force_load = sys.modules.get("ipyvue.ForceLoad")
+    # force_load_instance is only bound once ForceLoad.py has finished executing
+    return force_load is not None and not hasattr(force_load, "force_load_instance")
+
+
+def importing_ipyvuetify() -> bool:
+    """
+    Is ipyvuetify's `Themes` module executing (i.e., is ipyvuetify mid-import)?
+
+    Importing ipyvuetify constructs a module-level `theme` widget (and its
+    `ThemeColors`), usually outside any session. They're process-global, shared
+    by every session.
+    """
+    themes = sys.modules.get("ipyvuetify.Themes")
+    # theme is only bound once Themes.py has finished executing
+    return themes is not None and not hasattr(themes, "theme")
+
+
 def own_ipycanvas_manager(w: Widget) -> None:
     """
     Give an ipycanvas canvas its own draw-command manager.
@@ -555,8 +608,30 @@ def session_lifetime() -> Iterator[None]:
         yield
 
 
+# Whether widgets constructed now are process-global (see shared_construction)
+constructing_shared: ContextVar[bool] = ContextVar("constructing_shared", default=False)
+
+
+@contextmanager
+def shared_construction() -> Iterator[None]:
+    """
+    Make widgets constructed inside this block process-global: recorded in
+    SHARED_WIDGETS, owned by no render, and never closed. Works with or without
+    an active session.
+    """
+    token = constructing_shared.set(True)
+    try:
+        with WidgetRenderContext.suspended():
+            yield
+    finally:
+        constructing_shared.reset(token)
+
+
 # Use WeakSet() over Set() so that the session can be garbage collected
 SESSIONS: WeakSet[Session] = WeakSet()
+
+# Widgets constructed inside shared_construction(), keyed by model id. Never closed.
+SHARED_WIDGETS: dict[str, Widget] = {}
 
 # Widgets constructed during a render, keyed by that render's Context id. Closed
 # when the Context is invalidated (see close_render_widgets).
@@ -593,6 +668,8 @@ def close_render_widgets(session: Session, widgets: list[Widget]) -> None:
     for w in widgets:
         if is_closed_widget(w):  # already closed (e.g. by this session ending)
             continue
+        if is_process_global(w):
+            continue
         if id(w) in keep:
             kept.append(w)
             continue
@@ -614,6 +691,63 @@ def close_widget(w: Widget) -> None:
     # the widget instance, so remove it again
     if WIDGET_INSTANCE_MAP.get(model_id) is w:
         del WIDGET_INSTANCE_MAP[model_id]
+
+
+# Packages that construct widgets while being imported (see importing_lonboard() etc.)
+IMPORT_TIME_WIDGET_PACKAGES = ("ipyvue", "ipyvuetify", "lonboard", "ipycanvas")
+
+# The subset whose import-time widgets the frontend expects to simply exist in
+# the widget manager (e.g. ipyvuetify's view finds `theme` by scanning it)
+EAGERLY_SHARED_PACKAGES = ("ipyvue", "ipyvuetify")
+
+
+def is_process_global(w: Widget) -> bool:
+    """
+    Is `w` shared by every session (so no render or session may close it)?
+
+    True for widgets constructed inside shared_construction(), widgets already
+    open in several sessions, widgets held by a process-wide registry, and
+    widgets a known package constructed while being imported.
+    """
+    if w.comm is None:  # closed by the user
+        return False
+    return (
+        SHARED_WIDGETS.get(w.model_id) is w
+        or isinstance(w.comm, SharedShinyComm)
+        or in_template_registry(w)
+        or is_import_time_singleton(w)
+    )
+
+
+def is_import_time_singleton(w: Widget) -> bool:
+    """
+    Was `w` constructed outside any session while a package in
+    IMPORT_TIME_WIDGET_PACKAGES was imported?
+
+    Such a widget never got one of our comms. This also covers packages imported
+    *before* shinywidgets (when our construction hook wasn't installed yet).
+    """
+    comm = w.comm
+    if comm is None or isinstance(
+        comm, (ShinyComm, SharedShinyComm, OrphanedShinyComm)
+    ):
+        return False
+    return (
+        WIDGET_INSTANCE_MAP.get(w.model_id) is w
+        and widget_pkg(type(w)) in IMPORT_TIME_WIDGET_PACKAGES
+    )
+
+
+def in_template_registry(w: Widget) -> bool:
+    """
+    Is `w` cached in ipyvue's process-wide template registry?
+
+    ipyvue reuses a cached template for every later widget that loads the same
+    template file, whichever session it belongs to.
+    """
+    template_mod = sys.modules.get("ipyvue.Template")
+    registry: dict[str, object] = getattr(template_mod, "template_registry", {})
+    return any(t is w for t in registry.values())
 
 
 def walk_widget_tree(
