@@ -112,25 +112,31 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
         # Ensure we have a widget & smart layout defaults
         widget = self._as_widget(value)
-        if is_closed_widget(widget):
-            raise RuntimeError(
-                "This widget has been closed (its render was invalidated, or it was "
-                "closed explicitly), so it can't be displayed again. To reuse a widget "
-                "across renders, construct it inside `with session_lifetime():`."
-            )
 
         session = get_current_session()
         # Outside a real session (the Express UI-discovery pass, or a unit test
         # that calls _render() directly without a session) there's nothing to
-        # compare the returned widgets' ownership against, so there's nothing to
-        # reject.
-        if session is not None and not session.is_stub_session():
+        # compare the returned widgets' ownership against, so only a closed
+        # root can be rejected.
+        if session is None or session.is_stub_session():
+            if is_closed_widget(widget):
+                raise RuntimeError(
+                    "This widget has been closed (its render was invalidated, or it "
+                    "was closed explicitly), so it can't be displayed again. To reuse "
+                    "a widget across renders, construct it inside "
+                    "`with session_lifetime():`."
+                )
+        else:
             # _shinywidgets imports WidgetRenderContext and is_closed_widget from
             # this module at module scope, so importing it back the same way would
             # be circular; keep this one function-local instead.
-            from ._shinywidgets import foreign_or_closed_widget
+            from ._shinywidgets import (
+                foreign_or_closed_widget,
+                open_process_global_widgets,
+            )
 
-            bad = foreign_or_closed_widget(widget, session.root_scope())
+            root = session.root_scope()
+            bad = foreign_or_closed_widget(widget, root)
             if bad is not None and is_closed_widget(bad):
                 raise RuntimeError(
                     f"{type(bad).__name__} was closed (its render was invalidated, or "
@@ -143,6 +149,8 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
                     f"{type(bad).__name__} belongs to another Shiny session, so it "
                     "can't be displayed here. Construct widgets per session."
                 )
+            # Only once nothing raised, so a rejected render opens nothing
+            open_process_global_widgets(widget, root)
 
         # A canvas nested in the returned widget may have been coerced (and
         # drawn) earlier and then had its figure changed; refresh its initial
