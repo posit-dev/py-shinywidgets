@@ -3,7 +3,18 @@ from __future__ import annotations
 import sys
 import warnings
 from importlib.metadata import version as package_version
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+    cast,
+)
 
 from htmltools import Tag
 from ipywidgets.widgets.widget import Widget
@@ -23,6 +34,11 @@ if TYPE_CHECKING:
     from ipyleaflet import Map as LeafletMap
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from ipysigma import Sigma
+
+    # pygwalker 0.6 renamed its widget class (_WalkerWidget ->
+    # pygwalker.services.anywidget_widget.WalkerAnyWidget), so type both by
+    # their common public base
+    from ipywidgets import Widget as WalkerWidget
     from itables.widget import ITable
     from jscatter.widget import JupyterScatter
     from jupyter_bokeh import BokehModel
@@ -47,7 +63,7 @@ else:
         BokehModel
     ) = MapWidget = FigureWidget = DeckGLWidget = MosaicWidget = BqplotFigure = (
         CytoscapeWidget
-    ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = object
+    ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = WalkerWidget = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
     ) = QuakWidget = PerspectiveWidget = object
@@ -112,6 +128,7 @@ __all__ = (
     "render_plotly",
     "render_plotnine",
     "render_pydeck",
+    "render_pygwalker",
     "render_quak",
 )
 
@@ -1872,6 +1889,345 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
         if not pydeck_has_widget():
             raise TypeError(PYDECK_NO_WIDGET_MESSAGE)
         return super()._as_widget(value)
+
+
+class render_pygwalker(render_widget_base[ValueT, WalkerWidget]):
+    """
+    Reactively render a [PyGWalker](https://docs.kanaries.net/pygwalker) data
+    exploration app as a Shiny output.
+
+    The decorated function may return either a pandas `DataFrame` (which is coerced to
+    a PyGWalker widget; requires ``pip install 'shinywidgets[pygwalker]'``) or a widget created by
+    `pygwalker.api.anywidget.walk()` (use this to pass options like ``theme_key``).
+    A polars `DataFrame` is coerced too, but only when the installed pygwalker can read
+    it: every release so far trips over dtype groups that polars 1.0 removed (the fix
+    is merged upstream and due in pygwalker 0.6), so it's rejected with a hint to
+    convert it (``df.to_pandas()``).
+    Don't use the top-level `pygwalker.walk()`: outside of Jupyter, it starts a
+    blocking web server instead of returning a widget.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    PyGWalker widget. The widget has no traits that track the explorer's state, so
+    there's nothing to :func:`~shinywidgets.reactive_read`, and changing the explorer
+    means re-rendering it. Each render sends PyGWalker's JavaScript (about 10 MB) to
+    the browser, so avoid unnecessary re-renders.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output. Outside of
+    filling layouts, give it a height (e.g., ``"800px"``) that fits PyGWalker's UI.
+
+    Note
+    ----
+    **Privacy**: by default, PyGWalker sends usage events and checks for updates,
+    from both the Python process and each visitor's browser. Call
+    ``pygwalker.GlobalVarManager.set_privacy("offline")`` (before rendering) to
+    disable both.
+
+    **Security**: PyGWalker computes charts by running SQL that the browser sends on
+    DuckDB's process-wide default connection, and any visitor can send arbitrary SQL,
+    including SQL that reads or writes files on the server. So, this renderer
+    *requires* that connection to be locked down before it renders anything; if it
+    isn't, rendering raises an error. Do this when the app starts (this also applies
+    to any other code in the process that uses ``duckdb.sql()`` and friends without a
+    connection):
+
+    ```python
+    import duckdb
+
+    # Set first: PyGWalker sets it per query, which a locked configuration refuses
+    duckdb.execute("SET TimeZone = 'UTC'")
+    duckdb.execute("SET enable_external_access = false")
+    duckdb.execute("SET lock_configuration = true")
+    ```
+
+    ``lock_configuration`` is permanent for the connection, so set anything else you
+    need first (e.g., ``SET memory_limit = '2GB'``). shinywidgets also restricts the
+    SQL the browser can send to single ``SELECT`` statements against the widget's own
+    data (no DDL and no other tables or views, which the connection shared with every
+    other PyGWalker widget in the process would otherwise expose to every visitor),
+    and rejects the browser actions that can't be made safe: ``upload_spec_to_cloud``
+    with a visitor-supplied Kanaries token (it would overwrite the server's stored
+    credentials) and ``open_in_desktop`` (it launches the server's ``gw://`` handler).
+
+    Even then, the explorer is best suited to trusted users. Every PyGWalker widget
+    in the process shares the one connection and one table name
+    (``pygwalker_mid_table``), so per-user data is kept apart only by each request
+    re-registering its own data right before it queries -- which holds while Shiny
+    handles requests on a single thread, but is not a boundary you can build on. And
+    a visitor can still send expensive queries, which block the Python process (every
+    session, not just theirs) while they run. If different users must explore
+    different, mutually private datasets, prefer a renderer that keeps data apart by
+    design.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    # DataFrames are generic (several renderers accept them), so they can't be
+    # registered in AS_WIDGET_MAP
+    def _as_widget(self, value: ValueT) -> WalkerWidget:
+        if is_dataframe(value, "polars") and not polars_supported():
+            raise TypeError(
+                "PyGWalker can't read polars DataFrames with polars >= 1.0 (its polars "
+                "parser still uses dtype groups that polars removed; the fix is merged "
+                "upstream and due in pygwalker 0.6, but no release has it yet "
+                "-- https://github.com/Kanaries/pygwalker/commit/5055d702). Pass a "
+                "pandas DataFrame instead (e.g., df.to_pandas())."
+            )
+        if not (is_dataframe(value, "pandas") or is_dataframe(value, "polars")):
+            widget = super()._as_widget(value)
+            # A widget from walk() is PyGWalker's too, and needs the same lockdown and
+            # the same rejected actions as one this renderer creates
+            if is_walker_widget(widget):
+                require_duckdb_lockdown()
+                harden_walker_widget(widget)
+            return widget
+
+        try:
+            from pygwalker.api.anywidget import walk
+        except ImportError:
+            raise ImportError(
+                "Install the pygwalker package to use render_pygwalker with shinywidgets (pip install 'shinywidgets[pygwalker]')."
+            )
+
+        require_duckdb_lockdown()
+        return harden_walker_widget(walk(value))
+
+
+# PyGWalker hands the browser a set of request handlers (see PygWalker._init_callback).
+# Two of them let a visitor reach outside the app: `upload_spec_to_cloud` accepts a
+# Kanaries token from the browser (which pygwalker writes to its config file and to
+# process-wide state), so harden_walker_widget makes it refuse one; `open_in_desktop`
+# has no safe form at all (it shells out to the server's `gw://` protocol handler with
+# the whole data source in the URL), so it's rejected outright.
+_WALKER_BLOCKED_ACTIONS = ("open_in_desktop",)
+
+# Three more handlers run SQL verbatim from the browser (`get_datas` takes "sql",
+# batch_get_datas_by_sql a "queryList", export_dataframe_by_sql a "sql") on DuckDB's
+# default connection, which every PyGWalker widget in the process shares (under one
+# fixed view name, pygwalker_mid_table). harden_walker_widget wraps them so a visitor
+# can only read their own widget's data: no DDL (a CREATE TABLE would persist in the
+# shared database for every visitor to see), no other statements, and no tables or
+# views other than the widget's own. Per-widget connections upstream would make this
+# unnecessary (https://github.com/Kanaries/pygwalker/issues/747).
+_WALKER_SQL_ACTIONS = (
+    "get_datas",
+    "batch_get_datas_by_sql",
+    "export_dataframe_by_sql",
+)
+
+_WALKER_TABLE_NAME = "pygwalker_mid_table"
+
+_DUCKDB_UNLOCKED_MESSAGE = """\
+Can't render a PyGWalker explorer: DuckDB's default connection isn't locked down.
+
+PyGWalker computes charts by running the SQL its browser sends on that connection, and
+any visitor can send arbitrary SQL -- including SQL that reads or writes files on the
+server. Lock the connection down when the app starts:
+
+    import duckdb
+
+    # Set first: PyGWalker sets it per query, which a locked configuration refuses
+    duckdb.execute("SET TimeZone = 'UTC'")
+    duckdb.execute("SET enable_external_access = false")
+    duckdb.execute("SET lock_configuration = true")
+
+lock_configuration can't be undone, so set anything else you need (e.g.
+SET memory_limit = '2GB') before it."""
+
+
+# The browser picks both the name and the value of this setting, and pygwalker writes
+# the token to its config file and to process-wide state (GlobalVarManager), so it
+# must come from the app, not from a visitor.
+_WALKER_TOKEN_MESSAGE = """\
+shinywidgets rejected PyGWalker's upload_spec_to_cloud because the request supplied a
+Kanaries token. Visitors can't set the server's credentials: pass kanaries_api_key to
+pygwalker.api.anywidget.walk() (or set it in the environment) instead."""
+
+
+_WALKER_SQL_MESSAGE = """\
+shinywidgets rejected a SQL query from PyGWalker's browser because it isn't a single
+SELECT against the widget's own data. PyGWalker runs the SQL its browser sends on
+DuckDB's default connection, which every PyGWalker widget in the process shares, so
+visitors may only read their own widget's data (no DDL and no other tables or views)."""
+
+
+def is_walker_widget(x: object) -> bool:
+    # The widget class is pygwalker.api.anywidget._WalkerWidget in pygwalker <= 0.5
+    # and pygwalker.services.anywidget_widget.WalkerAnyWidget in 0.6+
+    return any(
+        widget_pkg(cls) == "pygwalker"
+        and cls.__name__ in ("_WalkerWidget", "WalkerAnyWidget")
+        for cls in type(x).__mro__
+    )
+
+
+def polars_supported() -> bool:
+    """
+    Whether pygwalker can read polars data with the installed polars (and pygwalker).
+
+    Every pygwalker release so far builds its field specs from dtype groups that polars
+    1.0 removed (``pl.NUMERIC_DTYPES`` and friends). Upstream replaced them with
+    ``dtype.is_numeric()`` and friends (Kanaries/pygwalker@5055d702, merged in PR #734
+    and staged for 0.6 -- main is at 0.6.0rc0 -- but unpublished), so look for it
+    (``_is_numeric_dtype``) as well as for polars old enough to still have the groups.
+    Unknown answers are treated as supported: this is a hint for a broken combination,
+    not a guarantee.
+    """
+    import polars as pl
+
+    if hasattr(pl, "NUMERIC_DTYPES"):
+        return True
+    try:
+        from pygwalker.data_parsers import polars_parser
+    except ImportError:
+        return True
+    return hasattr(polars_parser, "_is_numeric_dtype")
+
+
+def require_duckdb_lockdown() -> None:
+    """Raise unless DuckDB's default connection can't reach outside of DuckDB."""
+    external_access, locked = duckdb_settings()
+    if external_access or not locked:
+        raise RuntimeError(_DUCKDB_UNLOCKED_MESSAGE)
+
+
+def walker_comm(widget: Widget) -> Optional[Any]:
+    """PyGWalker's comm for `widget`, which holds its request handlers."""
+    callbacks = getattr(getattr(widget, "_msg_callbacks", None), "callbacks", ())
+    for callback in callbacks:
+        owner = getattr(callback, "__self__", None)
+        if isinstance(getattr(owner, "_endpoint_map", None), dict) and callable(
+            getattr(owner, "register", None)
+        ):
+            return owner
+    return None
+
+
+def harden_walker_widget(widget: WidgetT) -> WidgetT:
+    """
+    Stop the browser requests `widget` handles from reaching outside the app: it refuses
+    a visitor-supplied Kanaries token (see `_WALKER_TOKEN_MESSAGE`), rejects the actions
+    in `_WALKER_BLOCKED_ACTIONS`, and validates the SQL of the actions in
+    `_WALKER_SQL_ACTIONS` (see `validate_visitor_sql`).
+
+    Works on any PyGWalker widget, including one from `pygwalker.api.anywidget.walk()`,
+    and is a no-op the second time round (widgets can be rendered again).
+    """
+    comm = walker_comm(widget)
+    if comm is None:
+        raise RuntimeError(
+            "Can't secure this PyGWalker widget: shinywidgets can't find its request "
+            "handlers. This usually means the installed pygwalker version isn't "
+            "supported; please report it at "
+            "https://github.com/posit-dev/py-shinywidgets/issues"
+        )
+
+    handlers = comm._endpoint_map
+    upload_spec_to_cloud = handlers.get("upload_spec_to_cloud")
+    if upload_spec_to_cloud is not None and not getattr(
+        upload_spec_to_cloud, "_shinywidgets_rejects_tokens", False
+    ):
+
+        def reject_browser_token(data: Dict[str, Any]) -> Any:
+            if data.get("newToken"):
+                raise RuntimeError(_WALKER_TOKEN_MESSAGE)
+            return upload_spec_to_cloud(data)
+
+        reject_browser_token._shinywidgets_rejects_tokens = True  # pyright: ignore[reportFunctionMemberAccess]
+        comm.register("upload_spec_to_cloud", reject_browser_token)
+
+    for action in _WALKER_BLOCKED_ACTIONS:
+        comm.register(action, _reject_walker_action(action))
+
+    for action in _WALKER_SQL_ACTIONS:
+        handler = handlers.get(action)
+        if handler is None or getattr(handler, "_shinywidgets_validates_sql", False):
+            continue
+
+        def validate_then_handle(
+            data: Dict[str, Any],
+            _handler: Callable[[Dict[str, Any]], Any] = handler,
+            _action: str = action,
+        ) -> Any:
+            for sql in _walker_action_sql(_action, data):
+                validate_visitor_sql(sql)
+            return _handler(data)
+
+        validate_then_handle._shinywidgets_validates_sql = True  # pyright: ignore[reportFunctionMemberAccess]
+        comm.register(action, validate_then_handle)
+
+    return widget
+
+
+def _walker_action_sql(action: str, data: Dict[str, Any]) -> List[str]:
+    """The SQL strings a `_WALKER_SQL_ACTIONS` handler would run."""
+    if action == "batch_get_datas_by_sql":
+        return [sql for sql in data.get("queryList", []) if isinstance(sql, str)]
+    sql = data.get("sql")
+    return [sql] if isinstance(sql, str) else []
+
+
+def validate_visitor_sql(sql: str) -> None:
+    """
+    Raise unless `sql` (sent by a PyGWalker browser) is a single SELECT that reads
+    only the widget's own data.
+
+    PyGWalker runs the SQL its browser sends on DuckDB's default connection, which
+    every PyGWalker widget in the process shares, so a visitor's query may reference
+    the widget's registered view and its own CTEs only: no DDL (a ``CREATE TABLE``
+    would persist in the shared database for every visitor to read), no other
+    statements, and no other tables or views. Reading outside DuckDB (e.g.,
+    ``read_csv``) is covered separately: the renderer requires the connection to be
+    locked down first (see `require_duckdb_lockdown`).
+    """
+    import sqlglot
+    from sqlglot import exp
+
+    try:
+        statements = sqlglot.parse(sql, dialect="duckdb")
+    except Exception:
+        statements = []
+    if len(statements) != 1 or statements[0] is None:
+        raise RuntimeError(_WALKER_SQL_MESSAGE)
+    statement = statements[0]
+    while isinstance(statement, (exp.Subquery, exp.Paren)):
+        statement = statement.this
+    if not isinstance(statement, (exp.Select, exp.Union, exp.Except, exp.Intersect)):
+        raise RuntimeError(_WALKER_SQL_MESSAGE)
+    cte_names = {cte.alias for cte in statement.find_all(exp.CTE)}
+    for table in statement.find_all(exp.Table):
+        if table.name != _WALKER_TABLE_NAME and table.name not in cte_names:
+            raise RuntimeError(_WALKER_SQL_MESSAGE)
+
+
+def _reject_walker_action(action: str) -> Callable[[Dict[str, Any]], Any]:
+    def reject(_: Dict[str, Any]) -> Any:
+        raise RuntimeError(
+            f"shinywidgets doesn't allow PyGWalker's '{action}' action in a Shiny app."
+        )
+
+    return reject
+
+
+def is_dataframe(x: object, pkg: str) -> bool:
+    return any(
+        widget_pkg(cls) == pkg and cls.__name__ == "DataFrame"
+        for cls in type(x).__mro__
+    )
 
 
 class render_quak(render_widget_base[ValueT, QuakWidget]):
