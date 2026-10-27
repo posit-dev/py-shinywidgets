@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import sys
+import warnings
 from base64 import b64decode
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -47,6 +48,7 @@ from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_clos
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import (
     BufferType,
+    DataType,
     OrphanedShinyComm,
     SharedShinyComm,
     ShinyComm,
@@ -315,10 +317,53 @@ def open_shared_in(w: Widget, session: Session) -> None:
     # Sessionless references (e.g. the Layout ipyvue's ForceLoad materialized at
     # import time) are followed too: nothing else would send the browser a model
     # `w` points to. Any other reference (another session's widget, or a closed
-    # one) must not become shared; the render-time walk is what rejects those.
+    # one) must not become shared. No render rejects such a reference either:
+    # foreign_or_closed_widget() prunes at process-global widgets, so it never
+    # descends into `w` to find it. Warn once per reference instead of leaving
+    # the other sessions' browsers waiting for a model that never arrives.
     for r in direct_widget_references(w):
         if is_process_global(r) or is_sessionless(r):
             open_shared_in(r, session)
+        elif comm.dangling_warning_due(r.model_id):
+            warnings.warn(
+                dangling_reference_message(w, r, r.model_id, via_update=False),
+                stacklevel=2,
+            )
+
+
+def guard_shared_send(comm: SharedShinyComm, data: DataType) -> None:
+    """
+    Keep an update fanned out to several sessions from dangling in any of their
+    browsers. A referenced model every fan-out session has is fine. A
+    process-global one (e.g. a shared widget built lazily, after some session
+    already had this widget open) is opened in the sessions missing it. Any
+    other reference (session-owned or closed) can never reach them, so warn
+    once per referenced model rather than leave those browsers waiting.
+    """
+    for model_id in ipy_model_references(data):
+        w = WIDGET_INSTANCE_MAP.get(model_id)
+        if w is not None and is_process_global(w):
+            # is_swapped_out_default() widgets (e.g. ipycanvas's module-level
+            # manager) must never get a fan-out comm
+            if not is_swapped_out_default(w):
+                for session_id in comm.sessions_missing(model_id):
+                    open_shared_in(w, comm.comms[session_id].session)
+            continue
+        # A session that owns the referenced widget receives its model when
+        # the widget's deferred comm-open runs at the next flush; only the
+        # remaining sessions can never display it
+        owned = w is not None and not is_closed_widget(w)
+        missing = [
+            session_id
+            for session_id in comm.sessions_missing(model_id)
+            if not (owned and model_id in SESSION_WIDGET_ID_MAP.get(session_id, ()))
+        ]
+        if missing and comm.dangling_warning_due(model_id):
+            owner = WIDGET_INSTANCE_MAP.get(comm.comm_id)
+            warnings.warn(
+                dangling_reference_message(owner, w, model_id, via_update=True),
+                stacklevel=2,
+            )
 
 
 def init_session(session: Session) -> None:
@@ -791,6 +836,36 @@ def ownership_error(w: Widget) -> RuntimeError:
     return RuntimeError(f"{reason} {OWNERSHIP_GUIDANCE}")
 
 
+def dangling_reference_message(
+    owner: Optional[Widget], ref: Optional[Widget], ref_id: str, *, via_update: bool
+) -> str:
+    """
+    The warning for a shared widget (`owner`) referencing a model that some
+    session showing it can never receive: that browser hangs with 'Timeout
+    waiting for widget model'.
+    """
+    owner_name = type(owner).__name__ if owner is not None else "widget"
+    ref_name = type(ref).__name__ if ref is not None else f"model {ref_id}"
+    if ref is None:
+        reason = "isn't open in every session"
+    elif is_closed_widget(ref):
+        reason = "was closed"
+    else:
+        reason = "belongs to one Shiny session"
+    subject = (
+        f"An update to the shared {owner_name}"
+        if via_update
+        else f"The shared {owner_name}"
+    )
+    return (
+        f"{subject} references {ref_name}, which {reason}, so it can't be "
+        f"mirrored to the other sessions showing the {owner_name} (their "
+        "browsers hang with 'Timeout waiting for widget model'). Construct "
+        f"the {ref_name} inside `with shared_lifetime():` too, so every "
+        "session can display it."
+    )
+
+
 # Whether widgets constructed now are process-global (see shared_construction)
 constructing_shared: ContextVar[bool] = ContextVar("constructing_shared", default=False)
 
@@ -840,12 +915,16 @@ def close_render_widgets(session: Session, widgets: list[Widget]) -> None:
     # process: a cross-session reference shouldn't keep a widget alive, and on a
     # server with many sessions, walking only this session's widgets keeps the
     # sweep's cost independent of how many other sessions are open.
-    roots = (
+    roots = [
         WIDGET_INSTANCE_MAP.get(wid)
         for wid in SESSION_WIDGET_ID_MAP.get(session.id, ())
-    )
+    ]
+    # A process-global widget in `closing` survives (see the loop below), so
+    # root the walk at it too: what it references must survive with it
     keep = referenced_widgets(
-        w for w in roots if w is not None and id(w) not in closing
+        w
+        for w in (*roots, *widgets)
+        if w is not None and (id(w) not in closing or is_process_global(w))
     )
     kept: list[Widget] = []
     for w in widgets:
@@ -1052,6 +1131,24 @@ def direct_widget_references(w: Widget) -> Iterator[Widget]:
             pending.extend(cast(dict[object, object], item).values())
         elif isinstance(item, (list, tuple)):
             visited.add(id(item))
+            pending.extend(cast("list[object] | tuple[object, ...]", item))
+
+
+def ipy_model_references(data: object) -> Iterator[str]:
+    """
+    Yield the model id of every `IPY_MODEL_<id>` reference in `data` -- the
+    shape ipywidgets' widget_serialization gives widget references on the
+    wire -- descending through the dicts, lists and tuples that may wrap one.
+    """
+    pending: list[object] = [data]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            if item.startswith("IPY_MODEL_"):
+                yield item.removeprefix("IPY_MODEL_")
+        elif isinstance(item, dict):
+            pending.extend(cast(dict[object, object], item).values())
+        elif isinstance(item, (list, tuple)):
             pending.extend(cast("list[object] | tuple[object, ...]", item))
 
 
