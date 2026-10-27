@@ -63,6 +63,7 @@ __all__ = (
     "register_widget",
     "reactive_read",
     "session_lifetime",
+    "shared_lifetime",
 )
 
 
@@ -95,7 +96,8 @@ def init_shiny_widget(w: Widget):
         ):
             return
         raise RuntimeError(
-            "shinywidgets requires that all ipywidgets be constructed within an active Shiny session"
+            "shinywidgets requires that all ipywidgets be constructed within an "
+            f"active Shiny session. {OWNERSHIP_GUIDANCE}"
         )
     # Wait until we're in a "real" session before doing anything
     # (i.e., on the 1st run of an Express app, it's too early to do anything)
@@ -726,6 +728,67 @@ def session_lifetime() -> Iterator[None]:
         raise RuntimeError("session_lifetime() requires an active Shiny session")
     with WidgetRenderContext.suspended():
         yield
+
+
+@contextmanager
+def shared_lifetime() -> Iterator[None]:
+    """
+    Construct one widget that every Shiny session displays.
+
+    Widgets constructed inside this block exist once per Python process and are
+    mirrored into every session's browser: any user's interaction with one changes
+    it for everyone, and it is never freed. Use it for static content or state that
+    is deliberately shared between users. To reuse a widget across renders within a
+    single session instead, use `session_lifetime()`.
+
+    Works with or without an active session, so a widget can be built at module
+    level and returned from any session's render. Layout defaults a renderer
+    applies to it (e.g., filling its container) affect it for all sessions.
+
+    Construct each shared widget once: at the top level of a module the app
+    imports, or lazily, cached in a module-level variable. Don't construct one in
+    code that runs per render or per session (including the body of a Shiny
+    Express app file, which runs once per session): every widget built here is
+    kept forever and sent to every new session, so each run adds one more.
+    Widgets a shared widget references (e.g., a container's children) must be
+    constructed inside `shared_lifetime()` too, or other sessions can't show them.
+
+    Don't rely on models a shared widget's JavaScript creates in the browser when
+    a trait is left at its default (e.g., pythreejs's light `target` and `shadow`):
+    they belong to that one browser, and other sessions don't have them. Give such
+    traits explicit values, constructed inside `shared_lifetime()`.
+    """
+    with shared_construction():
+        yield
+
+
+OWNERSHIP_GUIDANCE = (
+    "A widget belongs to one Shiny session by default. To reuse a widget across "
+    "renders in the same session, construct it inside `with session_lifetime():`. "
+    "To show one widget to every user, construct it inside `with shared_lifetime():`; "
+    "then every user's interaction changes it for everyone and it is never freed, "
+    "so prefer that only for static or deliberately shared widgets."
+)
+
+
+def ownership_error(w: Widget) -> RuntimeError:
+    """The error for a widget that can't be displayed in the current session."""
+    name = type(w).__name__
+    if is_closed_widget(w):
+        reason = (
+            f"{name} was closed (its render was invalidated, or it was closed "
+            "explicitly), so it can't be displayed again."
+        )
+    elif is_sessionless(w):
+        reason = (
+            f"{name} was constructed outside a Shiny session, so it can't be "
+            "displayed here."
+        )
+    else:
+        reason = (
+            f"{name} belongs to another Shiny session, so it can't be displayed here."
+        )
+    return RuntimeError(f"{reason} {OWNERSHIP_GUIDANCE}")
 
 
 # Whether widgets constructed now are process-global (see shared_construction)

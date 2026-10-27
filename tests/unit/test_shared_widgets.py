@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 from collections.abc import Callable, Coroutine, Iterator
@@ -9,14 +10,16 @@ from types import ModuleType
 from typing import Any, TypeVar
 
 import pytest
+import shinywidgets
 import shinywidgets._shinywidgets as sw
-from ipywidgets import HTML, Button, DOMWidget, VBox, Widget
+from ipywidgets import HTML, Button, DOMWidget, IntSlider, VBox, Widget
 from packaging.version import Version
 from shiny import App, Session, reactive, ui
 from shiny._connection import MockConnection
 from shiny.reactive._core import Context
 from shiny.session import session_context
-from shinywidgets import session_lifetime
+from shiny.session._session import AppSession
+from shinywidgets import session_lifetime, shared_lifetime
 from shinywidgets._comm import OrphanedShinyComm, SharedShinyComm, ShinyComm
 from shinywidgets._render_widget_base import (
     WidgetRenderContext,
@@ -422,6 +425,70 @@ def test_open_shared_in_gives_canvas_its_own_manager(
     assert not manager._caching
 
 
+def comm_open_contents(
+    session: Session, monkeypatch: pytest.MonkeyPatch, open_: Callable[[], Widget]
+) -> dict[str, Any]:
+    """The comm-open message content `open_()` sends `session` for its widget."""
+    messages: list[str] = []
+
+    async def send_custom_message(type: str, message: object) -> None:
+        if type == "shinywidgets_comm_open":
+            assert isinstance(message, str)
+            messages.append(message)
+
+    monkeypatch.setattr(session, "send_custom_message", send_custom_message)
+    assert isinstance(session, AppSession)
+    w = open_()
+    flush()
+    run(session._flush_callbacks.invoke())
+    return next(
+        msg["content"]
+        for msg in map(json.loads, messages)
+        if msg["content"]["comm_id"] == w.model_id
+    )
+
+
+def open_shared(w: Widget, session: Session) -> Widget:
+    sw.open_shared_in(w, session)
+    return w
+
+
+def test_open_shared_in_protects_page_jquery_for_itables(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch, shared_state: None
+) -> None:
+    pd = pytest.importorskip("pandas")
+    itables_widget = pytest.importorskip("itables.widget")
+    with shared_lifetime():
+        table = itables_widget.ITable(pd.DataFrame({"a": [1]}))
+    content = comm_open_contents(
+        widget_session, monkeypatch, lambda: open_shared(table, widget_session)
+    )
+    assert content["protect_jquery"] is True
+
+
+def test_open_shared_in_sends_bokeh_and_extension_assets(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch, shared_state: None
+) -> None:
+    pd = pytest.importorskip("pandas")
+    pn = pytest.importorskip("panel")
+    jupyter_bokeh = pytest.importorskip("jupyter_bokeh")
+    # Its extension ships ES modules, which ride the `modules` open key
+    pane = pn.pane.Perspective(pd.DataFrame({"x": [1, 2]}))
+    root = pane.get_root()
+    try:
+        with shared_lifetime():
+            model = jupyter_bokeh.BokehModel(root)
+        content = comm_open_contents(
+            widget_session, monkeypatch, lambda: open_shared(model, widget_session)
+        )
+    finally:
+        pn.state._views.pop(root.id, None)
+        pane._cleanup(root)
+    dep_names = {d["name"] for d in content["html_deps"]}
+    assert {"bokeh", "bokeh-ext-panel"} <= dep_names
+    assert content["modules"]["exports"]
+
+
 def render_in(session: Session, fn: Callable[[], object]) -> None:
     renderer = render_widget_base()
     renderer(fn)
@@ -484,7 +551,6 @@ def test_template_registry_widget_reaches_a_second_session_on_render(
     registered: HTML, other_session: Session
 ) -> None:
     render_in(other_session, lambda: VBox(children=(registered,)))
-    flush()
     assert isinstance(registered.comm, SharedShinyComm)
     assert registered.comm.has_session(other_session.id)
 
@@ -542,3 +608,126 @@ def test_in_session_ipyvue_module_widget_is_not_process_global(
     flush()
     assert isinstance(w.comm, ShinyComm)
     assert not sw.is_process_global(w)
+
+
+def test_module_level_shared_widget_renders_in_two_sessions(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    with shared_lifetime():
+        s = IntSlider()
+    a, b = widget_session, other_session
+
+    renderer = render_widget_base()
+    renderer(lambda: s)
+    with session_context(a):
+        context = Context()
+        with context():
+            run(renderer.render())
+    flush()
+    render_in(b, lambda: s)
+    flush()
+    assert isinstance(s.comm, SharedShinyComm)
+    assert s.comm.has_session(a.id)
+    assert s.comm.has_session(b.id)
+
+    context.invalidate()
+    flush()
+    assert not is_closed_widget(s)
+
+
+def test_shared_lifetime_inside_render_reaches_other_session(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    def build() -> object:
+        with shared_lifetime():
+            return HTML()
+
+    holder: list[HTML] = []
+
+    def in_a() -> HTML:
+        s = build()
+        assert isinstance(s, HTML)
+        holder.append(s)
+        return s
+
+    render_in(widget_session, in_a)
+    flush()
+    s = holder[0]
+
+    render_in(other_session, lambda: VBox(children=(s,)))
+    flush()
+    assert isinstance(s.comm, SharedShinyComm)
+    assert s.comm.has_session(other_session.id)
+
+
+def test_interaction_in_one_session_reaches_the_other(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    with shared_lifetime():
+        s = IntSlider()
+    render_in(widget_session, lambda: s)
+    render_in(other_session, lambda: s)
+    flush()
+    assert isinstance(s.comm, SharedShinyComm)
+
+    sent: list[object] = []
+    comm_b = s.comm.comms[other_session.id]
+    setattr(comm_b, "send", lambda *args, **kwargs: sent.append((args, kwargs)))
+    s.comm.comms[widget_session.id].handle_msg(
+        {
+            "header": {"msg_id": "m1"},
+            "buffers": [],
+            "content": {
+                "data": {
+                    "method": "update",
+                    "state": {"value": 5},
+                    "buffer_paths": [],
+                }
+            },
+        }
+    )
+    assert s.value == 5
+    assert sent
+
+
+# A VBox built by a rejected render still has its deferred open pending, and that
+# open hits the closed child at the next flush.
+@pytest.mark.filterwarnings("ignore:Error in Effect")
+def test_ownership_errors_point_to_both_lifetimes(
+    widget_session: Session,
+    other_session: Session,
+    preimported: Callable[[type[Widget]], Widget],
+) -> None:
+    with pytest.raises(RuntimeError, match="shared_lifetime") as e:
+        HTML()
+    assert "active Shiny session" in str(e.value)
+
+    with session_context(widget_session), session_lifetime():
+        closed_root = HTML()
+        closed_child = HTML()
+    with session_context(other_session), session_lifetime():
+        foreign_root = HTML()
+        foreign_child = HTML()
+    flush()
+    closed_root.close()
+    closed_child.close()
+    outside = preimported(OtherThing)
+
+    cases: list[tuple[Callable[[], Widget], str]] = [
+        (lambda: closed_root, "can't be displayed again"),
+        (lambda: VBox(children=(closed_child,)), "can't be displayed again"),
+        (lambda: foreign_root, "another Shiny session"),
+        (lambda: VBox(children=(foreign_child,)), "another Shiny session"),
+        (lambda: outside, "outside a Shiny session"),
+    ]
+    for build, phrase in cases:
+        with pytest.raises(RuntimeError, match="shared_lifetime") as e:
+            render_in(widget_session, build)
+        assert phrase in str(e.value)
+
+
+def test_shared_lifetime_is_exported() -> None:
+    from shinywidgets import shared_lifetime as exported
+
+    assert exported is sw.shared_lifetime
+    assert "shared_lifetime" in shinywidgets.__all__
