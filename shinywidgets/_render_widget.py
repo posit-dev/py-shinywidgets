@@ -1821,9 +1821,10 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
     * Scene background: set `pythreejs.Scene(background=...)` (it defaults to
       white and overrides ``Renderer(background=...)``).
     * Give `pythreejs.DirectionalLight`/`pythreejs.SpotLight` an explicit
-      ``target`` (added to the scene) and ``shadow`` (with a camera) to avoid
-      server-side warnings -- pythreejs creates them browser-side otherwise,
-      and browser-created widgets don't sync to Python.
+      ``target`` (added to the scene) and ``shadow`` (with a camera) --
+      pythreejs creates defaults for them in the browser otherwise, and
+      browser-created widgets live until the session ends, so every re-render
+      would leak 3 models per light (and log a transient console error).
     * Rotate objects via ``mesh.quaternion``; pythreejs's ``rotation`` (Euler)
       updates don't render (an upstream pythreejs bug).
     """
