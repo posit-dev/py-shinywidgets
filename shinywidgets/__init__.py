@@ -45,7 +45,12 @@ from ._render_widget import (
     render_quak,
     render_widget,
 )
-from ._shinywidgets import reactive_read, register_widget, session_lifetime
+from ._shinywidgets import (
+    reactive_read,
+    register_widget,
+    session_lifetime,
+    shared_lifetime,
+)
 
 __all__ = (
     "__version__",
@@ -82,6 +87,7 @@ __all__ = (
     # Other methods last
     "as_widget",
     "bokeh_dependency",
+    "shared_lifetime",
     # Soft deprecated
     "register_widget",
     "session_lifetime",
