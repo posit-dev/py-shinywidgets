@@ -75,7 +75,7 @@ leafmap = ["leafmap", "plotly>=5.12.0,<7"]
 lonboard = ["lonboard; python_version < '3.15'"]
 maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
-mols2grid = ["mols2grid>=2.2.0"]
+mols2grid = ["mols2grid>=2.2.0,<3"]
 mosaic_widget = ["mosaic-widget"]
 niivue = ["ipyniivue>=2.4.0"]
 obsplot = ["pyobsplot>=0.5.0"]
@@ -132,7 +132,7 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
-  "mols2grid>=2.2.0",
+  "mols2grid>=2.2.0,<3",
   "pandas",
   "networkx",
   "mosaic-widget",
@@ -191,7 +191,7 @@ dev = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
-  "mols2grid>=2.2.0",
+  "mols2grid>=2.2.0,<3",
   "pandas",
   "networkx",
   "mosaic-widget",
@@ -255,7 +255,7 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
-  "mols2grid>=2.2.0",
+  "mols2grid>=2.2.0,<3",
   "pandas",
   "networkx",
   "mosaic-widget",
