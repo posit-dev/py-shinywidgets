@@ -42,16 +42,21 @@ def _():
     glmap.widget.set_center(lng, lat, zoom=9)
 
 
-# fly_to() blocks waiting for a reply from the app, so -- unlike set_center()
-# above -- it can never run on Shiny's event-loop thread (the wait would
-# block the loop that delivers the reply). Run it on a worker thread inside
-# an extended_task (geolibre >= 3.5.2 polls for the reply instead of pumping
-# a Jupyter kernel; see README.md).
+# geolibre's command methods send a command to the app and wait for its
+# reply. The *_async() variants (added in a geolibre release after 3.5.2;
+# https://github.com/opengeos/GeoLibre/issues/3273) await that reply, so --
+# like set_center() above, and unlike the blocking fly_to() -- they can run
+# directly on Shiny's event loop inside an extended_task. On geolibre 3.5.2
+# the blocking fly_to() must instead wait on a worker thread (the wait would
+# otherwise block the loop that delivers the reply). See README.md.
 @extended_task
 async def fly_to_city():
     lng, lat = CITIES[input.city()]
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, glmap.widget.fly_to, lng, lat, zoom=9)
+    if hasattr(glmap.widget, "fly_to_async"):
+        await glmap.widget.fly_to_async(lng, lat, zoom=9)
+    else:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, glmap.widget.fly_to, lng, lat, zoom=9)
 
 
 @reactive.effect

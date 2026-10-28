@@ -87,10 +87,12 @@ app_ui = ui.page_fillable(
         ui.input_action_button("rerender", "Rerender"),
         ui.input_action_button("add_local", "Add local COG"),
         ui.input_action_button("fly", "Fly to SF"),
+        ui.input_action_button("fly_async", "Fly to SF (async)"),
         ui.output_text("render_count", inline=True),
         ui.output_text("clicked", inline=True),
         ui.output_text("view", inline=True),
         ui.output_text("flown", inline=True),
+        ui.output_text("flown_async", inline=True),
         style="display: flex; gap: 0.5rem; align-items: center; height: 45px; overflow: hidden;",
     ),
 )
@@ -100,6 +102,7 @@ def server(input, output, session):
     counter = reactive.value(0)
     click = reactive.value(None)
     flown_center = reactive.value("")
+    flown_async_center = reactive.value("")
 
     @reactive.effect
     @reactive.event(input.rerender)
@@ -156,9 +159,31 @@ def server(input, output, session):
     def _():
         fly_to_sf.invoke()
 
+    # geolibre releases containing opengeos/GeoLibre#3273 (pending; the first
+    # after 3.5.2) add *_async() variants that await the reply instead of
+    # blocking a thread, so they run directly on Shiny's event loop inside an
+    # extended_task -- no run_in_executor.
+    @extended_task
+    async def fly_to_sf_async():
+        # Same ack-at-animation-start caveat as fly_to() above: let the
+        # animation settle before querying the center.
+        await map.widget.fly_to_async(-122.4, 37.8, duration=1000)
+        await asyncio.sleep(2)
+        center = await map.widget.get_center_async()
+        flown_async_center.set(json.dumps(center))
+
+    @reactive.effect
+    @reactive.event(input.fly_async)
+    def _():
+        fly_to_sf_async.invoke()
+
     @render.text
     def flown():
         return flown_center.get()
+
+    @render.text
+    def flown_async():
+        return flown_async_center.get()
 
     @render.text
     def clicked():

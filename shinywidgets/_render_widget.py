@@ -877,7 +877,12 @@ class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
     ``asyncio.get_running_loop().run_in_executor(None, map.widget.fly_to, ...)``
     -- geolibre >= 3.5.2 (enforced by the ``shinywidgets[geolibre]`` extra)
     polls for the reply instead of pumping a Jupyter kernel event loop, so
-    these work in Shiny from a worker thread. Where a non-blocking
+    these work in Shiny from a worker thread. Better still, geolibre releases
+    containing https://github.com/opengeos/GeoLibre/issues/3273 (pending; the
+    first after 3.5.2) add ``*_async()`` variants
+    (``fly_to_async()``/``get_center_async()``/...) that await the reply
+    instead of blocking, so they run directly on the event loop inside an
+    `extended_task` -- no worker thread. Where a non-blocking
     alternative exists -- ``set_center()`` for ``fly_to()``,
     ``fit_project_bounds()`` for ``fit_bounds()``, the synced ``project``
     trait for the query methods -- it remains the cheaper option.

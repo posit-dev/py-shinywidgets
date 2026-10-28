@@ -164,6 +164,34 @@ def test_geolibre_blocking_methods_from_extended_task(page: Page, local_app) -> 
     assert center[1] == pytest.approx(37.8, abs=1e-6)
 
 
+def test_geolibre_async_methods_from_extended_task(page: Page, local_app) -> None:
+    # geolibre's *_async() command methods (fly_to_async(), get_center_async(),
+    # ...) await the app's reply instead of blocking a thread, so they run
+    # directly on Shiny's event loop inside an extended_task -- no
+    # run_in_executor. They require a geolibre release containing
+    # opengeos/GeoLibre#3273 (pending; the first after 3.5.2), so skip (rather
+    # than fail) until then.
+    geolibre = pytest.importorskip("geolibre")
+    if not hasattr(geolibre.Map, "fly_to_async"):
+        pytest.skip(
+            "geolibre without the async command methods "
+            "(needs a release containing opengeos/GeoLibre#3273)"
+        )
+
+    page.goto(local_app.url)
+    wait_for_app(page, "map")
+
+    # Same flow and float-tolerance rationale as
+    # test_geolibre_blocking_methods_from_extended_task, but via
+    # fly_to_async()/get_center_async() awaited directly in the extended_task
+    # (see app.py).
+    page.click("#fly_async")
+    expect(page.locator("#flown_async")).not_to_have_text("", timeout=LOAD_TIMEOUT)
+    center = json.loads(page.locator("#flown_async").inner_text())
+    assert center[0] == pytest.approx(-122.4, abs=1e-6)
+    assert center[1] == pytest.approx(37.8, abs=1e-6)
+
+
 def test_geolibre_rerender(page: Page, local_app) -> None:
     page.goto(local_app.url)
     expect(map_frame(page, "map").locator("canvas").first).to_be_visible(
