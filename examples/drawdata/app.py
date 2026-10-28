@@ -59,14 +59,23 @@ with ui.layout_columns(col_widths=(7, 5)):
             X = df[["x", "y"]].to_numpy()
             y = df["label"].to_numpy()
             classes, y_idx = np.unique(y, return_inverse=True)
-            # k-NN decision boundary over a coarse grid
+            # k-NN decision boundary over a coarse grid. Process the grid in
+            # chunks (using |a-b|^2 = |a|^2 + |b|^2 - 2*a.b, so no Nx3
+            # broadcast intermediate) so peak memory stays bounded no matter
+            # how many points are drawn, and let argpartition select the k
+            # nearest neighbors instead of fully sorting every row.
             gx, gy = np.meshgrid(np.linspace(0, W, 100), np.linspace(0, H, 50))
             grid = np.c_[gx.ravel(), gy.ravel()]
-            d2 = ((grid[:, None, :] - X[None, :, :]) ** 2).sum(-1)
-            knn = np.argsort(d2, axis=1)[:, :5]
-            votes = np.apply_along_axis(
-                lambda r: np.bincount(r).argmax(), 1, y_idx[knn]
-            )
+            k = min(5, len(X))
+            x2 = (X**2).sum(1)
+            votes = np.empty(len(grid), dtype=int)
+            for start in range(0, len(grid), 1000):
+                g = grid[start : start + 1000]
+                d2 = (g**2).sum(1)[:, None] + x2[None, :] - 2 * (g @ X.T)
+                knn = np.argpartition(d2, min(k, len(X) - 1), axis=1)[:, :k]
+                counts = np.zeros((len(g), len(classes)), dtype=int)
+                np.add.at(counts, (np.arange(len(g))[:, None], y_idx[knn]), 1)
+                votes[start : start + len(g)] = counts.argmax(1)
             ax.contourf(gx, gy, votes.reshape(gx.shape), levels=len(classes), alpha=0.25)
             for c, name in zip(["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"], classes):
                 pts = X[y == name]
