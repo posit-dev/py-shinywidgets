@@ -48,6 +48,31 @@ def test_render_vizarr_fill_after_layout_defaults(widget_session) -> None:
     assert fill is True
 
 
+def test_layout_defaults_adds_marker_class(widget_session) -> None:
+    # shinywidgets.css fits .shinywidgets-vizarr outputs to an explicit height
+    with session_context(widget_session):
+        viewer = vizarr.Viewer()
+        rwb.set_layout_defaults(viewer)
+    assert "shinywidgets-vizarr" in viewer._dom_classes
+
+
+def test_layout_defaults_user_height_opts_out_of_fill(widget_session) -> None:
+    with session_context(widget_session):
+        _, fill = rwb.set_layout_defaults(vizarr.Viewer(height="300px"))
+    assert fill is False
+
+
+def test_layout_defaults_idempotent_on_rerender(widget_session) -> None:
+    # A widget rendered again (e.g., via session_lifetime()) keeps filling and
+    # doesn't accumulate the marker class
+    with session_context(widget_session):
+        viewer = vizarr.Viewer()
+        _, fill_first = rwb.set_layout_defaults(viewer)
+        _, fill_second = rwb.set_layout_defaults(viewer)
+    assert fill_first is True and fill_second is True
+    assert list(viewer._dom_classes).count("shinywidgets-vizarr") == 1
+
+
 def test_add_image_ndarray_registers_in_memory_store(widget_session) -> None:
     with session_context(widget_session):
         viewer = vizarr.Viewer()

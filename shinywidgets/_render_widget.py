@@ -2454,11 +2454,12 @@ class render_vizarr(render_widget_base[ValueT, VizarrViewer]):
     layer controls in the viewer's side panel (channel colors, contrast limits,
     visibility) do *not* sync back to Python.
 
-    **Sizing**: the viewer's height comes from its ``height`` trait (default
-    ``"500px"``), not ``output_widget(height=...)``. In a filling layout the
-    viewer flexes to the available space, but with an explicit
-    ``output_widget(height=...)`` smaller than the trait height the canvas is
-    clipped — set the trait instead (e.g., ``vizarr.Viewer(height="300px")``).
+    **Sizing**: in a filling layout the viewer grows or shrinks to fit its
+    container, and an explicit ``output_widget(height=...)`` sizes the viewer to
+    that height. Otherwise the viewer's own ``height`` trait applies (default
+    ``"500px"``); setting it (e.g., ``vizarr.Viewer(height="300px")``) opts out
+    of filling, and an explicit ``output_widget(height=...)`` takes precedence
+    over it.
 
     **Network access**: the widget loads its JavaScript (the vizarr viewer and
     viv) from CDNs at render time, so it requires an internet connection.
