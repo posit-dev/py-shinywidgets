@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import io
 from typing import Any
 
+import numpy as np
+from PIL import Image
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, Route, expect
 from shiny.run import ShinyAppProc
 
@@ -62,6 +66,54 @@ _MODELS_JS = """async () => {
 def client_models(page: Page) -> list[dict[str, Any]]:
     """Per-model summary (class name + live view count) of the browser's widget registry."""
     return page.evaluate(_MODELS_JS)
+
+
+# Sum of live views across every model with the given class name. Views are
+# attached/detached asynchronously, so the sum can lag behind what the DOM
+# already shows.
+_MODEL_VIEWS_JS = """async (modelName) => {
+    const models = await Promise.all(
+        Object.values(window.widgetManager._models).map((p) => p.catch(() => null))
+    );
+    return models
+        .filter((m) => m && m.get('_model_name') === modelName)
+        .reduce((sum, m) => sum + Object.keys(m.views || {}).length, 0);
+}"""
+
+# True when the per-model view count matches the previous poll's (i.e., async
+# view registration/disposal has settled). Keeps the last count per model name
+# on the window between polls (and across calls, which is fine: an unchanged
+# count is the settled value we're after).
+_MODEL_VIEWS_STABLE_JS = """async (modelName) => {
+    const models = await Promise.all(
+        Object.values(window.widgetManager._models).map((p) => p.catch(() => null))
+    );
+    const n = models
+        .filter((m) => m && m.get('_model_name') === modelName)
+        .reduce((sum, m) => sum + Object.keys(m.views || {}).length, 0);
+    const last = window.__shinywidgetsLastModelViewCounts || {};
+    const stable = last[modelName] === n;
+    last[modelName] = n;
+    window.__shinywidgetsLastModelViewCounts = last;
+    return stable;
+}"""
+
+
+def wait_for_stable_model_view_count(
+    page: Page, model_name: str, timeout: int = 30000
+) -> int:
+    """Return the summed live-view count for `model_name` once it stops changing.
+
+    Per-model counterpart to `wait_for_stable_view_count()`: widget views
+    register and dispose asynchronously, so sampling `client_models()` as soon
+    as an output appears in the DOM can catch a partially populated (or not yet
+    cleaned up) registry -- and a later equality check against that sample then
+    fails spuriously. Requires the `expose_manager` route.
+    """
+    page.wait_for_function(
+        _MODEL_VIEWS_STABLE_JS, arg=model_name, polling=500, timeout=timeout
+    )
+    return page.evaluate(_MODEL_VIEWS_JS, model_name)
 
 
 def assert_rerender_cleanup(
@@ -137,6 +189,39 @@ def collect_errors(page: Page) -> tuple[list[str], list[str]]:
         lambda res: failed_requests.append(res.url) if res.status >= 400 else None,
     )
     return errors, failed_requests
+
+
+# The red-pixel count that counts as "the scene was drawn" for
+# wait_for_red_pixels() (e.g., a scatter of pure-red markers on white)
+MIN_RED_PIXELS = 50
+
+
+def count_red_pixels(page: Page, selector: str) -> int:
+    try:
+        # Short timeout: a missing/detached canvas (e.g., mid re-render)
+        # counts as "not drawn yet" rather than failing the poll
+        png = page.locator(selector).first.screenshot(timeout=1000)
+    except PlaywrightError:
+        return 0
+    rgb = np.asarray(Image.open(io.BytesIO(png)).convert("RGB")).astype(int)
+    # Marker shading darkens pure red to ~rgb(198,0,0), so don't demand >200
+    red = (rgb[..., 0] > 150) & (rgb[..., 1] < 80) & (rgb[..., 2] < 80)
+    return int(red.sum())
+
+
+def wait_for_red_pixels(page: Page, selector: str, timeout_ms: int = 30000) -> None:
+    """Wait until a WebGL canvas shows its (red) scene, via screenshot pixels.
+
+    WebGL pixels can't be read back from the canvas itself (no
+    preserveDrawingBuffer), so check the composited pixels instead. The first
+    drawn frame is also a good "the widget finished initializing" signal:
+    until then, the page's main thread may still be busy with WebGL setup.
+    """
+    waited = 0
+    while count_red_pixels(page, selector) <= MIN_RED_PIXELS:
+        assert waited < timeout_ms, f"no scene pixels drawn in {selector}"
+        page.wait_for_timeout(250)
+        waited += 250
 
 
 # anywidget evaluates a widget's inline ESM once per *view* (a fresh blob

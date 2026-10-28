@@ -112,37 +112,31 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
         # Ensure we have a widget & smart layout defaults
         widget = self._as_widget(value)
-        if is_closed_widget(widget):
-            raise RuntimeError(
-                "This widget has been closed (its render was invalidated, or it was "
-                "closed explicitly), so it can't be displayed again. To reuse a widget "
-                "across renders, construct it inside `with session_lifetime():`."
-            )
 
         session = get_current_session()
+        # _shinywidgets imports WidgetRenderContext and is_closed_widget from
+        # this module at module scope, so importing it back the same way would
+        # be circular; keep this one function-local instead.
+        from ._shinywidgets import (
+            foreign_or_closed_widget,
+            open_process_global_widgets,
+            ownership_error,
+        )
+
         # Outside a real session (the Express UI-discovery pass, or a unit test
         # that calls _render() directly without a session) there's nothing to
-        # compare the returned widgets' ownership against, so there's nothing to
-        # reject.
-        if session is not None and not session.is_stub_session():
-            # _shinywidgets imports WidgetRenderContext and is_closed_widget from
-            # this module at module scope, so importing it back the same way would
-            # be circular; keep this one function-local instead.
-            from ._shinywidgets import foreign_or_closed_widget
-
-            bad = foreign_or_closed_widget(widget, session.root_scope())
-            if bad is not None and is_closed_widget(bad):
-                raise RuntimeError(
-                    f"{type(bad).__name__} was closed (its render was invalidated, or "
-                    "it was closed explicitly), so it can't be displayed again. To "
-                    "reuse a widget across renders, construct it inside "
-                    "`with session_lifetime():`."
-                )
+        # compare the returned widgets' ownership against, so only a closed
+        # root can be rejected.
+        if session is None or session.is_stub_session():
+            if is_closed_widget(widget):
+                raise ownership_error(widget)
+        else:
+            root = session.root_scope()
+            bad = foreign_or_closed_widget(widget, root)
             if bad is not None:
-                raise RuntimeError(
-                    f"{type(bad).__name__} belongs to another Shiny session, so it "
-                    "can't be displayed here. Construct widgets per session."
-                )
+                raise ownership_error(bad)
+            # Only once nothing raised, so a rejected render opens nothing
+            open_process_global_widgets(widget, root)
 
         # A canvas nested in the returned widget may have been coerced (and
         # drawn) earlier and then had its figure changed; refresh its initial
@@ -393,6 +387,71 @@ def pygwalker_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # reused via session_lifetime()) already has the "100%" written above, which
     # set_layout_defaults() reads as an explicit height.
     return fill or layout.height == "100%"
+
+
+def ipyvolume_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from ipyvolume.widgets import Figure
+
+    if not isinstance(widget, Figure):
+        return fill
+
+    # A figure's width/height are its WebGL canvas size in pixels. Treat both
+    # "default" sizes as unset: the trait default (500x400) and the one
+    # ipv.figure()/quickscatter() always passes explicitly (400x500). When
+    # filling, the browser resizes the canvas to the container (see
+    # WIDGET_BEHAVIORS in js/src/fill.ts) and saves the measured size back to
+    # these traits, so also treat a size matching the last browser sync as
+    # unset -- otherwise re-rendering a cached, session-lifetime figure would
+    # mistake the browser's measurements for an explicit user size (while a
+    # size the user assigned after that sync still counts as explicit).
+    size = (widget.width, widget.height)
+    # Called unconditionally (even for a default-sized figure, where the
+    # answer is already known): it installs the sync tracking that later
+    # renders of this same figure rely on
+    synced = _frontend_size(widget)
+    if size in ((500, 400), (400, 500)) or size == synced:
+        return fill
+    return False
+
+
+# Widget attribute names used by _frontend_size() to track the figure size
+# last synced from the browser (see below)
+_FRONTEND_SIZE_ATTR = "_shinywidgets_frontend_size"
+_FRONTEND_SIZE_TRACKING_ATTR = "_shinywidgets_tracking_frontend_size"
+
+
+def _frontend_size(widget: Widget) -> Optional[Tuple[int, int]]:
+    """
+    The (width, height) last synced from the browser, or None.
+
+    Installs (once) a wrapper on the widget's set_state() -- the method
+    front-end "update" messages go through -- that records width/height
+    syncs, so the browser resizer's measurements can be told apart from
+    sizes the user assigned in Python.
+    """
+    if not getattr(widget, _FRONTEND_SIZE_TRACKING_ATTR, False):
+        original = widget.set_state
+
+        def set_state(sync_data: dict) -> None:  # pyright: ignore[reportMissingParameterType]
+            if "width" in sync_data or "height" in sync_data:
+                # sync_data may update only one of the two traits; the other
+                # keeps its current value (set_state applies the state after
+                # this wrapper runs). Only called with widgets that have
+                # width/height traits (e.g., ipyvolume.Figure).
+                setattr(
+                    widget,
+                    _FRONTEND_SIZE_ATTR,
+                    (
+                        sync_data.get("width", getattr(widget, "width")),
+                        sync_data.get("height", getattr(widget, "height")),
+                    ),
+                )
+            original(sync_data)
+
+        setattr(widget, "set_state", set_state)
+        setattr(widget, _FRONTEND_SIZE_TRACKING_ATTR, True)
+
+    return getattr(widget, _FRONTEND_SIZE_ATTR, None)
 
 
 def itables_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
@@ -646,6 +705,69 @@ def leafmap_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+PYTHREEJS_DEFAULT_SIZE = 200
+
+# Attributes stashed on a pythreejs Renderer by _track_pythreejs_sizing_intent()
+_PYTHREEJS_FILL_INTENT = "_shinywidgets_pythreejs_fill"
+_PYTHREEJS_FRONTEND_UPDATE = "_shinywidgets_pythreejs_frontend_update"
+
+
+def pythreejs_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from pythreejs import Renderer
+
+    if not isinstance(widget, Renderer):
+        return fill
+
+    intent = cast(Optional[bool], getattr(widget, _PYTHREEJS_FILL_INTENT, None))
+    if intent is None:
+        # A pythreejs Renderer draws into a fixed pixel-size canvas, so an
+        # explicit width/height is a request for that size rather than
+        # filling. The 200x200 default can't be told apart from an explicit
+        # 200x200 (Renderer.__init__() sets it either way), so the default is
+        # treated as unset.
+        intent = (
+            widget.width == PYTHREEJS_DEFAULT_SIZE
+            and widget.height == PYTHREEJS_DEFAULT_SIZE
+        )
+        _track_pythreejs_sizing_intent(widget, intent)
+    return fill and intent
+
+
+def _track_pythreejs_sizing_intent(renderer: DOMWidget, intent: bool) -> None:
+    # setupPythreejsResize() (js/src/fill.ts) syncs a filling Renderer's pixel
+    # size back to Python, so the live width/height of a reused Renderer
+    # (e.g., one cached with session_lifetime() and returned on a later
+    # render) reflect its container, not the user's intent. Record the
+    # first-render decision and revisit it only on size changes that didn't
+    # come from the front-end (front-end state updates all arrive through
+    # Widget.set_state()), so an explicit user size change is still honored.
+    setattr(renderer, _PYTHREEJS_FILL_INTENT, intent)
+    setattr(renderer, _PYTHREEJS_FRONTEND_UPDATE, False)
+
+    set_state = renderer.set_state
+
+    def set_state_tracking_frontend(sync_data: dict[str, Jsonifiable]) -> None:
+        setattr(renderer, _PYTHREEJS_FRONTEND_UPDATE, True)
+        try:
+            set_state(sync_data)
+        finally:
+            setattr(renderer, _PYTHREEJS_FRONTEND_UPDATE, False)
+
+    renderer.set_state = set_state_tracking_frontend  # type: ignore[method-assign]
+
+    def update_intent(change: object) -> None:
+        if getattr(renderer, _PYTHREEJS_FRONTEND_UPDATE):
+            return
+        setattr(
+            renderer,
+            _PYTHREEJS_FILL_INTENT,
+            renderer.width == PYTHREEJS_DEFAULT_SIZE  # type: ignore[attr-defined]
+            and renderer.height == PYTHREEJS_DEFAULT_SIZE,  # type: ignore[attr-defined]
+        )
+
+    renderer.observe(update_intent, names=["width", "height"])
+
+
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
 # (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
 # in js/src/fill.ts). A handler receives the widget and the current fill
@@ -658,6 +780,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
     "geolibre": geolibre_layout_defaults,
+    "ipyvolume": ipyvolume_layout_defaults,
     "ipyaladin": ipyaladin_layout_defaults,
     "ipycanvas": ipycanvas_layout_defaults,
     "ipysigma": ipysigma_layout_defaults,
@@ -670,6 +793,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "jupyter_bokeh": bokeh_layout_defaults,
     "leafmap": leafmap_layout_defaults,
     "maplibre": maplibre_layout_defaults,
+    "pythreejs": pythreejs_layout_defaults,
 }
 
 

@@ -4,8 +4,10 @@ from pathlib import Path
 
 from playwright.sync_api import Page, expect
 from shiny.pytest import create_app_fixture
+from shiny.run import ShinyAppProc
 from tests.playwright.conftest import (
     assert_no_unexpected_errors,
+    client_models,
     collect_errors,
     expose_manager,
     wait_for_stable_view_count,
@@ -184,4 +186,150 @@ def test_bqplot_tooltip_follows_theme(page: Page, local_app_tooltip) -> None:
     assert dark == {"bg": page.evaluate(body_bg_js), "border": "solid"}, dark
     assert dark["bg"] != light["bg"]
 
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+local_app_toolbar = create_app_fixture(Path(__file__).parent / "app_toolbar.py")
+# The disconnect test kills its server, so it gets a process of its own.
+local_app_toolbar_disconnect = create_app_fixture(
+    Path(__file__).parent / "app_toolbar.py", scope="function"
+)
+local_app_toolbar_reconnect = create_app_fixture(
+    Path(__file__).parent / "app_toolbar.py", scope="function"
+)
+
+PANZOOM_BUTTON = "#fig button[title='PanZoom']"
+RESET_BUTTON = "#fig button[title='Reset']"
+
+# Counts comm_close messages the browser sends. comm.ts resolves `Shiny` at call
+# time, so wrapping setInputValue after load sees every ShinyComm message.
+COUNT_CLOSES_JS = """() => {
+  window.__commCloses = 0;
+  const original = Shiny.setInputValue;
+  Shiny.setInputValue = (name, value, opts) => {
+    if (name === 'shinywidgets_comm_send' && JSON.parse(value).header?.msg_type === 'comm_close') {
+      window.__commCloses++;
+    }
+    return original(name, value, opts);
+  };
+}"""
+
+
+def model_names(page: Page) -> list[str]:
+    return [m["name"] for m in client_models(page)]
+
+
+def comm_closes(page: Page) -> int:
+    return page.evaluate("() => window.__commCloses")
+
+
+def test_toolbar_panzoom_creates_and_closes_python_widget(
+    page: Page, local_app_toolbar
+) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.route("**/output.js", expose_manager)
+    page.goto(local_app_toolbar.url)
+    expect(page.locator("#fig .bqplot svg").first).to_be_visible(timeout=30000)
+    expect(page.locator("#interaction")).to_have_text("NoneType")
+    page.evaluate(COUNT_CLOSES_JS)
+    before = len(model_names(page))
+
+    page.hover("#fig .bqplot")
+    page.click(PANZOOM_BUTTON)
+    # The browser-created model now has a Python counterpart, so the figure's
+    # IPY_MODEL_ reference to it resolves.
+    expect(page.locator("#interaction")).to_have_text("PanZoom")
+    assert "PanZoomModel" in model_names(page)
+
+    page.click(RESET_BUTTON)  # bqplot closes the PanZoom model from the browser
+    expect(page.locator("#interaction")).to_have_text("NoneType")
+    expect(page.locator("#fig .bqplot svg").first).to_be_visible()
+    assert "PanZoomModel" not in model_names(page)
+    assert len(model_names(page)) == before
+    assert comm_closes(page) == 1
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_toolbar_figure_rerenders_cleanly(page: Page, local_app_toolbar) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.route("**/output.js", expose_manager)
+    page.goto(local_app_toolbar.url)
+    expect(page.locator("#fig .bqplot svg").first).to_be_visible(timeout=30000)
+    page.evaluate(COUNT_CLOSES_JS)
+    page.hover("#fig .bqplot")
+    page.click(PANZOOM_BUTTON)
+    expect(page.locator("#interaction")).to_have_text("PanZoom")
+    before = len(model_names(page))
+
+    # Python closes the figure; the browser must not answer with a comm_close.
+    page.click("#rerender")
+    expect(page.locator("#interaction")).to_have_text("NoneType")
+    expect(page.locator("#fig .bqplot svg").first).to_be_visible()
+    assert comm_closes(page) == 0
+    # Each PanZoom active at rerender stays until session end, keeping its two
+    # old scales alive. This test activates it only once.
+    assert model_names(page).count("PanZoomModel") == 1
+    after_first = len(model_names(page))
+    assert after_first == before + 2
+
+    page.click("#rerender")
+    expect(page.locator("#interaction")).to_have_text("NoneType")
+    expect(page.locator("#fig .bqplot svg").first).to_be_visible()
+    page.wait_for_timeout(500)
+    assert comm_closes(page) == 0
+    assert model_names(page).count("PanZoomModel") == 1
+    assert len(model_names(page)) == after_first
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_toolbar_reset_closes_comm_after_reconnect(
+    page: Page, local_app_toolbar_reconnect: ShinyAppProc
+) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.route("**/output.js", expose_manager)
+    page.goto(local_app_toolbar_reconnect.url)
+    expect(page.locator("#fig .bqplot svg").first).to_be_visible(timeout=30000)
+
+    page.evaluate(
+        """async () => {
+            await Shiny.shinyapp.dispatchMessage(JSON.stringify({allowReconnect: 'force'}));
+            window.__reconnected = false;
+            $(document).one('shiny:connected', () => { window.__reconnected = true; });
+            Shiny.shinyapp.$socket.close();
+        }"""
+    )
+    page.wait_for_function("window.__reconnected", timeout=30000)
+    expect(page.locator("#fig .bqplot svg").first).to_be_visible(timeout=30000)
+    page.evaluate(COUNT_CLOSES_JS)
+
+    page.hover("#fig .bqplot")
+    page.click(PANZOOM_BUTTON)
+    expect(page.locator("#interaction")).to_have_text("PanZoom")
+    page.click(RESET_BUTTON)
+    expect(page.locator("#interaction")).to_have_text("NoneType")
+
+    assert "PanZoomModel" not in model_names(page)
+    assert comm_closes(page) == 1
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_disconnect_closes_models_without_errors(
+    page: Page, local_app_toolbar_disconnect
+) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.route("**/output.js", expose_manager)
+    page.goto(local_app_toolbar_disconnect.url)
+    expect(page.locator("#fig .bqplot svg").first).to_be_visible(timeout=30000)
+    page.hover("#fig .bqplot")
+    page.click(PANZOOM_BUTTON)
+    expect(page.locator("#interaction")).to_have_text("PanZoom")
+
+    # Kill the server: the websocket drops and shiny:disconnected fires.
+    local_app_toolbar_disconnect.close()
+    page.wait_for_selector("#shiny-disconnected-overlay", timeout=10000)
+    page.wait_for_timeout(500)
+    # clear_state() closed every model (and comm) without throwing.
+    assert model_names(page) == []
     assert_no_unexpected_errors(errors, failed_requests)

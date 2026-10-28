@@ -43,6 +43,7 @@ def reset_shinywidgets_globals(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any
     monkeypatch.setattr(sw, "COMM_MANAGERS", {})
     monkeypatch.setattr(sw, "RENDER_OWNED_WIDGETS", {})
     monkeypatch.setattr(sw, "KEPT_WIDGETS", {})
+    monkeypatch.setattr(sw, "SHARED_WIDGETS", {})
     return {"sw": sw}
 
 
@@ -230,7 +231,7 @@ def test_nbextensions_mount_when_widget_dep_has_subdir(
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
 
     monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", False)
-    monkeypatch.setattr(sw, "require_dependency", lambda w, session, warn: Dep())
+    monkeypatch.setattr(sw, "require_dependencies", lambda w, session, warn: [Dep()])
 
     w = FakeWidget()
     sw.init_shiny_widget(w)  # type: ignore[arg-type]

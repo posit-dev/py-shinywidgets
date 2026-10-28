@@ -8,7 +8,7 @@ import tempfile
 import threading
 import warnings
 from types import ModuleType
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import packaging.version
 from htmltools import HTMLDependency, tags
@@ -102,24 +102,34 @@ def custom_elements_dependency() -> HTMLDependency:
 # possible for a Widget to have traits that are themselves Widgets
 # (which could have their own npm module), but in practice, I haven't seen any cases
 # where a 3rd party widget can contain a 3rd party widget.
-def require_dependency(
+def require_dependencies(
     w: Widget, session: Session, warn_if_missing: bool = True
-) -> Optional[HTMLDependency]:
+) -> List[HTMLDependency]:
     """
-    Obtain an HTMLDependency for a 3rd party ipywidget that points
-    require('widget-npm-package') requests in the browser to the correct local path.
+    Obtain HTMLDependencies for a 3rd party ipywidget that point
+    require('widget-npm-package') requests in the browser to the correct local
+    paths. The first entry serves the widget's own module; any additional
+    entries serve AMD externals of the widget's bundle that are themselves
+    installed nbextensions (see amd_require_config()).
     """
 
     # The relevant npm package should be specified as an attribute on the widget
     # instance. If the widget is installed as a jupyter extension, in most cases, that
     # name will registered at the extension name/directory
-    module_attr = "_view_module" if isinstance(w, DOMWidget) else "_model_module"
-    module_name: str = getattr(w, module_attr, widget_pkg(w))
+    # (ipyvue's ForceLoad is a DOMWidget with `_view_module = None`, so fall through
+    # to `_model_module` when the view module is unset)
+    module_attrs = ["_model_module"]
+    if isinstance(w, DOMWidget):
+        module_attrs.insert(0, "_view_module")
+    module_name: str = next(
+        (name for attr in module_attrs if (name := getattr(w, attr, None))),
+        widget_pkg(w),
+    )
 
     # ipywidgets (i.e., @jupyter-widgets) come pre-bundled in libembed-amd.js
     # # (i.e., _core() dependencies)
     if module_name.startswith("@jupyter-widgets/"):
-        return None
+        return []
 
     # It's technically possible for the npm package name to be different from the actual
     # extension path (defined by `_jupyter_nbextension_paths` in __init__.py), but we
@@ -136,28 +146,183 @@ def require_dependency(
                     + " To avoid depending on a CDN, make sure the widget is installed as a jupyter extension.",
                     stacklevel=2,
                 )
-            return None
+            return []
 
     if module_name == "anywidget":
         module_dir = relax_anywidget_init_timeout(module_dir)
 
     version = parse_version_safely(getattr(w, "_model_module_version", "1.0"))
-    source = HTMLDependencySource(subdir=module_dir)
 
-    dep = HTMLDependency(module_name, version, source=source)
-    # Get the location where the dependency files will be mounted by the shiny app
-    # and use that to inform the requirejs import path
-    href = dep.source_path_map(lib_prefix=session.app.lib_prefix)["href"]
-    config = {"paths": {module_name: os.path.join(href, "index")}}
-    # Basically our equivalent of the extension.js file provided by the cookiecutter
-    # https://github.com/jupyter-widgets/widget-cookiecutter/blob/master/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js
-    return HTMLDependency(
-        module_name,
-        version,
-        source=source,
-        all_files=True,
-        head=tags.script(f"window.require.config({json.dumps(config)})"),
+    deps: List[HTMLDependency] = []
+    # The widget's own module, plus any AMD externals (of the modules visited
+    # along the way) that are themselves installed nbextensions
+    seen: set[str] = set()
+    worklist = [(module_name, module_dir, version)]
+    while worklist:
+        name, dir_, ver = worklist.pop(0)
+        if name in seen:
+            continue
+        seen.add(name)
+        source = HTMLDependencySource(subdir=dir_)
+        dep = HTMLDependency(name, ver, source=source)
+        # Get the location where the dependency files will be mounted by the shiny app
+        # and use that to inform the requirejs import path
+        href = dep.source_path_map(lib_prefix=session.app.lib_prefix)["href"]
+        config, nbextensions = amd_require_config(name, dir_, href)
+        # Basically our equivalent of the extension.js file provided by the cookiecutter
+        # https://github.com/jupyter-widgets/widget-cookiecutter/blob/master/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js
+        deps.append(
+            HTMLDependency(
+                name,
+                ver,
+                source=source,
+                all_files=True,
+                head=tags.script(f"window.require.config({json.dumps(config)})"),
+            )
+        )
+        for ext in nbextensions:
+            ext_dir = jupyter_extension_path(ext)
+            if ext_dir is not None:
+                worklist.append((ext, ext_dir, dir_version(ext_dir)))
+
+    return deps
+
+
+# Module names that a widget bundle may declare in the define([...]) header of
+# its AMD bundle, but that shinywidgets' browser environment already provides:
+# the @jupyter-widgets packages come prebundled in libembed-amd.js, and the
+# rest are require.js or classic-notebook builtins
+AMD_PREBUNDLED = {
+    "module",
+    "require",
+    "exports",
+    "jquery",
+    "jupyter-js-widgets",
+}
+
+
+def amd_externals(module_dir: str) -> List[str]:
+    """
+    The externals declared by an nbextension's AMD bundle (in the define([...])
+    header of its index.js) that shinywidgets' browser environment doesn't
+    already provide.
+
+    Widget packages built with a webpack `externals` config (e.g., ipyvolume
+    and pythreejs externalize `three`; jupyter-vuetify externalizes
+    `jupyter-vue`) rely on the classic notebook's global require.config
+    registry (built up at page load from every enabled nbextension's
+    extension.js) to resolve those names. shinywidgets loads widget modules on
+    demand instead, so without an explicit paths/map entry, require.js
+    resolves such names relative to the app root (404).
+    """
+    try:
+        with open(
+            os.path.join(module_dir, "index.js"), encoding="utf-8", errors="replace"
+        ) as f:
+            head = f.read(8192)
+    except OSError:
+        return []
+    m = re.search(r"define\(\s*\[([^\]]*)\]", head)
+    if not m:
+        # Not an AMD bundle (e.g., an anywidget ESM index.js), or not one we
+        # can parse; either way there's nothing to resolve
+        return []
+    deps = re.findall(r"""["']([^"']+)["']""", m.group(1))
+    return [
+        dep
+        for dep in deps
+        if dep not in AMD_PREBUNDLED
+        and not dep.startswith(("@jupyter-widgets/", "base/js/", "./", "../"))
+    ]
+
+
+def amd_require_config(
+    module_name: str, module_dir: str, href: str
+) -> "tuple[dict[str, object], List[str]]":
+    """
+    The require.js config for one nbextension module: a paths entry for the
+    module itself, plus scoped aliases for any externals the bundle ships
+    inside its own nbextension directory. Also returns the names of externals
+    that are themselves installed nbextensions (they need their own dependency
+    to mount and configure them).
+    """
+    paths: Dict[str, str] = {module_name: os.path.join(href, "index")}
+    map_: Dict[str, Dict[str, str]] = {}
+    shim: Dict[str, Dict[str, str]] = {}
+    nbextensions: List[str] = []
+    for ext in amd_externals(module_dir):
+        ext_file = os.path.join(module_dir, f"{ext}.js")
+        if os.path.isfile(ext_file):
+            # The bundle ships its own copy of the external: serve it under an
+            # alias scoped to this module (via require.js map) -- another
+            # module may ship an incompatible build under the same name
+            # (ipyvolume and pythreejs, for example, bundle different
+            # three.js builds, and an ipyvolume figure needs both)
+            alias = f"{module_name}/{ext}"
+            paths[alias] = os.path.join(href, ext)
+            map_[module_name] = {**map_.get(module_name, {}), ext: alias}
+            global_name = umd_global(ext_file)
+            if global_name is not None:
+                # UMD bundles take the global-export branch (shiny's require.js
+                # wrapper keeps define.amd = false), so expose the global as
+                # the module value
+                shim[alias] = {"exports": global_name}
+        elif jupyter_extension_path(ext) is not None:
+            nbextensions.append(ext)
+        # Otherwise leave the external unresolved. The widget-level CDN retry
+        # does not configure paths for its bare externals.
+    config: dict[str, object] = {"paths": paths}
+    if map_:
+        config["map"] = map_
+    if shim:
+        config["shim"] = shim
+    return config, nbextensions
+
+
+def umd_global(js_file: str) -> Optional[str]:
+    """
+    The global variable a UMD-style bundle exports, or None for a plain AMD
+    bundle (which provides its module value by calling define()).
+    """
+    try:
+        with open(js_file, encoding="utf-8", errors="replace") as f:
+            head = f.read(1024)
+    except OSError:
+        return None
+    # Skip past leading comments/whitespace
+    stripped = re.sub(r"\A(?:\s|/\*.*?\*/|//[^\n]*)*", "", head, flags=re.S)
+    if stripped.startswith("define("):
+        return None
+    # The UMD global-export branch: rollup writes `global.Name = {}`, webpack
+    # writes `root["Name"] = ...`
+    m = re.search(r"\.([A-Za-z_$][\w$]*)\s*=\s*\{\s*\}", head) or re.search(
+        r"""\[["']([A-Za-z_$][\w$]*)["']\]\s*=""", head
     )
+    if m is None:
+        warnings.warn(
+            f"{js_file} doesn't look like an AMD bundle, but the global it "
+            "exports couldn't be determined; it will be served without a "
+            "require.js shim, which may prevent the widget from rendering.",
+            stacklevel=2,
+        )
+        return None
+    return m.group(1)
+
+
+def dir_version(module_dir: str) -> str:
+    """
+    A pseudo-version for an nbextension we have no widget instance to take a
+    module version from (e.g., an AMD external of a widget's bundle): use the
+    newest file mtime so a reinstall/upgrade still busts the lib cache.
+    """
+    try:
+        mtime = max(
+            os.path.getmtime(os.path.join(module_dir, f))
+            for f in os.listdir(module_dir)
+        )
+        return f"0.0.{int(mtime)}"
+    except (OSError, ValueError):
+        return "0.0"
 
 
 def geolibre_app_mount(w: Widget, session: Session) -> None:

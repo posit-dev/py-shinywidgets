@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from ipyleaflet import Map as LeafletMap
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from ipysigma import Sigma
+    from ipyvolume.widgets import Figure as IpyvolumeFigure
 
     # pygwalker 0.6 renamed its widget class (_WalkerWidget ->
     # pygwalker.services.anywidget_widget.WalkerAnyWidget), so type both by
@@ -58,6 +59,7 @@ if TYPE_CHECKING:
         from embedding_atlas.widget import EmbeddingAtlasWidget
     else:
         from ipywidgets import Widget as EmbeddingAtlasWidget
+    from pythreejs import Renderer as PythreejsRenderer
     from quak import Widget as QuakWidget
 else:
     JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
@@ -67,7 +69,7 @@ else:
     ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = WalkerWidget = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
-    ) = QuakWidget = PerspectiveWidget = GeolibreMap = object
+    ) = QuakWidget = PerspectiveWidget = GeolibreMap = IpyvolumeFigure = PythreejsRenderer = object
 
 from shiny.render.renderer import ValueFn
 
@@ -116,6 +118,7 @@ __all__ = (
     "render_ipydatagrid",
     "render_ipyleaflet",
     "render_ipysigma",
+    "render_ipyvolume",
     "render_itables",
     "render_jscatter",
     "render_k3d",
@@ -131,6 +134,7 @@ __all__ = (
     "render_plotnine",
     "render_pydeck",
     "render_pygwalker",
+    "render_pythreejs",
     "render_quak",
 )
 
@@ -805,11 +809,9 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
     ``bplt.figure(key=...)``) reuses one figure across renders, outputs and sessions,
     which fails after the first re-render.
 
-    The PanZoom and Reset buttons of a figure's built-in toolbar don't work in Shiny
-    (they create widgets from the browser, which shinywidgets doesn't support); pass
-    ``display_toolbar=False`` to the figure to hide the toolbar, and set
-    ``fig.interaction = bqplot.interacts.PanZoom(...)`` from Python to enable panning
-    and zooming.
+    The figure's built-in toolbar (``display_toolbar=True``) and a standalone
+    ``bqplot.Toolbar`` work, and the active ``PanZoom`` is readable with
+    ``reactive_read(fig.widget, "interaction")``.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -972,6 +974,81 @@ class render_keplergl(render_widget_base[ValueT, KeplerGl]):
             if isinstance(value, pd.DataFrame):
                 return dataframe_to_keplergl(value)
         return super()._as_widget(value)
+
+
+class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
+    """
+    Reactively render an [ipyvolume](https://ipyvolume.readthedocs.io) 3D plot as
+    a Shiny output.
+
+    The decorated function may return an `ipyvolume.Figure` widget (requires
+    ``pip install 'shinywidgets[ipyvolume]'``; ipyvolume 0.6.3 also needs
+    ``ipython_genutils``, which it doesn't declare, so the extra installs it
+    for you). Both ways of getting one work: the pylab API (return `ipv.gcf()`
+    after drawing, or the container returned by `ipv.quickscatter()`/
+    `ipv.gcc()`, which is unwrapped to its figure) or direct construction
+    (`ipyvolume.Figure`, with `ipyvolume.widgets.Scatter` and friends added to
+    ``fig.scatters``). Either way, call the constructors inside the render
+    function: the pylab functions draw on a module-level "current figure", so
+    figures created elsewhere can end up shared across sessions. With direct
+    construction, set ``size_selected``/``color_selected`` explicitly on
+    scatters -- their trait defaults are 0-d numpy arrays, which don't
+    JSON-serialize -- and set ``fig.xlim``/``fig.ylim``/``fig.zlim``, since
+    directly constructed figures default to a [0, 1]^3 axis box with no
+    auto-fit. In a filling layout, the figure's WebGL canvas is resized to
+    fill its container (and tracks container resizes) unless the figure has
+    an explicit ``width`` or ``height``.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `ipyvolume.Figure` instance. Use `.widget` to programmatically update the
+    rendered figure in place (trait changes on the widget are synced to the
+    browser), or to reactively read widget state with
+    :func:`~shinywidgets.reactive_read` (e.g., ``reactive_read(plot.widget,
+    "camera")``). For selections, register a callback with
+    ``plot.widget.on_selection(fn)`` (selections arrive as custom messages, not
+    trait changes) and set a `reactive.value` inside it.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    import ipyvolume as ipv
+    import numpy as np
+    from shiny import App, ui
+    from shinywidgets import output_widget, render_ipyvolume
+
+    app_ui = ui.page_fillable(output_widget("plot"))
+
+
+    def server(input, output, session):
+        @render_ipyvolume
+        def plot():
+            x, y, z = np.random.normal(size=(3, 1000))
+            ipv.quickscatter(x, y, z, size=1, marker="sphere")
+            return ipv.gcf()
+
+
+    app = App(app_ui, server)
+    ```
+    """
 
 
 class render_leafmap(render_widget_base[ValueT, LeafletMap]):
@@ -1868,6 +1945,59 @@ def _split_config(value: object) -> tuple[object, Optional[Dict[str, Any]]]:
         "config is a dict of Plotly.js config options (e.g., {'displayModeBar': False}), "
         f"but got {problem}."
     )
+
+
+class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
+    """
+    Reactively render a [pythreejs](https://pythreejs.readthedocs.io) 3D scene as a
+    Shiny output.
+
+    The decorated function should return a `pythreejs.Renderer` widget (i.e., a
+    `Scene` plus a camera, with meshes/lights added to the scene; requires ``pip
+    install 'shinywidgets[pythreejs]'``). By default, the scene fills its container (the canvas and
+    camera aspect resize with it); give the `Renderer` an explicit ``width`` or
+    ``height`` (or a `layout` height) to use a fixed pixel size instead.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `Renderer` instance. Use `.widget` to programmatically update the rendered scene
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`. With
+    `pythreejs.OrbitControls` (or `TrackballControls`), the camera's ``position``,
+    ``quaternion``, and ``zoom`` sync back to Python each time the user finishes
+    orbiting, so e.g. ``reactive_read(scene.widget.camera, "position")`` picks up
+    every interaction.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Notes
+    -----
+    * Scene background: set `pythreejs.Scene(background=...)` (it defaults to
+      white and overrides ``Renderer(background=...)``).
+    * Give `pythreejs.DirectionalLight`/`pythreejs.SpotLight` an explicit
+      ``target`` (added to the scene) and ``shadow`` (with a camera) --
+      pythreejs creates defaults for them in the browser otherwise, and
+      browser-created widgets live until the session ends, so every re-render
+      would leak 3 models per light (and log a transient console error).
+    * Rotate objects via ``mesh.quaternion``; pythreejs's ``rotation`` (Euler)
+      updates don't render (an upstream pythreejs bug).
+    """
 
 
 class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):

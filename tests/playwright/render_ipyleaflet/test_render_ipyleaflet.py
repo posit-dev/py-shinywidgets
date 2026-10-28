@@ -3,9 +3,9 @@ from __future__ import annotations
 from playwright.sync_api import Page, expect
 from tests.playwright.conftest import (
     assert_no_unexpected_errors,
-    client_models,
     collect_errors,
     expose_manager,
+    wait_for_stable_model_view_count,
 )
 
 # Tolerance (px) for comparing a map's box to its container's
@@ -173,10 +173,9 @@ def test_render_ipyleaflet_rerender_lifecycle(page: Page, local_app) -> None:
 
     def live_map_views() -> int:
         # Maps whose model is retired on rerender are closed, so only the live
-        # ones (9 outputs) should still hold a view
-        return sum(
-            m["views"] for m in client_models(page) if m["name"] == "LeafletMapModel"
-        )
+        # ones (9 outputs) should still hold a view. Views attach/detach
+        # asynchronously, so wait for the count to settle before sampling.
+        return wait_for_stable_model_view_count(page, "LeafletMapModel")
 
     initial = live_map_views()
     assert initial == 9

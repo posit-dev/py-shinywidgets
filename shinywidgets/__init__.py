@@ -31,6 +31,7 @@ from ._render_widget import (
     render_ipydatagrid,
     render_ipyleaflet,
     render_ipysigma,
+    render_ipyvolume,
     render_itables,
     render_jscatter,
     render_k3d,
@@ -46,10 +47,16 @@ from ._render_widget import (
     render_plotnine,
     render_pydeck,
     render_pygwalker,
+    render_pythreejs,
     render_quak,
     render_widget,
 )
-from ._shinywidgets import reactive_read, register_widget, session_lifetime
+from ._shinywidgets import (
+    reactive_read,
+    register_widget,
+    session_lifetime,
+    shared_lifetime,
+)
 
 __all__ = (
     "__version__",
@@ -67,6 +74,7 @@ __all__ = (
     "render_ipydatagrid",
     "render_ipyleaflet",
     "render_ipysigma",
+    "render_ipyvolume",
     "render_itables",
     "render_jscatter",
     "render_k3d",
@@ -82,6 +90,7 @@ __all__ = (
     "render_plotnine",
     "render_pydeck",
     "render_pygwalker",
+    "render_pythreejs",
     "render_quak",
     # Reactive read second
     "reactive_read",
@@ -90,7 +99,9 @@ __all__ = (
     # Other methods last
     "as_widget",
     "bokeh_dependency",
+    # Lifetime methods
+    "session_lifetime",
+    "shared_lifetime",
     # Soft deprecated
     "register_widget",
-    "session_lifetime",
 )
