@@ -224,6 +224,7 @@ test = [
   "ipydatagrid>=1.2.0",
   "ipyleaflet>=0.20.0",
   "ipysigma",
+  "ipyreact>=0.6",
   "ipyvue>=3",
   "ipyvuetify>=3",
   "holoviews",

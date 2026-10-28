@@ -89,7 +89,11 @@ def init_shiny_widget(w: Widget):
     session = get_current_session()
     shared = constructing_shared.get()
     if session is None:
-        if shared:
+        if (
+            shared
+            or is_ipyreact_registry_widget(w)
+            or constructing_ipyreact_registry_widget()
+        ):
             # Widget.open() then gives it an inert DummyComm with this id
             if getattr(w, "_model_id", None) is None:
                 w._model_id = uuid4().hex
@@ -138,7 +142,13 @@ def init_shiny_widget(w: Widget):
     id = cast(str, w._model_id)
     # The import's module-level widgets are process-global even when the first
     # import runs inside a session (e.g. a lazy import in a render function)
-    shared = shared or importing_ipyvue() or importing_ipyvuetify()
+    shared = (
+        shared
+        or importing_ipyvue()
+        or importing_ipyvuetify()
+        or is_ipyreact_registry_widget(w)
+        or constructing_ipyreact_registry_widget()
+    )
     if shared:
         SHARED_WIDGETS[id] = w
 
@@ -435,6 +445,30 @@ def init_session(session: Session) -> None:
             and widget_pkg(type(w)) in EAGERLY_SHARED_PACKAGES
         ):
             open_shared_in(w, session)
+    # ipyreact's dependency widgets (Module/ImportMap) may predate our
+    # construction hook or a stub session (an import cached in sys.modules
+    # doesn't re-run for the real session); every ipyreact widget waits on
+    # them by name, so each session needs them open.
+    ipyreact_widgets = list(ipyreact_registry_widgets())
+    ipyreact_widgets.extend(
+        w
+        for w in list(WIDGET_INSTANCE_MAP.values())
+        if is_sessionless(w)
+        and is_ipyreact_registry_widget(w)
+        and w not in ipyreact_widgets
+    )
+    for w in ipyreact_widgets:
+        if w.comm is None:  # closed by the user
+            continue
+        # Adopt the widgets it already references (e.g. a Layout materialized
+        # before our hook was installed): a process-global widget's references
+        # must be process-global too.
+        for r in walk_widget_tree([w]):
+            if r.comm is not None and (
+                is_sessionless(r) or SHARED_WIDGETS.get(r.model_id) is r
+            ):
+                SHARED_WIDGETS.setdefault(r.model_id, r)
+        open_shared_in(w, session)
 
 
 def mount_widget_deps(session: Session, widget_deps: Iterable[HTMLDependency]) -> None:
@@ -605,6 +639,68 @@ def importing_ipyvue() -> bool:
     force_load = sys.modules.get("ipyvue.ForceLoad")
     # force_load_instance is only bound once ForceLoad.py has finished executing
     return force_load is not None and not hasattr(force_load, "force_load_instance")
+
+
+def is_ipyreact_registry_widget(w: Widget) -> bool:
+    """
+    Is `w` one of ipyreact's process-global dependency widgets?
+
+    `ipyreact.define_module()` and `ipyreact.define_import_map()` construct
+    `Module` and `ImportMap` widgets whose frontend *models* register ES
+    modules with the browser's import shim; every ipyreact widget then waits
+    on those modules by name. ipyreact treats them as process-wide (it keeps
+    them in `ipyreact.module._module_widgets` and
+    `ipyreact.importmap._import_map_widget`), and they're usually constructed
+    at import time (e.g. reactable-py calls `define_module()` at module
+    level), so they can't belong to one session: mirror them into every
+    session like shared_lifetime() widgets.
+    """
+    return any(
+        widget_pkg(cls) == "ipyreact" and cls.__name__ in ("Module", "ImportMap")
+        for cls in type(w).__mro__
+    )
+
+
+def constructing_ipyreact_registry_widget() -> bool:
+    """
+    Is ipyreact's define_module()/define_import_map() constructing this widget?
+
+    Catches the sub-widgets a Module/ImportMap materializes while it's being
+    constructed (e.g. its Layout, when Widget.open() serializes state): they
+    must be process-global for the same reason the Module/ImportMap itself is.
+    """
+    if "ipyreact.module" not in sys.modules and "ipyreact.importmap" not in sys.modules:
+        return False
+    frame = sys._getframe(1)
+    try:
+        while frame is not None:
+            if frame.f_globals.get("__name__") in (
+                "ipyreact.module",
+                "ipyreact.importmap",
+            ):
+                return True
+            frame = frame.f_back
+        return False
+    finally:
+        del frame
+
+
+def ipyreact_registry_widgets() -> List[Widget]:
+    """
+    ipyreact's process-global dependency widgets, if ipyreact is imported.
+
+    Picks up widgets our construction hook missed (ipyreact imported before
+    shinywidgets, or during a stub session, where define_module() returns the
+    already-registered widget instead of constructing a new one).
+    """
+    widgets: List[Widget] = []
+    module_mod = sys.modules.get("ipyreact.module")
+    widgets.extend(getattr(module_mod, "_module_widgets", {}).values())
+    importmap_mod = sys.modules.get("ipyreact.importmap")
+    import_map_widget = getattr(importmap_mod, "_import_map_widget", None)
+    if import_map_widget is not None:
+        widgets.append(import_map_widget)
+    return widgets
 
 
 def importing_ipyvuetify() -> bool:
