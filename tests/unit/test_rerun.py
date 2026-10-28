@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 
 import pytest
 import shinywidgets._render_widget as rw
@@ -14,8 +15,22 @@ pytest.importorskip("numpy")
 rr = pytest.importorskip("rerun")
 pytest.importorskip("rerun_notebook")
 
-from rerun.notebook import Viewer  # noqa: E402
-from rerun_notebook import Viewer as RerunNotebookViewer  # noqa: E402
+# rerun requires Python 3.11+; pytest.importorskip() skips execution on 3.10,
+# but pyright would still resolve these imports statically, so guard them (the
+# fallback aliases are never used since the module is skipped on 3.10)
+if sys.version_info >= (3, 11):
+    from rerun.notebook import Viewer
+    from rerun_notebook import Viewer as RerunNotebookViewer
+else:
+    from typing import Any
+
+    # Stub so pyright on 3.10 has something to check against; never
+    # instantiated since the module is skipped above
+    class Viewer:
+        def __init__(self, **kwargs: Any) -> None:
+            self._viewer: Any = None
+
+    RerunNotebookViewer = Viewer
 
 
 def make_viewer(**kwargs) -> Viewer:

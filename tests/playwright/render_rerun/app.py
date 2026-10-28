@@ -12,10 +12,20 @@ from rerun.notebook import Viewer
 from shiny import App, reactive, render, ui
 from shinywidgets import output_widget, render_rerun
 
-app_ui = ui.page_fluid(
+# Identifiable payloads so the tests can verify logged data actually reaches
+# the browser (they show up, base64-encoded, in the websocket comm messages)
+PRE_RENDER_MARKER = "PRE_RENDER_MARKER_7f3a2c"
+POST_RENDER_MARKER = "POST_RENDER_MARKER_9d1e4b"
+
+app_ui = ui.page_fillable(
     ui.input_action_button("rerender", "Rerender"),
+    ui.input_action_button("log_more", "Log more data"),
     ui.output_text("render_count"),
-    output_widget("viewer"),
+    ui.card(
+        ui.card_header("Viewer"),
+        output_widget("viewer"),
+        height="500px",
+    ),
     ui.output_text("viewer_event"),
 )
 
@@ -23,6 +33,7 @@ app_ui = ui.page_fluid(
 def server(input, output, session):
     counter = reactive.value(0)
     event = reactive.value("(no events)")
+    recordings = []
 
     @reactive.effect
     @reactive.event(input.rerender)
@@ -37,11 +48,25 @@ def server(input, output, session):
     def viewer():
         counter.get()  # re-render on button click
         rec = rr.RecordingStream(application_id="render_rerun_test")
+        recordings[:] = [rec]
         rng = np.random.default_rng(counter.get())
         rec.log("points", rr.Points3D(rng.normal(size=(50, 3)), radii=0.05))
-        v = Viewer(width="auto", height="auto", recording=rec)
+        # Logged before the viewer (and its callback sink) exists; rerun
+        # replays it to the widget when Viewer() attaches the sink
+        rec.log("logs", rr.TextLog(PRE_RENDER_MARKER))
+        # Leave width/height at their 640x480 defaults to exercise the
+        # "defaults mean fill the container" conversion
+        v = Viewer(recording=rec)
         v.on_event(lambda evt: event.set(type(evt).__name__))
         return v
+
+    @reactive.effect
+    @reactive.event(input.log_more)
+    def _():
+        if recordings:
+            # Log to the currently mounted viewer's recording after render
+            recordings[0].log("logs", rr.TextLog(POST_RENDER_MARKER))
+            recordings[0].flush()
 
     @render.text
     def viewer_event():

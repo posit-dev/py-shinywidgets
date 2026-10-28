@@ -62,8 +62,14 @@ if TYPE_CHECKING:
         from ipywidgets import Widget as EmbeddingAtlasWidget
     from pythreejs import Renderer as PythreejsRenderer
     from quak import Widget as QuakWidget
-    from rerun.notebook import Viewer as RerunViewer
-    from rerun_notebook import Viewer as RerunNotebookViewer
+
+    # rerun requires Python 3.11+, so it's absent from 3.10 environments
+    if sys.version_info >= (3, 11):
+        from rerun.notebook import Viewer as RerunViewer
+        from rerun_notebook import Viewer as RerunNotebookViewer
+    else:
+        from ipywidgets import Widget as RerunNotebookViewer
+        from ipywidgets import Widget as RerunViewer
 
     # vizarr isn't in the dev/test groups (it pins zarr<3)
     from vizarr import Viewer as VizarrViewer  # pyright: ignore[reportMissingImports]
@@ -2748,6 +2754,10 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
     ``RERUN_NOTEBOOK_ASSET`` environment variable to ``serve-local`` or
     ``inline`` to serve it from the Shiny process instead (see the
     [rerun-notebook docs](https://pypi.org/project/rerun-notebook/)).
+    Note that ``serve-local`` starts a loopback (``localhost``) server inside
+    the Shiny process, so the browser can only reach it when it runs on the
+    same host as the app (e.g., local development). For remote deployments,
+    use ``inline`` instead, unless the asset server is proxied to the client.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
