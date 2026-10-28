@@ -75,6 +75,7 @@ lonboard = ["lonboard; python_version < '3.15'"]
 maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
 mosaic_widget = ["mosaic-widget"]
+obsplot = ["pyobsplot>=0.5.0"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
 # pyarrow is required for pandas DataFrame conversion (perspective-python
 # doesn't depend on it)
@@ -131,6 +132,7 @@ test = [
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
+  "pyobsplot>=0.5.0",
   "plotly>=5.12.0",
   "plotnine",
   "polars",
@@ -185,6 +187,7 @@ dev = [
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
+  "pyobsplot>=0.5.0",
   "plotly>=5.12.0",
   "plotnine",
   "polars",
@@ -244,6 +247,7 @@ test = [
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
+  "pyobsplot>=0.5.0",
   "plotly>=5.12.0",
   "plotnine",
   "polars",

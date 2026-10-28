@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
+    from pyobsplot.widget import ObsplotWidget
 
     # embedding-atlas requires Python 3.11+, so it's absent from 3.10 environments
     if sys.version_info >= (3, 11):
@@ -74,7 +75,7 @@ else:
         LonboardMap
     ) = QuakWidget = PerspectiveWidget = GeolibreMap = IpyvolumeFigure = (
         PythreejsRenderer
-    ) = VizarrViewer = object
+    ) = ObsplotWidget = VizarrViewer = object
 
 from shiny.render.renderer import ValueFn
 
@@ -133,6 +134,7 @@ __all__ = (
     "render_maplibre",
     "render_matplotlib",
     "render_mosaic_widget",
+    "render_obsplot",
     "render_panel",
     "render_perspective",
     "render_plotly",
@@ -1436,6 +1438,94 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    """
+
+
+class render_obsplot(render_widget_base[ObsplotWidget, ObsplotWidget]):
+    """
+    Reactively render an [Observable Plot](https://observablehq.com/plot/)
+    chart, created with [pyobsplot](https://juba.github.io/pyobsplot/), as a
+    Shiny output.
+
+    The decorated function should return a `pyobsplot.widget.ObsplotWidget`
+    (requires ``pip install 'shinywidgets[obsplot]'``), as produced by
+    `Plot.plot()` (or by calling an `Obsplot()` creator). The `Plot`/`Obsplot`
+    object itself is a plot *creator*, not a chart -- calling it with a plot
+    specification produces the chart. Only the default ``format='widget'``
+    produces a chart; the other formats (``'html'``, ``'svg'``, ``'png'``)
+    return `None`, which renders as an empty output.
+
+    Observable Plot charts have a fixed pixel width: they shrink
+    proportionally (preserving aspect ratio) to fit a narrower container,
+    but never grow past the specification's width. Control the size with
+    ``width`` (and, if needed, ``height``) in the plot specification.
+    pyobsplot's interactions (tips, crosshairs) run entirely in the browser;
+    nothing is synced back to Python, so there's no widget state to
+    :func:`~shinywidgets.reactive_read`.
+
+    The decorated function also gains two read-only attributes: `.value` and
+    `.widget`, which are both the rendered `ObsplotWidget` instance. To change
+    a chart without re-rendering, assign a new specification to
+    ``.widget.spec`` (the same dictionary you'd pass to `Plot.plot()`).
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ----
+    pandas and polars `DataFrame`s in the specification are serialized to
+    Arrow IPC and sent to the browser with the widget state, so a chart over a
+    large dataset makes for a large message (and ``pyobsplot`` bundles about
+    1.4 MB of JavaScript, which anywidget sends to the browser again on each
+    render). For large data, aggregate before plotting.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    import polars as pl
+    from pyobsplot import Plot
+    from shiny.express import ui
+    from shinywidgets import render_obsplot
+
+    penguins = pl.read_csv(
+        "https://github.com/juba/pyobsplot/raw/main/doc/data/penguins.csv"
+    )
+
+
+    @render_obsplot
+    def penguin_plot():
+        return Plot.plot(
+            {
+                "grid": True,
+                "color": {"legend": True},
+                "marks": [
+                    Plot.dot(
+                        penguins,
+                        {
+                            "x": "flipper_length_mm",
+                            "y": "body_mass_g",
+                            "fill": "species",
+                        },
+                    )
+                ],
+            }
+        )
+    ```
     """
 
 
