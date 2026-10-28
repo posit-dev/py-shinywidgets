@@ -26,6 +26,19 @@ app_ui = ui.page_fillable(
         output_widget("viewer"),
         height="500px",
     ),
+    # An output with an explicit height isn't fillable, so the viewer gets no
+    # forward-fill-potential styling; shinywidgets.css must fit it to the
+    # output instead (otherwise its 16:9 default sizing overflows and clips)
+    ui.card(
+        ui.card_header("Viewer (explicit output height)"),
+        output_widget("viewer_fixed", height="250px"),
+    ),
+    # A non-fillable output with no height sizes to the viewer's content (its
+    # default 16:9 sizing)
+    ui.card(
+        ui.card_header("Viewer (non-filling output)"),
+        output_widget("viewer_plain", fill=False, fillable=False),
+    ),
     ui.output_text("viewer_event"),
 )
 
@@ -59,6 +72,21 @@ def server(input, output, session):
         v = Viewer(recording=rec)
         v.on_event(lambda evt: event.set(type(evt).__name__))
         return v
+
+    def _plain_viewer(seed: int):
+        rec = rr.RecordingStream(application_id="render_rerun_sizing_test")
+        rng = np.random.default_rng(seed)
+        rec.log("points", rr.Points3D(rng.normal(size=(50, 3)), radii=0.05))
+        # Leave width/height at their 640x480 defaults (as with `viewer`)
+        return Viewer(recording=rec)
+
+    @render_rerun
+    def viewer_fixed():
+        return _plain_viewer(1)
+
+    @render_rerun
+    def viewer_plain():
+        return _plain_viewer(2)
 
     @reactive.effect
     @reactive.event(input.log_more)

@@ -2715,22 +2715,32 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
     """
     Reactively render a [rerun](https://rerun.io) viewer as a Shiny output.
 
+    rerun is a multimodal viewer for time-indexed data: you log 3D scenes,
+    images, tensors, timeseries, or text logs from Python, and the viewer lets
+    you scrub a timeline to see how it all evolved. Data logged to the viewer's
+    recording streams live to the browser, both during the initial render and
+    from later reactive updates.
+
     The decorated function may return either a `rerun.notebook.Viewer` (the
     recommended, high-level API; it is coerced to its inner widget) or a
     `rerun_notebook.Viewer` widget directly. Both require ``pip install
-    'shinywidgets[rerun]'``. Data logged to the viewer's recording (a 3D scene,
-    timeseries, images, tensors, text logs, ...) streams live to the browser,
-    both during the initial render and from later reactive updates.
+    'shinywidgets[rerun]'``.
 
     .. important::
-        Give each session its own `rerun.RecordingStream` and pass it to the
-        viewer (``Viewer(recording=...)``). rerun's usual ``rr.init()`` +
-        ``rr.log()`` pattern logs to a *global* recording shared by every
-        session, so one user's data would appear in every other user's viewer.
+        Create the `rerun.RecordingStream` inside the render function and pass
+        it to the viewer (``Viewer(recording=...)``), so each session gets its
+        own recording. rerun's usual ``rr.init()`` + ``rr.log()`` pattern
+        writes to a single process-global recording. That's fine in Jupyter,
+        where one kernel serves one person, but a Shiny process serves every
+        browser session at once -- with a global recording, one user's data
+        would appear in every other user's viewer.
 
     Note that ``rr.notebook_show()`` does not work in Shiny: it renders through
-    Jupyter's display machinery (and drains the recording), so always construct
-    a `rerun.notebook.Viewer` and return it from the render function instead.
+    Jupyter's display machinery (which Shiny never invokes), and it *drains*
+    the recording, producing a one-shot snapshot with no live updates. Always
+    construct a `rerun.notebook.Viewer` and return it from the render function
+    instead -- the viewer then stays connected, and data logged later streams
+    in live.
 
     The decorated function also gains two read-only attributes: `.value`, the
     value most recently returned by the render function, and `.widget`, the
@@ -2741,15 +2751,34 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
     Python-side trait updates (e.g., ``widget._width = 800``) also stream to
     the browser.
 
-    To react to viewer interactions (play/pause, time changes, selection
+    To react to viewer interactions (play/pause, timeline scrubbing, selection
     changes), register a callback with `rerun.notebook.Viewer.on_event()` and
-    set a `shiny.reactive.Value` inside it (events arrive as comm messages, so
-    they are not readable via :func:`~shinywidgets.reactive_read`, which only
-    covers synced traits).
+    set a `shiny.reactive.Value` inside it. These interactions reach Python as
+    one-off messages, not as synced widget state, so
+    :func:`~shinywidgets.reactive_read` can't see them -- it only reads synced
+    traits. rerun keeps high-frequency interactions off the synced-trait
+    channel by design (syncing every timeline tick would be expensive), and the
+    explicit callback lets you choose which events are worth reacting to:
+
+    ```python
+    from shiny import reactive
+
+    selection = reactive.Value(None)
+
+
+    @render_rerun
+    def viewer():
+        rec = rr.RecordingStream(application_id="my_app")
+        v = rr.notebook.Viewer(recording=rec)
+        v.on_event(lambda evt: selection.set(evt))
+        return v
+    ```
 
     In a filling layout, the viewer fills its container when its width/height
     are left at their defaults (or set to ``"auto"``); an explicit integer
-    ``width=``/``height=`` is respected instead. The viewer's JavaScript/Wasm
+    ``width=``/``height=`` is respected instead. An explicit
+    ``output_widget(height=...)`` also fits the default-sized viewer to the
+    output's height. The viewer's JavaScript/Wasm
     bundle (~55MB) loads from rerun's CDN by default; set the
     ``RERUN_NOTEBOOK_ASSET`` environment variable to ``serve-local`` or
     ``inline`` to serve it from the Shiny process instead (see the

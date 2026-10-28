@@ -90,6 +90,47 @@ def test_rerun_default_size_fills_output(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_rerun_default_size_fits_explicit_output_height(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+
+    # An output with an explicit height isn't fillable, so the viewer gets no
+    # forward-fill-potential styling; shinywidgets.css fits the viewer (whose
+    # default sizing is `height: auto; aspect-ratio: 16/9`, taller than 250px
+    # here) to the output instead of letting it overflow and get clipped
+    inner = page.locator("#viewer_fixed .rerun_notebook > div")
+    expect(inner).to_have_count(1, timeout=90000)
+    canvas = page.locator("#viewer_fixed .rerun_notebook canvas")
+    expect(canvas.first).to_be_visible(timeout=90000)
+    output_box = page.locator("#viewer_fixed").bounding_box()
+    inner_box = inner.bounding_box()
+    assert output_box is not None and inner_box is not None
+    assert abs(output_box["height"] - 250) < 2
+    assert abs(inner_box["height"] - 250) < 2
+    assert inner_box["width"] > 0
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_rerun_default_size_non_filling_output(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+
+    # A non-fillable output with no explicit height sizes to the viewer's
+    # content (its default 16:9 sizing), so both should be positive
+    inner = page.locator("#viewer_plain .rerun_notebook > div")
+    expect(inner).to_have_count(1, timeout=90000)
+    canvas = page.locator("#viewer_plain .rerun_notebook canvas")
+    expect(canvas.first).to_be_visible(timeout=90000)
+    output_box = page.locator("#viewer_plain").bounding_box()
+    inner_box = inner.bounding_box()
+    assert output_box is not None and inner_box is not None
+    assert output_box["width"] > 0 and output_box["height"] > 0
+    assert inner_box["width"] > 0 and inner_box["height"] > 0
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_rerun_logged_data_reaches_browser(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
 
@@ -135,7 +176,9 @@ def test_rerun_rerender_lifecycle(page: Page, local_app) -> None:
         # view's canvas to detach and the new one to mount (render_count is a
         # separate output and can update before the new viewer is displayed)
         page.wait_for_function("el => !el.isConnected", arg=old_canvas, timeout=90000)
-        expect(canvas).to_have_count(1)
+        # The new viewer's wasm can take a while to boot under load, so give
+        # the mount check the same generous timeout as the visibility one
+        expect(canvas).to_have_count(1, timeout=90000)
         expect(canvas.first).to_be_visible(timeout=90000)
         expect(page.locator("#render_count")).to_have_text(str(i))
 
