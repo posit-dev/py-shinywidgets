@@ -252,6 +252,51 @@ def test_nglview_respects_constructor_width(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_nglview_own_height_wins_over_explicit_output_height(
+    page: Page, local_app
+) -> None:
+    # NGLWidget(height="200px") inside output_widget(height="400px"): the
+    # widget opted out of filling, so its own height must win over the
+    # output's explicit one
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    expect(page.locator("#sized_both canvas")).to_have_count(1, timeout=30000)
+
+    page.wait_for_function(
+        """() => document.getElementById('sized_both').querySelector('canvas')
+            .getBoundingClientRect().height === 200""",
+        timeout=30000,
+    )
+    s = sizes(page, "sized_both")
+    assert s["out"][1] == 400
+    assert s["canvas"][1] == 200
+    # ... while its width still tracks the output
+    assert abs(s["canvas"][0] - s["out"][0]) <= 1
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_nglview_respects_assigned_layout(page: Page, local_app) -> None:
+    # widget.layout = Layout(width="200px", height="150px"): the stage must be
+    # (re)sized from the Layout once ipywidgets applies its styles to the view
+    # root (it does so only after display), rather than taking the output's
+    # width and the stage's default height
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    expect(page.locator("#layout_sized canvas")).to_have_count(1, timeout=30000)
+
+    page.wait_for_function(
+        """() => {
+          const c = document.getElementById('layout_sized').querySelector('canvas')
+            .getBoundingClientRect();
+          return Math.abs(c.width - 200) <= 1 && Math.abs(c.height - 150) <= 1;
+        }""",
+        timeout=30000,
+    )
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_nglview_child_removal_disposes_stage(page: Page, local_app) -> None:
     # A container dropping a child calls view.remove() directly, which doesn't go
     # through the output binding's teardown; the stage must still be disposed

@@ -242,8 +242,12 @@ const nglviewBehavior: WidgetBehavior = {
   // widget_pkg, but it inherits nglview's view
   matches: (model) => model.get('_view_name') === 'NGLView',
   setupFill: ({ el, view, model }) => setupNglviewAutoSize(el, view, model),
-  setupFixedSize: ({ el, view, model }) =>
-    setupNglviewAutoSize(el, view, model, !!el.style.height),
+  // Track the output's height only when the widget wants to fill and the
+  // output has a height of its own: a widget with a height of its own (e.g.
+  // `NGLWidget(height=...)` or `layout.height`) keeps it even inside an
+  // `output_widget(height=...)`, tracking only the width
+  setupFixedSize: ({ el, view, model, widgetWantsFill }) =>
+    setupNglviewAutoSize(el, view, model, widgetWantsFill && !!el.style.height),
 };
 
 // shinywidgets.css sizes an ipyleaflet map to its (non-filling) output's

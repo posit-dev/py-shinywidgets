@@ -27,19 +27,33 @@ export function setupNglviewAutoSize(
     return () => {};
   }
   const stage = view as unknown as NglviewView;
-  const observer = new ResizeObserver(() => {
-    // nglview stores an `NGLWidget(width=...)` argument on the synced
-    // `_view_width` trait (default '') and sizes the stage to it, so an
-    // explicit width opts out of tracking the output's width. Otherwise the
-    // stage's own fixed pixel width would overflow or underfill the output.
-    const width = model.get('_view_width') || `${el.clientWidth}px`;
+  const root = view.el;
+  const resize = () => {
+    // Explicit widths opt out of tracking the output's width: a constructor
+    // `NGLWidget(width=...)` (the synced `_view_width` trait, which nglview
+    // sizes the stage to itself), or a `Layout(width=...)` (an inline style
+    // ipywidgets applies to the view root). Otherwise the stage's own fixed
+    // pixel width would overflow or underfill the output.
+    const width =
+      model.get('_view_width') || root.style.width || `${el.clientWidth}px`;
     const height = trackHeight
       ? `${el.clientHeight}px`
-      : stage.stage.viewer.container.style.height;
+      : // A `Layout(height=...)` similarly wins over the stage's current size
+        root.style.height || stage.stage.viewer.container.style.height;
     stage.setSize(width, height);
-  });
+  };
+  const observer = new ResizeObserver(resize);
   observer.observe(el);
-  return () => observer.disconnect();
+  // ipywidgets applies a widget's Layout styles to the view root only after
+  // display (widget.js's setLayout() waits on `displayed`), so they can land
+  // after the observer's initial pass; resize when they do. setSize() writes
+  // to a descendant of the root, never the root itself, so this can't loop.
+  const styleObserver = new MutationObserver(resize);
+  styleObserver.observe(root, { attributes: true, attributeFilter: ['style'] });
+  return () => {
+    observer.disconnect();
+    styleObserver.disconnect();
+  };
 }
 
 // The model name of nglview's process-global ColormakerRegistry widget

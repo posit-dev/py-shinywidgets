@@ -54,6 +54,8 @@ app_ui = ui.page_fluid(
     output_widget("fixed", height="250px"),
     output_widget("own_height_view"),
     output_widget("width_view"),
+    output_widget("sized_both", height="400px"),
+    output_widget("layout_sized"),
     output_widget("custom_scheme"),
     output_widget("boxed"),
     ui.output_text("picked_atom"),
@@ -107,6 +109,22 @@ def server(input, output, session):
         return nglview.NGLWidget(
             nglview.TextStructure(TINY_PDB), width="200px", height="200px"
         )
+
+    @render_nglview
+    def sized_both():
+        # A constructor height (200px) must win over the output's 400px
+        return nglview.NGLWidget(nglview.TextStructure(TINY_PDB), height="200px")
+
+    @render_nglview
+    def layout_sized():
+        # An explicitly sized Layout must win over the output's size, and the
+        # stage must follow once ipywidgets applies the styles to the view
+        # root (it does so only after display). A constructor `layout=`
+        # argument is not covered: nglview archives it raw into the synced
+        # _ngl_msg_archive, which is not JSON serializable
+        widget = nglview.NGLWidget(nglview.TextStructure(TINY_PDB))
+        widget.layout = ipywidgets.Layout(width="200px", height="150px")
+        return widget
 
     @render_nglview
     def custom_scheme():
