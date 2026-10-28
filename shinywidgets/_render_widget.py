@@ -60,7 +60,9 @@ if TYPE_CHECKING:
         from ipywidgets import Widget as EmbeddingAtlasWidget
     from pythreejs import Renderer as PythreejsRenderer
     from quak import Widget as QuakWidget
-    from vizarr import Viewer as VizarrViewer
+
+    # vizarr isn't in the dev/test groups (it pins zarr<3)
+    from vizarr import Viewer as VizarrViewer  # pyright: ignore[reportMissingImports]
 else:
     JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
         BokehModel
