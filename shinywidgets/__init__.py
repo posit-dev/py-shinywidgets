@@ -22,6 +22,7 @@ from ._render_widget import (
     render_altair,
     render_bokeh,
     render_bqplot,
+    render_embedding_atlas,
     render_holoviews,
     render_ipyaladin,
     render_ipycanvas,
@@ -29,8 +30,10 @@ from ._render_widget import (
     render_ipydatagrid,
     render_ipyleaflet,
     render_ipysigma,
+    render_ipyvolume,
     render_itables,
     render_jscatter,
+    render_k3d,
     render_keplergl,
     render_leafmap,
     render_lonboard,
@@ -43,10 +46,17 @@ from ._render_widget import (
     render_plotly,
     render_plotnine,
     render_pydeck,
+    render_pygwalker,
+    render_pythreejs,
     render_quak,
     render_widget,
 )
-from ._shinywidgets import reactive_read, register_widget, session_lifetime
+from ._shinywidgets import (
+    reactive_read,
+    register_widget,
+    session_lifetime,
+    shared_lifetime,
+)
 
 __all__ = (
     "__version__",
@@ -54,6 +64,7 @@ __all__ = (
     "render_widget",
     "render_altair",
     "render_bokeh",
+    "render_embedding_atlas",
     "render_bqplot",
     "render_holoviews",
     "render_ipyaladin",
@@ -62,8 +73,10 @@ __all__ = (
     "render_ipydatagrid",
     "render_ipyleaflet",
     "render_ipysigma",
+    "render_ipyvolume",
     "render_itables",
     "render_jscatter",
+    "render_k3d",
     "render_keplergl",
     "render_leafmap",
     "render_lonboard",
@@ -76,6 +89,8 @@ __all__ = (
     "render_plotly",
     "render_plotnine",
     "render_pydeck",
+    "render_pygwalker",
+    "render_pythreejs",
     "render_quak",
     # Reactive read second
     "reactive_read",
@@ -84,7 +99,9 @@ __all__ = (
     # Other methods last
     "as_widget",
     "bokeh_dependency",
+    # Lifetime methods
+    "session_lifetime",
+    "shared_lifetime",
     # Soft deprecated
     "register_widget",
-    "session_lifetime",
 )

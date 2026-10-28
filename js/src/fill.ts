@@ -1,4 +1,5 @@
 import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
+import { setupIpyvolumeAutoResize } from './ipyvolume';
 import { setupJscatterAutoHeight, setupJscatterFixedHeight } from './jscatter';
 import { setupKeplerAutoHeight } from './keplergl';
 import { setupMplAutoResize } from './mpl';
@@ -25,6 +26,10 @@ export interface BehaviorContext {
   lmWidget: HTMLElement;
   view: DOMWidgetView;
   model: WidgetModel;
+  // The server-side fill decision (set_layout_defaults()): false means the
+  // widget itself opted out of filling (e.g., an explicit size), so a
+  // setupFixedSize() hook must leave its size alone
+  widgetWantsFill: boolean;
 }
 
 export interface PostDisplayContext extends BehaviorContext {
@@ -89,9 +94,133 @@ const plotlyBehavior: WidgetBehavior = {
   },
 };
 
+// ipyvolume figures render at a fixed pixel size and need their canvas
+// resized to the container (see setupIpyvolumeAutoResize). The same applies
+// when the output (or the widget's own Layout) has an explicit height;
+// otherwise the figure's intrinsic size applies, so leave it alone.
+const ipyvolumeBehavior: WidgetBehavior = {
+  setupFill: ({ el, view, model }) => setupIpyvolumeAutoResize(el, view, model),
+  setupFixedSize: ({ el, lmWidget, view, model, widgetWantsFill }) =>
+    // Only resize when the output (or the widget's own Layout, which lands on
+    // the widget element) has an explicit height; otherwise the figure's
+    // intrinsic pixel size applies. Checked at resize time: the Layout style
+    // may only be applied after setup runs.
+    //
+    // A Layout height on the widget is always a size to drive the canvas to,
+    // but the output's CSS height only applies when the widget itself hasn't
+    // opted out of filling (widgetWantsFill) -- an explicit figure size
+    // (e.g., ipv.Figure(width=400, height=300)) keeps its pixel size even
+    // inside an explicitly sized output.
+    setupIpyvolumeAutoResize(
+      el,
+      view,
+      model,
+      () =>
+        !!(
+          (widgetWantsFill && (el.style.height || lmWidget.style.height)) ||
+          (view.el as HTMLElement).style.height
+        )
+    ),
+};
+
 const quakBehavior: WidgetBehavior = {
   setupFill: ({ el, lmWidget }) => setupQuakFit(el, lmWidget, true),
   setupFixedSize: ({ el, lmWidget }) => setupQuakFit(el, lmWidget, false),
+};
+
+// Aspect-management ownership per camera, persisted across view lifetimes
+// (a cached Renderer gets a fresh view, and a fresh setupPythreejsResize()
+// closure, on every render): the aspect value we last set on each camera.
+// Without it, a re-render's new view would adopt a user-set aspect as the
+// managed baseline and overwrite it on the first resize.
+const managedCameraAspects = new WeakMap<WidgetModel, number>();
+
+// A pythreejs Renderer draws into a canvas fixed to its _width/_height pixel
+// traits (and three.js doesn't update the camera's aspect ratio when the
+// canvas resizes), so drive both from the container's size. The traits are
+// synced, so the Python-side Renderer/camera see the new values too.
+function setupPythreejsResize({ el, lmWidget, model }: BehaviorContext): () => void {
+  // An inline <canvas> sits on the text baseline, leaving a ~6px strut of
+  // line height below it. In a container whose height is content-derived
+  // (plain page_fluid, an auto-height card), that strut makes el taller than
+  // the canvas, so sizing the canvas to el grows el, which fires the observer
+  // again -- an unbounded feedback loop. Block display removes the strut, so
+  // sizing the canvas to el is a fixed point.
+  const canvas = lmWidget.querySelector('canvas');
+  if (canvas) canvas.style.display = 'block';
+
+  // Python can replace the camera in place (renderer.camera = ...), so
+  // (re)capture the active camera on change:camera rather than only here.
+  let camera: WidgetModel | undefined;
+  // Manage the aspect ratio only while it holds a value we set (or the
+  // initial one): a user-set aspect (from either side) wins.
+  let lastAspect: number | undefined;
+  let lastWidth = -1;
+  let lastHeight = -1;
+
+  const applySize = (w: number, h: number) => {
+    model.set('_width', w);
+    model.set('_height', h);
+    model.save_changes();
+    if (camera && lastAspect !== undefined && camera.get('aspect') === lastAspect) {
+      lastAspect = w / h;
+      camera.set('aspect', lastAspect);
+      camera.save_changes();
+      managedCameraAspects.set(camera, lastAspect);
+    }
+  };
+
+  const trackCamera = () => {
+    camera = model.get('camera') as WidgetModel | undefined;
+    // A camera we've managed before keeps the aspect we last set as the
+    // baseline, so a user-set aspect (from either side) still wins after a
+    // re-render; a never-managed camera adopts its current (initial) aspect.
+    const managed = camera ? managedCameraAspects.get(camera) : undefined;
+    if (managed !== undefined) {
+      lastAspect = managed;
+    } else {
+      const aspect = camera?.get('aspect');
+      lastAspect = typeof aspect === 'number' ? aspect : undefined;
+    }
+    // A replacement camera still holds its own (stale) aspect, so apply the
+    // current dimensions immediately. resizeToFit()'s dimension cache would
+    // suppress this when the container size hasn't changed.
+    if (lastWidth > 0 && lastHeight > 0) applySize(lastWidth, lastHeight);
+  };
+
+  const resizeToFit = () => {
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    if (w <= 0 || h <= 0 || (w === lastWidth && h === lastHeight)) return;
+    lastWidth = w;
+    lastHeight = h;
+    applySize(w, h);
+  };
+
+  trackCamera();
+  model.on('change:camera', trackCamera);
+  const observer = new ResizeObserver(() => resizeToFit());
+  // Observe the output container (not the widget): with the strut removed
+  // above, the container tracks the canvas exactly, so resizing the canvas
+  // to it doesn't change it and the observer settles.
+  observer.observe(el);
+  resizeToFit();
+  return () => {
+    model.off('change:camera', trackCamera);
+    observer.disconnect();
+  };
+}
+
+const pythreejsBehavior: WidgetBehavior = {
+  setupFill: (ctx) => setupPythreejsResize(ctx),
+  // A fixed-size output with an explicit height (e.g.,
+  // output_widget(height="250px", fillable=False)) gets the canvas sized to
+  // it too, unless the Renderer opted out of filling (its own explicit
+  // width/height), in which case its pixel size is respected. An unsized
+  // non-fillable output keeps the widget's own size rather than stretching
+  // the canvas to the output's full width.
+  setupFixedSize: (ctx) =>
+    ctx.widgetWantsFill && ctx.el.style.height ? setupPythreejsResize(ctx) : undefined,
 };
 
 // kepler.gl's size comes from a pixel `height` trait, so it needs to be driven
@@ -138,10 +267,12 @@ export const ipyleafletBehavior: WidgetBehavior = {
 
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
+  ipyvolume: ipyvolumeBehavior,
   jscatter: jscatterBehavior,
   keplergl: keplerglBehavior,
   nglview: nglviewBehavior,
   plotly: plotlyBehavior,
+  pythreejs: pythreejsBehavior,
   quak: quakBehavior,
   ipyleaflet: ipyleafletBehavior,
 };

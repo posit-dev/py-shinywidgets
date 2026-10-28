@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import io
 from typing import Any
 
+import numpy as np
+from PIL import Image
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, Route, expect
 from shiny.run import ShinyAppProc
 
@@ -24,6 +28,30 @@ def expose_manager(route: Route) -> None:
     )
 
 
+LIVE_VIEWS_JS = "() => window.widgetManager._liveViews.size"
+
+# True when the live-view count matches the previous poll's (i.e., async view
+# registration has settled). Keeps the last count on the window between polls.
+_VIEWS_STABLE_JS = """() => {
+  const n = window.widgetManager._liveViews.size;
+  const stable = window.__shinywidgetsLastViewCount === n;
+  window.__shinywidgetsLastViewCount = n;
+  return stable;
+}"""
+
+
+def wait_for_stable_view_count(page: Page, timeout: int = 30000) -> int:
+    """Return the live-view count once it stops changing between polls.
+
+    Widget views register asynchronously after first paint, so sampling
+    `_liveViews.size` as soon as an output appears can catch a partially
+    populated registry -- and a later equality check against that sample then
+    fails spuriously. Requires the `expose_manager` route.
+    """
+    page.wait_for_function(_VIEWS_STABLE_JS, polling=500, timeout=timeout)
+    return page.evaluate(LIVE_VIEWS_JS)
+
+
 _MODELS_JS = """async () => {
     const models = await Promise.all(
         Object.values(window.widgetManager._models).map((p) => p.catch(() => null))
@@ -40,42 +68,52 @@ def client_models(page: Page) -> list[dict[str, Any]]:
     return page.evaluate(_MODELS_JS)
 
 
-_LIVE_VIEWS_JS = "() => window.widgetManager._liveViews.size"
+# Sum of live views across every model with the given class name. Views are
+# attached/detached asynchronously, so the sum can lag behind what the DOM
+# already shows.
+_MODEL_VIEWS_JS = """async (modelName) => {
+    const models = await Promise.all(
+        Object.values(window.widgetManager._models).map((p) => p.catch(() => null))
+    );
+    return models
+        .filter((m) => m && m.get('_model_name') === modelName)
+        .reduce((sum, m) => sum + Object.keys(m.views || {}).length, 0);
+}"""
 
-# Each kepler.gl/lonboard map bundles its own copy of luma.gl, which logs this
-# (harmless) console error when a page shows more than one map. How many of them
-# have logged it by the time a test asserts depends on how fast the bundle loads
-# (on a fast runner every map on the page initializes before the first is even
-# visible), so it can't be left to timing.
-LUMA_REINIT = "luma.gl: This version of luma.gl has already been initialized"
+# True when the per-model view count matches the previous poll's (i.e., async
+# view registration/disposal has settled). Keeps the last count per model name
+# on the window between polls (and across calls, which is fine: an unchanged
+# count is the settled value we're after).
+_MODEL_VIEWS_STABLE_JS = """async (modelName) => {
+    const models = await Promise.all(
+        Object.values(window.widgetManager._models).map((p) => p.catch(() => null))
+    );
+    const n = models
+        .filter((m) => m && m.get('_model_name') === modelName)
+        .reduce((sum, m) => sum + Object.keys(m.views || {}).length, 0);
+    const last = window.__shinywidgetsLastModelViewCounts || {};
+    const stable = last[modelName] === n;
+    last[modelName] = n;
+    window.__shinywidgetsLastModelViewCounts = last;
+    return stable;
+}"""
 
 
-def settled_live_views(page: Page, timeout: int = 10000, quiet_ms: int = 500) -> int:
-    """Return the manager's live-view count, once it has stopped changing.
+def wait_for_stable_model_view_count(
+    page: Page, model_name: str, timeout: int = 30000
+) -> int:
+    """Return the summed live-view count for `model_name` once it stops changing.
 
-    Child views (e.g. bqplot's scales, axes and marks, or the ipywidgets nglview
-    builds for its GUI) are created asynchronously, so the count keeps changing
-    for a moment after the DOM first looks right -- a container may even drop a
-    previous render's children before the new ones are registered. Wait for a
-    quiet period rather than sampling once, so comparisons are made between
-    settled counts.
+    Per-model counterpart to `wait_for_stable_view_count()`: widget views
+    register and dispose asynchronously, so sampling `client_models()` as soon
+    as an output appears in the DOM can catch a partially populated (or not yet
+    cleaned up) registry -- and a later equality check against that sample then
+    fails spuriously. Requires the `expose_manager` route.
     """
-    step = 50
-    count = page.evaluate(_LIVE_VIEWS_JS)
-    stable_for = 0
-    waited = 0
-    while waited < timeout:
-        page.wait_for_timeout(step)
-        waited += step
-        latest = page.evaluate(_LIVE_VIEWS_JS)
-        if latest == count:
-            stable_for += step
-            if stable_for >= quiet_ms:
-                return count
-        else:
-            count = latest
-            stable_for = 0
-    return count
+    page.wait_for_function(
+        _MODEL_VIEWS_STABLE_JS, arg=model_name, polling=500, timeout=timeout
+    )
+    return page.evaluate(_MODEL_VIEWS_JS, model_name)
 
 
 def assert_rerender_cleanup(
@@ -153,6 +191,52 @@ def collect_errors(page: Page) -> tuple[list[str], list[str]]:
     return errors, failed_requests
 
 
+# The red-pixel count that counts as "the scene was drawn" for
+# wait_for_red_pixels() (e.g., a scatter of pure-red markers on white)
+MIN_RED_PIXELS = 50
+
+
+def count_red_pixels(page: Page, selector: str) -> int:
+    try:
+        # Short timeout: a missing/detached canvas (e.g., mid re-render)
+        # counts as "not drawn yet" rather than failing the poll
+        png = page.locator(selector).first.screenshot(timeout=1000)
+    except PlaywrightError:
+        return 0
+    rgb = np.asarray(Image.open(io.BytesIO(png)).convert("RGB")).astype(int)
+    # Marker shading darkens pure red to ~rgb(198,0,0), so don't demand >200
+    red = (rgb[..., 0] > 150) & (rgb[..., 1] < 80) & (rgb[..., 2] < 80)
+    return int(red.sum())
+
+
+def wait_for_red_pixels(page: Page, selector: str, timeout_ms: int = 30000) -> None:
+    """Wait until a WebGL canvas shows its (red) scene, via screenshot pixels.
+
+    WebGL pixels can't be read back from the canvas itself (no
+    preserveDrawingBuffer), so check the composited pixels instead. The first
+    drawn frame is also a good "the widget finished initializing" signal:
+    until then, the page's main thread may still be busy with WebGL setup.
+    """
+    waited = 0
+    while count_red_pixels(page, selector) <= MIN_RED_PIXELS:
+        assert waited < timeout_ms, f"no scene pixels drawn in {selector}"
+        page.wait_for_timeout(250)
+        waited += 250
+
+
+# anywidget evaluates a widget's inline ESM once per *view* (a fresh blob
+# URL per evaluation), so a page with N keplergl maps initializes luma.gl's
+# page-global runtime N times; luma keeps the first initialization and logs
+# this (benign) message for the rest. Whether the extra inits interleave
+# badly enough to log is a timing race, so the message appears
+# intermittently (mostly on loaded CI runners). Deduping the evaluation
+# isn't an option: other anywidgets (e.g. mosaic-widget) keep per-view state
+# in their module namespace and break when views share one.
+KEPLERGL_ALLOWED_ERRORS = (
+    "luma.gl: This version of luma.gl has already been initialized",
+)
+
+
 def assert_no_unexpected_errors(
     errors: list[str],
     failed_requests: list[str],
@@ -164,8 +248,8 @@ def assert_no_unexpected_errors(
     Failed requests whose URL contains one of `allowed_404s` are tolerated, along
     with the generic "Failed to load resource" console error they produce (the
     console message doesn't include the URL, so it can't be matched precisely).
-    `allowed_errors` are console messages that come from a third-party bundle
-    rather than from shinywidgets (see LUMA_REINIT).
+    Console errors containing one of the `allowed_errors` substrings are also
+    tolerated (for known-benign third-party messages).
     """
     assert all(
         any(allowed in url for allowed in allowed_404s) for url in failed_requests

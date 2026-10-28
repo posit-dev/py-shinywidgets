@@ -40,7 +40,9 @@ The core challenge is establishing bidirectional communication between Python ip
 - `ShinyComm` replaces `ipykernel.comm.Comm` - sends widget state via Shiny custom messages (`shinywidgets_comm_open`, `shinywidgets_comm_msg`, `shinywidgets_comm_close`)
 - `init_shiny_widget()` hooks into `Widget.on_widget_constructed` to intercept all widget creation and establish comms
 - Widget state is serialized with buffer handling for binary data (base64 encoded since Shiny doesn't support binary messages)
-- Global state maps in `_shinywidgets.py`: `SESSIONS`, `COMM_MANAGER`, `SESSION_WIDGET_ID_MAP`, `WIDGET_INSTANCE_MAP`
+- `SharedShinyComm` fans one process-global widget's messages out to a `ShinyComm` per session; shared widgets are never closed
+- Global state maps in `_shinywidgets.py`: `SESSIONS`, `COMM_MANAGERS`, `SESSION_WIDGET_ID_MAP`, `WIDGET_INSTANCE_MAP`, `SHARED_WIDGETS` (widgets built in `shared_lifetime()`)
+- `is_process_global()` decides which widgets every session may display (and no render or session may close); `open_shared_in()` opens one in a session, and runs at session start (`init_session()`), at render time (`open_process_global_widgets()`), and when a referencing widget's comm opens
 
 **JavaScript side (`js/src/output.ts`, `js/src/comm.ts`):**
 - `OutputManager` extends `@jupyter-widgets/html-manager`'s `HTMLManager` to render widgets
@@ -66,7 +68,7 @@ Not all visualization objects are ipywidgets. `as_widget()` converts:
 ### Dependencies (`_dependencies.py`)
 
 Handles dynamic loading of 3rd party widget JavaScript:
-- `require_dependency()` locates widget's nbextension files and creates HTMLDependency
+- `require_dependencies()` locates widget's nbextension files and creates HTMLDependencies
 - Configures require.js paths so widgets can load their JS modules
 - Falls back to CDN (unpkg.com) if local extension not found
 

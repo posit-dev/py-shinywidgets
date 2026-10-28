@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from playwright.sync_api import Page, expect
 from tests.playwright.conftest import (
-    LUMA_REINIT,
+    KEPLERGL_ALLOWED_ERRORS,
     assert_no_unexpected_errors,
     collect_errors,
 )
@@ -44,7 +44,9 @@ def test_redisplayed_widget_keeps_filling(page: Page, local_app) -> None:
         timeout=10000,
     )
 
-    assert_no_unexpected_errors(errors, failed_requests, allowed_errors=(LUMA_REINIT,))
+    assert_no_unexpected_errors(
+        errors, failed_requests, allowed_errors=KEPLERGL_ALLOWED_ERRORS
+    )
 
 
 def test_widget_with_own_height_after_filling_render_is_respected(
@@ -69,4 +71,6 @@ def test_widget_with_own_height_after_filling_render_is_respected(
     assert heights["container"] > 400
     assert abs(heights["kepler"] - 250) <= 1
 
-    assert_no_unexpected_errors(errors, failed_requests, allowed_errors=(LUMA_REINIT,))
+    assert_no_unexpected_errors(
+        errors, failed_requests, allowed_errors=KEPLERGL_ALLOWED_ERRORS
+    )

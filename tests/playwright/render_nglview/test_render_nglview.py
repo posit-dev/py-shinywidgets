@@ -8,7 +8,7 @@ from tests.playwright.conftest import (
     assert_no_unexpected_errors,
     collect_errors,
     expose_manager,
-    settled_live_views,
+    wait_for_stable_view_count,
 )
 
 # Size (in CSS px) of an element and the canvas nglview drew inside it
@@ -182,7 +182,7 @@ def test_nglview_rerender_releases_old_views(page: Page, local_app) -> None:
 
     expect(page.locator("#view canvas")).to_have_count(1, timeout=30000)
     expect(page.locator("#render_count")).to_have_text("0")
-    initial = settled_live_views(page)
+    initial = wait_for_stable_view_count(page)
 
     for i in range(1, 4):
         page.click("#rerender")
@@ -190,7 +190,7 @@ def test_nglview_rerender_releases_old_views(page: Page, local_app) -> None:
         expect(page.locator("#view canvas")).to_have_count(1, timeout=30000)
 
     expect(page.locator("#view > .lm-Widget")).to_have_count(1)
-    assert settled_live_views(page) == initial
+    assert wait_for_stable_view_count(page) == initial
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
     assert_no_unexpected_errors(errors, failed_requests)

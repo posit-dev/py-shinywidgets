@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from playwright.sync_api import Page, expect
 from tests.playwright.conftest import (
-    LUMA_REINIT,
     assert_no_unexpected_errors,
     client_models,
     collect_errors,
     expose_manager,
 )
+
+# Each lonboard map bundles its own copy of luma.gl, which logs this (harmless)
+# console error when a page shows more than one map. How many of them have
+# logged it by the time a test asserts depends on timing, so it can't be
+# asserted on exactly.
+LUMA_REINIT = "luma.gl: This version of luma.gl has already been initialized"
 
 MEASURE_JS = """(id) => {
   const box = (el) => {
