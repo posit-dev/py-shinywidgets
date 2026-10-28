@@ -66,7 +66,9 @@ else:
         BokehModel
     ) = MapWidget = FigureWidget = DeckGLWidget = MosaicWidget = BqplotFigure = (
         CytoscapeWidget
-    ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = WalkerWidget = NGLWidget = object
+    ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = WalkerWidget = (
+        NGLWidget
+    ) = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
     ) = QuakWidget = PerspectiveWidget = IpyvolumeFigure = PythreejsRenderer = object
