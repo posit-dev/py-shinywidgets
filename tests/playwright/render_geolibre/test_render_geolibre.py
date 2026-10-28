@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -161,10 +162,14 @@ def test_geolibre_blocking_methods_from_extended_task(page: Page, local_app) -> 
     wait_for_app(page, "map")
 
     # The app calls fly_to(-122.4, 37.8) then get_center(), both via
-    # run_in_executor inside an extended_task (see app.py)
+    # run_in_executor inside an extended_task (see app.py). Compare floats
+    # with tolerance: the reported center carries fp jitter either side of
+    # the target (e.g. -122.4000000000043 or -122.3999999999952).
     page.click("#fly")
-    expect(page.locator("#flown")).to_contain_text("-122.4", timeout=LOAD_TIMEOUT)
-    expect(page.locator("#flown")).to_contain_text("37.8", timeout=LOAD_TIMEOUT)
+    expect(page.locator("#flown")).not_to_have_text("", timeout=LOAD_TIMEOUT)
+    center = json.loads(page.locator("#flown").inner_text())
+    assert center[0] == pytest.approx(-122.4, abs=1e-6)
+    assert center[1] == pytest.approx(37.8, abs=1e-6)
 
 
 def test_geolibre_rerender(page: Page, local_app) -> None:
