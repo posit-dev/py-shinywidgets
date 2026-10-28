@@ -6,13 +6,25 @@ import sys
 import warnings
 from functools import lru_cache, partial
 from importlib.metadata import version as package_version
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, TypeVar, Union, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    TypeVar,
+    Union,
+    cast,
+)
 
 from htmltools import Tag
 from ipywidgets.widgets.widget import Widget
 from packaging.version import Version
 
 if TYPE_CHECKING:
+    import duckdb
     import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
@@ -25,9 +37,16 @@ if TYPE_CHECKING:
     from ipyleaflet import Map as LeafletMap
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from ipysigma import Sigma
+    from ipyvolume.widgets import Figure as IpyvolumeFigure
+
+    # pygwalker 0.6 renamed its widget class (_WalkerWidget ->
+    # pygwalker.services.anywidget_widget.WalkerAnyWidget), so type both by
+    # their common public base
+    from ipywidgets import Widget as WalkerWidget
     from itables.widget import ITable
     from jscatter.widget import JupyterScatter
     from jupyter_bokeh import BokehModel
+    from k3d.plot import Plot as K3dPlot
     from keplergl import KeplerGl
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
     from maplibre.ipywidget import MapWidget
@@ -37,16 +56,23 @@ if TYPE_CHECKING:
     from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
+
+    # embedding-atlas requires Python 3.11+, so it's absent from 3.10 environments
+    if sys.version_info >= (3, 11):
+        from embedding_atlas.widget import EmbeddingAtlasWidget
+    else:
+        from ipywidgets import Widget as EmbeddingAtlasWidget
+    from pythreejs import Renderer as PythreejsRenderer
     from quak import Widget as QuakWidget
 else:
     JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
         BokehModel
     ) = MapWidget = FigureWidget = DeckGLWidget = MosaicWidget = BqplotFigure = (
         CytoscapeWidget
-    ) = base = LeafletMap = object
+    ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = WalkerWidget = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
-    ) = QuakWidget = PerspectiveWidget = MolGrid = object
+    ) = QuakWidget = PerspectiveWidget = IpyvolumeFigure = PythreejsRenderer = MolGrid = object
 
 from ipywidgets.widgets import HTML, Box, Layout
 from shiny.render.renderer import Jsonifiable, ValueFn
@@ -89,6 +115,7 @@ __all__ = (
     "render_widget",
     "render_altair",
     "render_bokeh",
+    "render_embedding_atlas",
     "render_bqplot",
     "render_holoviews",
     "render_ipyaladin",
@@ -97,8 +124,10 @@ __all__ = (
     "render_ipydatagrid",
     "render_ipyleaflet",
     "render_ipysigma",
+    "render_ipyvolume",
     "render_itables",
     "render_jscatter",
+    "render_k3d",
     "render_keplergl",
     "render_leafmap",
     "render_lonboard",
@@ -111,6 +140,8 @@ __all__ = (
     "render_plotly",
     "render_plotnine",
     "render_pydeck",
+    "render_pygwalker",
+    "render_pythreejs",
     "render_quak",
 )
 
@@ -227,6 +258,147 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     """
+
+
+class render_embedding_atlas(
+    render_widget_base[EmbeddingAtlasWidget, EmbeddingAtlasWidget]
+):
+    """
+    Reactively render an [Embedding Atlas](https://apple.github.io/embedding-atlas/)
+    explorer as a Shiny output.
+
+    The decorated function should return an `embedding_atlas.widget.EmbeddingAtlasWidget`
+    (requires ``pip install 'shinywidgets[embedding_atlas]'``, which needs Python 3.11
+    or newer).
+    Unlike the other decorators, a bare data frame isn't enough to build the widget, so
+    construct it yourself, passing the data frame along with the columns that describe
+    the embedding (e.g., ``EmbeddingAtlasWidget(df, x="x", y="y", text="text")``).
+    The embedding (scatter) view itself requires a browser with WebGPU and its
+    ``shader-f16`` feature (e.g., recent Chrome, Edge, or Firefox); elsewhere, the
+    rest of the explorer still works. The explorer needs room: in a non-filling
+    layout, give the output a height of at least ``"600px"``.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `EmbeddingAtlasWidget` instance. The filter a user builds in the browser is
+    synced to the widget's (upstream-internal) `_predicate` trait, so
+    ``reactive_read(my_atlas.widget, "_predicate")`` followed by
+    ``my_atlas.widget.selection()`` gives the selected rows reactively. The explorer
+    doesn't respond to trait changes made from Python; to change it, re-render.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Security**: the explorer runs its queries by sending SQL from the browser to
+    the widget's DuckDB connection, and without restrictions any visitor can send
+    arbitrary SQL, including SQL that reads or writes files on the server. To
+    protect against this, the renderer locks down the widget's connection before
+    display (``SET enable_external_access = false``; ``SET lock_configuration =
+    true``), so that only the data you gave the widget is reachable. If you locked
+    the connection's configuration yourself (``SET lock_configuration = true``),
+    the renderer leaves your configuration untouched. Pass
+    ``allow_unrestricted_connection=True`` to opt out of the lockdown (e.g., for a
+    local, single-user app).
+
+    Even with the lockdown, a visitor can still send expensive queries, which
+    block the Python process while they run.
+
+    Parameters
+    ----------
+    allow_unrestricted_connection
+        When ``True``, the widget's DuckDB connection is left as the render
+        function returned it, without the lockdown described above. The default
+        (``False``) is strongly recommended for deployed apps: an unrestricted
+        connection lets any visitor run arbitrary SQL with the server process's
+        permissions.
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[EmbeddingAtlasWidget]] = None,
+        *,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+        allow_unrestricted_connection: bool = False,
+    ):
+        super().__init__(_fn, width=width, height=height, fill=fill, fillable=fillable)
+        self.allow_unrestricted_connection = allow_unrestricted_connection
+
+    def _as_widget(self, value: EmbeddingAtlasWidget) -> EmbeddingAtlasWidget:
+        widget = super()._as_widget(value)
+        if not self.allow_unrestricted_connection:
+            restrict_embedding_atlas_connection(widget)
+        return widget
+
+
+def restrict_embedding_atlas_connection(widget: EmbeddingAtlasWidget) -> None:
+    """
+    Lock down an `EmbeddingAtlasWidget`'s DuckDB connection, so the SQL the
+    browser sends can't reach server files or change the connection's
+    configuration.
+    """
+    # `_connection` is upstream-internal (like the `_predicate` trait this
+    # renderer already relies on); embedding-atlas is pre-1.0, so fail loudly if
+    # it disappears rather than silently render an unrestricted widget.
+    con = getattr(widget, "_connection", None)
+    if con is None:
+        raise RuntimeError(
+            "Couldn't find the EmbeddingAtlasWidget's DuckDB connection "
+            "(`_connection`), so its SQL access can't be restricted. If "
+            "embedding-atlas renamed this attribute, please report it. To render "
+            "anyway, pass `allow_unrestricted_connection=True` to "
+            "`@render_embedding_atlas`."
+        )
+    restrict_duckdb_connection(con)
+
+
+def duckdb_settings(
+    con: Optional[duckdb.DuckDBPyConnection] = None,
+) -> Tuple[bool, bool]:
+    """
+    DuckDB's ``(enable_external_access, lock_configuration)`` for `con`, which
+    defaults to the default connection.
+    """
+    import duckdb
+
+    target = duckdb if con is None else con
+    settings = target.execute(
+        "SELECT current_setting('enable_external_access'),"
+        " current_setting('lock_configuration')"
+    ).fetchone()
+    assert settings is not None  # the query always returns its two settings
+    external_access, locked = settings
+    return bool(external_access), bool(locked)
+
+
+def restrict_duckdb_connection(con: duckdb.DuckDBPyConnection) -> None:
+    """
+    Lock down a DuckDB connection, so SQL run on it can't reach server files or
+    change the connection's configuration. A connection whose configuration is
+    already locked is left untouched: its owner took control of its settings
+    (possibly keeping external access on deliberately), and a locked connection
+    rejects further SET commands.
+    """
+    if duckdb_settings(con)[1]:
+        return
+    con.execute("SET enable_external_access = false")
+    con.execute("SET lock_configuration = true")
 
 
 class render_ipyaladin(render_widget_base[ValueT, Aladin]):
@@ -494,6 +666,62 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
     """
 
 
+class render_k3d(render_widget_base[ValueT, K3dPlot]):
+    """
+    Reactively render a [k3d](https://k3d-jupyter.org) 3D plot as a Shiny output.
+
+    The decorated function should return a `k3d.Plot` (i.e., the result of
+    `k3d.plot()` with objects added to it; requires ``pip install 'shinywidgets[k3d]'``),
+    or a bare k3d object such as `k3d.points(...)`, which is placed on a new plot. By
+    default, the plot fills its container; pass `height` to `k3d.plot()` to use a fixed
+    pixel height instead (a `height` of 512, the k3d default, is treated as unspecified).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `Plot` instance. Use `.widget` to programmatically update the rendered plot in
+    place (trait changes on the widget are synced to the browser), or to reactively
+    read widget state with :func:`~shinywidgets.reactive_read`.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    def _as_widget(self, value: ValueT) -> K3dPlot:
+        try:
+            # Import the factory from its own module: `k3d.plot` is also the name of
+            # the submodule defining Plot, which is what type checkers resolve
+            from k3d.factory.plot import plot as new_plot
+            from k3d.objects import Drawable
+        except ImportError:
+            raise ImportError(
+                "Install the k3d package to use render_k3d with shinywidgets (pip install 'shinywidgets[k3d]')."
+            )
+
+        # A drawable is a model-only widget that draws nothing by itself, so (like
+        # its Jupyter display does) put it on a new plot
+        if isinstance(value, Drawable):
+            plot = new_plot()
+            plot += value
+            # k3d annotates `+=` as returning its PlotObjectsMixin, but it returns self
+            return cast(K3dPlot, plot)
+        return cast(K3dPlot, super()._as_widget(value))
+
+
 class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
     """
     Reactively render an [ipycytoscape](https://github.com/cytoscape/ipycytoscape)
@@ -588,11 +816,9 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
     ``bplt.figure(key=...)``) reuses one figure across renders, outputs and sessions,
     which fails after the first re-render.
 
-    The PanZoom and Reset buttons of a figure's built-in toolbar don't work in Shiny
-    (they create widgets from the browser, which shinywidgets doesn't support); pass
-    ``display_toolbar=False`` to the figure to hide the toolbar, and set
-    ``fig.interaction = bqplot.interacts.PanZoom(...)`` from Python to enable panning
-    and zooming.
+    The figure's built-in toolbar (``display_toolbar=True``) and a standalone
+    ``bqplot.Toolbar`` work, and the active ``PanZoom`` is readable with
+    ``reactive_read(fig.widget, "interaction")``.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -664,6 +890,81 @@ class render_keplergl(render_widget_base[ValueT, KeplerGl]):
             if isinstance(value, pd.DataFrame):
                 return dataframe_to_keplergl(value)
         return super()._as_widget(value)
+
+
+class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
+    """
+    Reactively render an [ipyvolume](https://ipyvolume.readthedocs.io) 3D plot as
+    a Shiny output.
+
+    The decorated function may return an `ipyvolume.Figure` widget (requires
+    ``pip install 'shinywidgets[ipyvolume]'``; ipyvolume 0.6.3 also needs
+    ``ipython_genutils``, which it doesn't declare, so the extra installs it
+    for you). Both ways of getting one work: the pylab API (return `ipv.gcf()`
+    after drawing, or the container returned by `ipv.quickscatter()`/
+    `ipv.gcc()`, which is unwrapped to its figure) or direct construction
+    (`ipyvolume.Figure`, with `ipyvolume.widgets.Scatter` and friends added to
+    ``fig.scatters``). Either way, call the constructors inside the render
+    function: the pylab functions draw on a module-level "current figure", so
+    figures created elsewhere can end up shared across sessions. With direct
+    construction, set ``size_selected``/``color_selected`` explicitly on
+    scatters -- their trait defaults are 0-d numpy arrays, which don't
+    JSON-serialize -- and set ``fig.xlim``/``fig.ylim``/``fig.zlim``, since
+    directly constructed figures default to a [0, 1]^3 axis box with no
+    auto-fit. In a filling layout, the figure's WebGL canvas is resized to
+    fill its container (and tracks container resizes) unless the figure has
+    an explicit ``width`` or ``height``.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `ipyvolume.Figure` instance. Use `.widget` to programmatically update the
+    rendered figure in place (trait changes on the widget are synced to the
+    browser), or to reactively read widget state with
+    :func:`~shinywidgets.reactive_read` (e.g., ``reactive_read(plot.widget,
+    "camera")``). For selections, register a callback with
+    ``plot.widget.on_selection(fn)`` (selections arrive as custom messages, not
+    trait changes) and set a `reactive.value` inside it.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    import ipyvolume as ipv
+    import numpy as np
+    from shiny import App, ui
+    from shinywidgets import output_widget, render_ipyvolume
+
+    app_ui = ui.page_fillable(output_widget("plot"))
+
+
+    def server(input, output, session):
+        @render_ipyvolume
+        def plot():
+            x, y, z = np.random.normal(size=(3, 1000))
+            ipv.quickscatter(x, y, z, size=1, marker="sphere")
+            return ipv.gcf()
+
+
+    app = App(app_ui, server)
+    ```
+    """
 
 
 class render_leafmap(render_widget_base[ValueT, LeafletMap]):
@@ -1562,6 +1863,59 @@ def _split_config(value: object) -> tuple[object, Optional[Dict[str, Any]]]:
     )
 
 
+class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
+    """
+    Reactively render a [pythreejs](https://pythreejs.readthedocs.io) 3D scene as a
+    Shiny output.
+
+    The decorated function should return a `pythreejs.Renderer` widget (i.e., a
+    `Scene` plus a camera, with meshes/lights added to the scene; requires ``pip
+    install 'shinywidgets[pythreejs]'``). By default, the scene fills its container (the canvas and
+    camera aspect resize with it); give the `Renderer` an explicit ``width`` or
+    ``height`` (or a `layout` height) to use a fixed pixel size instead.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `Renderer` instance. Use `.widget` to programmatically update the rendered scene
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`. With
+    `pythreejs.OrbitControls` (or `TrackballControls`), the camera's ``position``,
+    ``quaternion``, and ``zoom`` sync back to Python each time the user finishes
+    orbiting, so e.g. ``reactive_read(scene.widget.camera, "position")`` picks up
+    every interaction.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Notes
+    -----
+    * Scene background: set `pythreejs.Scene(background=...)` (it defaults to
+      white and overrides ``Renderer(background=...)``).
+    * Give `pythreejs.DirectionalLight`/`pythreejs.SpotLight` an explicit
+      ``target`` (added to the scene) and ``shadow`` (with a camera) --
+      pythreejs creates defaults for them in the browser otherwise, and
+      browser-created widgets live until the session ends, so every re-render
+      would leak 3 models per light (and log a transient console error).
+    * Rotate objects via ``mesh.quaternion``; pythreejs's ``rotation`` (Euler)
+      updates don't render (an upstream pythreejs bug).
+    """
+
+
 class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
     """
     Deprecated: use pydeck layers with :class:`~shinywidgets.render_maplibre`
@@ -1674,6 +2028,345 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
         if not pydeck_has_widget():
             raise TypeError(PYDECK_NO_WIDGET_MESSAGE)
         return super()._as_widget(value)
+
+
+class render_pygwalker(render_widget_base[ValueT, WalkerWidget]):
+    """
+    Reactively render a [PyGWalker](https://docs.kanaries.net/pygwalker) data
+    exploration app as a Shiny output.
+
+    The decorated function may return either a pandas `DataFrame` (which is coerced to
+    a PyGWalker widget; requires ``pip install 'shinywidgets[pygwalker]'``) or a widget created by
+    `pygwalker.api.anywidget.walk()` (use this to pass options like ``theme_key``).
+    A polars `DataFrame` is coerced too, but only when the installed pygwalker can read
+    it: every release so far trips over dtype groups that polars 1.0 removed (the fix
+    is merged upstream and due in pygwalker 0.6), so it's rejected with a hint to
+    convert it (``df.to_pandas()``).
+    Don't use the top-level `pygwalker.walk()`: outside of Jupyter, it starts a
+    blocking web server instead of returning a widget.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    PyGWalker widget. The widget has no traits that track the explorer's state, so
+    there's nothing to :func:`~shinywidgets.reactive_read`, and changing the explorer
+    means re-rendering it. Each render sends PyGWalker's JavaScript (about 10 MB) to
+    the browser, so avoid unnecessary re-renders.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output. Outside of
+    filling layouts, give it a height (e.g., ``"800px"``) that fits PyGWalker's UI.
+
+    Note
+    ----
+    **Privacy**: by default, PyGWalker sends usage events and checks for updates,
+    from both the Python process and each visitor's browser. Call
+    ``pygwalker.GlobalVarManager.set_privacy("offline")`` (before rendering) to
+    disable both.
+
+    **Security**: PyGWalker computes charts by running SQL that the browser sends on
+    DuckDB's process-wide default connection, and any visitor can send arbitrary SQL,
+    including SQL that reads or writes files on the server. So, this renderer
+    *requires* that connection to be locked down before it renders anything; if it
+    isn't, rendering raises an error. Do this when the app starts (this also applies
+    to any other code in the process that uses ``duckdb.sql()`` and friends without a
+    connection):
+
+    ```python
+    import duckdb
+
+    # Set first: PyGWalker sets it per query, which a locked configuration refuses
+    duckdb.execute("SET TimeZone = 'UTC'")
+    duckdb.execute("SET enable_external_access = false")
+    duckdb.execute("SET lock_configuration = true")
+    ```
+
+    ``lock_configuration`` is permanent for the connection, so set anything else you
+    need first (e.g., ``SET memory_limit = '2GB'``). shinywidgets also restricts the
+    SQL the browser can send to single ``SELECT`` statements against the widget's own
+    data (no DDL and no other tables or views, which the connection shared with every
+    other PyGWalker widget in the process would otherwise expose to every visitor),
+    and rejects the browser actions that can't be made safe: ``upload_spec_to_cloud``
+    with a visitor-supplied Kanaries token (it would overwrite the server's stored
+    credentials) and ``open_in_desktop`` (it launches the server's ``gw://`` handler).
+
+    Even then, the explorer is best suited to trusted users. Every PyGWalker widget
+    in the process shares the one connection and one table name
+    (``pygwalker_mid_table``), so per-user data is kept apart only by each request
+    re-registering its own data right before it queries -- which holds while Shiny
+    handles requests on a single thread, but is not a boundary you can build on. And
+    a visitor can still send expensive queries, which block the Python process (every
+    session, not just theirs) while they run. If different users must explore
+    different, mutually private datasets, prefer a renderer that keeps data apart by
+    design.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+    # DataFrames are generic (several renderers accept them), so they can't be
+    # registered in AS_WIDGET_MAP
+    def _as_widget(self, value: ValueT) -> WalkerWidget:
+        if is_dataframe(value, "polars") and not polars_supported():
+            raise TypeError(
+                "PyGWalker can't read polars DataFrames with polars >= 1.0 (its polars "
+                "parser still uses dtype groups that polars removed; the fix is merged "
+                "upstream and due in pygwalker 0.6, but no release has it yet "
+                "-- https://github.com/Kanaries/pygwalker/commit/5055d702). Pass a "
+                "pandas DataFrame instead (e.g., df.to_pandas())."
+            )
+        if not (is_dataframe(value, "pandas") or is_dataframe(value, "polars")):
+            widget = super()._as_widget(value)
+            # A widget from walk() is PyGWalker's too, and needs the same lockdown and
+            # the same rejected actions as one this renderer creates
+            if is_walker_widget(widget):
+                require_duckdb_lockdown()
+                harden_walker_widget(widget)
+            return widget
+
+        try:
+            from pygwalker.api.anywidget import walk
+        except ImportError:
+            raise ImportError(
+                "Install the pygwalker package to use render_pygwalker with shinywidgets (pip install 'shinywidgets[pygwalker]')."
+            )
+
+        require_duckdb_lockdown()
+        return harden_walker_widget(walk(value))
+
+
+# PyGWalker hands the browser a set of request handlers (see PygWalker._init_callback).
+# Two of them let a visitor reach outside the app: `upload_spec_to_cloud` accepts a
+# Kanaries token from the browser (which pygwalker writes to its config file and to
+# process-wide state), so harden_walker_widget makes it refuse one; `open_in_desktop`
+# has no safe form at all (it shells out to the server's `gw://` protocol handler with
+# the whole data source in the URL), so it's rejected outright.
+_WALKER_BLOCKED_ACTIONS = ("open_in_desktop",)
+
+# Three more handlers run SQL verbatim from the browser (`get_datas` takes "sql",
+# batch_get_datas_by_sql a "queryList", export_dataframe_by_sql a "sql") on DuckDB's
+# default connection, which every PyGWalker widget in the process shares (under one
+# fixed view name, pygwalker_mid_table). harden_walker_widget wraps them so a visitor
+# can only read their own widget's data: no DDL (a CREATE TABLE would persist in the
+# shared database for every visitor to see), no other statements, and no tables or
+# views other than the widget's own. Per-widget connections upstream would make this
+# unnecessary (https://github.com/Kanaries/pygwalker/issues/747).
+_WALKER_SQL_ACTIONS = (
+    "get_datas",
+    "batch_get_datas_by_sql",
+    "export_dataframe_by_sql",
+)
+
+_WALKER_TABLE_NAME = "pygwalker_mid_table"
+
+_DUCKDB_UNLOCKED_MESSAGE = """\
+Can't render a PyGWalker explorer: DuckDB's default connection isn't locked down.
+
+PyGWalker computes charts by running the SQL its browser sends on that connection, and
+any visitor can send arbitrary SQL -- including SQL that reads or writes files on the
+server. Lock the connection down when the app starts:
+
+    import duckdb
+
+    # Set first: PyGWalker sets it per query, which a locked configuration refuses
+    duckdb.execute("SET TimeZone = 'UTC'")
+    duckdb.execute("SET enable_external_access = false")
+    duckdb.execute("SET lock_configuration = true")
+
+lock_configuration can't be undone, so set anything else you need (e.g.
+SET memory_limit = '2GB') before it."""
+
+
+# The browser picks both the name and the value of this setting, and pygwalker writes
+# the token to its config file and to process-wide state (GlobalVarManager), so it
+# must come from the app, not from a visitor.
+_WALKER_TOKEN_MESSAGE = """\
+shinywidgets rejected PyGWalker's upload_spec_to_cloud because the request supplied a
+Kanaries token. Visitors can't set the server's credentials: pass kanaries_api_key to
+pygwalker.api.anywidget.walk() (or set it in the environment) instead."""
+
+
+_WALKER_SQL_MESSAGE = """\
+shinywidgets rejected a SQL query from PyGWalker's browser because it isn't a single
+SELECT against the widget's own data. PyGWalker runs the SQL its browser sends on
+DuckDB's default connection, which every PyGWalker widget in the process shares, so
+visitors may only read their own widget's data (no DDL and no other tables or views)."""
+
+
+def is_walker_widget(x: object) -> bool:
+    # The widget class is pygwalker.api.anywidget._WalkerWidget in pygwalker <= 0.5
+    # and pygwalker.services.anywidget_widget.WalkerAnyWidget in 0.6+
+    return any(
+        widget_pkg(cls) == "pygwalker"
+        and cls.__name__ in ("_WalkerWidget", "WalkerAnyWidget")
+        for cls in type(x).__mro__
+    )
+
+
+def polars_supported() -> bool:
+    """
+    Whether pygwalker can read polars data with the installed polars (and pygwalker).
+
+    Every pygwalker release so far builds its field specs from dtype groups that polars
+    1.0 removed (``pl.NUMERIC_DTYPES`` and friends). Upstream replaced them with
+    ``dtype.is_numeric()`` and friends (Kanaries/pygwalker@5055d702, merged in PR #734
+    and staged for 0.6 -- main is at 0.6.0rc0 -- but unpublished), so look for it
+    (``_is_numeric_dtype``) as well as for polars old enough to still have the groups.
+    Unknown answers are treated as supported: this is a hint for a broken combination,
+    not a guarantee.
+    """
+    import polars as pl
+
+    if hasattr(pl, "NUMERIC_DTYPES"):
+        return True
+    try:
+        from pygwalker.data_parsers import polars_parser
+    except ImportError:
+        return True
+    return hasattr(polars_parser, "_is_numeric_dtype")
+
+
+def require_duckdb_lockdown() -> None:
+    """Raise unless DuckDB's default connection can't reach outside of DuckDB."""
+    external_access, locked = duckdb_settings()
+    if external_access or not locked:
+        raise RuntimeError(_DUCKDB_UNLOCKED_MESSAGE)
+
+
+def walker_comm(widget: Widget) -> Optional[Any]:
+    """PyGWalker's comm for `widget`, which holds its request handlers."""
+    callbacks = getattr(getattr(widget, "_msg_callbacks", None), "callbacks", ())
+    for callback in callbacks:
+        owner = getattr(callback, "__self__", None)
+        if isinstance(getattr(owner, "_endpoint_map", None), dict) and callable(
+            getattr(owner, "register", None)
+        ):
+            return owner
+    return None
+
+
+def harden_walker_widget(widget: WidgetT) -> WidgetT:
+    """
+    Stop the browser requests `widget` handles from reaching outside the app: it refuses
+    a visitor-supplied Kanaries token (see `_WALKER_TOKEN_MESSAGE`), rejects the actions
+    in `_WALKER_BLOCKED_ACTIONS`, and validates the SQL of the actions in
+    `_WALKER_SQL_ACTIONS` (see `validate_visitor_sql`).
+
+    Works on any PyGWalker widget, including one from `pygwalker.api.anywidget.walk()`,
+    and is a no-op the second time round (widgets can be rendered again).
+    """
+    comm = walker_comm(widget)
+    if comm is None:
+        raise RuntimeError(
+            "Can't secure this PyGWalker widget: shinywidgets can't find its request "
+            "handlers. This usually means the installed pygwalker version isn't "
+            "supported; please report it at "
+            "https://github.com/posit-dev/py-shinywidgets/issues"
+        )
+
+    handlers = comm._endpoint_map
+    upload_spec_to_cloud = handlers.get("upload_spec_to_cloud")
+    if upload_spec_to_cloud is not None and not getattr(
+        upload_spec_to_cloud, "_shinywidgets_rejects_tokens", False
+    ):
+
+        def reject_browser_token(data: Dict[str, Any]) -> Any:
+            if data.get("newToken"):
+                raise RuntimeError(_WALKER_TOKEN_MESSAGE)
+            return upload_spec_to_cloud(data)
+
+        reject_browser_token._shinywidgets_rejects_tokens = True  # pyright: ignore[reportFunctionMemberAccess]
+        comm.register("upload_spec_to_cloud", reject_browser_token)
+
+    for action in _WALKER_BLOCKED_ACTIONS:
+        comm.register(action, _reject_walker_action(action))
+
+    for action in _WALKER_SQL_ACTIONS:
+        handler = handlers.get(action)
+        if handler is None or getattr(handler, "_shinywidgets_validates_sql", False):
+            continue
+
+        def validate_then_handle(
+            data: Dict[str, Any],
+            _handler: Callable[[Dict[str, Any]], Any] = handler,
+            _action: str = action,
+        ) -> Any:
+            for sql in _walker_action_sql(_action, data):
+                validate_visitor_sql(sql)
+            return _handler(data)
+
+        validate_then_handle._shinywidgets_validates_sql = True  # pyright: ignore[reportFunctionMemberAccess]
+        comm.register(action, validate_then_handle)
+
+    return widget
+
+
+def _walker_action_sql(action: str, data: Dict[str, Any]) -> List[str]:
+    """The SQL strings a `_WALKER_SQL_ACTIONS` handler would run."""
+    if action == "batch_get_datas_by_sql":
+        return [sql for sql in data.get("queryList", []) if isinstance(sql, str)]
+    sql = data.get("sql")
+    return [sql] if isinstance(sql, str) else []
+
+
+def validate_visitor_sql(sql: str) -> None:
+    """
+    Raise unless `sql` (sent by a PyGWalker browser) is a single SELECT that reads
+    only the widget's own data.
+
+    PyGWalker runs the SQL its browser sends on DuckDB's default connection, which
+    every PyGWalker widget in the process shares, so a visitor's query may reference
+    the widget's registered view and its own CTEs only: no DDL (a ``CREATE TABLE``
+    would persist in the shared database for every visitor to read), no other
+    statements, and no other tables or views. Reading outside DuckDB (e.g.,
+    ``read_csv``) is covered separately: the renderer requires the connection to be
+    locked down first (see `require_duckdb_lockdown`).
+    """
+    import sqlglot
+    from sqlglot import exp
+
+    try:
+        statements = sqlglot.parse(sql, dialect="duckdb")
+    except Exception:
+        statements = []
+    if len(statements) != 1 or statements[0] is None:
+        raise RuntimeError(_WALKER_SQL_MESSAGE)
+    statement = statements[0]
+    while isinstance(statement, (exp.Subquery, exp.Paren)):
+        statement = statement.this
+    if not isinstance(statement, (exp.Select, exp.Union, exp.Except, exp.Intersect)):
+        raise RuntimeError(_WALKER_SQL_MESSAGE)
+    cte_names = {cte.alias for cte in statement.find_all(exp.CTE)}
+    for table in statement.find_all(exp.Table):
+        if table.name != _WALKER_TABLE_NAME and table.name not in cte_names:
+            raise RuntimeError(_WALKER_SQL_MESSAGE)
+
+
+def _reject_walker_action(action: str) -> Callable[[Dict[str, Any]], Any]:
+    def reject(_: Dict[str, Any]) -> Any:
+        raise RuntimeError(
+            f"shinywidgets doesn't allow PyGWalker's '{action}' action in a Shiny app."
+        )
+
+    return reject
+
+
+def is_dataframe(x: object, pkg: str) -> bool:
+    return any(
+        widget_pkg(cls) == pkg and cls.__name__ == "DataFrame"
+        for cls in type(x).__mro__
+    )
 
 
 class render_quak(render_widget_base[ValueT, QuakWidget]):

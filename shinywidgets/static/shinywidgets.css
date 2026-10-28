@@ -143,6 +143,61 @@
 
 
 /*
+* Embedding Atlas hard-codes a 650px (user-resizable) height on its container in an
+* inline style. When the output or the widget has an explicit height, fit the container
+* to it instead of clipping it. (Filling layouts are handled by .forward-fill-potential.)
+*
+* The selectors detect an explicit height from the inline style: on the output element
+* (set by output_widget(height=...); keep in sync with _output_widget.py) or on
+* .lm-Widget (set by ipywidgets from layout.height, where "auto" means unset).
+* Intrinsic keyword heights (`auto`, `fit-content`, ...; matched with and without a
+* space because the browser re-serializes the attribute) aren't definite, so 100% of
+* them would collapse the explorer -- they're excluded, as in the ipydatagrid and
+* ipycytoscape rules above.
+*/
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .lm-Widget:has(> .embedding-atlas-widget-container) {
+  height: 100%;
+}
+
+/* !important is needed to override the container's inline height */
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .lm-Widget
+  > .embedding-atlas-widget-container,
+.lm-Widget[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .embedding-atlas-widget-container {
+  height: 100% !important;
+  resize: none;
+}
+
+/*
 * Allow Shiny's busy indicator (spinner) to show while recalculating, even though
 * renderValue() puts `visibility: hidden` on the output element (both when the
 * widget value is None/null and while a plotly widget is settling). This mirrors
@@ -325,6 +380,57 @@
 */
 .html-fill-container > .lm-Widget:not(.html-fill-item) {
   flex: 0 0 auto;
+}
+
+/*
+* k3d sets a fixed pixel height (its `height` trait) as an inline style on its inner
+* container, which would overflow (and get clipped by) an output with an explicit height.
+* (`[style*="height:"]` would also match min-/max-height, but output_widget() only emits
+* width and height. Keep in sync with _output_widget.py.)
+* Intrinsic heights (`auto`, `fit-content`, ...) are excluded, as in the bqplot rule
+* above: 100% of an indefinite-height parent would replace the plot's own pixel height
+* (which the flex rules below treat as its intrinsic height) and collapse the plot.
+*/
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .k3d-plot {
+  height: 100%;
+}
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .k3d-plot
+  > div {
+  height: 100% !important;
+}
+
+/*
+* Likewise, a Layout(height=...) on the plot sizes only its .lm-Widget, so let k3d's
+* inner container flex to it (its pixel height is just the flex basis, so the plot
+* keeps that height when the widget's own height is intrinsic).
+*/
+.shiny-ipywidget-output > .k3d-plot {
+  display: flex;
+  flex-direction: column;
+}
+.shiny-ipywidget-output > .k3d-plot > div {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /*

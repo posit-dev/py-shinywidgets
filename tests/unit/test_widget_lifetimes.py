@@ -204,6 +204,44 @@ def test_referenced_widgets_ignores_traits_without_to_json(
     assert referenced_widgets([holder]) == {id(holder)}
 
 
+def test_referenced_widgets_includes_static_default_widget(
+    widget_session: Session,
+) -> None:
+    from ipywidgets.widgets.widget import widget_serialization
+    from shinywidgets._shinywidgets import referenced_widgets
+    from traitlets import Any as AnyTrait
+
+    with session_context(widget_session):
+        inner = HTML()
+
+        class Holder(HTML):
+            ref = AnyTrait(inner).tag(sync=True, **widget_serialization)
+
+        holder = Holder()
+        assert id(inner) in referenced_widgets([holder])
+
+
+def test_walk_does_not_construct_dynamic_defaults(widget_session: Session) -> None:
+    from shinywidgets._shinywidgets import referenced_widgets
+
+    with session_context(widget_session):
+        w = HTML()
+        n = len(_instances)
+        referenced_widgets([w])
+        assert len(_instances) == n
+        assert not w.trait_has_value("layout")
+
+
+def test_direct_widget_references_is_not_recursive(widget_session: Session) -> None:
+    from shinywidgets._shinywidgets import direct_widget_references
+
+    with session_context(widget_session):
+        leaf = HTML()
+        mid = VBox(children=(leaf,))
+        top = VBox(children=(mid,))
+        assert list(direct_widget_references(top)) == [mid]
+
+
 def test_kept_borrowed_widget_is_rechecked_and_closed_once_dropped(
     widget_session: Session,
 ) -> None:
