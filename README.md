@@ -30,6 +30,7 @@ everything it needs:
 | `@render_ipydatagrid` | `pip install 'shinywidgets[ipydatagrid]'` |
 | `@render_ipyleaflet` | `pip install 'shinywidgets[ipyleaflet]'` |
 | `@render_ipysigma` | `pip install 'shinywidgets[ipysigma]'` |
+| `@render_ipyvolume` | `pip install 'shinywidgets[ipyvolume]'` |
 | `@render_itables` | `pip install 'shinywidgets[itables]'` |
 | `@render_jscatter` | `pip install 'shinywidgets[jscatter]'` |
 | `@render_k3d` | `pip install 'shinywidgets[k3d]'` |

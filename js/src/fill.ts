@@ -1,4 +1,5 @@
 import type { DOMWidgetView, WidgetModel } from '@jupyter-widgets/base';
+import { setupIpyvolumeAutoResize } from './ipyvolume';
 import { setupJscatterAutoHeight, setupJscatterFixedHeight } from './jscatter';
 import { setupKeplerAutoHeight } from './keplergl';
 import { setupMplAutoResize } from './mpl';
@@ -84,6 +85,35 @@ const plotlyBehavior: WidgetBehavior = {
 
     void waitForPlotlyReadyToReveal(plotEl, ctx.dispatchResize).finally(ctx.reveal);
   },
+};
+
+// ipyvolume figures render at a fixed pixel size and need their canvas
+// resized to the container (see setupIpyvolumeAutoResize). The same applies
+// when the output (or the widget's own Layout) has an explicit height;
+// otherwise the figure's intrinsic size applies, so leave it alone.
+const ipyvolumeBehavior: WidgetBehavior = {
+  setupFill: ({ el, view, model }) => setupIpyvolumeAutoResize(el, view, model),
+  setupFixedSize: ({ el, lmWidget, view, model, widgetWantsFill }) =>
+    // Only resize when the output (or the widget's own Layout, which lands on
+    // the widget element) has an explicit height; otherwise the figure's
+    // intrinsic pixel size applies. Checked at resize time: the Layout style
+    // may only be applied after setup runs.
+    //
+    // A Layout height on the widget is always a size to drive the canvas to,
+    // but the output's CSS height only applies when the widget itself hasn't
+    // opted out of filling (widgetWantsFill) -- an explicit figure size
+    // (e.g., ipv.Figure(width=400, height=300)) keeps its pixel size even
+    // inside an explicitly sized output.
+    setupIpyvolumeAutoResize(
+      el,
+      view,
+      model,
+      () =>
+        !!(
+          (widgetWantsFill && (el.style.height || lmWidget.style.height)) ||
+          (view.el as HTMLElement).style.height
+        )
+    ),
 };
 
 const quakBehavior: WidgetBehavior = {
@@ -217,6 +247,7 @@ export const ipyleafletBehavior: WidgetBehavior = {
 
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
+  ipyvolume: ipyvolumeBehavior,
   jscatter: jscatterBehavior,
   keplergl: keplerglBehavior,
   plotly: plotlyBehavior,
