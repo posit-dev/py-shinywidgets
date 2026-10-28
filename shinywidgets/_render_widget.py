@@ -60,6 +60,7 @@ if TYPE_CHECKING:
         from ipywidgets import Widget as EmbeddingAtlasWidget
     from pythreejs import Renderer as PythreejsRenderer
     from quak import Widget as QuakWidget
+    from vizarr import Viewer as VizarrViewer
 else:
     JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
         BokehModel
@@ -68,7 +69,7 @@ else:
     ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = WalkerWidget = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
-    ) = QuakWidget = PerspectiveWidget = IpyvolumeFigure = PythreejsRenderer = object
+    ) = QuakWidget = PerspectiveWidget = IpyvolumeFigure = PythreejsRenderer = VizarrViewer = object
 
 from shiny.render.renderer import ValueFn
 
@@ -134,6 +135,7 @@ __all__ = (
     "render_pygwalker",
     "render_pythreejs",
     "render_quak",
+    "render_vizarr",
 )
 
 
@@ -2413,6 +2415,68 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
             )
 
         return quak.Widget(value)
+
+
+class render_vizarr(render_widget_base[ValueT, VizarrViewer]):
+    """
+    Reactively render a [vizarr](https://github.com/hms-dbmi/vizarr) image viewer
+    (for OME-NGFF/Zarr bioimages) as a Shiny output.
+
+    The decorated function should return a `vizarr.Viewer` with one or more images
+    added via ``.add_image()`` (requires ``pip install 'shinywidgets[vizarr]'``).
+    In a filling layout, the viewer grows or shrinks to fit its container.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `vizarr.Viewer` instance. Use `.widget` to programmatically update the rendered
+    viewer in place (e.g., ``.widget.add_image(...)`` adds a layer without a full
+    re-render, and ``.widget.view_state = {...}`` sets the camera; trait changes on
+    the widget are synced to the browser), or to reactively read viewer state with
+    :func:`~shinywidgets.reactive_read`.
+
+    Note
+    ---
+    **Data sources**: ``add_image()`` accepts a remote URL string (e.g., an
+    OME-Zarr store on S3), which the browser fetches directly, or a local
+    `zarr.Array`/`zarr.Group`/store/numpy array, in which case chunks are served
+    on demand over the widget comm (base64-encoded, since Shiny has no binary
+    message channel). Prefer remote URLs for large images: they avoid the ~33%
+    base64 inflation and keep chunk traffic off the Shiny websocket.
+
+    **Reactive state**: panning and zooming syncs the camera to the ``view_state``
+    trait (a dict with ``target`` and ``zoom``, debounced ~200ms), so it can drive
+    reactive calculations (e.g., ``reactive_read(vz.widget, "view_state")``).
+    Setting ``.widget.view_state`` from Python moves the camera. Note that the
+    layer controls in the viewer's side panel (channel colors, contrast limits,
+    visibility) do *not* sync back to Python.
+
+    **Sizing**: the viewer's height comes from its ``height`` trait (default
+    ``"500px"``), not ``output_widget(height=...)``. In a filling layout the
+    viewer flexes to the available space, but with an explicit
+    ``output_widget(height=...)`` smaller than the trait height the canvas is
+    clipped — set the trait instead (e.g., ``vizarr.Viewer(height="300px")``).
+
+    **Network access**: the widget loads its JavaScript (the vizarr viewer and
+    viv) from CDNs at render time, so it requires an internet connection.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
 
 
 def dataframe_to_keplergl(df: pd.DataFrame) -> KeplerGl:

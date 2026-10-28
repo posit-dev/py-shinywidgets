@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### New features
 
+* Added `@render_vizarr` for [vizarr](https://github.com/hms-dbmi/vizarr) viewers of OME-NGFF (zarr) bioimages. Local zarr stores are served chunk-by-chunk over the widget comm (or pass a URL string and the browser fetches it directly), the camera syncs both ways via the `view_state` trait (`reactive_read()` it, or set it to fly to a region), and `add_image()` can be called in place to add layers without a re-render. Requires an internet connection (the viewer's JavaScript loads from a CDN).
 * Added per-renderer extras, so each `@render_*` decorator's widget dependencies can be installed in one command (e.g., `pip install 'shinywidgets[plotly]'` or `'shinywidgets[maplibre,bokeh]'`). See the README for the full list.
 * Added `shared_lifetime()`, a context manager for constructing one widget that every session displays (any user's interaction changes it for everyone, and it is never freed). Widgets that ipyvue and ipyvuetify share across the whole process (e.g., `ipyvuetify.theme` and custom `VueTemplate`s) now work across re-renders and sessions instead of hanging for 30 seconds. Ownership errors now explain both `session_lifetime()` and `shared_lifetime()`. (#348)
 
