@@ -72,7 +72,9 @@ else:
     ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = WalkerWidget = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
-    ) = QuakWidget = PerspectiveWidget = IpyvolumeFigure = PythreejsRenderer = MolGrid = object
+    ) = QuakWidget = PerspectiveWidget = IpyvolumeFigure = PythreejsRenderer = (
+        MolGrid
+    ) = object
 
 from ipywidgets.widgets import HTML, Box, Layout
 from shiny.render.renderer import Jsonifiable, ValueFn
