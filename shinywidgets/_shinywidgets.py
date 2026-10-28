@@ -54,7 +54,12 @@ from ._comm import (
     ShinyComm,
     ShinyCommManager,
 )
-from ._dependencies import custom_elements_dependency, require_dependencies, widget_pkg
+from ._dependencies import (
+    custom_elements_dependency,
+    geolibre_app_mount,
+    require_dependencies,
+    widget_pkg,
+)
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -188,6 +193,13 @@ def init_shiny_widget(w: Widget):
             shared_construction() if shared else WidgetRenderContext.resumed(render_ctx)
         ):
             prepare_to_serialize(w)
+            # Serve geolibre's bundled app from the Shiny app and switch the
+            # widget to the mode that probes that route. This must happen here
+            # (not in init_shiny_widget()): that hook runs inside
+            # Widget.__init__(), and geolibre's Map.__init__() sets
+            # _remote_mode after super().__init__() returns, overwriting it.
+            if any(widget_pkg(cls) == "geolibre" for cls in type(w).__mro__):
+                geolibre_app_mount(w, session)
             state, buffer_paths, buffers = _remove_buffers(w.get_state())
 
         # Covers widgets that are opened but never displayed (so no render-time
