@@ -780,6 +780,8 @@ def vizarr_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     if height is not None and height != widget.trait_defaults("height"):
         return False
     return fill
+
+
 def drawdata_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # drawdata's ScatterWidget/BarWidget always have an intrinsic pixel size
     # (their own `width`/`height` traits, 800x400 / 800x550 by default) and
