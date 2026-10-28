@@ -22,6 +22,7 @@ from ._render_widget import (
     render_altair,
     render_bokeh,
     render_bqplot,
+    render_drawdata,
     render_embedding_atlas,
     render_geolibre,
     render_holoviews,
@@ -51,6 +52,7 @@ from ._render_widget import (
     render_pygwalker,
     render_pythreejs,
     render_quak,
+    render_rerun,
     render_vizarr,
     render_widget,
 )
@@ -68,6 +70,7 @@ __all__ = (
     "render_altair",
     "render_bokeh",
     "render_bqplot",
+    "render_drawdata",
     "render_embedding_atlas",
     "render_geolibre",
     "render_holoviews",
@@ -98,6 +101,7 @@ __all__ = (
     "render_pythreejs",
     "render_quak",
     "render_vizarr",
+    "render_rerun",
     # Reactive read second
     "reactive_read",
     # UI methods third

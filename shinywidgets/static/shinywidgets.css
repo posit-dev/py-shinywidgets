@@ -185,6 +185,49 @@
 }
 
 /*
+* rerun sizes its viewer's container div from the widget's own width/height settings:
+* a default (640x480) or "auto" height becomes inline `height: auto; aspect-ratio:
+* 16 / 9` on the container (see rerun_layout_defaults). Filling layouts stretch the
+* container via .forward-fill-potential, but in an output with an explicit height the
+* 16:9 height overflows (and gets clipped by) the output. Fit the viewer to the
+* output instead. The [style*="height:"] selector matches the inline style that
+* output_widget(height=) emits (keep in sync with _output_widget.py); intrinsic
+* keyword heights (e.g. "auto") are excluded, as in the ipydatagrid and ipycytoscape
+* rules above, since 100% of an indefinite height would collapse the viewer. The
+* [style*="height: auto"] guard on the container restricts the override to the
+* auto-height case, so an explicit integer Viewer(height=) still wins over the
+* output's height (and the !important beats the container's inline style).
+*/
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .lm-Widget.rerun_notebook {
+  height: 100%;
+  min-height: 0;
+}
+
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .lm-Widget.rerun_notebook > div[style*="height: auto"] {
+  height: 100% !important;
+}
+
+/*
 * Embedding Atlas hard-codes a 650px (user-resizable) height on its container in an
 * inline style. When the output or the widget has an explicit height, fit the container
 * to it instead of clipping it. (Filling layouts are handled by .forward-fill-potential.)
