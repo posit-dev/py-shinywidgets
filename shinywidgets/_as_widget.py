@@ -62,6 +62,7 @@ def as_widget(x: object) -> Widget:
     * pydeck `Deck` -> `pydeck.widget.DeckGLWidget` (pydeck <= 0.8 only; pydeck
       v0.9 removed its widget, so this raises a `TypeError` that points to
       alternatives)
+    * rerun `rerun.notebook.Viewer` -> its inner `rerun_notebook.Viewer` widget
 
     Parameters
     ----------
@@ -635,6 +636,24 @@ def as_widget_pydeck(x: object) -> Widget:
     return res
 
 
+def as_widget_rerun(x: object) -> Widget:
+    # rerun's high-level notebook viewer (rerun.notebook.Viewer) is not itself a
+    # widget: it wraps the actual anywidget (a rerun_notebook.Viewer) at `._viewer`,
+    # plus notebook-only HTML widgets (an error overlay and a table-loading
+    # indicator). Unwrapping keeps the recording -> viewer data plumbing intact
+    # (the recording's callback sink targets the inner widget directly), so data
+    # logged after the render still streams to the browser.
+    viewer = getattr(x, "_viewer", None)
+    if not isinstance(viewer, Widget):
+        raise TypeError(
+            f"Don't know how to coerce {_short_repr(x)} into an ipywidget.Widget object. "
+            "To render a rerun viewer in Shiny, return a rerun.notebook.Viewer (or "
+            "rerun_notebook.Viewer) from the render function (pip install "
+            "'shinywidgets[rerun]')."
+        )
+    return viewer
+
+
 PYDECK_NO_WIDGET_MESSAGE = (
     "pydeck v0.9 removed its Jupyter widget (Deck.show() now returns static HTML), "
     "so shinywidgets can't render pydeck maps. To use pydeck layers in a reactive "
@@ -679,6 +698,7 @@ AS_WIDGET_MAP = {
     "plotnine": as_widget_plotnine,
     "pydeck": as_widget_pydeck,
     "pyobsplot": as_widget_pyobsplot,
+    "rerun": as_widget_rerun,
     "seaborn": as_widget_mpl,
 }
 

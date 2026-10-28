@@ -92,6 +92,7 @@ pythreejs = ["pythreejs"]
 quak = ["quak"]
 # vizarr pins zarr<3, so it is not in the shared test/dev groups
 vizarr = ["vizarr>=0.1.1"]
+rerun = ["rerun-sdk[notebook]>=0.40; python_version >= '3.11'"]
 test = [
   "altair",
   "bokeh",
@@ -146,6 +147,7 @@ test = [
   "pytest-playwright>=0.3.0",
   "pythreejs",
   "quak",
+  "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "tox-uv>=1",
 ]
 dev = [
@@ -202,6 +204,7 @@ dev = [
   "pytest-playwright>=0.3.0",
   "pythreejs",
   "quak",
+  "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "ruff>=0.6.5",
   "tox-uv>=1",
 ]
@@ -263,6 +266,7 @@ test = [
   "pytest-playwright>=0.3.0",
   "pythreejs",
   "quak",
+  "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "tox-uv>=1",
 ]
 dev = [
