@@ -274,7 +274,112 @@ export const geolibreBehavior: WidgetBehavior = {
   },
 };
 
+// drawdata's widgets have an intrinsic pixel size (their width/height
+// traits, 800x400 / 800x550 by default) that their frontends also cap the
+// *display* to: ScatterWidget's <svg> gets an inline `max-width: {width}px`
+// (and .dd-scatter-container a CSS `max-width: 1200px`), and BarWidget's
+// chart <svg> gets fixed width/height attributes with no viewBox. The
+// traits really define the *data
+// coordinate space* (drawn points are stored in viewBox coordinates), so
+// scaling the display around an unchanged viewBox is lossless (d3 resolves
+// pointer coordinates through the svg's CTM, so brushing/dragging still
+// works when scaled). Remove those caps so the widgets fill their
+// container's width, with aspect-ratio preserving the coordinate aspect.
+//
+// In a sized output (a filling layout, or output_widget(height=)), scaling
+// to the full width can make the chart taller than the output (e.g., a
+// 1200x500 output grows the default 800x400 ScatterWidget to 1200x600),
+// which the output's overflow:hidden then clips. So when the output's
+// height is definite, also constrain the chart's width by the height left
+// over after the controls. Returns a cleanup function when fitting.
+function relaxDrawdataSize(ctx: BehaviorContext, fitHeight: boolean): (() => void) | void {
+  const { el, lmWidget } = ctx;
+  // Lift the containers' CSS width caps (and BarWidget's 20px vertical
+  // margins, which just add slack in a sized output)
+  for (const container of lmWidget.querySelectorAll<HTMLElement>(
+    '.dd-scatter-container, .container'
+  )) {
+    container.style.maxWidth = 'none';
+    container.style.marginTop = '0';
+    container.style.marginBottom = '0';
+  }
+  // BarWidget's chart wrapper also carries a 20px bottom margin
+  for (const wrap of lmWidget.querySelectorAll<HTMLElement>('.chart-container')) {
+    wrap.style.marginBottom = '0';
+  }
+  // Find the chart svg: ScatterWidget's is the one with an inline pixel
+  // max-width; BarWidget's is the one with pixel width/height attributes
+  // and no viewBox (button icons are excluded -- they already have one).
+  let chart: SVGSVGElement | undefined;
+  for (const svg of lmWidget.querySelectorAll('svg')) {
+    if (svg.style.maxWidth.endsWith('px')) {
+      // ScatterWidget's chart svg: inline `max-width: {width}px` is the only
+      // thing stopping its width:100%/aspect-ratio sizing from growing past
+      // the trait width
+      svg.style.maxWidth = 'none';
+      chart = svg;
+      continue;
+    }
+    // BarWidget's chart svg: fixed pixel width/height attributes, no
+    // viewBox (button icons are excluded -- they already have a viewBox).
+    // Give it one and let CSS scale it like ScatterWidget's.
+    const w = Number(svg.getAttribute('width'));
+    const h = Number(svg.getAttribute('height'));
+    if (svg.getAttribute('viewBox') === null && w > 0 && h > 0) {
+      svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+      svg.style.width = '100%';
+      svg.style.height = 'auto';
+      svg.style.aspectRatio = `${w} / ${h}`;
+      chart = svg;
+    }
+  }
+
+  // Fitting the height only makes sense when the output's height is
+  // definite -- otherwise it's derived from the widget's own height, and
+  // shrinking the chart would shrink the output (a feedback loop).
+  //
+  // BarWidget's chart svg is a direct child of its (classless, drawdata
+  // 0.5.x) container, alongside the controls -- so measure the chart's own
+  // position, not its parent's, to account for the controls above it.
+  const wrap = chart?.parentElement;
+  if (!fitHeight || !chart || !wrap) return;
+  const chartSvg = chart;
+  const chartWrap = wrap;
+
+  const fit = () => {
+    const viewBox = chartSvg.viewBox.baseVal;
+    if (viewBox.width <= 0 || viewBox.height <= 0) return;
+    // Available height = the output's bottom minus everything physically
+    // above the chart (controls, margins). Measuring below-chart slack off
+    // a container doesn't work in fill layouts, where the fill CSS chain
+    // sizes the widget's containers to the output (so their bottoms no
+    // longer track the chart's).
+    const availH =
+      el.getBoundingClientRect().bottom - chartSvg.getBoundingClientRect().top;
+    const availW = chartWrap.clientWidth;
+    const w = Math.floor(Math.min(availW, (availH * viewBox.width) / viewBox.height));
+    chartSvg.style.width = `${Math.max(w, 1)}px`;
+  };
+
+  // Observing el (not the widget) is a fixed point: the chart's size changes
+  // never change the definite-height output.
+  const observer = new ResizeObserver(fit);
+  observer.observe(el);
+  fit();
+  return () => observer.disconnect();
+}
+
+const drawdataBehavior: WidgetBehavior = {
+  setupFill: (ctx) => relaxDrawdataSize(ctx, true),
+  // Also relax in fixed-size outputs: BarWidget's fixed 800px width
+  // otherwise overflows narrow containers, and full-width rendering matches
+  // how other outputs (e.g., plotly) look in plain page flow. Only an
+  // explicit output height is definite here, so only then fit the height.
+  setupFixedSize: (ctx) => relaxDrawdataSize(ctx, !!ctx.el.style.height),
+};
+
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
+  drawdata: drawdataBehavior,
   ipympl: ipymplBehavior,
   ipyvolume: ipyvolumeBehavior,
   jscatter: jscatterBehavior,

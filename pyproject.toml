@@ -44,6 +44,7 @@ bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 # embedding-atlas requires Python 3.11+, so it's not installable on 3.10
 embedding_atlas = ["embedding-atlas>=0.26; python_version >= '3.11'"]
 bqplot = ["bqplot"]
+drawdata = ["drawdata>=0.5"]
 # geolibre requires Python 3.11+; >=3.5.2 for blocking command methods
 # (fly_to(), get_center(), ...) from a worker thread outside Jupyter
 geolibre = ["geolibre>=3.5.2; python_version >= '3.11'"]
@@ -94,6 +95,7 @@ pyvista = ["pyvista[jupyter]; python_version < '3.15'"]
 quak = ["quak"]
 # vizarr pins zarr<3, so it is not in the shared test/dev groups
 vizarr = ["vizarr>=0.1.1"]
+rerun = ["rerun-sdk[notebook]>=0.40; python_version >= '3.11'"]
 test = [
   "altair",
   "bokeh",
@@ -104,6 +106,7 @@ test = [
   # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "drawdata>=0.5",
   "embedding-atlas>=0.26; python_version >= '3.11'",
   "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
@@ -150,6 +153,7 @@ test = [
   # so pyvista can't be installed there
   "pyvista[jupyter]; python_version < '3.15'",
   "quak",
+  "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "tox-uv>=1",
 ]
 dev = [
@@ -162,6 +166,7 @@ dev = [
   # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "drawdata>=0.5",
   "embedding-atlas>=0.26; python_version >= '3.11'",
   "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
@@ -208,6 +213,7 @@ dev = [
   # so pyvista can't be installed there
   "pyvista[jupyter]; python_version < '3.15'",
   "quak",
+  "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "ruff>=0.6.5",
   "tox-uv>=1",
 ]
@@ -223,6 +229,7 @@ test = [
   # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "drawdata>=0.5",
   "embedding-atlas>=0.26; python_version >= '3.11'",
   "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
@@ -271,6 +278,7 @@ test = [
   # so pyvista can't be installed there
   "pyvista[jupyter]; python_version < '3.15'",
   "quak",
+  "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "tox-uv>=1",
 ]
 dev = [
