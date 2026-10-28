@@ -1363,7 +1363,8 @@ class render_obsplot(render_widget_base[ObsplotWidget, ObsplotWidget]):
     Observable Plot charts have a fixed pixel size: they don't resize to fit
     their container. Control the size with ``width`` (and, if needed,
     ``height``) in the plot specification. pyobsplot's interactions (tips,
-    crosshairs) run entirely in the browser; nothing is synced back to Python,
+    crosshairs) run entirely in the browser; nothing is synced back to Python
+    (tracked upstream in [pyobsplot#55](https://github.com/juba/pyobsplot/issues/55)),
     so there's no widget state to :func:`~shinywidgets.reactive_read`.
 
     The decorated function also gains two read-only attributes: `.value` and
@@ -1383,8 +1384,9 @@ class render_obsplot(render_widget_base[ObsplotWidget, ObsplotWidget]):
 
     With pyobsplot 0.5.4, a pandas `DataFrame` whose index doesn't start at 0
     (e.g., a filtered frame) fails to serialize (``KeyError`` in
-    ``pd_to_arrow``). Call ``df.reset_index(drop=True)`` after filtering, or
-    use polars, which is unaffected.
+    ``pd_to_arrow``; [pyobsplot#56](https://github.com/juba/pyobsplot/issues/56)).
+    Call ``df.reset_index(drop=True)`` after filtering, or use polars, which is
+    unaffected.
 
     Parameters
     ----------
