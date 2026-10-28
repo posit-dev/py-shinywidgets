@@ -38,7 +38,8 @@ def read_first_lines(path: str | None, n: int = 5) -> str:
         with open(resolved) as f:
             lines = list(islice(f, n))  # up to n lines; shorter files are fine
         return f"{resolved}\n\n{''.join(lines)}"
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:
+        # UnicodeDecodeError covers binary/non-UTF-8 files (e.g. .pyc)
         return f"{resolved}\n\n(can't read: {e})"
 
 

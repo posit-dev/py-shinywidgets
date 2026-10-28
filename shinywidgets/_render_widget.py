@@ -2090,17 +2090,17 @@ class render_ipyfilechooser(render_widget_base[ValueT, FileChooser]):
 
 
     def server(input, output, session):
-        selected = reactive.value(None)
+        selection = reactive.value(None)
 
         @render_ipyfilechooser
         def chooser():
             fc = FileChooser()
-            fc.register_callback(lambda fc: selected.set(fc.selected))
+            fc.register_callback(lambda fc: selection.set(fc.selected))
             return fc
 
         @render.text
-        def selected_():
-            return f"Selected: {selected()}"
+        def selected():
+            return f"Selected: {selection()}"
 
 
     app = App(app_ui, server)
