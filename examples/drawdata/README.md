@@ -26,5 +26,11 @@ Two things to know about:
   (`ScatterWidget(width=1000, height=500)`) define the drawing's *data
   coordinate space* -- drawn points come back in those coordinates, y-up --
   and the aspect ratio, not the display size. Also note that `BarWidget`
-  overwrites constructor-provided `data` at first render and ignores later
-  Python-side trait updates until the next re-render.
+  always starts empty: its frontend overwrites constructor-provided `data`
+  at first render (seeding is impossible, even via a re-render) and ignores
+  later Python-side trait updates until the next re-render (upstream
+  drawdata [issue #42](https://github.com/koaning/drawdata/issues/42)), so
+  re-render -- return a new `BarWidget` -- to change settings like
+  `n_bins`. Avoid two `BarWidget`s on the same page for now: their
+  collection buttons interfere
+  ([issue #43](https://github.com/koaning/drawdata/issues/43)).

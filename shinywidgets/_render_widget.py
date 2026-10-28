@@ -243,10 +243,19 @@ class render_drawdata(render_widget_base[DrawdataWidgetT, DrawdataWidgetT]):
     full). The undo (pops one batch) and reset buttons sync immediately.
     `BarWidget` is not affected.
 
-    Also note that `BarWidget` overwrites any ``data`` passed to its
-    constructor when its frontend initializes (all bins start at 0), and its
-    frontend ignores later Python-side trait updates until the next re-render
+    Also note a few `BarWidget` limitations (upstream drawdata issue
+    [#42](https://github.com/koaning/drawdata/issues/42)): its frontend
+    overwrites any ``data`` passed to the constructor when it initializes
+    (all bins start at ``y_min``), so a `BarWidget` output always starts
+    empty -- seeding initial data is impossible, even via a re-render --
+    and it ignores later Python-side trait updates until the next re-render
     (it registers no ``change:`` handlers, unlike `ScatterWidget`).
+    Re-rendering (returning a new `BarWidget` in response to a reactive
+    change) is the way to change ``n_bins``, ``y_max``, etc. Finally, avoid
+    putting two `BarWidget`s on the same page: clicking one widget's
+    collection buttons silently switches the other's active collection
+    (upstream drawdata issue
+    [#43](https://github.com/koaning/drawdata/issues/43)).
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
