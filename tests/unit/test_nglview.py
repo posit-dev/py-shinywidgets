@@ -229,11 +229,14 @@ def test_close_widget_ignores_non_viewer_nglview_widgets(
     # Non-viewer nglview widgets (e.g. the global _ColormakerRegistry, or a
     # RepresentationControl) match a package-wide MRO check but have no
     # background threads (or `_event`); closing them must not raise.
-    from nglview.color import _ColormakerRegistry
+    from nglview.color import ColormakerRegistry
     from shinywidgets._shinywidgets import close_widget
 
+    # nglview decorates the registry class with a singleton factory, so call
+    # the class itself (via the instance's type) for a fresh widget: closing
+    # the singleton would mutate process-global state other tests rely on
     with session_context(widget_session):
-        widget = _ColormakerRegistry()
+        widget = type(ColormakerRegistry)()
     close_widget(widget)  # would raise AttributeError on w._event pre-fix
     assert widget.comm is not None
 
