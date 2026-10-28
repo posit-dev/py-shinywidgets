@@ -656,18 +656,19 @@ def as_widget_pyvista(x: object) -> Widget:
             "Install pyvista's jupyter extra to use pyvista with shinywidgets (pip install 'shinywidgets[pyvista]')."
         ) from e
 
-    # jupyter_backend='html' exports the scene to a self-contained,
-    # client-side vtk.js view. pyvista's other interactive backends ('trame',
-    # 'client', 'server') need their own trame websocket server, which
-    # shinywidgets can't host.
-    #
-    # The export still needs pyvista's shared trame server running, so start it
-    # ourselves (localhost-only, in a daemon thread) rather than letting
-    # trame_pyvista's elegantly_launch() patch asyncio process-wide via
-    # nest_asyncio2
-    ensure_pyvista_trame_server()
-
     try:
+        # jupyter_backend='html' exports the scene to a self-contained,
+        # client-side vtk.js view. pyvista's other interactive backends ('trame',
+        # 'client', 'server') need their own trame websocket server, which
+        # shinywidgets can't host.
+        #
+        # The export still needs pyvista's shared trame server running, so start
+        # it ourselves (localhost-only, in a daemon thread) rather than letting
+        # trame_pyvista's elegantly_launch() patch asyncio process-wide via
+        # nest_asyncio2. This is inside the try so a startup failure (e.g. its
+        # timeout) still closes the plotter below.
+        ensure_pyvista_trame_server()
+
         widget = show_trame(x, mode="html", width="100%", height="100%")
         if not isinstance(widget, DOMWidget):
             raise TypeError(

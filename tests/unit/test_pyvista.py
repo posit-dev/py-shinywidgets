@@ -118,6 +118,24 @@ def test_as_widget_pyvista_closes_plotter_on_unexpected_widget(
     assert pl._closed
 
 
+def test_as_widget_pyvista_closes_plotter_on_server_start_failure(
+    widget_session, monkeypatch
+) -> None:
+    import shinywidgets._as_widget
+
+    def failing_ensure_server() -> None:
+        raise TimeoutError("trame server didn't start")
+
+    monkeypatch.setattr(
+        shinywidgets._as_widget, "ensure_pyvista_trame_server", failing_ensure_server
+    )
+    pl = make_plotter()
+    with pytest.raises(TimeoutError, match="didn't start"):
+        coerce_plotter(widget_session, pl)
+    # The plotter is closed even though the server never started
+    assert pl._closed
+
+
 def test_as_widget_pyvista_passthrough_widget(widget_session) -> None:
     w = coerce_plotter(widget_session, make_plotter())
     assert as_widget(w) is w
