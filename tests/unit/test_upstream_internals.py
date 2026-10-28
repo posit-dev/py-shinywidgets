@@ -35,6 +35,7 @@ from ipywidgets import Widget
 
 pytest.importorskip("ipyvue")
 pytest.importorskip("ipyvuetify")
+pytest.importorskip("nglview")
 
 
 def test_importing_ipyvue_heuristic_internals() -> None:
@@ -57,6 +58,16 @@ def test_importing_ipyvue_heuristic_internals() -> None:
         "importing_ipyvue() must be False once ipyvue has fully imported; "
         "it keys off ipyvue.ForceLoad lacking `force_load_instance`"
     )
+
+
+def test_importing_nglview_heuristic_internals() -> None:
+    """importing_nglview() assumes nglview.color binds ColormakerRegistry only
+    when color.py has finished executing (it's the module's last statement)."""
+    color_mod = sys.modules["nglview.color"]
+    registry = color_mod.ColormakerRegistry
+    # ... and that what it binds is the singleton widget instance itself
+    assert isinstance(registry, Widget)
+    assert not sw.importing_nglview()
 
 
 def test_importing_ipyvuetify_heuristic_internals() -> None:
@@ -100,13 +111,18 @@ def test_in_template_registry_heuristic_internals() -> None:
 
 
 def test_import_time_singletons_are_process_global() -> None:
-    """The widgets ipyvue/ipyvuetify construct at import time must be the
-    ones is_process_global()/EAGERLY_SHARED_PACKAGES treat as shared by
+    """The widgets ipyvue/ipyvuetify/nglview construct at import time must be
+    the ones is_process_global()/EAGERLY_SHARED_PACKAGES treat as shared by
     every session."""
     force_load_instance = sys.modules["ipyvue.ForceLoad"].force_load_instance
     theme = sys.modules["ipyvuetify.Themes"].theme
+    colormaker_registry = sys.modules["nglview.color"].ColormakerRegistry
 
-    for singleton, pkg in ((force_load_instance, "ipyvue"), (theme, "ipyvuetify")):
+    for singleton, pkg in (
+        (force_load_instance, "ipyvue"),
+        (theme, "ipyvuetify"),
+        (colormaker_registry, "nglview"),
+    ):
         assert sw.is_process_global(singleton), (
             f"{pkg}'s import-time widget is no longer process-global; "
             "sessions would be allowed to close a widget every session shares"

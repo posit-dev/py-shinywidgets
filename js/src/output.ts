@@ -2,6 +2,7 @@ import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { setConnected, ShinyComm } from './comm';
 import { behaviorForModel, ipyleafletBehavior, WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
 import { isJQuery, jsonParse, lendDataTables, protectPageJQuery } from './utils';
+import { NGLVIEW_COLORMAKER_REGISTRY_MODEL, renderHiddenColormakerRegistry } from './nglview';
 import { disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
 import { uuid } from '@jupyter-widgets/base';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
@@ -581,6 +582,14 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
   // renderValue() would render nothing for it.
   closedModels.delete(msg.content.comm_id);
   manager.handle_comm_open(comm, msg);
+  // nglview's process-global ColormakerRegistry is eagerly opened in every
+  // session; its custom color scheme handlers live on its (otherwise never
+  // displayed) view, so render it hidden as its model opens
+  if (msg.content.data?.state?._model_name === NGLVIEW_COLORMAKER_REGISTRY_MODEL) {
+    renderHiddenColormakerRegistry(manager, msg.content.comm_id).catch((err) =>
+      console.error('Error rendering hidden ColormakerRegistry view:', err)
+    );
+  }
 });
 
 // Handle any mutation of the model (e.g., add a marker to a map, without a full redraw)

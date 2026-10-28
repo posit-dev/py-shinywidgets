@@ -140,7 +140,9 @@ def init_shiny_widget(w: Widget):
     id = cast(str, w._model_id)
     # The import's module-level widgets are process-global even when the first
     # import runs inside a session (e.g. a lazy import in a render function)
-    shared = shared or importing_ipyvue() or importing_ipyvuetify()
+    shared = (
+        shared or importing_ipyvue() or importing_ipyvuetify() or importing_nglview()
+    )
     if shared:
         SHARED_WIDGETS[id] = w
 
@@ -1001,11 +1003,19 @@ def close_comm_on_close(w: Widget) -> None:
 
 
 # Packages that construct widgets while being imported (see importing_lonboard() etc.)
-IMPORT_TIME_WIDGET_PACKAGES = ("ipyvue", "ipyvuetify", "lonboard", "ipycanvas")
+IMPORT_TIME_WIDGET_PACKAGES = (
+    "ipyvue",
+    "ipyvuetify",
+    "lonboard",
+    "ipycanvas",
+    "nglview",
+)
 
 # The subset whose import-time widgets the frontend expects to simply exist in
-# the widget manager (e.g. ipyvuetify's view finds `theme` by scanning it)
-EAGERLY_SHARED_PACKAGES = ("ipyvue", "ipyvuetify")
+# the browser. ipyvuetify's view finds `theme` by scanning the widget manager;
+# nglview's ColormakerRegistry must be open (and its view rendered, see
+# js/src/nglview.ts) for its view to register custom color schemes
+EAGERLY_SHARED_PACKAGES = ("ipyvue", "ipyvuetify", "nglview")
 
 
 def is_process_global(w: Widget) -> bool:

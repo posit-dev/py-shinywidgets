@@ -281,3 +281,79 @@ def test_nglview_child_removal_disposes_stage(page: Page, local_app) -> None:
     assert page.evaluate("() => window.__nglDisposed") == 1
 
     assert_no_unexpected_errors(errors, failed_requests)
+
+
+def count_blue_pixels(locator: Locator) -> int:
+    image = Image.open(io.BytesIO(locator.screenshot())).convert("RGB")
+    return sum(
+        1 for r, g, b in image.getdata() if b > 100 and b > r + 40 and b > g + 40
+    )
+
+
+def wait_for_blue_pixels(locator: Locator, page: Page, minimum: int = 50) -> None:
+    for _ in range(50):
+        try:
+            if count_blue_pixels(locator) > minimum:
+                return
+        except Exception:
+            pass
+        page.wait_for_timeout(200)
+    raise AssertionError("no blue (custom-scheme) pixels ever appeared")
+
+
+def test_custom_color_scheme_renders_in_browser(page: Page, local_app) -> None:
+    # The app registers "sw_blue" on the process-global ColormakerRegistry at
+    # import time; the registry's view must render (hidden) in the browser and
+    # receive the registration before the representation is created
+    errors, failed_requests = collect_errors(page)
+    warnings: list[str] = []
+    page.on(
+        "console",
+        lambda msg: warnings.append(msg.text) if msg.type == "warning" else None,
+    )
+    page.goto(local_app.url)
+    canvas = page.locator("#custom_scheme canvas")
+    expect(canvas).to_have_count(1, timeout=30000)
+
+    wait_for_blue_pixels(canvas, page)
+
+    # In particular: NGL never fell back to parsing "sw_blue" as a color
+    assert not any("Unknown color" in w for w in warnings)
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_custom_color_scheme_reaches_a_second_session(page: Page, local_app) -> None:
+    # The registry fans out to every session, and each browser renders its own
+    # hidden registry view
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    expect(page.locator("#custom_scheme canvas")).to_have_count(1, timeout=30000)
+    wait_for_blue_pixels(page.locator("#custom_scheme canvas"), page)
+
+    page2 = page.context.new_page()
+    page2.goto(local_app.url)
+    canvas2 = page2.locator("#custom_scheme canvas")
+    expect(canvas2).to_have_count(1, timeout=30000)
+    wait_for_blue_pixels(canvas2, page2)
+    page2.close()
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_method_call_updates_viewer_in_place(page: Page, local_app) -> None:
+    # add_representation() runs on nglview's background thread; the update must
+    # still reach the browser, without a re-render
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    canvas = page.locator("#view canvas")
+    expect(canvas).to_have_count(1, timeout=30000)
+    wait_until_drawn(page, canvas)
+    assert page.locator("#render_count").inner_text() == "0"
+    assert count_blue_pixels(canvas) <= 50
+
+    page.click("#add_spacefill")
+
+    wait_for_blue_pixels(canvas, page)
+    # No re-render happened (the counter only increments via the Rerender button)
+    assert page.locator("#render_count").inner_text() == "0"
+    assert_no_unexpected_errors(errors, failed_requests)

@@ -146,6 +146,35 @@ def test_direct_close_stops_nglview_threads(
     assert not any(t.is_alive() for t in threads)
 
 
+def test_colormaker_registry_is_eagerly_shared(nglview: ModuleType) -> None:
+    # The registry registers custom color schemes from its frontend view, so
+    # every session must open it (see EAGERLY_SHARED_PACKAGES), and no render
+    # or session may close it
+    import shinywidgets._shinywidgets as sw
+
+    registry = nglview.color.ColormakerRegistry
+    assert sw.is_process_global(registry)
+    assert "nglview" in sw.IMPORT_TIME_WIDGET_PACKAGES
+    assert "nglview" in sw.EAGERLY_SHARED_PACKAGES
+    assert not sw.is_swapped_out_default(registry)
+
+
+def test_session_start_opens_colormaker_registry(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # Deliberately no shared_state fixture: the registry is a genuine
+    # process-global singleton, and shared_state would close it (leaving it
+    # comm-less) for later tests
+    import shinywidgets._shinywidgets as sw
+
+    registry = nglview.color.ColormakerRegistry
+    with session_context(widget_session):
+        # The first widget constructed in a session runs init_session(),
+        # which eagerly opens the registry
+        Widget()
+    assert registry.model_id in sw.COMM_MANAGERS[widget_session.id].comms
+
+
 def test_nglview_shutdown_releases_in_flight_acknowledgement_wait(
     nglview: ModuleType, widget_session: Session
 ) -> None:

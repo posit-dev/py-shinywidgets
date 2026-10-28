@@ -1403,16 +1403,11 @@ class render_nglview(render_widget_base[ValueT, NGLWidget]):
     reactively read widget state with :func:`~shinywidgets.reactive_read` (e.g., the
     picked atom via ``"picked"``).
 
-    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+    Changes made with `.widget` methods (e.g., `add_representation()`,
+    `center()`, `clear_representations()`) reach the browser even though
+    nglview sends them from a background thread (requires shiny >= 1.9).
 
-    Note
-    ---
-    **Shiny version**: nglview sends the changes its methods make (e.g.,
-    `add_representation()`, `center()`, `clear_representations()`) from a
-    background thread, which Shiny before 1.9 doesn't send to the browser until
-    the next input arrives. So with older Shiny, those changes can be delayed,
-    and calling them in the render function can leave the viewer blank when it
-    first loads.
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Parameters
     ----------
