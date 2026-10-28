@@ -286,6 +286,11 @@ class OrphanedShinyComm:
 
     comm_id: str
 
+    # Cross-library contract: ipywidgets treats a comm with `kernel = None`
+    # like a `DummyComm`, and ipyvue >= 3 skips caching templates whose comm
+    # was never sent to the frontend.
+    kernel = None
+
     def send(
         self,
         *args: object,
@@ -302,6 +307,88 @@ class OrphanedShinyComm:
 
     def on_msg(self, callback: MsgCallback) -> None:
         pass
+
+
+class SharedShinyComm:
+    """
+    The comm of a widget that is open in several sessions at once. `send()`
+    fans out to the `ShinyComm` of every active session; incoming client
+    messages still arrive through each session's own `ShinyComm`, which runs
+    the callbacks registered here. A shared widget is never closed.
+
+    Before fanning out, `send()` guards against updates that reference a model
+    some session doesn't have (a browser without it waits forever for it): a
+    process-global one is opened in the sessions missing it, and any other is
+    warned about once per referenced model (see guard_shared_send).
+    """
+
+    kernel = "Shiny"
+
+    def __init__(self, comm_id: str) -> None:
+        self.comm_id = comm_id
+        # Keyed by root session id
+        self.comms: Dict[str, ShinyComm] = {}
+        # Referenced models a dangling-reference warning was already issued for
+        self._dangling_warned: set[str] = set()
+        self._msg_callback: Optional[MsgCallback] = None
+        self._close_callback: Optional[MsgCallback] = None
+
+    def add(self, comm: ShinyComm) -> None:
+        self.comms[comm.session.id] = comm
+        if self._msg_callback is not None:
+            comm.on_msg(self._msg_callback)
+        if self._close_callback is not None:
+            comm.on_close(self._close_callback)
+
+    def has_session(self, session_id: str) -> bool:
+        return session_id in self.comms
+
+    def drop_session(self, session_id: str) -> None:
+        self.comms.pop(session_id, None)
+
+    def sessions_missing(self, model_id: str) -> List[str]:
+        """The active fan-out sessions whose browser has no `model_id` model."""
+        return [
+            session_id
+            for session_id, comm in self.comms.items()
+            if comm.comm_manager.active and model_id not in comm.comm_manager.comms
+        ]
+
+    def dangling_warning_due(self, model_id: str) -> bool:
+        """True the first time a dangling reference to `model_id` is reported."""
+        if model_id in self._dangling_warned:
+            return False
+        self._dangling_warned.add(model_id)
+        return True
+
+    def send(
+        self,
+        data: DataType = None,
+        metadata: MetadataType = None,
+        buffers: BufferType = None,
+    ) -> None:
+        # _shinywidgets imports this module at module scope, so keep the
+        # guard's import function-local (the same trick _render_widget_base
+        # uses to import _shinywidgets in the other direction)
+        from ._shinywidgets import guard_shared_send
+
+        guard_shared_send(self, data)
+        for comm in list(self.comms.values()):
+            if comm.comm_manager.active:
+                comm.send(data=data, metadata=metadata, buffers=buffers)
+
+    def close(self, *args: object, **kwargs: object) -> None:
+        pass
+
+    def on_msg(self, callback: MsgCallback) -> None:
+        self._msg_callback = callback
+        for comm in self.comms.values():
+            comm.on_msg(callback)
+
+    def on_close(self, callback: MsgCallback) -> None:
+        self._close_callback = callback
+        for comm in self.comms.values():
+            comm.on_close(callback)
 
 
 logger = logging.getLogger("shinywidgets")

@@ -4,12 +4,15 @@ import json
 import logging
 import os
 import sys
+import warnings
 from base64 import b64decode
 from contextlib import contextmanager
+from contextvars import ContextVar
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from typing import (
     Any,
+    Callable,
     Dict,
     Iterable,
     Iterator,
@@ -43,7 +46,14 @@ from shiny.session import get_current_session, require_active_session, session_c
 from ._as_widget import as_widget, pydeck_has_widget
 from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
-from ._comm import BufferType, OrphanedShinyComm, ShinyComm, ShinyCommManager
+from ._comm import (
+    BufferType,
+    DataType,
+    OrphanedShinyComm,
+    SharedShinyComm,
+    ShinyComm,
+    ShinyCommManager,
+)
 from ._dependencies import custom_elements_dependency, require_dependencies, widget_pkg
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
@@ -55,6 +65,7 @@ __all__ = (
     "register_widget",
     "reactive_read",
     "session_lifetime",
+    "shared_lifetime",
 )
 
 
@@ -71,11 +82,24 @@ def init_shiny_widget(w: Widget):
     if plotly_version is not None:
         raise RuntimeError(PLOTLY_VERSION_MESSAGE.format(version=plotly_version))
     session = get_current_session()
+    shared = constructing_shared.get()
     if session is None:
-        if importing_lonboard() or importing_ipycanvas():
+        if shared:
+            # Widget.open() then gives it an inert DummyComm with this id
+            if getattr(w, "_model_id", None) is None:
+                w._model_id = uuid4().hex
+            SHARED_WIDGETS[cast(str, w._model_id)] = w
+            return
+        if (
+            importing_lonboard()
+            or importing_ipycanvas()
+            or importing_ipyvue()
+            or importing_ipyvuetify()
+        ):
             return
         raise RuntimeError(
-            "shinywidgets requires that all ipywidgets be constructed within an active Shiny session"
+            "shinywidgets requires that all ipywidgets be constructed within an "
+            f"active Shiny session. {OWNERSHIP_GUIDANCE}"
         )
     # Wait until we're in a "real" session before doing anything
     # (i.e., on the 1st run of an Express app, it's too early to do anything)
@@ -85,44 +109,7 @@ def init_shiny_widget(w: Widget):
     # will be some module-specific copy.
     session = session.root_scope()
 
-    # If this is the first time we've seen this session, initialize some things
-    if session not in SESSIONS:
-        SESSIONS.add(session)
-        COMM_MANAGERS[session.id] = ShinyCommManager()
-
-        # Somewhere inside ipywidgets, it makes requests for static files
-        # under the publicPath set by the webpack.config.js file.
-        session.app._dependency_handler.mount(
-            "/dist/",
-            StaticFiles(directory=os.path.join(package_dir("shinywidgets"), "static")),
-            name="shinywidgets-static-resources",
-        )
-
-        # Handle messages from the client. Note that widgets like qgrid send client->server messages
-        # to figure out things like what filter to be shown in the table.
-        @reactive.effect
-        @reactive.event(session.input.shinywidgets_comm_send)
-        def _():
-            handle_client_comm_msg(
-                session, json.loads(session.input.shinywidgets_comm_send())
-            )
-
-        def _cleanup_session_state():
-            SESSIONS.remove(session)
-            COMM_MANAGERS.pop(session.id).active = False
-            # Cleanup any widgets that were created in this session. Use the same
-            # close_widget() helper as render cleanup (not a plain widget.close())
-            # so these widgets also keep a working model_id afterwards -- other
-            # live widgets (e.g. a sibling session's container that still lists
-            # this widget as a child) may still read it.
-            for id in SESSION_WIDGET_ID_MAP[session.id]:
-                widget = WIDGET_INSTANCE_MAP.get(id)
-                if widget:
-                    close_widget(widget)
-            del SESSION_WIDGET_ID_MAP[session.id]
-            KEPT_WIDGETS.pop(session.id, None)
-
-        session.on_ended(_cleanup_session_state)
+    init_session(session)
 
     if isinstance(w.comm, ShinyComm):
         # The browser opened this comm (see open_client_comm()) and already has
@@ -144,31 +131,18 @@ def init_shiny_widget(w: Widget):
         w._model_id = uuid4().hex
 
     id = cast(str, w._model_id)
+    # The import's module-level widgets are process-global even when the first
+    # import runs inside a session (e.g. a lazy import in a render function)
+    shared = shared or importing_ipyvue() or importing_ipyvuetify()
+    if shared:
+        SHARED_WIDGETS[id] = w
 
-    if any(widget_pkg(cls) == "perspective" for cls in type(w).__mro__):
-        widget_deps.append(custom_elements_dependency())
-    open_keys: Dict[str, object] = {}
+    widget_deps, open_keys = widget_open_extras(w, session, widget_deps)
     if getattr(w, "_model_module", None) == "@bokeh/jupyter_bokeh":
-        widget_deps.append(_bokeh_dependency())
-        ext = bokeh_extension_assets(w, session)
-        widget_deps.extend(ext.deps)
-        if ext.module_urls or ext.module_exports:
-            # ES modules load via dynamic import() client-side (default
-            # exports get assigned to globals); they can't ride the
-            # dependency channel since import() must be awaited.
-            open_keys["modules"] = {
-                "urls": ext.module_urls,
-                "exports": ext.module_exports,
-            }
         # BokehModel.close() is not idempotent; guard against double close.
         guard_widget_close(w)
     elif any(widget_pkg(cls) == "k3d" for cls in type(w).__mro__):
         close_comm_on_close(w)
-
-    if any(widget_pkg(cls) == "itables" for cls in type(w).__mro__):
-        # itables' bundle replaces the global `$` when its module is evaluated (see
-        # protectPageJQuery() in js/src/utils.ts), which happens after this open
-        open_keys["protect_jquery"] = True
 
     # Since the actual ShinyComm() is initialized _after_ the Widget is initialized,
     # and Widget.__init__() includes a call to Widget.open() which opens an unnecessary
@@ -180,7 +154,7 @@ def init_shiny_widget(w: Widget):
     # then get the same cleanup as this widget instead of living until session end.
     render_ctx = (
         WidgetRenderContext.get_render_context()
-        if WidgetRenderContext.is_rendering_widget()
+        if WidgetRenderContext.is_rendering_widget() and not shared
         else None
     )
 
@@ -203,23 +177,25 @@ def init_shiny_widget(w: Widget):
         if w is None or WIDGET_INSTANCE_MAP.get(id) is not w:
             return
 
-        with WidgetRenderContext.resumed(render_ctx):
-            # Plotly's display hook snapshots the data and layout for get_state().
-            # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
-            # ipympl's sets _data_url, the image the frontend first paints
-            # (as_widget() already drew it, unless the Canvas was never coerced).
-            # Other display hooks can create preview widgets, causing an infinite
-            # widget-creation loop (e.g. pythreejs, #244).
-            pkgs = {widget_pkg(cls) for cls in type(w).__mro__}
-            if "plotly" in pkgs or (
-                "ipympl" in pkgs and not getattr(w, "_data_url", "")
-            ):
-                w._repr_mimebundle_()
-            if any(widget_pkg(cls) == "lonboard" for cls in type(w).__mro__):
-                own_lonboard_controls(w)
+        # Already opened in another session by open_shared_in(); a plain
+        # ShinyComm here would cut that session off.
+        if isinstance(w.comm, SharedShinyComm):
+            open_shared_in(w, session)
+            return
 
-            # Now, get the state
+        # A shared widget's lazily created defaults (e.g. its Layout) are shared too
+        with (
+            shared_construction() if shared else WidgetRenderContext.resumed(render_ctx)
+        ):
+            prepare_to_serialize(w)
             state, buffer_paths, buffers = _remove_buffers(w.get_state())
+
+        # Covers widgets that are opened but never displayed (so no render-time
+        # walk opens their references); the browser would otherwise wait for a
+        # model it never gets. Foreign references are left for the render to reject.
+        for r in direct_widget_references(w):
+            if is_process_global(r):
+                open_shared_in(r, session)
 
         # Initialize the comm -- this sends widget state to the frontend
         w.comm = ShinyComm(
@@ -281,6 +257,176 @@ def init_shiny_widget(w: Widget):
     # we're setting the data-base-url attribute on the <body> (which we should
     # be doing on load in js/src/output.ts)
     # https://github.com/jupyter-widgets/widget-cookiecutter/blob/9694718/%7B%7Bcookiecutter.github_project_name%7D%7D/js/lib/extension.js#L8
+    mount_widget_deps(session, widget_deps)
+
+
+# TODO: can we restore the widget constructor in a sensible way?
+Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
+
+
+def open_shared_in(w: Widget, session: Session) -> None:
+    """
+    Open a process-global widget (and the process-global widgets it references)
+    in `session`. Idempotent per (widget, session).
+    """
+    session = session.root_scope()
+    # Its client-message effect must run in this session (e.g. so a callback
+    # can construct widgets), whichever session's context we're called from
+    with session_context(session):
+        init_session(session)
+
+    comm = w.comm
+    if not isinstance(comm, SharedShinyComm):
+        shared = SharedShinyComm(w.model_id)
+        # Anything else (an inert comm, or one whose session has ended) never
+        # reaches a live browser, so dropping it loses nothing
+        if isinstance(comm, ShinyComm) and comm.comm_manager.active:
+            shared.add(comm)
+        w.comm = shared
+        comm = shared
+    SHARED_WIDGETS[comm.comm_id] = w
+    if comm.has_session(session.id):
+        return
+
+    widget_deps = (
+        []
+        if SHINYWIDGETS_CDN_ONLY
+        else require_dependencies(w, session, SHINYWIDGETS_EXTENSION_WARNING)
+    )
+    widget_deps, open_keys = widget_open_extras(w, session, widget_deps)
+    mount_widget_deps(session, widget_deps)
+    # Defaults first materialized while serializing must be shared as well
+    with shared_construction():
+        prepare_to_serialize(w)
+        state, buffer_paths, buffers = _remove_buffers(w.get_state())
+    comm.add(
+        ShinyComm(
+            comm_id=comm.comm_id,
+            comm_manager=COMM_MANAGERS[session.id],
+            session=session,
+            target_name="jupyter.widget",
+            data={"state": state, "buffer_paths": buffer_paths},
+            buffers=cast(BufferType, buffers),
+            metadata={"version": __protocol_version__},
+            html_deps=session._process_ui(TagList(*widget_deps))["deps"],
+            **open_keys,
+        )
+    )
+    flush_ipycanvas_manager(w)
+
+    # Sessionless references (e.g. the Layout ipyvue's ForceLoad materialized at
+    # import time) are followed too: nothing else would send the browser a model
+    # `w` points to. Any other reference (another session's widget, or a closed
+    # one) must not become shared. No render rejects such a reference either:
+    # foreign_or_closed_widget() prunes at process-global widgets, so it never
+    # descends into `w` to find it. Warn once per reference instead of leaving
+    # the other sessions' browsers waiting for a model that never arrives.
+    for r in direct_widget_references(w):
+        if is_process_global(r) or is_sessionless(r):
+            open_shared_in(r, session)
+        elif comm.dangling_warning_due(r.model_id):
+            warnings.warn(
+                dangling_reference_message(w, r, r.model_id, via_update=False),
+                stacklevel=2,
+            )
+
+
+def guard_shared_send(comm: SharedShinyComm, data: DataType) -> None:
+    """
+    Keep an update fanned out to several sessions from dangling in any of their
+    browsers. A referenced model every fan-out session has is fine. A
+    process-global one (e.g. a shared widget built lazily, after some session
+    already had this widget open) is opened in the sessions missing it. Any
+    other reference (session-owned or closed) can never reach them, so warn
+    once per referenced model rather than leave those browsers waiting.
+    """
+    for model_id in ipy_model_references(data):
+        w = WIDGET_INSTANCE_MAP.get(model_id)
+        if w is not None and is_process_global(w):
+            # is_swapped_out_default() widgets (e.g. ipycanvas's module-level
+            # manager) must never get a fan-out comm
+            if not is_swapped_out_default(w):
+                for session_id in comm.sessions_missing(model_id):
+                    open_shared_in(w, comm.comms[session_id].session)
+            continue
+        # A session that owns the referenced widget receives its model when
+        # the widget's deferred comm-open runs at the next flush; only the
+        # remaining sessions can never display it
+        owned = w is not None and not is_closed_widget(w)
+        missing = [
+            session_id
+            for session_id in comm.sessions_missing(model_id)
+            if not (owned and model_id in SESSION_WIDGET_ID_MAP.get(session_id, ()))
+        ]
+        if missing and comm.dangling_warning_due(model_id):
+            owner = WIDGET_INSTANCE_MAP.get(comm.comm_id)
+            warnings.warn(
+                dangling_reference_message(owner, w, model_id, via_update=True),
+                stacklevel=2,
+            )
+
+
+def init_session(session: Session) -> None:
+    """Set up a (root) session the first time a widget is opened in it."""
+    if session in SESSIONS:
+        return
+    SESSIONS.add(session)
+    COMM_MANAGERS[session.id] = ShinyCommManager()
+
+    # Somewhere inside ipywidgets, it makes requests for static files
+    # under the publicPath set by the webpack.config.js file.
+    session.app._dependency_handler.mount(
+        "/dist/",
+        StaticFiles(directory=os.path.join(package_dir("shinywidgets"), "static")),
+        name="shinywidgets-static-resources",
+    )
+
+    # Handle messages from the client. Note that widgets like qgrid send client->server messages
+    # to figure out things like what filter to be shown in the table.
+    @reactive.effect
+    @reactive.event(session.input.shinywidgets_comm_send)
+    def _():
+        handle_client_comm_msg(
+            session, json.loads(session.input.shinywidgets_comm_send())
+        )
+
+    def _cleanup_session_state():
+        SESSIONS.remove(session)
+        COMM_MANAGERS.pop(session.id).active = False
+        for w in SHARED_WIDGETS.values():
+            if isinstance(w.comm, SharedShinyComm):
+                w.comm.drop_session(session.id)
+        # Cleanup any widgets that were created in this session. Use the same
+        # close_widget() helper as render cleanup (not a plain widget.close())
+        # so these widgets also keep a working model_id afterwards -- other
+        # live widgets (e.g. a sibling session's container that still lists
+        # this widget as a child) may still read it.
+        # A session that only had shared widgets opened in it constructed none.
+        for id in SESSION_WIDGET_ID_MAP.get(session.id, []):
+            widget = WIDGET_INSTANCE_MAP.get(id)
+            if widget and not is_process_global(widget):
+                close_widget(widget)
+        SESSION_WIDGET_ID_MAP.pop(session.id, None)
+        KEPT_WIDGETS.pop(session.id, None)
+
+    session.on_ended(_cleanup_session_state)
+
+    # As in Jupyter, where every widget is in the one frontend's manager, since
+    # some views look models up there (e.g. ipyvuetify's finds `theme`). Snapshot
+    # both, since opening can construct widgets.
+    for w in list(SHARED_WIDGETS.values()):
+        if w.comm is not None:  # not closed by the user
+            open_shared_in(w, session)
+    for w in list(WIDGET_INSTANCE_MAP.values()):
+        if (
+            is_import_time_singleton(w)
+            and widget_pkg(type(w)) in EAGERLY_SHARED_PACKAGES
+        ):
+            open_shared_in(w, session)
+
+
+def mount_widget_deps(session: Session, widget_deps: Iterable[HTMLDependency]) -> None:
+    """Serve each dependency's source directory under /nbextensions/<name>."""
     for widget_dep in widget_deps:
         if not widget_dep.source:
             continue
@@ -293,8 +439,55 @@ def init_shiny_widget(w: Widget):
             )
 
 
-# TODO: can we restore the widget constructor in a sensible way?
-Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
+def widget_open_extras(
+    w: Widget, session: Session, widget_deps: Iterable[HTMLDependency]
+) -> tuple[list[HTMLDependency], dict[str, object]]:
+    """
+    The HTML dependencies (`widget_deps`, from require_dependencies(), plus any
+    package-specific ones) and extra comm-open keys `w`'s open message needs.
+    """
+    pkgs = {widget_pkg(cls) for cls in type(w).__mro__}
+    deps = list(widget_deps)
+    open_keys: dict[str, object] = {}
+    if "perspective" in pkgs:
+        deps.append(custom_elements_dependency())
+    if getattr(w, "_model_module", None) == "@bokeh/jupyter_bokeh":
+        deps.append(_bokeh_dependency())
+        ext = bokeh_extension_assets(w, session)
+        deps.extend(ext.deps)
+        if ext.module_urls or ext.module_exports:
+            # ES modules load via dynamic import() client-side (default
+            # exports get assigned to globals); they can't ride the
+            # dependency channel since import() must be awaited.
+            open_keys["modules"] = {
+                "urls": ext.module_urls,
+                "exports": ext.module_exports,
+            }
+    if "itables" in pkgs:
+        # itables' bundle replaces the global `$` when its module is evaluated (see
+        # protectPageJQuery() in js/src/utils.ts), which happens after this open
+        open_keys["protect_jquery"] = True
+    return deps, open_keys
+
+
+def prepare_to_serialize(w: Widget) -> None:
+    """Package-specific fixes to a widget's state, run right before it's sent."""
+    pkgs = {widget_pkg(cls) for cls in type(w).__mro__}
+    # Plotly's display hook snapshots the data and layout for get_state().
+    # https://github.com/plotly/plotly.py/blob/0089f32/packages/python/plotly/plotly/basewidget.py#L734-L738
+    # ipympl's sets _data_url, the image the frontend first paints
+    # (as_widget() already drew it, unless the Canvas was never coerced).
+    # Other display hooks can create preview widgets, causing an infinite
+    # widget-creation loop (e.g. pythreejs, #244).
+    if "plotly" in pkgs or ("ipympl" in pkgs and not getattr(w, "_data_url", "")):
+        w._repr_mimebundle_()
+    if "lonboard" in pkgs:
+        own_lonboard_controls(w)
+    # A no-op for canvases constructed in a session (init_shiny_widget already
+    # did it), but a canvas constructed outside one still has the module-level
+    # manager
+    if "ipycanvas" in pkgs:
+        own_ipycanvas_manager(w)
 
 
 def handle_client_comm_msg(session: Session, msg: Dict[str, Any]) -> None:
@@ -387,6 +580,32 @@ def importing_ipycanvas() -> bool:
     canvas_mod = sys.modules.get("ipycanvas.canvas")
     # _CANVAS_MANAGER is only bound once canvas.py has finished executing
     return canvas_mod is not None and not hasattr(canvas_mod, "_CANVAS_MANAGER")
+
+
+def importing_ipyvue() -> bool:
+    """
+    Is ipyvue's `ForceLoad` module executing (i.e., is ipyvue mid-import)?
+
+    Importing ipyvue constructs a module-level `ForceLoad` widget (which every
+    ipyvue widget references, to make the frontend load jupyter-vue), usually
+    outside any session. It's process-global, shared by every session.
+    """
+    force_load = sys.modules.get("ipyvue.ForceLoad")
+    # force_load_instance is only bound once ForceLoad.py has finished executing
+    return force_load is not None and not hasattr(force_load, "force_load_instance")
+
+
+def importing_ipyvuetify() -> bool:
+    """
+    Is ipyvuetify's `Themes` module executing (i.e., is ipyvuetify mid-import)?
+
+    Importing ipyvuetify constructs a module-level `theme` widget (and its
+    `ThemeColors`), usually outside any session. They're process-global, shared
+    by every session.
+    """
+    themes = sys.modules.get("ipyvuetify.Themes")
+    # theme is only bound once Themes.py has finished executing
+    return themes is not None and not hasattr(themes, "theme")
 
 
 def own_ipycanvas_manager(w: Widget) -> None:
@@ -556,8 +775,124 @@ def session_lifetime() -> Iterator[None]:
         yield
 
 
+@contextmanager
+def shared_lifetime() -> Iterator[None]:
+    """
+    Construct one widget that every Shiny session displays.
+
+    Widgets constructed inside this block exist once per Python process and are
+    mirrored into every session's browser: any user's interaction with one changes
+    it for everyone, and it is never freed. Use it for static content or state that
+    is deliberately shared between users. To reuse a widget across renders within a
+    single session instead, use `session_lifetime()`.
+
+    Works with or without an active session, so a widget can be built at module
+    level and returned from any session's render. Layout defaults a renderer
+    applies to it (e.g., filling its container) affect it for all sessions.
+
+    Construct each shared widget once: at the top level of a module the app
+    imports, or lazily, cached in a module-level variable. Don't construct one in
+    code that runs per render or per session (including the body of a Shiny
+    Express app file, which runs once per session): every widget built here is
+    kept forever and sent to every new session, so each run adds one more.
+    Widgets a shared widget references (e.g., a container's children) must be
+    constructed inside `shared_lifetime()` too, or other sessions can't show them.
+
+    Don't rely on models a shared widget's JavaScript creates in the browser when
+    a trait is left at its default (e.g., pythreejs's light `target` and `shadow`):
+    they belong to that one browser, and other sessions don't have them. A session
+    that opens the shared widget afterwards references a model it never received,
+    waits 30 seconds for it ("Timeout waiting for widget model"), and the affected
+    outputs never render. Give such traits explicit values, constructed inside
+    `shared_lifetime()`.
+    """
+    with shared_construction():
+        yield
+
+
+OWNERSHIP_GUIDANCE = (
+    "A widget belongs to one Shiny session by default. To reuse a widget across "
+    "renders in the same session, construct it inside `with session_lifetime():`. "
+    "To show one widget to every user, construct it inside `with shared_lifetime():`; "
+    "then every user's interaction changes it for everyone and it is never freed, "
+    "so prefer that only for static or deliberately shared widgets."
+)
+
+
+def ownership_error(w: Widget) -> RuntimeError:
+    """The error for a widget that can't be displayed in the current session."""
+    name = type(w).__name__
+    if is_closed_widget(w):
+        reason = (
+            f"{name} was closed (its render was invalidated, or it was closed "
+            "explicitly), so it can't be displayed again."
+        )
+    elif is_sessionless(w):
+        reason = (
+            f"{name} was constructed outside a Shiny session, so it can't be "
+            "displayed here."
+        )
+    else:
+        reason = (
+            f"{name} belongs to another Shiny session, so it can't be displayed here."
+        )
+    return RuntimeError(f"{reason} {OWNERSHIP_GUIDANCE}")
+
+
+def dangling_reference_message(
+    owner: Optional[Widget], ref: Optional[Widget], ref_id: str, *, via_update: bool
+) -> str:
+    """
+    The warning for a shared widget (`owner`) referencing a model that some
+    session showing it can never receive: that browser hangs with 'Timeout
+    waiting for widget model'.
+    """
+    owner_name = type(owner).__name__ if owner is not None else "widget"
+    ref_name = type(ref).__name__ if ref is not None else f"model {ref_id}"
+    if ref is None:
+        reason = "isn't open in every session"
+    elif is_closed_widget(ref):
+        reason = "was closed"
+    else:
+        reason = "belongs to one Shiny session"
+    subject = (
+        f"An update to the shared {owner_name}"
+        if via_update
+        else f"The shared {owner_name}"
+    )
+    return (
+        f"{subject} references {ref_name}, which {reason}, so it can't be "
+        f"mirrored to the other sessions showing the {owner_name} (their "
+        "browsers hang with 'Timeout waiting for widget model'). Construct "
+        f"the {ref_name} inside `with shared_lifetime():` too, so every "
+        "session can display it."
+    )
+
+
+# Whether widgets constructed now are process-global (see shared_construction)
+constructing_shared: ContextVar[bool] = ContextVar("constructing_shared", default=False)
+
+
+@contextmanager
+def shared_construction() -> Iterator[None]:
+    """
+    Make widgets constructed inside this block process-global: recorded in
+    SHARED_WIDGETS, owned by no render, and never closed. Works with or without
+    an active session.
+    """
+    token = constructing_shared.set(True)
+    try:
+        with WidgetRenderContext.suspended():
+            yield
+    finally:
+        constructing_shared.reset(token)
+
+
 # Use WeakSet() over Set() so that the session can be garbage collected
 SESSIONS: WeakSet[Session] = WeakSet()
+
+# Widgets constructed inside shared_construction(), keyed by model id. Never closed.
+SHARED_WIDGETS: dict[str, Widget] = {}
 
 # Widgets constructed during a render, keyed by that render's Context id. Closed
 # when the Context is invalidated (see close_render_widgets).
@@ -583,16 +918,22 @@ def close_render_widgets(session: Session, widgets: list[Widget]) -> None:
     # process: a cross-session reference shouldn't keep a widget alive, and on a
     # server with many sessions, walking only this session's widgets keeps the
     # sweep's cost independent of how many other sessions are open.
-    roots = (
+    roots = [
         WIDGET_INSTANCE_MAP.get(wid)
         for wid in SESSION_WIDGET_ID_MAP.get(session.id, ())
-    )
+    ]
+    # A process-global widget in `closing` survives (see the loop below), so
+    # root the walk at it too: what it references must survive with it
     keep = referenced_widgets(
-        w for w in roots if w is not None and id(w) not in closing
+        w
+        for w in (*roots, *widgets)
+        if w is not None and (id(w) not in closing or is_process_global(w))
     )
     kept: list[Widget] = []
     for w in widgets:
         if is_closed_widget(w):  # already closed (e.g. by this session ending)
+            continue
+        if is_process_global(w):
             continue
         if id(w) in keep:
             kept.append(w)
@@ -638,9 +979,90 @@ def close_comm_on_close(w: Widget) -> None:
     w.close = close_with_comm  # type: ignore[method-assign]
 
 
-def walk_widget_tree(roots: Iterable[object]) -> Iterator[Widget]:
+# Packages that construct widgets while being imported (see importing_lonboard() etc.)
+IMPORT_TIME_WIDGET_PACKAGES = ("ipyvue", "ipyvuetify", "lonboard", "ipycanvas")
+
+# The subset whose import-time widgets the frontend expects to simply exist in
+# the widget manager (e.g. ipyvuetify's view finds `theme` by scanning it)
+EAGERLY_SHARED_PACKAGES = ("ipyvue", "ipyvuetify")
+
+
+def is_process_global(w: Widget) -> bool:
     """
-    Yield every widget reachable from `roots` through materialized synced traits.
+    Is `w` shared by every session (so no render or session may close it)?
+
+    True for widgets constructed inside shared_construction(), widgets already
+    open in several sessions, widgets held by a process-wide registry, and
+    widgets a known package constructed while being imported.
+    """
+    if w.comm is None:  # closed by the user
+        return False
+    return (
+        SHARED_WIDGETS.get(w.model_id) is w
+        or isinstance(w.comm, SharedShinyComm)
+        or in_template_registry(w)
+        or is_import_time_singleton(w)
+    )
+
+
+def is_import_time_singleton(w: Widget) -> bool:
+    """
+    Was `w` constructed outside any session while a package in
+    IMPORT_TIME_WIDGET_PACKAGES was imported?
+
+    Such a widget never got one of our comms. This also covers packages imported
+    *before* shinywidgets (when our construction hook wasn't installed yet).
+    """
+    return (
+        is_sessionless(w)
+        and WIDGET_INSTANCE_MAP.get(w.model_id) is w
+        and widget_pkg(type(w)) in IMPORT_TIME_WIDGET_PACKAGES
+    )
+
+
+def is_sessionless(w: Widget) -> bool:
+    """
+    Is `w` open, but with a comm that isn't one of ours (e.g. the DummyComm of a
+    widget constructed outside any session)?
+    """
+    comm = w.comm
+    return comm is not None and not isinstance(
+        comm, (ShinyComm, SharedShinyComm, OrphanedShinyComm)
+    )
+
+
+def is_swapped_out_default(w: Widget) -> bool:
+    """
+    Is `w` a module-level default that own_lonboard_controls() or
+    own_ipycanvas_manager() replace before the referencing widget is sent?
+
+    Such a widget is process-global but must never be opened: e.g. ipycanvas's
+    manager with a fan-out comm would broadcast every session's draw commands.
+    """
+    return (
+        is_import_time_singleton(w)
+        and widget_pkg(type(w)) not in EAGERLY_SHARED_PACKAGES
+        and SHARED_WIDGETS.get(w.model_id) is not w
+    )
+
+
+def in_template_registry(w: Widget) -> bool:
+    """
+    Is `w` cached in ipyvue's process-wide template registry?
+
+    ipyvue reuses a cached template for every later widget that loads the same
+    template file, whichever session it belongs to.
+    """
+    template_mod = sys.modules.get("ipyvue.Template")
+    registry: dict[str, object] = getattr(template_mod, "template_registry", {})
+    return any(t is w for t in registry.values())
+
+
+def walk_widget_tree(
+    roots: Iterable[object], prune: Callable[[Widget], bool] | None = None
+) -> Iterator[Widget]:
+    """
+    Yield every widget reachable from `roots` through synced traits.
 
     Recurses into traits that have a `to_json` serializer (this is how
     `children`/`layout`/`style` etc. are tagged) plus dicts/lists/tuples wrapping
@@ -648,6 +1070,12 @@ def walk_widget_tree(roots: Iterable[object]) -> Iterator[Widget]:
     client. Other traits can't carry a widget reference across the wire, so
     skipping them also avoids walking large opaque payloads like GeoJSON `data`
     or Altair specs that can't hold widgets anyway.
+
+    A trait that hasn't been read yet is followed only if its static default is
+    a widget (see `synced_trait_values`), so a widget a class pins as a default
+    is found even before it's materialized.
+
+    If `prune(w)` is true, `w` is still yielded but its traits aren't followed.
     """
     visited: set[int] = set()
     pending: list[object] = list(roots)
@@ -658,38 +1086,110 @@ def walk_widget_tree(roots: Iterable[object]) -> Iterator[Widget]:
         visited.add(id(item))
         if isinstance(item, Widget):
             yield item
-            pending.extend(
-                getattr(item, name)
-                for name in item.keys
-                if item.trait_has_value(name)
-                and item.trait_metadata(name, "to_json") is not None
-            )
+            if prune is None or not prune(item):
+                pending.extend(synced_trait_values(item))
         elif isinstance(item, dict):
             pending.extend(cast(dict[object, object], item).values())
         else:
             pending.extend(cast("list[object] | tuple[object, ...]", item))
 
 
+def synced_trait_values(w: Widget) -> Iterator[object]:
+    """
+    Yield the values of `w`'s synced traits that can carry widget references
+    (those with a `to_json` serializer).
+
+    A trait that hasn't been read yet yields its default only if that default is
+    already a widget. Dynamic defaults (e.g. the Layout/Style a widget builds on
+    first access) are never evaluated here, since that would construct widgets as
+    a side effect of walking.
+    """
+    for name in w.keys:
+        if w.trait_metadata(name, "to_json") is None:
+            continue
+        if w.trait_has_value(name):
+            yield getattr(w, name)
+        else:
+            default = w.traits()[name].default_value
+            if isinstance(default, Widget):
+                yield default
+
+
+def direct_widget_references(w: Widget) -> Iterator[Widget]:
+    """
+    Yield the widgets `w` references directly, descending through dicts, lists and
+    tuples but not into the widgets it yields.
+    """
+    visited: set[int] = set()
+    pending: list[object] = list(synced_trait_values(w))
+    while pending:
+        item = pending.pop()
+        if id(item) in visited:
+            continue
+        if isinstance(item, Widget):
+            visited.add(id(item))
+            yield item
+        elif isinstance(item, dict):
+            visited.add(id(item))
+            pending.extend(cast(dict[object, object], item).values())
+        elif isinstance(item, (list, tuple)):
+            visited.add(id(item))
+            pending.extend(cast("list[object] | tuple[object, ...]", item))
+
+
+def ipy_model_references(data: object) -> Iterator[str]:
+    """
+    Yield the model id of every `IPY_MODEL_<id>` reference in `data` -- the
+    shape ipywidgets' widget_serialization gives widget references on the
+    wire -- descending through the dicts, lists and tuples that may wrap one.
+    """
+    pending: list[object] = [data]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            if item.startswith("IPY_MODEL_"):
+                yield item.removeprefix("IPY_MODEL_")
+        elif isinstance(item, dict):
+            pending.extend(cast(dict[object, object], item).values())
+        elif isinstance(item, (list, tuple)):
+            pending.extend(cast("list[object] | tuple[object, ...]", item))
+
+
 def referenced_widgets(roots: Iterable[Widget]) -> set[int]:
-    """ids of every widget reachable from `roots` through materialized synced traits."""
+    """ids of every widget reachable from `roots` (see walk_widget_tree)."""
     return {id(w) for w in walk_widget_tree(roots)}
 
 
 def foreign_or_closed_widget(widget: Widget, session: Session) -> Widget | None:
     """
     Find the first widget in `widget`'s tree (itself, or any descendant reachable
-    the same way `referenced_widgets` walks for the cleanup sweep) that doesn't
-    belong to `session` or has already been closed.
+    through walk_widget_tree) that isn't process-global and either doesn't belong
+    to `session` or has already been closed.
+
+    Process-global widgets (and whatever they reference) are displayable in any
+    session, so they're skipped (see open_process_global_widgets).
 
     `session` must already be normalized to its root scope, matching how
     SESSION_WIDGET_ID_MAP is keyed. Returns None if the whole tree is
     displayable in this session.
     """
     own_ids = set(SESSION_WIDGET_ID_MAP.get(session.id, ()))
-    for w in walk_widget_tree([widget]):
+    for w in walk_widget_tree([widget], prune=is_process_global):
+        if is_process_global(w):
+            continue
         if is_closed_widget(w) or w._model_id not in own_ids:
             return w
     return None
+
+
+def open_process_global_widgets(widget: Widget, session: Session) -> None:
+    """
+    Open, in `session`, the process-global widgets in `widget`'s tree (the ones
+    foreign_or_closed_widget skips).
+    """
+    for w in walk_widget_tree([widget], prune=is_process_global):
+        if is_process_global(w) and not is_swapped_out_default(w):
+            open_shared_in(w, session)
 
 
 # One comm manager per session (keyed by session id), so a client can only reach

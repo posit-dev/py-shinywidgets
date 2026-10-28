@@ -128,6 +128,7 @@ test = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "pythreejs",
   "quak",
   "tox-uv>=1",
 ]
@@ -177,6 +178,7 @@ dev = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "pythreejs",
   "quak",
   "ruff>=0.6.5",
   "tox-uv>=1",
@@ -202,6 +204,8 @@ test = [
   "ipydatagrid>=1.2.0",
   "ipyleaflet>=0.20.0",
   "ipysigma",
+  "ipyvue>=3",
+  "ipyvuetify>=3",
   "holoviews",
   "ipympl",
   "itables[widget]",
@@ -229,6 +233,7 @@ test = [
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "pythreejs",
   "quak",
   "tox-uv>=1",
 ]

@@ -20,6 +20,7 @@ from shinywidgets._dependencies import (
     require_dependencies,
     widget_pkg,
 )
+from traitlets import Unicode
 
 
 def test_parse_version_strips_semver_prefixes() -> None:
@@ -224,6 +225,28 @@ def test_require_dependencies_extension_found_returns_dependencies(
     assert "window.require.config(" in head
     assert "some-widget-module" in head
     assert "/lib/some-widget-module-1.2.3/index" in head
+
+
+def test_require_dependencies_falls_back_when_view_module_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NoViewModuleWidget(DOMWidget):
+        _view_module = Unicode(None, allow_none=True).tag(sync=True)
+        _model_module = Unicode("jupyter-vue").tag(sync=True)
+
+    w = NoViewModuleWidget.__new__(NoViewModuleWidget)
+    session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
+
+    looked_up: list[str] = []
+
+    def spy(module_name: str) -> None:
+        looked_up.append(module_name)
+
+    monkeypatch.setattr(deps, "jupyter_extension_path", spy)
+    monkeypatch.setattr(deps, "jupyter_extension_destination", lambda w: "some-dest")
+
+    assert require_dependencies(w, session, warn_if_missing=False) == []
+    assert looked_up[0] == "jupyter-vue"
 
 
 AMD_INDEX = 'define(["three","@jupyter-widgets/base"],function(t,e){return {}})'

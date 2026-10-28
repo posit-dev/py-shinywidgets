@@ -187,6 +187,8 @@ class FakeReactive:
 
 
 class FakeWidget:
+    keys: List[str] = []
+
     def __init__(self) -> None:
         self._model_id: Optional[str] = None
         self.comm: Any = None

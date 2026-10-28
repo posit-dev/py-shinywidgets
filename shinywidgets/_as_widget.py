@@ -279,7 +279,7 @@ def as_widget_mpl(x: object, *, context: str = "matplotlib") -> Widget:
 
     # The renderer imports this module, so defer these circular imports.
     from ._render_widget_base import is_closed_widget
-    from ._shinywidgets import foreign_or_closed_widget
+    from ._shinywidgets import foreign_or_closed_widget, ownership_error
 
     # Several higher-level APIs return something that holds the figure: an Axes
     # (e.g., pandas.DataFrame.plot()), an ipympl Canvas, or a seaborn grid
@@ -347,10 +347,7 @@ def as_widget_mpl(x: object, *, context: str = "matplotlib") -> Widget:
         if session is not None and not session.is_stub_session():
             bad = foreign_or_closed_widget(canvas, session.root_scope())
             if bad is not None:
-                raise RuntimeError(
-                    f"{type(bad).__name__} belongs to another Shiny session, so it "
-                    "can't be displayed here. Construct widgets per session."
-                )
+                raise ownership_error(bad)
         draw_initial_image(canvas)
 
     return canvas

@@ -43,6 +43,7 @@ def reset_shinywidgets_globals(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any
     monkeypatch.setattr(sw, "COMM_MANAGERS", {})
     monkeypatch.setattr(sw, "RENDER_OWNED_WIDGETS", {})
     monkeypatch.setattr(sw, "KEPT_WIDGETS", {})
+    monkeypatch.setattr(sw, "SHARED_WIDGETS", {})
     return {"sw": sw}
 
 
