@@ -23,6 +23,7 @@ everything it needs:
 | `@render_bokeh` | `pip install 'shinywidgets[bokeh]'` |
 | `@render_embedding_atlas` | `pip install 'shinywidgets[embedding_atlas]'` (Python 3.11+) |
 | `@render_bqplot` | `pip install 'shinywidgets[bqplot]'` |
+| `@render_geolibre` | `pip install 'shinywidgets[geolibre]'` (Python ≥ 3.11) |
 | `@render_holoviews` | `pip install 'shinywidgets[holoviews]'` |
 | `@render_ipyaladin` | `pip install 'shinywidgets[ipyaladin]'` |
 | `@render_ipycanvas` | `pip install 'shinywidgets[ipycanvas]'` |
@@ -40,6 +41,7 @@ everything it needs:
 | `@render_maplibre` | `pip install 'shinywidgets[maplibre]'` |
 | `@render_matplotlib` | `pip install 'shinywidgets[matplotlib]'` |
 | `@render_mosaic_widget` | `pip install 'shinywidgets[mosaic_widget]'` |
+| `@render_obsplot` | `pip install 'shinywidgets[obsplot]'` |
 | `@render_panel` | `pip install 'shinywidgets[panel]'` |
 | `@render_perspective` | `pip install 'shinywidgets[perspective]'` |
 | `@render_plotly` | `pip install 'shinywidgets[plotly]'` |
@@ -48,6 +50,7 @@ everything it needs:
 | `@render_pythreejs` | `pip install 'shinywidgets[pythreejs]'` |
 | `@render_pyvista` | `pip install 'shinywidgets[pyvista]'` (Python < 3.15) |
 | `@render_quak` | `pip install 'shinywidgets[quak]'` |
+| `@render_vizarr` | `pip install 'shinywidgets[vizarr]'` |
 
 ## Development
 

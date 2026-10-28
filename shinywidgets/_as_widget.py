@@ -58,6 +58,8 @@ def as_widget(x: object) -> Widget:
       `ipympl.backend_nbagg.Canvas`
     * panel pane/viewable -> bokeh model
     * perspective `Table` -> `perspective.widget.PerspectiveWidget`
+    * pyobsplot `Obsplot`/`Plot` creators raise a `TypeError` (they create
+      charts when called; the result is already an ipywidget)
     * plotly `Figure` -> `plotly.graph_objects.FigureWidget`
     * plotnine `ggplot` (or plot composition) -> `ipympl.backend_nbagg.Canvas`
     * pydeck `Deck` -> `pydeck.widget.DeckGLWidget` (pydeck <= 0.8 only; pydeck
@@ -792,6 +794,20 @@ PYDECK_NO_WIDGET_MESSAGE = (
 )
 
 
+def as_widget_pyobsplot(x: object) -> Widget:
+    """
+    pyobsplot's `ObsplotWidget` is already an ipywidget, so only non-widget
+    pyobsplot objects reach this function: the `Plot`/`Obsplot` plot creators
+    (calling one with a specification returns the chart widget).
+    """
+    raise TypeError(
+        f"Don't know how to coerce {_short_repr(x)} into an ipywidget.Widget object. "
+        "A pyobsplot Plot/Obsplot object is a plot creator, not a chart: call it "
+        "with a plot specification (e.g., Plot.plot({'marks': [...]})) and return "
+        "the result."
+    )
+
+
 AS_WIDGET_MAP = {
     "altair": as_widget_altair,
     "bokeh": as_widget_bokeh,
@@ -808,6 +824,7 @@ AS_WIDGET_MAP = {
     "plotly": as_widget_plotly,
     "plotnine": as_widget_plotnine,
     "pydeck": as_widget_pydeck,
+    "pyobsplot": as_widget_pyobsplot,
     "pyvista": as_widget_pyvista,
     "seaborn": as_widget_mpl,
 }

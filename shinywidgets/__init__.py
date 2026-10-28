@@ -23,6 +23,7 @@ from ._render_widget import (
     render_bokeh,
     render_bqplot,
     render_embedding_atlas,
+    render_geolibre,
     render_holoviews,
     render_ipyaladin,
     render_ipycanvas,
@@ -40,6 +41,7 @@ from ._render_widget import (
     render_maplibre,
     render_matplotlib,
     render_mosaic_widget,
+    render_obsplot,
     render_panel,
     render_perspective,
     render_plotly,
@@ -49,6 +51,7 @@ from ._render_widget import (
     render_pythreejs,
     render_pyvista,
     render_quak,
+    render_vizarr,
     render_widget,
 )
 from ._shinywidgets import (
@@ -64,8 +67,9 @@ __all__ = (
     "render_widget",
     "render_altair",
     "render_bokeh",
-    "render_embedding_atlas",
     "render_bqplot",
+    "render_embedding_atlas",
+    "render_geolibre",
     "render_holoviews",
     "render_ipyaladin",
     "render_ipycanvas",
@@ -83,6 +87,7 @@ __all__ = (
     "render_maplibre",
     "render_matplotlib",
     "render_mosaic_widget",
+    "render_obsplot",
     "render_panel",
     "render_perspective",
     "render_plotly",
@@ -92,6 +97,7 @@ __all__ = (
     "render_pythreejs",
     "render_pyvista",
     "render_quak",
+    "render_vizarr",
     # Reactive read second
     "reactive_read",
     # UI methods third

@@ -245,6 +245,35 @@ export const ipyleafletBehavior: WidgetBehavior = {
   },
 };
 
+// geolibre embeds its app in an <iframe> whose height comes from the widget's
+// `height` trait; when that's left at the default, geolibre_layout_defaults()
+// sets it to "100%", which only resolves against a sized view root. Mark the
+// view root so shinywidgets.css can size it to the output (which is definite
+// in the fixed-size cases that matter, e.g. output_widget(height=)); an
+// indefinite output leaves the app at its flex-basis height.
+export const geolibreBehavior: WidgetBehavior = {
+  setupFixedSize: ({ lmWidget }) => {
+    const mark = () => {
+      const iframe = lmWidget.querySelector(':scope > iframe');
+      if (iframe instanceof HTMLIFrameElement && iframe.style.height.endsWith('%')) {
+        lmWidget.classList.add('shinywidgets-geolibre');
+        return true;
+      }
+      return false;
+    };
+    // In geolibre's "remote" mode (which shinywidgets uses so the bundled app
+    // loads same-origin), the <iframe> is only created after an async probe,
+    // so it may not exist yet when this runs (the probe's placeholder text
+    // already counts as "rendered").
+    if (mark()) return;
+    const mo = new MutationObserver(() => {
+      if (mark()) mo.disconnect();
+    });
+    mo.observe(lmWidget, { childList: true });
+    return () => mo.disconnect();
+  },
+};
+
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipympl: ipymplBehavior,
   ipyvolume: ipyvolumeBehavior,
@@ -254,4 +283,5 @@ export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   pythreejs: pythreejsBehavior,
   quak: quakBehavior,
   ipyleaflet: ipyleafletBehavior,
+  geolibre: geolibreBehavior,
 };

@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     import plotly.graph_objects as go
     from altair import JupyterChart
     from bqplot import Figure as BqplotFigure
+    from geolibre import Map as GeolibreMap
     from ipyaladin import Aladin
     from ipycanvas import Canvas as IpycanvasCanvas
     from ipycanvas import MultiCanvas, MultiRoughCanvas, RoughCanvas
@@ -52,6 +53,7 @@ if TYPE_CHECKING:
     from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
+    from pyobsplot.widget import ObsplotWidget
 
     # embedding-atlas requires Python 3.11+, so it's absent from 3.10 environments
     if sys.version_info >= (3, 11):
@@ -62,6 +64,9 @@ if TYPE_CHECKING:
     from pyvista import Plotter as PyvistaPlotter  # pyright: ignore[reportMissingImports]
     from quak import Widget as QuakWidget
     from trame_pyvista.jupyter import EmbeddableWidget as PyvistaHtmlWidget  # pyright: ignore[reportMissingImports]
+
+    # vizarr isn't in the dev/test groups (it pins zarr<3)
+    from vizarr import Viewer as VizarrViewer  # pyright: ignore[reportMissingImports]
 else:
     JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
         BokehModel
@@ -70,9 +75,9 @@ else:
     ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = WalkerWidget = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
-    ) = QuakWidget = PerspectiveWidget = IpyvolumeFigure = PythreejsRenderer = (
-        PyvistaPlotter
-    ) = PyvistaHtmlWidget = object
+    ) = QuakWidget = PerspectiveWidget = GeolibreMap = IpyvolumeFigure = (
+        PythreejsRenderer
+    ) = PyvistaPlotter = PyvistaHtmlWidget = ObsplotWidget = VizarrViewer = object
 
 from shiny.render.renderer import ValueFn
 
@@ -119,6 +124,7 @@ __all__ = (
     "render_bokeh",
     "render_embedding_atlas",
     "render_bqplot",
+    "render_geolibre",
     "render_holoviews",
     "render_ipyaladin",
     "render_ipycanvas",
@@ -136,6 +142,7 @@ __all__ = (
     "render_maplibre",
     "render_matplotlib",
     "render_mosaic_widget",
+    "render_obsplot",
     "render_panel",
     "render_perspective",
     "render_plotly",
@@ -145,6 +152,7 @@ __all__ = (
     "render_pythreejs",
     "render_pyvista",
     "render_quak",
+    "render_vizarr",
 )
 
 
@@ -842,6 +850,95 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
     """
 
 
+class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
+    """
+    Reactively render a [GeoLibre](https://geolibre.app) map -- the full
+    GeoLibre GIS app embedded as a widget -- as a Shiny output.
+
+    The decorated function should return a `geolibre.Map` (requires
+    ``pip install 'shinywidgets[geolibre]'``). In a filling layout, the map
+    fills its container unless the `Map` was given a ``height`` other than
+    geolibre's default (``"800px"``). The ``height`` is read once, when the
+    embedded app loads, so changing ``.widget.height`` after rendering has no
+    effect (resize the output's container instead).
+
+    The decorated function also gains two read-only attributes: `.value` and
+    `.widget`, both the rendered `geolibre.Map` instance. Use `.widget` to
+    update the rendered map in place, or to reactively read its state.
+
+    Note
+    ---
+    **Updating the map from Python**: methods that edit the map's *project*
+    (its synced document) work as they do in Jupyter --
+    ``add_geojson()``/``add_vector()``/``add_cog()``/etc.,
+    ``set_center()``/``set_zoom()``/``fit_project_bounds()``, layer styling
+    (``get_layer(id).set_style()``/``set_opacity()``), and
+    ``set_identify()``/``show_control()``. Methods that send a command to the
+    app and block waiting for its reply can never work on Shiny's event-loop
+    thread -- not directly inside a render function, `reactive.calc`, or a
+    `reactive.effect`/observer (sync or async) -- because the wait would
+    block the very loop that must deliver the reply. These include
+    ``fly_to()``, ``fit_bounds()``, ``zoom_to_layer()``, ``identify()``,
+    ``get_center()``/``get_view()``/``get_bounds()``,
+    ``get_selected_features()``/``get_drawn_features()``, ``run_algorithm()``,
+    and ``to_image()``. They do work from a worker thread (where the event
+    loop stays free), e.g., inside `reactive.extended_task` via
+    ``asyncio.get_running_loop().run_in_executor(None, map.widget.fly_to, ...)``
+    -- geolibre >= 3.5.2 (enforced by the ``shinywidgets[geolibre]`` extra)
+    polls for the reply instead of pumping a Jupyter kernel event loop, so
+    these work in Shiny from a worker thread. Where a non-blocking
+    alternative exists -- ``set_center()`` for ``fly_to()``,
+    ``fit_project_bounds()`` for ``fit_bounds()``, the synced ``project``
+    trait for the query methods -- it remains the cheaper option.
+
+    **Reading map state**: user edits in the app (panning, zooming, adding or
+    restyling layers) sync back to the ``project`` trait, so
+    ``reactive_read(map.widget, "project")`` gives you the live project --
+    but note it invalidates on every pan and zoom, and carries the whole
+    project (including inlined layer data), so prefer the event callbacks for
+    high-frequency interactions: register ``map.widget.on_click()``,
+    ``on_selection_change()``, or ``on_layer_change()`` inside the render
+    function and have the callback set a `reactive.value`.
+
+    **Network access**: shinywidgets serves the bundled GeoLibre app from the
+    Shiny app itself, so the widget works in deployed apps (shinyapps.io,
+    Posit Connect, ...) as well as locally. This includes layers read from
+    files on the server's disk (e.g., ``add_cog()``/``add_raster()`` of a
+    local GeoTIFF): geolibre serves those from a localhost server in the
+    Python process, and shinywidgets mounts a reverse proxy at
+    ``/proxy/{port}/`` that forwards that server to the browser, same-origin
+    (the same role jupyter-server-proxy plays for Jupyter servers). Note this
+    makes the localhost server reachable by anyone who can reach the app;
+    its file routes are protected by unguessable per-process tokens. Basemap
+    tiles and remote data URLs require internet access from the browser.
+
+    **The ``layout`` parameter**: `geolibre.Map(layout=...)` chooses the
+    app's chrome (``"embed"``, ``"full"``, or ``"maponly"``); it is *not*
+    an `ipywidgets.Layout`, so ipywidgets layout styling (e.g.,
+    ``Layout(border=...)``) isn't available on this widget. (geolibre
+    reuses the ``layout`` trait name, which also causes a harmless
+    "Cannot read properties of undefined" error in the browser console.)
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+
 class render_keplergl(render_widget_base[ValueT, KeplerGl]):
     """
     Reactively render a [kepler.gl](https://kepler.gl) map as a Shiny output.
@@ -1350,6 +1447,94 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    """
+
+
+class render_obsplot(render_widget_base[ObsplotWidget, ObsplotWidget]):
+    """
+    Reactively render an [Observable Plot](https://observablehq.com/plot/)
+    chart, created with [pyobsplot](https://juba.github.io/pyobsplot/), as a
+    Shiny output.
+
+    The decorated function should return a `pyobsplot.widget.ObsplotWidget`
+    (requires ``pip install 'shinywidgets[obsplot]'``), as produced by
+    `Plot.plot()` (or by calling an `Obsplot()` creator). The `Plot`/`Obsplot`
+    object itself is a plot *creator*, not a chart -- calling it with a plot
+    specification produces the chart. Only the default ``format='widget'``
+    produces a chart; the other formats (``'html'``, ``'svg'``, ``'png'``)
+    return `None`, which renders as an empty output.
+
+    Observable Plot charts have a fixed pixel width: they shrink
+    proportionally (preserving aspect ratio) to fit a narrower container,
+    but never grow past the specification's width. Control the size with
+    ``width`` (and, if needed, ``height``) in the plot specification.
+    pyobsplot's interactions (tips, crosshairs) run entirely in the browser;
+    nothing is synced back to Python, so there's no widget state to
+    :func:`~shinywidgets.reactive_read`.
+
+    The decorated function also gains two read-only attributes: `.value` and
+    `.widget`, which are both the rendered `ObsplotWidget` instance. To change
+    a chart without re-rendering, assign a new specification to
+    ``.widget.spec`` (the same dictionary you'd pass to `Plot.plot()`).
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ----
+    pandas and polars `DataFrame`s in the specification are serialized to
+    Arrow IPC and sent to the browser with the widget state, so a chart over a
+    large dataset makes for a large message (and ``pyobsplot`` bundles about
+    1.4 MB of JavaScript, which anywidget sends to the browser again on each
+    render). For large data, aggregate before plotting.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    import polars as pl
+    from pyobsplot import Plot
+    from shiny.express import ui
+    from shinywidgets import render_obsplot
+
+    penguins = pl.read_csv(
+        "https://github.com/juba/pyobsplot/raw/main/doc/data/penguins.csv"
+    )
+
+
+    @render_obsplot
+    def penguin_plot():
+        return Plot.plot(
+            {
+                "grid": True,
+                "color": {"legend": True},
+                "marks": [
+                    Plot.dot(
+                        penguins,
+                        {
+                            "x": "flipper_length_mm",
+                            "y": "body_mass_g",
+                            "fill": "species",
+                        },
+                    )
+                ],
+            }
+        )
+    ```
     """
 
 
@@ -2424,6 +2609,69 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
             )
 
         return quak.Widget(value)
+
+
+class render_vizarr(render_widget_base[ValueT, VizarrViewer]):
+    """
+    Reactively render a [vizarr](https://github.com/hms-dbmi/vizarr) image viewer
+    (for OME-NGFF/Zarr bioimages) as a Shiny output.
+
+    The decorated function should return a `vizarr.Viewer` with one or more images
+    added via ``.add_image()`` (requires ``pip install 'shinywidgets[vizarr]'``).
+    In a filling layout, the viewer grows or shrinks to fit its container.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `vizarr.Viewer` instance. Use `.widget` to programmatically update the rendered
+    viewer in place (e.g., ``.widget.add_image(...)`` adds a layer without a full
+    re-render, and ``.widget.view_state = {...}`` sets the camera; trait changes on
+    the widget are synced to the browser), or to reactively read viewer state with
+    :func:`~shinywidgets.reactive_read`.
+
+    Note
+    ---
+    **Data sources**: ``add_image()`` accepts a remote URL string (e.g., an
+    OME-Zarr store on S3), which the browser fetches directly, or a local
+    `zarr.Array`/`zarr.Group`/store/numpy array, in which case chunks are served
+    on demand over the widget comm (base64-encoded, since Shiny has no binary
+    message channel). Prefer remote URLs for large images: they avoid the ~33%
+    base64 inflation and keep chunk traffic off the Shiny websocket.
+
+    **Reactive state**: panning and zooming syncs the camera to the ``view_state``
+    trait (a dict with ``target`` and ``zoom``, debounced ~200ms), so it can drive
+    reactive calculations (e.g., ``reactive_read(vz.widget, "view_state")``).
+    Setting ``.widget.view_state`` from Python moves the camera. Note that the
+    layer controls in the viewer's side panel (channel colors, contrast limits,
+    visibility) do *not* sync back to Python.
+
+    **Sizing**: in a filling layout the viewer grows or shrinks to fit its
+    container, and an explicit ``output_widget(height=...)`` sizes the viewer to
+    that height. Otherwise the viewer's own ``height`` trait applies (default
+    ``"500px"``); setting it (e.g., ``vizarr.Viewer(height="300px")``) opts out
+    of filling, and an explicit ``output_widget(height=...)`` takes precedence
+    over it.
+
+    **Network access**: the widget loads its JavaScript (the vizarr viewer and
+    viv) from CDNs at render time, so it requires an internet connection.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
 
 
 def dataframe_to_keplergl(df: pd.DataFrame) -> KeplerGl:
