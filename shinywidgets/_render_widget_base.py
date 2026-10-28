@@ -782,6 +782,27 @@ def vizarr_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def rerun_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # rerun sizes its inner container from its own `_width`/`_height` traits
+    # (the string "auto" or integer px), not the ipywidgets Layout: "auto" makes
+    # the viewer track the output element's size (which shinywidgets fills), while
+    # an integer is a fixed px size. rerun.notebook.Viewer defaults both to
+    # 640x480 ints; those can't be told apart from an explicit 640x480, so treat
+    # them as unset (as with maplibre's 400px default) and switch them to "auto".
+    # Any other integer height is user intent, which opts out of filling (an
+    # integer width alone just leaves empty space beside the viewer, as for
+    # fixed-width bokeh figures).
+    width = getattr(widget, "_width", None)
+    height = getattr(widget, "_height", None)
+    if width == 640:
+        widget._width = "auto"  # type: ignore[attr-defined]
+    if height == 480:
+        widget._height = "auto"  # type: ignore[attr-defined]
+    elif isinstance(height, int):
+        fill = False
+    return fill
+
+
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
 # (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
 # in js/src/fill.ts). A handler receives the widget and the current fill
@@ -809,6 +830,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "maplibre": maplibre_layout_defaults,
     "pythreejs": pythreejs_layout_defaults,
     "vizarr": vizarr_layout_defaults,
+    "rerun_notebook": rerun_layout_defaults,
 }
 
 

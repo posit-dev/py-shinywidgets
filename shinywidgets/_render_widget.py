@@ -65,6 +65,8 @@ if TYPE_CHECKING:
 
     # vizarr isn't in the dev/test groups (it pins zarr<3)
     from vizarr import Viewer as VizarrViewer  # pyright: ignore[reportMissingImports]
+    from rerun.notebook import Viewer as RerunViewer
+    from rerun_notebook import Viewer as RerunNotebookViewer
 else:
     JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
         BokehModel
@@ -75,7 +77,7 @@ else:
         LonboardMap
     ) = QuakWidget = PerspectiveWidget = GeolibreMap = IpyvolumeFigure = (
         PythreejsRenderer
-    ) = ObsplotWidget = VizarrViewer = object
+    ) = ObsplotWidget = VizarrViewer = RerunViewer = RerunNotebookViewer = object
 
 from shiny.render.renderer import ValueFn
 
@@ -109,6 +111,10 @@ IpycanvasCanvasT = TypeVar(
     "IpycanvasCanvasT",
     bound="Union[IpycanvasCanvas, MultiCanvas, RoughCanvas, MultiRoughCanvas]",
 )
+# The values a @render_rerun render function may return: rerun's high-level
+# notebook Viewer (coerced to its inner widget) or the rerun_notebook widget
+# itself. String bound since rerun is an optional dependency.
+RerunValueT = TypeVar("RerunValueT", bound="Union[RerunViewer, RerunNotebookViewer]")
 
 __all__ = (
     "render_widget",
@@ -144,6 +150,7 @@ __all__ = (
     "render_pythreejs",
     "render_quak",
     "render_vizarr",
+    "render_rerun",
 )
 
 
@@ -2696,3 +2703,84 @@ def dataframe_to_keplergl(df: pd.DataFrame) -> KeplerGl:
     # Unlike keplergl's default JSON serialization, Arrow keeps missing values
     # (NaN isn't valid JSON) and is more compact
     return KeplerGl(data={"data": df}, use_arrow=True)
+
+
+class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
+    """
+    Reactively render a [rerun](https://rerun.io) viewer as a Shiny output.
+
+    The decorated function may return either a `rerun.notebook.Viewer` (the
+    recommended, high-level API; it is coerced to its inner widget) or a
+    `rerun_notebook.Viewer` widget directly. Both require ``pip install
+    'shinywidgets[rerun]'``. Data logged to the viewer's recording (a 3D scene,
+    timeseries, images, tensors, text logs, ...) streams live to the browser,
+    both during the initial render and from later reactive updates.
+
+    .. important::
+        Give each session its own `rerun.RecordingStream` and pass it to the
+        viewer (``Viewer(recording=...)``). rerun's usual ``rr.init()`` +
+        ``rr.log()`` pattern logs to a *global* recording shared by every
+        session, so one user's data would appear in every other user's viewer.
+
+    Note that ``rr.notebook_show()`` does not work in Shiny: it renders through
+    Jupyter's display machinery (and drains the recording), so always construct
+    a `rerun.notebook.Viewer` and return it from the render function instead.
+
+    The decorated function also gains two read-only attributes: `.value`, the
+    value most recently returned by the render function, and `.widget`, the
+    rendered `rerun_notebook.Viewer` widget. Since `.widget` is the low-level
+    widget (not the `rerun.notebook.Viewer` wrapper), keep a reference to the
+    wrapper if you want to call its methods (`update_panels()`,
+    `set_time_ctrl()`, `send_table()`, ...) from later reactive updates.
+    Python-side trait updates (e.g., ``widget._width = 800``) also stream to
+    the browser.
+
+    To react to viewer interactions (play/pause, time changes, selection
+    changes), register a callback with `rerun.notebook.Viewer.on_event()` and
+    set a `shiny.reactive.Value` inside it (events arrive as comm messages, so
+    they are not readable via :func:`~shinywidgets.reactive_read`, which only
+    covers synced traits).
+
+    In a filling layout, the viewer fills its container when its width/height
+    are left at their defaults (or set to ``"auto"``); an explicit integer
+    ``width=``/``height=`` is respected instead. The viewer's JavaScript/Wasm
+    bundle (~55MB) loads from rerun's CDN by default; set the
+    ``RERUN_NOTEBOOK_ASSET`` environment variable to ``serve-local`` or
+    ``inline`` to serve it from the Shiny process instead (see the
+    [rerun-notebook docs](https://pypi.org/project/rerun-notebook/)).
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    import numpy as np
+    import rerun as rr
+    from rerun.notebook import Viewer
+    from shiny.express import ui
+    from shinywidgets import render_rerun
+
+
+    @render_rerun
+    def viewer():
+        rec = rr.RecordingStream(application_id="my_app")
+        rec.log("points", rr.Points3D(np.random.rand(100, 3)))
+        return Viewer(width="auto", height="auto", recording=rec)
+    ```
+    """
