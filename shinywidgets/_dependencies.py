@@ -1,11 +1,14 @@
+import asyncio
+import http.client
 import importlib
 import json
 import os
 import re
 import tempfile
+import threading
 import warnings
 from types import ModuleType
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import packaging.version
 from htmltools import HTMLDependency, tags
@@ -16,8 +19,15 @@ from ipywidgets.widgets.domwidget import DOMWidget
 from ipywidgets.widgets.widget import Widget
 from jupyter_core.paths import jupyter_path
 from shiny import Session
+from starlette.types import Receive, Scope, Send
+
+try:
+    from starlette._utils import get_route_path  # starlette >= 0.47
+except ImportError:  # pragma: no cover
+    from starlette.routing import get_route_path  # pyright: ignore[reportPrivateImportUsage]
 
 from . import __version__
+from ._utils import package_dir
 
 
 # TODO: scripts/static_download.R should produce/update these
@@ -313,6 +323,234 @@ def dir_version(module_dir: str) -> str:
         return f"0.0.{int(mtime)}"
     except (OSError, ValueError):
         return "0.0"
+
+
+def geolibre_app_mount(w: Widget, session: Session) -> None:
+    """
+    Serve geolibre's bundled app from the Shiny app and use it for the widget's
+    <iframe> (works locally *and* deployed).
+
+    geolibre's widget renders the full GeoLibre SPA in an <iframe>. By default
+    the app is served by a localhost server in the Python process, which a
+    remote browser (i.e., any deployed app) can't reach. For remote Jupyter
+    servers, geolibre's front-end instead probes two same-origin routes, in
+    order: `{base_url}proxy/{port}/` (the jupyter-server-proxy route to the
+    kernel's localhost server) and `{base_url}geolibre/app/` (its Jupyter
+    Server extension route). Mount *both* equivalents on the Shiny app and
+    switch the widget to its "remote" mode, so the first probe finds the
+    proxy mount. (geolibre reads `base_url` from the page's
+    jupyter-config-data element, defaulting to "/"; js/src/output.ts injects
+    one so the routes also resolve when the app is served under a path
+    prefix.)
+
+    The proxy mount is the important one: only when the app loads through
+    `{base_url}proxy/{port}/` does geolibre's front-end rewrite the loopback
+    URLs of layers backed by files on the server's disk (e.g., `add_cog()` of
+    a local GeoTIFF) onto that same-origin base -- so it's what makes such
+    layers work in deployed apps, not just for same-host browsers. The
+    extension-style mount stays as a fallback (e.g., if the localhost server
+    isn't running).
+    """
+    handler = session.app._dependency_handler
+
+    # Mount once per App (init_shiny_widget() runs for every widget)
+    for route in handler.routes:
+        if getattr(route, "name", None) == "geolibre-app":
+            break
+    else:
+        from starlette.staticfiles import StaticFiles
+
+        app_dir = os.path.join(package_dir("geolibre"), "static", "app")
+        if os.path.isdir(app_dir):
+            handler.mount(
+                "/geolibre/app/",
+                StaticFiles(directory=app_dir),
+                name="geolibre-app",
+            )
+
+    port = int(getattr(w, "_app_port", 0) or 0)
+    if port > 0:
+        for route in handler.routes:
+            if getattr(route, "name", None) == f"geolibre-proxy-{port}":
+                break
+        else:
+            handler.mount(
+                f"/proxy/{port}/",
+                _LoopbackProxyApp(port),
+                name=f"geolibre-proxy-{port}",
+            )
+
+    # Remote mode probes the mounts above (and ignores the localhost
+    # `_app_url`). The localhost server keeps running either way; the proxy
+    # mount forwards to it.
+    w._remote_mode = "remote"  # type: ignore[attr-defined]
+
+
+# Hop-by-hop headers (plus Host/Accept-Encoding, which http.client manages
+# itself) that the loopback proxy must not forward in either direction.
+_LOOPBACK_PROXY_DROP_HEADERS = frozenset(
+    {
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+        "host",
+        "accept-encoding",
+    }
+)
+
+
+class _LoopbackProxyAborted(Exception):
+    pass
+
+
+class _LoopbackProxyApp:
+    """
+    A minimal ASGI reverse proxy that forwards HTTP requests to a server bound
+    to 127.0.0.1:{port} in this process.
+
+    geolibre's bundled static server serves the app bundle and tokenized
+    local-file/tile routes from loopback, which a remote browser can't reach.
+    Mounted at `/proxy/{port}/` (see geolibre_app_mount()), this plays the
+    role of jupyter-server-proxy for the Shiny app. Note it makes the
+    loopback server reachable by anyone who can reach the Shiny app; the
+    local-file routes are protected by unguessable per-process tokens (the
+    same exposure model as jupyter-server-proxy).
+
+    Only GET/HEAD/OPTIONS are forwarded (all the server implements). The
+    blocking http.client I/O runs on a thread, streaming the response through
+    a bounded queue so large files don't have to be buffered whole (geolibre's
+    server answers range requests, so chunks stay small).
+    """
+
+    _CHUNK_SIZE = 65536
+
+    def __init__(self, port: int) -> None:
+        self._port = port
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "websocket":
+            await send({"type": "websocket.close"})
+            return
+        if scope["type"] != "http":
+            raise RuntimeError(f"Unsupported scope type: {scope['type']}")
+        if scope["method"] not in ("GET", "HEAD", "OPTIONS"):
+            await self._simple_response(send, 405, b"Method Not Allowed")
+            return
+
+        # The Mount above strips the `/proxy/{port}` prefix into root_path
+        # (starlette's Mount doesn't put the remainder in path_params)
+        path = get_route_path(scope)
+        if not path.startswith("/"):
+            path = "/" + path
+        query = scope.get("query_string", b"")
+        if query:
+            path += "?" + query.decode("latin-1")
+        req_headers = {
+            k.decode("latin-1"): v.decode("latin-1")
+            for k, v in scope["headers"]
+            if k.decode("latin-1").lower() not in _LOOPBACK_PROXY_DROP_HEADERS
+        }
+
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[Tuple[str, Any]] = asyncio.Queue(maxsize=8)
+        stop = threading.Event()
+
+        def put(item: Tuple[str, Any]) -> None:
+            if stop.is_set():
+                return
+            try:
+                asyncio.run_coroutine_threadsafe(queue.put(item), loop).result(
+                    timeout=30
+                )
+            except Exception:
+                stop.set()
+                raise _LoopbackProxyAborted
+
+        def forward() -> None:
+            conn = http.client.HTTPConnection("127.0.0.1", self._port, timeout=60)
+            try:
+                conn.request(scope["method"], path, headers=req_headers)
+                resp = conn.getresponse()
+                put(("start", (resp.status, resp.getheaders())))
+                while not stop.is_set():
+                    chunk = resp.read(self._CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    put(("body", chunk))
+            except _LoopbackProxyAborted:
+                pass
+            except Exception as exc:
+                put(("error", exc))
+            finally:
+                put(("end", None))
+                conn.close()
+
+        threading.Thread(target=forward, daemon=True).start()
+
+        response_started = False
+        response_finished = False
+        try:
+            while True:
+                kind, payload = await queue.get()
+                if kind == "start":
+                    status, resp_headers = payload
+                    await send(
+                        {
+                            "type": "http.response.start",
+                            "status": status,
+                            "headers": [
+                                (k.lower().encode("latin-1"), v.encode("latin-1"))
+                                for k, v in resp_headers
+                                if k.lower() not in _LOOPBACK_PROXY_DROP_HEADERS
+                            ],
+                        }
+                    )
+                    response_started = True
+                elif kind == "body":
+                    await send(
+                        {
+                            "type": "http.response.body",
+                            "body": payload,
+                            "more_body": True,
+                        }
+                    )
+                elif kind == "error":
+                    if not response_started:
+                        await self._simple_response(send, 502, b"Bad Gateway")
+                        response_finished = True
+                    break
+                else:  # "end"
+                    break
+        except Exception:
+            # Most likely the client disconnected mid-stream; the forwarding
+            # thread is aborted via `stop` below and there's nothing more to send.
+            response_finished = True
+        finally:
+            stop.set()
+            if response_started and not response_finished:
+                try:
+                    await send({"type": "http.response.body", "body": b""})
+                except Exception:
+                    pass
+
+    @staticmethod
+    async def _simple_response(send: Send, status: int, body: bytes) -> None:
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status,
+                "headers": [
+                    (b"content-type", b"text/plain; charset=utf-8"),
+                    (b"content-length", str(len(body)).encode("latin-1")),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
 
 
 # anywidget's front-end rejects a model's `ready` promise if initialization

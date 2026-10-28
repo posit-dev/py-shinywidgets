@@ -506,6 +506,25 @@ def itables_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def geolibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from geolibre import Map
+
+    if not isinstance(widget, Map):
+        return fill
+
+    # The embedded app reads the `height` trait once, when it loads (styling
+    # its <iframe>), so changing it after rendering has no effect. The
+    # default ("800px") can't be told apart from an explicit one, so treat it
+    # as unset (as ipyaladin_layout_defaults() does): in a filling layout,
+    # size the iframe to its container; any other height opts out of filling
+    # (the front-end applies it to the iframe directly).
+    if widget.height != "800px":
+        return False
+    if fill:
+        widget.height = "100%"
+    return fill
+
+
 def keplergl_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # KeplerGl sizes itself from a pixel `height` trait (default 400), so the only
     # way to tell the user asked for a specific height is that it isn't the default.
@@ -760,6 +779,20 @@ def _track_pythreejs_sizing_intent(renderer: DOMWidget, intent: bool) -> None:
     renderer.observe(update_intent, names=["width", "height"])
 
 
+def vizarr_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # vizarr's Viewer styles its root element with an inline `height` taken from
+    # its `height` trait (default "500px"), which the generic Layout check above
+    # can't see (the layout is an ordinary ipywidgets Layout). Only the
+    # untouched default counts as unset. The marker class lets shinywidgets.css
+    # fit the viewer to an output with an explicit height (which, unlike a
+    # filling layout, doesn't stretch the viewer on its own).
+    widget.add_class("shinywidgets-vizarr")
+    height = getattr(widget, "height", None)
+    if height is not None and height != widget.trait_defaults("height"):
+        return False
+    return fill
+
+
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
 # (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
 # in js/src/fill.ts). A handler receives the widget and the current fill
@@ -771,6 +804,7 @@ def _track_pythreejs_sizing_intent(renderer: DOMWidget, intent: bool) -> None:
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
+    "geolibre": geolibre_layout_defaults,
     "ipyvolume": ipyvolume_layout_defaults,
     "ipyaladin": ipyaladin_layout_defaults,
     "ipycanvas": ipycanvas_layout_defaults,
@@ -786,6 +820,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "maplibre": maplibre_layout_defaults,
     "nglview": nglview_layout_defaults,
     "pythreejs": pythreejs_layout_defaults,
+    "vizarr": vizarr_layout_defaults,
 }
 
 
