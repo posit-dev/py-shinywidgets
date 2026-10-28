@@ -23,6 +23,7 @@ everything it needs:
 | `@render_bokeh` | `pip install 'shinywidgets[bokeh]'` |
 | `@render_embedding_atlas` | `pip install 'shinywidgets[embedding_atlas]'` (Python 3.11+) |
 | `@render_bqplot` | `pip install 'shinywidgets[bqplot]'` |
+| `@render_geolibre` | `pip install 'shinywidgets[geolibre]'` (Python ≥ 3.11) |
 | `@render_holoviews` | `pip install 'shinywidgets[holoviews]'` |
 | `@render_ipyaladin` | `pip install 'shinywidgets[ipyaladin]'` |
 | `@render_ipycanvas` | `pip install 'shinywidgets[ipycanvas]'` |
