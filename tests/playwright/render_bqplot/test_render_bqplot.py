@@ -201,6 +201,17 @@ local_app_toolbar_reconnect = create_app_fixture(
 PANZOOM_BUTTON = "#fig button[title='PanZoom']"
 RESET_BUTTON = "#fig button[title='Reset']"
 
+# bqplot's figure render is async and sizes the plot-area rects near its end,
+# so a positive width means the render has essentially completed. Waiting on
+# this (rather than just a visible svg) keeps a reconnect/disconnect from
+# tearing the figure down mid-render, which makes bqplot size those rects
+# against the detached (zero-size) element and log (harmless) negative
+# width/height errors.
+PLOT_AREA_SIZED_JS = """() => {
+  const bg = document.querySelector('#fig .bqplot .plotarea_background');
+  return bg !== null && parseFloat(bg.getAttribute('width')) > 0;
+}"""
+
 # Counts comm_close messages the browser sends. comm.ts resolves `Shiny` at call
 # time, so wrapping setInputValue after load sees every ShinyComm message.
 COUNT_CLOSES_JS = """() => {
@@ -291,6 +302,7 @@ def test_toolbar_reset_closes_comm_after_reconnect(
     page.route("**/output.js", expose_manager)
     page.goto(local_app_toolbar_reconnect.url)
     expect(page.locator("#fig .bqplot svg").first).to_be_visible(timeout=30000)
+    page.wait_for_function(PLOT_AREA_SIZED_JS, timeout=30000)
 
     page.evaluate(
         """async () => {

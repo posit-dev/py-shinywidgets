@@ -450,6 +450,43 @@ def test_open_shared_in_gives_canvas_its_own_manager(
     assert not manager._caching
 
 
+def test_open_shared_in_resets_ipycanvas_canvas_tracking(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    pytest.importorskip("ipycanvas")
+    import ipycanvas.canvas
+
+    with sw.shared_construction():
+        canvas = ipycanvas.Canvas()
+    sw.open_shared_in(canvas, widget_session)
+    manager = canvas._canvas_manager
+    # Drawing after the first session opened goes straight through (caching is
+    # off), so the manager only re-announces the canvas when it changes
+    canvas.fill_rect(0, 0, 10, 10)
+    assert manager._current_canvas is canvas
+    # A session joining since then never saw the switchCanvas command; the next
+    # draw must re-announce the canvas or that browser errors on every command
+    sw.open_shared_in(canvas, other_session)
+    assert manager._current_canvas is None
+
+
+def test_import_time_widget_constructed_in_shared_lifetime_is_not_shared(
+    monkeypatch: pytest.MonkeyPatch, shared_state: None
+) -> None:
+    pytest.importorskip("ipycanvas")
+    import ipycanvas.canvas
+
+    # Simulate ipycanvas itself being imported inside shared_lifetime(): the
+    # module-level _CANVAS_MANAGER it constructs must not become shared -- a
+    # fan-out comm on it would broadcast every session's draw commands (the
+    # scenario is_swapped_out_default() exists to prevent)
+    monkeypatch.setattr(sw, "importing_ipycanvas", lambda: True)
+    with shared_lifetime():
+        manager = ipycanvas.canvas._CanvasManager()
+    assert manager.model_id not in sw.SHARED_WIDGETS
+    assert not isinstance(manager.comm, SharedShinyComm)
+
+
 def comm_open_contents(
     session: Session, monkeypatch: pytest.MonkeyPatch, open_: Callable[[], Widget]
 ) -> dict[str, Any]:
