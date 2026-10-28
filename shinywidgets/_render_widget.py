@@ -69,7 +69,9 @@ else:
     ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = WalkerWidget = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
-    ) = QuakWidget = PerspectiveWidget = GeolibreMap = IpyvolumeFigure = PythreejsRenderer = object
+    ) = QuakWidget = PerspectiveWidget = GeolibreMap = IpyvolumeFigure = (
+        PythreejsRenderer
+    ) = object
 
 from shiny.render.renderer import ValueFn
 
