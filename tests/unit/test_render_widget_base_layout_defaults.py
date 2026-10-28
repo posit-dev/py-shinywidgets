@@ -220,6 +220,37 @@ def test_altair_concat_chart_emits_warning(monkeypatch) -> None:
         rwb.set_layout_defaults(w)
 
 
+def test_k3d_default_height_fills() -> None:
+    k3d = pytest.importorskip("k3d")
+
+    _, fill = rwb.set_layout_defaults(k3d.plot())
+    assert fill is True
+
+
+def test_k3d_explicit_height_disables_fill() -> None:
+    k3d = pytest.importorskip("k3d")
+
+    _, fill = rwb.set_layout_defaults(k3d.plot(height=300))
+    assert fill is False
+
+
+def test_k3d_layout_height_disables_fill() -> None:
+    k3d = pytest.importorskip("k3d")
+    import ipywidgets as widgets
+
+    plot = k3d.plot()
+    plot.layout = widgets.Layout(height="300px")
+    _, fill = rwb.set_layout_defaults(plot)
+    assert fill is False
+
+
+def test_k3d_height_512_is_treated_as_unset_and_fills() -> None:
+    k3d = pytest.importorskip("k3d")
+
+    _, fill = rwb.set_layout_defaults(k3d.plot(height=512))
+    assert fill is True
+
+
 def test_ipydatagrid_fills_unless_widget_height_is_set() -> None:
     pytest.importorskip("ipydatagrid")
     import pandas as pd
@@ -356,3 +387,136 @@ def test_maplibre_explicit_layout_height_is_kept() -> None:
     _, fill = rwb.set_layout_defaults(w)
     assert fill is False
     assert w.layout.height == "300px"
+
+
+def test_ipyvolume_default_size_fills() -> None:
+    pytest.importorskip("ipyvolume")
+    import ipyvolume as ipv
+
+    # Both construction paths' default canvas sizes count as "unset": the
+    # trait default (500x400) and ipv.figure()'s (400x500)
+    for w in (ipv.Figure(), ipv.figure()):
+        _, fill = rwb.set_layout_defaults(w)
+        assert fill is True
+
+
+def test_ipyvolume_explicit_size_disables_fill() -> None:
+    pytest.importorskip("ipyvolume")
+    import ipyvolume as ipv
+
+    for w in (ipv.Figure(height=300), ipv.figure(width=800), ipv.figure(height=300)):
+        _, fill = rwb.set_layout_defaults(w)
+        assert fill is False
+
+
+def test_ipyvolume_browser_synced_size_still_fills() -> None:
+    # When a cached, session-lifetime figure is redisplayed, its width/height
+    # may hold the size the browser resizer measured and synced back (a
+    # front-end "update" message, which arrives via Widget.set_state()). That
+    # must not be mistaken for an explicit user size.
+    pytest.importorskip("ipyvolume")
+    import ipyvolume as ipv
+
+    w = ipv.figure()
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is True
+
+    # The browser resizer saves its measured canvas size back to Python
+    w.set_state({"width": 800, "height": 390})
+    assert (w.width, w.height) == (800, 390)
+
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is True
+
+
+def test_ipyvolume_user_resize_after_browser_sync_disables_fill() -> None:
+    # An intentional size change in Python (after the browser's sync) is an
+    # explicit user size, so the output should stop filling
+    pytest.importorskip("ipyvolume")
+    import ipyvolume as ipv
+
+    w = ipv.figure()
+    rwb.set_layout_defaults(w)
+    w.set_state({"width": 800, "height": 390})
+
+    w.height = 300
+    _, fill = rwb.set_layout_defaults(w)
+    assert fill is False
+
+
+def make_pythreejs_renderer(**kwargs):
+    p3 = pytest.importorskip("pythreejs")
+    return p3.Renderer(
+        scene=p3.Scene(),
+        camera=p3.PerspectiveCamera(position=[3, 3, 3]),
+        **kwargs,
+    )
+
+
+def test_pythreejs_default_size_fills() -> None:
+    _, fill = rwb.set_layout_defaults(make_pythreejs_renderer())
+    assert fill is True
+
+
+def test_pythreejs_explicit_size_disables_fill() -> None:
+    _, fill = rwb.set_layout_defaults(make_pythreejs_renderer(width=640, height=480))
+    assert fill is False
+
+
+def test_pythreejs_layout_height_disables_fill() -> None:
+    import ipywidgets as widgets
+
+    renderer = make_pythreejs_renderer()
+    renderer.layout = widgets.Layout(height="300px")
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is False
+
+
+def test_pythreejs_default_size_is_treated_as_unset_and_fills() -> None:
+    _, fill = rwb.set_layout_defaults(make_pythreejs_renderer(width=200, height=200))
+    assert fill is True
+
+
+def test_pythreejs_frontend_size_sync_keeps_fill_on_rerender() -> None:
+    # Regression: a default-sized Renderer cached (e.g., with
+    # session_lifetime()) and returned on a later render must keep filling
+    # after the browser syncs its container size back (setupPythreejsResize()
+    # in js/src/fill.ts) -- the synced size is not an explicit user size
+    renderer = make_pythreejs_renderer()
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is True
+
+    # What the front-end's model.set('_width', ...); save_changes() delivers
+    renderer.set_state({"_width": 800, "_height": 600})
+    assert (renderer.width, renderer.height) == (800, 600)
+
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is True
+
+
+def test_pythreejs_explicit_size_change_after_fill_disables_fill() -> None:
+    # An explicit user size change is still honored after the Renderer filled
+    renderer = make_pythreejs_renderer()
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is True
+    renderer.set_state({"_width": 800, "_height": 600})
+
+    renderer.width = 640
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is False
+
+    # Setting the size back to the 200x200 default is treated as unset
+    renderer.width = 200
+    renderer.height = 200
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is True
+
+
+def test_pythreejs_explicit_size_stays_fixed_after_frontend_sync() -> None:
+    renderer = make_pythreejs_renderer(width=640, height=480)
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is False
+
+    renderer.set_state({"_width": 800, "_height": 600})
+    _, fill = rwb.set_layout_defaults(renderer)
+    assert fill is False

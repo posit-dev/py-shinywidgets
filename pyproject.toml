@@ -41,16 +41,25 @@ Issues = "https://github.com/rstudio/py-shinywidgets/issues"
 # anywidget is already a core dependency, so extras don't need to repeat it.
 altair = ["altair>=5.1"]
 bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
+# embedding-atlas requires Python 3.11+, so it's not installable on 3.10
+embedding_atlas = ["embedding-atlas>=0.26; python_version >= '3.11'"]
 bqplot = ["bqplot"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
 ipycytoscape = ["ipycytoscape"]
-ipydatagrid = ["ipydatagrid"]
+# ipydatagrid 1.2.0 is the first release that doesn't construct widgets while
+# the package is imported (1.1.x builds `Expr()` widgets in class bodies), so
+# older versions raise "shinywidgets requires that all ipywidgets be
+# constructed within an active Shiny session" on `import ipydatagrid`. (#99)
+ipydatagrid = ["ipydatagrid>=1.2.0"]
 ipyleaflet = ["ipyleaflet>=0.20.0"]
 ipysigma = ["ipysigma"]
+# ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
+ipyvolume = ["ipyvolume", "ipython_genutils"]
 itables = ["itables[widget]"]
 jscatter = ["jupyter-scatter"]
+k3d = ["k3d"]
 # An explicit pre-release specifier, so uv/pip accept it without --pre.
 # keplergl 0.3.x imports pkg_resources (removed in setuptools 82), so 0.4
 # (an anywidget rewrite) is the first version that imports there.
@@ -69,6 +78,12 @@ panel = ["panel", "jupyter_bokeh>=4.1"]
 perspective = ["perspective-python>=3.0", "pyarrow"]
 plotly = ["plotly>=5.12.0"]
 plotnine = ["plotnine", "ipympl"]
+# duckdb is listed because the security model requires apps to `import duckdb`
+# and lock down the default connection themselves (see render_pygwalker's docs),
+# and sqlglot because shinywidgets validates the browser's SQL with it (see
+# validate_visitor_sql), not just transitively through pygwalker
+pygwalker = ["pygwalker>=0.4.9.13", "duckdb>=0.10.4", "sqlglot>=23.15.8"]
+pythreejs = ["pythreejs"]
 # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
 # so pyvista can't be installed there
 pyvista = ["pyvista[jupyter]; python_version < '3.15'"]
@@ -83,20 +98,25 @@ test = [
   # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "embedding-atlas>=0.26; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
   "ipycanvas",
   "ipycytoscape",
-  "ipydatagrid",
+  "ipydatagrid>=1.2.0",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
+  # ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
+  "ipyvolume",
+  "ipython_genutils",
   "ipympl",
   "itables[widget]",
   "matplotlib",
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
+  "k3d",
   "keplergl>=0.4.0rc4",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
@@ -113,9 +133,11 @@ test = [
   "polars",
   "pyarrow",
   "pydeck",
+  "pygwalker>=0.4.9.13",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "pythreejs",
   # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
   # so pyvista can't be installed there
   "pyvista[jupyter]; python_version < '3.15'",
@@ -132,20 +154,25 @@ dev = [
   # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "embedding-atlas>=0.26; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
   "ipycanvas",
   "ipycytoscape",
-  "ipydatagrid",
+  "ipydatagrid>=1.2.0",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
+  # ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
+  "ipyvolume",
+  "ipython_genutils",
   "ipympl",
   "itables[widget]",
   "matplotlib",
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
+  "k3d",
   "keplergl>=0.4.0rc4",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
@@ -162,9 +189,11 @@ dev = [
   "polars",
   "pyarrow",
   "pydeck",
+  "pygwalker>=0.4.9.13",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "pythreejs",
   # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
   # so pyvista can't be installed there
   "pyvista[jupyter]; python_version < '3.15'",
@@ -184,20 +213,27 @@ test = [
   # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
+  "embedding-atlas>=0.26; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
   "ipycanvas",
   "ipycytoscape",
-  "ipydatagrid",
+  "ipydatagrid>=1.2.0",
   "ipyleaflet>=0.20.0",
   "ipysigma",
+  "ipyvue>=3",
+  "ipyvuetify>=3",
   "holoviews",
+  # ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
+  "ipyvolume",
+  "ipython_genutils",
   "ipympl",
   "itables[widget]",
   "matplotlib",
   "jupyter_bokeh>=4.1",
   "jupyter-scatter",
+  "k3d",
   "keplergl>=0.4.0rc4",
   # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
   # Python 3.15+ yet, so lonboard can't be installed there
@@ -214,9 +250,11 @@ test = [
   "polars",
   "pyarrow",
   "pydeck",
+  "pygwalker>=0.4.9.13",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "pythreejs",
   # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
   # so pyvista can't be installed there
   "pyvista[jupyter]; python_version < '3.15'",
@@ -232,6 +270,17 @@ dev = [
 # mosaic-widget 0.33.0 declares narwhals>=2.8 but imports is_into_lazyframe,
 # which was added in narwhals 2.22. Drop this once upstream fixes its metadata.
 constraint-dependencies = ["narwhals>=2.22"]
+# embedding_atlas.widget never imports these; only embedding_atlas.projection and the
+# CLI do (litellm is a lazy import inside _create_litellm_embedder). Skipping them
+# keeps torch (and CUDA wheels on Linux) out of the dev/CI env, and keeps litellm's
+# fastuuid dependency (no cp315 wheels) from breaking Python 3.15 installs.
+# uv-only: the published package metadata is unaffected.
+override-dependencies = [
+  "torch; python_version < '0'",
+  "sentence-transformers; python_version < '0'",
+  "umap-learn; python_version < '0'",
+  "litellm; python_version < '0'",
+]
 
 [build-system]
 requires = ["hatchling>=1.26.0", "hatch-vcs>=0.4.0"]
