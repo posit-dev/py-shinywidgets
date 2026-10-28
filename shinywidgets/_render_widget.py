@@ -1363,9 +1363,10 @@ class render_obsplot(render_widget_base[ObsplotWidget, ObsplotWidget]):
     Observable Plot charts have a fixed pixel width: they shrink
     proportionally (preserving aspect ratio) to fit a narrower container,
     but never grow past the specification's width. Control the size with
-    ``width`` (and, if needed, ``height``) in the plot specification. pyobsplot's interactions (tips,
-    crosshairs) run entirely in the browser; nothing is synced back to Python,
-    so there's no widget state to :func:`~shinywidgets.reactive_read`.
+    ``width`` (and, if needed, ``height``) in the plot specification.
+    pyobsplot's interactions (tips, crosshairs) run entirely in the browser;
+    nothing is synced back to Python, so there's no widget state to
+    :func:`~shinywidgets.reactive_read`.
 
     The decorated function also gains two read-only attributes: `.value` and
     `.widget`, which are both the rendered `ObsplotWidget` instance. To change
