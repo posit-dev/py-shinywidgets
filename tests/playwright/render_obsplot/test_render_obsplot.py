@@ -24,9 +24,7 @@ FIGURE_SVG = '.pyobsplot-plot svg[class^="plot-"]'
 
 
 def wait_for_chart(page: Page, output_id: str, n_dots: int = 300) -> None:
-    expect(page.locator(f"#{output_id} {FIGURE_SVG}")).to_have_count(
-        1, timeout=30000
-    )
+    expect(page.locator(f"#{output_id} {FIGURE_SVG}")).to_have_count(1, timeout=30000)
     expect(page.locator(f"#{output_id} {FIGURE_SVG} circle")).to_have_count(
         n_dots, timeout=30000
     )
@@ -71,9 +69,7 @@ def test_obsplot_scales_svg_to_container(page: Page, local_app) -> None:
     assert abs(boxes["svg"][0] - boxes["out"][0]) <= 2
 
     page.set_viewport_size({"width": 1600, "height": 900})
-    page.wait_for_function(
-        f"() => ({BOXES_JS})('scatter').out[0] > 900", timeout=10000
-    )
+    page.wait_for_function(f"() => ({BOXES_JS})('scatter').out[0] > 900", timeout=10000)
     boxes = page.evaluate(BOXES_JS, "scatter")
     print(f"wide: {boxes}")
     assert boxes["svg"][0] == 640
