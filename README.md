@@ -43,6 +43,7 @@ everything it needs:
 | `@render_maplibre` | `pip install 'shinywidgets[maplibre]'` |
 | `@render_matplotlib` | `pip install 'shinywidgets[matplotlib]'` |
 | `@render_mosaic_widget` | `pip install 'shinywidgets[mosaic_widget]'` |
+| `@render_niivue` | `pip install 'shinywidgets[niivue]'` |
 | `@render_obsplot` | `pip install 'shinywidgets[obsplot]'` |
 | `@render_panel` | `pip install 'shinywidgets[panel]'` |
 | `@render_perspective` | `pip install 'shinywidgets[perspective]'` |

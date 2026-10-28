@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from ipyfilechooser import FileChooser
     from ipyleaflet import Map as LeafletMap
     from ipympl.backend_nbagg import Canvas as MplCanvas
+    from ipyniivue import NiiVue
     from ipysigma import Sigma
     from ipyvolume.widgets import Figure as IpyvolumeFigure
 
@@ -88,7 +89,9 @@ else:
         LonboardMap
     ) = QuakWidget = PerspectiveWidget = GeolibreMap = IpyvolumeFigure = (
         PythreejsRenderer
-    ) = ObsplotWidget = VizarrViewer = RerunViewer = RerunNotebookViewer = object
+    ) = ObsplotWidget = VizarrViewer = RerunViewer = RerunNotebookViewer = NiiVue = (
+        object
+    )
 
 from shiny.render.renderer import ValueFn
 
@@ -160,6 +163,7 @@ __all__ = (
     "render_maplibre",
     "render_matplotlib",
     "render_mosaic_widget",
+    "render_niivue",
     "render_obsplot",
     "render_panel",
     "render_perspective",
@@ -2993,5 +2997,107 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
         rec = rr.RecordingStream(application_id="my_app")
         rec.log("points", rr.Points3D(np.random.rand(100, 3)))
         return Viewer(width="auto", height="auto", recording=rec)
+    ```
+    """
+
+
+class render_niivue(render_widget_base[ValueT, NiiVue]):
+    """
+    Reactively render a [NiiVue](https://niivue.com) neuroimaging viewer
+    (volumes, overlays, and meshes) as a Shiny output, via
+    [ipyniivue](https://github.com/niivue/ipyniivue).
+
+    The decorated function should return an `ipyniivue.NiiVue` widget with
+    volumes and/or meshes loaded (requires ``pip install
+    'shinywidgets[niivue]'``). In a filling layout, the viewer grows or
+    shrinks to fit its container (tracking resizes, including
+    ``full_screen``); an explicit ``output_widget(height=...)`` is respected
+    too. Don't pass ``height=`` to `NiiVue()` itself -- it sets the canvas's
+    pixel height, which disagrees with the output's height and causes
+    clipping or dead space.
+
+    The decorated function also gains two read-only attributes: `.value`, the
+    value most recently returned by the render function, and `.widget`, the
+    rendered `NiiVue` instance. Use `.widget` to update the viewer in place
+    without a re-render: ``.widget.set_colormap(volume_id, name)``,
+    ``.widget.set_opacity(index, value)``, ``.widget.set_gamma(value)``,
+    ``.widget.set_slice_type(SliceType.RENDER)``, and
+    ``.widget.move_crosshair_in_vox(dx, dy, dz)`` all apply live (trait
+    changes on the widget are synced to the browser).
+
+    Note
+    ---
+    **Reading the crosshair**: the crosshair position does *not* sync back
+    as a trait (``reactive_read(nv.widget.scene, "crosshair_pos")`` never
+    updates). Instead, register a callback with
+    ``@nv.on_location_change`` inside the render function and have it set a
+    session-scoped `reactive.Value` -- the payload includes fractional and
+    millimeter coordinates and the voxel intensities under the crosshair.
+    (Beware: exceptions raised inside these callbacks are swallowed by
+    ipywidgets, so a failing callback just looks like "no updates".)
+    Similarly, ``nv.frac2mm()``/``nv.mm2frac()`` don't work on Shiny (the
+    coordinate matrices exist only in the browser); use the millimeter
+    coordinates from the `on_location_change` payload instead.
+
+    **Data size**: each render sends the viewer's JavaScript bundle (~5 MB)
+    plus every volume (base64-encoded) to the browser, and the browser
+    uploads the decoded voxels back to Python, so re-renders are expensive
+    for large volumes. Prefer `Volume(url=...)` for remote data (the
+    browser fetches it directly), and prefer in-place ``.widget.set_*``
+    updates over re-rendering.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    from ipyniivue import NiiVue, Volume
+    from shiny import App, reactive, render, ui
+    from shinywidgets import output_widget, render_niivue
+
+    app_ui = ui.page_fluid(
+        output_widget("brain"),
+        ui.output_text_verbatim("crosshair"),
+    )
+
+
+    def server(input, output, session):
+        location = reactive.Value("Click the brain to inspect a voxel")
+
+        @render_niivue
+        def brain():
+            nv = NiiVue()
+            nv.load_volumes(
+                [Volume(url="https://niivue.com/demos/images/mni152.nii.gz")]
+            )
+
+            @nv.on_location_change
+            def _(loc):
+                location.set(loc["string"])
+
+            return nv
+
+        @render.text
+        def crosshair():
+            return location()
+
+
+    app = App(app_ui, server)
     ```
     """
