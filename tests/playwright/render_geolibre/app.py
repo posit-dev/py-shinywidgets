@@ -139,8 +139,11 @@ def server(input, output, session):
     @extended_task
     async def fly_to_sf():
         loop = asyncio.get_running_loop()
-        # fly_to() only waits for the app's acknowledgement, not for the
-        # camera animation to finish, so give it a beat before get_center()
+        # fly_to() only waits for the app's acknowledgement (sent when the
+        # animation starts), not for the camera animation to finish, so give
+        # it a beat before get_center(). An upstream `wait=` option (ack at
+        # animation end, or final view state in the ack payload) would make
+        # this sleep unnecessary.
         await loop.run_in_executor(
             None, partial(map.widget.fly_to, -122.4, 37.8, duration=1000)
         )
