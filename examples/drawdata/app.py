@@ -76,7 +76,9 @@ with ui.layout_columns(col_widths=(7, 5)):
                 counts = np.zeros((len(g), len(classes)), dtype=int)
                 np.add.at(counts, (np.arange(len(g))[:, None], y_idx[knn]), 1)
                 votes[start : start + len(g)] = counts.argmax(1)
-            ax.contourf(gx, gy, votes.reshape(gx.shape), levels=len(classes), alpha=0.25)
+            ax.contourf(
+                gx, gy, votes.reshape(gx.shape), levels=len(classes), alpha=0.25
+            )
             for c, name in zip(["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"], classes):
                 pts = X[y == name]
                 ax.scatter(pts[:, 0], pts[:, 1], c=c, s=12, label=name)
