@@ -89,6 +89,20 @@ def init_shiny_widget(w: Widget):
     session = get_current_session()
     shared = constructing_shared.get()
     if session is None:
+        # A package's module-level widgets stay unshared even when the import
+        # itself runs inside shared_lifetime(): they're swapped for per-widget
+        # copies before display (own_ipycanvas_manager() etc.), so opening them
+        # in every session would broadcast traffic meant to be swapped away
+        # (see is_swapped_out_default()).
+        if (
+            importing_lonboard()
+            or importing_ipycanvas()
+            or importing_ipyvue()
+            or importing_ipyvuetify()
+        ):
+            return
+        # ipyreact's registry widgets are the exception: they stay process-global
+        # in every session (see is_ipyreact_registry_widget()).
         if (
             shared
             or is_ipyreact_registry_widget(w)
@@ -98,13 +112,6 @@ def init_shiny_widget(w: Widget):
             if getattr(w, "_model_id", None) is None:
                 w._model_id = uuid4().hex
             SHARED_WIDGETS[cast(str, w._model_id)] = w
-            return
-        if (
-            importing_lonboard()
-            or importing_ipycanvas()
-            or importing_ipyvue()
-            or importing_ipyvuetify()
-        ):
             return
         raise RuntimeError(
             "shinywidgets requires that all ipywidgets be constructed within an "
@@ -335,6 +342,7 @@ def open_shared_in(w: Widget, session: Session) -> None:
         )
     )
     flush_ipycanvas_manager(w)
+    reset_ipycanvas_current_canvas(w)
 
     # Sessionless references (e.g. the Layout ipyvue's ForceLoad materialized at
     # import time) are followed too: nothing else would send the browser a model
@@ -760,6 +768,24 @@ def flush_ipycanvas_manager(w: Widget) -> None:
     # turning caching off (the order hold_canvas() uses)
     w.flush()  # type: ignore
     setattr(w, "_caching", False)
+
+
+def reset_ipycanvas_current_canvas(w: Widget) -> None:
+    """
+    Make an ipycanvas draw-command manager re-announce its canvas on next draw.
+
+    The manager only sends the browser a switchCanvas command when the canvas
+    changes. A session that joined the manager's fan-out since the last draw
+    never received one, so its browser applies draw commands to an
+    uninitialized canvas (a TypeError per command, and the frontend's chained
+    command processing then drops every later command). Resetting makes the
+    next command re-announce the canvas to every session, which is harmless
+    for sessions that already had it.
+    """
+    if widget_pkg(w) != "ipycanvas":
+        return
+    if hasattr(w, "_current_canvas"):
+        setattr(w, "_current_canvas", None)
 
 
 def is_unused_pydeck_widget(w: Widget) -> bool:
