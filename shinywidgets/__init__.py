@@ -50,8 +50,8 @@ from ._render_widget import (
     render_pygwalker,
     render_pythreejs,
     render_quak,
-    render_vizarr,
     render_rerun,
+    render_vizarr,
     render_widget,
 )
 from ._shinywidgets import (

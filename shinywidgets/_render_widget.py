@@ -62,11 +62,11 @@ if TYPE_CHECKING:
         from ipywidgets import Widget as EmbeddingAtlasWidget
     from pythreejs import Renderer as PythreejsRenderer
     from quak import Widget as QuakWidget
+    from rerun.notebook import Viewer as RerunViewer
+    from rerun_notebook import Viewer as RerunNotebookViewer
 
     # vizarr isn't in the dev/test groups (it pins zarr<3)
     from vizarr import Viewer as VizarrViewer  # pyright: ignore[reportMissingImports]
-    from rerun.notebook import Viewer as RerunViewer
-    from rerun_notebook import Viewer as RerunNotebookViewer
 else:
     JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
         BokehModel
