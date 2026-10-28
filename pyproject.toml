@@ -44,6 +44,9 @@ bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 # embedding-atlas requires Python 3.11+, so it's not installable on 3.10
 embedding_atlas = ["embedding-atlas>=0.26; python_version >= '3.11'"]
 bqplot = ["bqplot"]
+# geolibre requires Python 3.11+; >=3.5.2 for blocking command methods
+# (fly_to(), get_center(), ...) from a worker thread outside Jupyter
+geolibre = ["geolibre>=3.5.2; python_version >= '3.11'"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
@@ -98,6 +101,7 @@ test = [
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
   "embedding-atlas>=0.26; python_version >= '3.11'",
+  "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
@@ -151,6 +155,7 @@ dev = [
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
   "embedding-atlas>=0.26; python_version >= '3.11'",
+  "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
@@ -207,6 +212,7 @@ test = [
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
   "embedding-atlas>=0.26; python_version >= '3.11'",
+  "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",

@@ -318,6 +318,20 @@
 }
 
 /*
+* geolibre embeds its app in an <iframe> whose height comes from the widget's
+* `height` trait; when that's left at the default, geolibre_layout_defaults()
+* sets it to "100%", which only resolves against a sized view root. In a
+* fixed-size output (e.g., output_widget(height="400px")), size the root to
+* the output's definite height (same pattern as the maplibre rule below); an
+* output with no definite height leaves the app at its flex-basis height. The
+* class is added by geolibreBehavior in js/src/fill.ts (only when the iframe
+* asks for a percentage height, i.e. an explicit widget height is unaffected).
+*/
+.shiny-ipywidget-output:not(.forward-fill-potential) > .lm-Widget.shinywidgets-geolibre {
+  height: 100%;
+}
+
+/*
 * A maplibre MapWidget's root is styled `height: <height>` (400px by default), which
 * crops the map in a shorter output and leaves a gap in a taller one. Size it to the
 * widget container instead, which is sized to the output (or, with an explicit

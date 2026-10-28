@@ -29,6 +29,14 @@ class FakeDependencyHandler:
     def mount(self, path: str, app: Any, *, name: str) -> None:
         self.mounts.append({"path": path, "app": app, "name": name})
 
+    # Starlette's Router exposes .routes (a list of objects with .name);
+    # mirror it so code that checks for an existing mount works on the fake
+    @property
+    def routes(self) -> List[Any]:
+        from types import SimpleNamespace
+
+        return [SimpleNamespace(name=m["name"]) for m in self.mounts]
+
 
 @dataclass
 class FakeApp:
