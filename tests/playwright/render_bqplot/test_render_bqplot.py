@@ -154,9 +154,12 @@ def test_bqplot_rerender_lifecycle(page: Page, local_app) -> None:
         expect(page.locator("#render_count")).to_have_text(str(i))
         expect(page.locator("#fig .dot")).to_have_count(4)
 
-    # Re-rendering replaces the figure; the old views must be disposed
+    # Re-rendering replaces the figure; the old views must be disposed. Wait
+    # for the count to return to `initial` (and hold) rather than sampling
+    # "stable" then asserting: under load, view churn can stall longer than a
+    # poll interval and a transient count would look settled.
     expect(page.locator("#fig .bqplot")).to_have_count(1)
-    assert wait_for_stable_view_count(page) == initial
+    assert wait_for_stable_view_count(page, expected=initial) == initial
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)

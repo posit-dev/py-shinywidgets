@@ -171,11 +171,13 @@ def test_render_ipyleaflet_rerender_lifecycle(page: Page, local_app) -> None:
         page.locator("#map_subclass_layout_height .leaflet-container")
     ).to_have_count(1, timeout=30000)
 
-    def live_map_views() -> int:
+    def live_map_views(expected: int = -1) -> int:
         # Maps whose model is retired on rerender are closed, so only the live
         # ones (9 outputs) should still hold a view. Views attach/detach
         # asynchronously, so wait for the count to settle before sampling.
-        return wait_for_stable_model_view_count(page, "LeafletMapModel")
+        return wait_for_stable_model_view_count(
+            page, "LeafletMapModel", expected=expected
+        )
 
     initial = live_map_views()
     assert initial == 9
@@ -186,6 +188,9 @@ def test_render_ipyleaflet_rerender_lifecycle(page: Page, local_app) -> None:
         expect(page.locator("#lmap .leaflet-marker-icon")).to_have_count(1)
 
     expect(page.locator("#lmap .leaflet-container")).to_have_count(1)
-    assert live_map_views() == initial
+    # Wait for the count to return to `initial` (and hold) rather than
+    # sampling "stable" then asserting: under load, view churn can stall
+    # longer than a poll interval and a transient count would look settled.
+    assert live_map_views(expected=initial) == initial
 
     assert_no_unexpected_errors(errors, failed_requests)
