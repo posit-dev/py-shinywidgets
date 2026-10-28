@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import threading
+from typing import Any, Dict
 
 from ipywidgets import Widget
 
@@ -98,3 +99,44 @@ def importing_nglview() -> bool:
 
 def exit_thread(view: Widget) -> None:
     raise SystemExit
+
+
+def is_nglview_registry(w: Widget) -> bool:
+    """
+    Is `w` nglview's process-global `_ColormakerRegistry`?
+
+    Singled out because the hidden-view replay (js/src/nglview.ts) executes
+    this widget's archived `_call()` messages as JS in every session.
+    """
+    return (
+        type(w).__name__ == "_ColormakerRegistry" and widget_pkg(type(w)) == "nglview"
+    )
+
+
+# The one trait the registry's view legitimately writes: it flips `_ready`
+# once its render() completes, releasing Python's queue of pending `_call()`s
+_REGISTRY_CLIENT_TRAITS = frozenset({"_ready"})
+
+
+def guard_registry_state(w: Widget) -> None:
+    """
+    Drop client-authored state updates to the shared registry, except `_ready`.
+
+    `_msg_ar` (the archive of `_call()` messages) is a synced trait, so any
+    session could write it through the usual `update` comm message -- and the
+    hidden-view replay executes archived `executeCode` messages as JS in
+    every later session. Python is the only legitimate author of everything
+    but `_ready` (which the view sets when it finishes rendering), so reject
+    the rest at the point they'd be applied. Filtering here, before
+    `set_state()`, also keeps rejected writes out of the echo update the
+    shared comm would fan out to the other sessions.
+    """
+    if getattr(w, "_shinywidgets_registry_guarded", False):
+        return
+    set_state = w.set_state
+
+    def guarded_set_state(sync_data: Dict[str, Any]) -> None:
+        set_state({k: v for k, v in sync_data.items() if k in _REGISTRY_CLIENT_TRAITS})
+
+    w.set_state = guarded_set_state  # type: ignore[method-assign]
+    w._shinywidgets_registry_guarded = True  # type: ignore[attr-defined]

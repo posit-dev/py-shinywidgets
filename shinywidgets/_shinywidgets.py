@@ -60,7 +60,13 @@ from ._dependencies import (
     require_dependencies,
     widget_pkg,
 )
-from ._nglview import importing_nglview, is_nglview_widget, stop_threads_on_close
+from ._nglview import (
+    guard_registry_state,
+    importing_nglview,
+    is_nglview_registry,
+    is_nglview_widget,
+    stop_threads_on_close,
+)
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -301,6 +307,11 @@ def open_shared_in(w: Widget, session: Session) -> None:
     # can construct widgets), whichever session's context we're called from
     with session_context(session):
         init_session(session)
+
+    if is_nglview_registry(w):
+        # Its archived messages are executed as JS by the hidden-view replay,
+        # so no session's browser may write its state (see _nglview.py)
+        guard_registry_state(w)
 
     comm = w.comm
     if not isinstance(comm, SharedShinyComm):

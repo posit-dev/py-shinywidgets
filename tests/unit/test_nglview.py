@@ -251,3 +251,52 @@ def test_session_end_stops_nglview_threads(
     for t in threads:
         t.join(timeout=2)
     assert not any(t.is_alive() for t in threads)
+
+
+def test_registry_ignores_client_state_writes(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # The shared ColormakerRegistry's archived _call()s are executed as JS by
+    # the hidden-view replay, so a browser must not be able to write _msg_ar
+    # (a synced trait) through an ordinary `update` comm message. `_ready`
+    # must still get through: the registry's view sets it once rendered.
+    import shinywidgets._shinywidgets as sw
+    from nglview.color import ColormakerRegistry as registry
+
+    msg_ar_before = list(registry._msg_ar)
+    ready_before = registry._ready
+
+    # The session's first widget opens the import-time registry in the
+    # session (init_session), which installs the guard
+    with session_context(widget_session):
+        import ipywidgets
+
+        ipywidgets.IntSlider()
+    assert getattr(registry, "_shinywidgets_registry_guarded", False)
+
+    poison = {
+        "type": "callMethod",
+        "methodName": "executeCode",
+        "args": ["window.pwned = true"],
+        "kwargs": {},
+    }
+    update = {
+        "header": {"msg_id": "poison-1", "msg_type": "comm_msg"},
+        "content": {
+            "comm_id": registry.model_id,
+            "data": {
+                "method": "update",
+                "state": {"_msg_ar": [poison], "_ready": True},
+                "buffer_paths": [],
+            },
+        },
+        "buffers": [],
+    }
+    try:
+        with session_context(widget_session):
+            sw.handle_client_comm_msg(widget_session, update)
+        assert list(registry._msg_ar) == msg_ar_before
+        assert registry._ready is True
+    finally:
+        # Restore the process-global registry for other tests
+        registry._ready = ready_before
