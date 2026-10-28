@@ -43,6 +43,7 @@ from ._render_widget import (
     render_matplotlib,
     render_mosaic_widget,
     render_nglview,
+    render_niivue,
     render_obsplot,
     render_panel,
     render_perspective,
@@ -52,6 +53,7 @@ from ._render_widget import (
     render_pygwalker,
     render_pythreejs,
     render_quak,
+    render_rerun,
     render_vizarr,
     render_widget,
 )
@@ -90,6 +92,7 @@ __all__ = (
     "render_matplotlib",
     "render_nglview",
     "render_mosaic_widget",
+    "render_niivue",
     "render_obsplot",
     "render_panel",
     "render_perspective",
@@ -100,6 +103,7 @@ __all__ = (
     "render_pythreejs",
     "render_quak",
     "render_vizarr",
+    "render_rerun",
     # Reactive read second
     "reactive_read",
     # UI methods third

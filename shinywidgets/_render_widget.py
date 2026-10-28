@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from ipydatagrid import DataGrid
     from ipyleaflet import Map as LeafletMap
     from ipympl.backend_nbagg import Canvas as MplCanvas
+    from ipyniivue import NiiVue
     from ipysigma import Sigma
     from ipyvolume.widgets import Figure as IpyvolumeFigure
 
@@ -66,6 +67,14 @@ if TYPE_CHECKING:
     from pythreejs import Renderer as PythreejsRenderer
     from quak import Widget as QuakWidget
 
+    # rerun requires Python 3.11+, so it's absent from 3.10 environments
+    if sys.version_info >= (3, 11):
+        from rerun.notebook import Viewer as RerunViewer
+        from rerun_notebook import Viewer as RerunNotebookViewer
+    else:
+        from ipywidgets import Widget as RerunNotebookViewer
+        from ipywidgets import Widget as RerunViewer
+
     # vizarr isn't in the dev/test groups (it pins zarr<3)
     from vizarr import Viewer as VizarrViewer  # pyright: ignore[reportMissingImports]
 else:
@@ -80,7 +89,9 @@ else:
         LonboardMap
     ) = QuakWidget = PerspectiveWidget = GeolibreMap = IpyvolumeFigure = (
         PythreejsRenderer
-    ) = ObsplotWidget = VizarrViewer = object
+    ) = ObsplotWidget = VizarrViewer = RerunViewer = RerunNotebookViewer = NiiVue = (
+        object
+    )
 
 from shiny.render.renderer import ValueFn
 
@@ -121,6 +132,10 @@ DrawdataWidgetT = TypeVar(
     "DrawdataWidgetT",
     bound="Union[DrawdataScatterWidget, DrawdataBarWidget]",
 )
+# The values a @render_rerun render function may return: rerun's high-level
+# notebook Viewer (coerced to its inner widget) or the rerun_notebook widget
+# itself. String bound since rerun is an optional dependency.
+RerunValueT = TypeVar("RerunValueT", bound="Union[RerunViewer, RerunNotebookViewer]")
 
 __all__ = (
     "render_widget",
@@ -148,6 +163,7 @@ __all__ = (
     "render_matplotlib",
     "render_mosaic_widget",
     "render_nglview",
+    "render_niivue",
     "render_obsplot",
     "render_panel",
     "render_perspective",
@@ -158,6 +174,7 @@ __all__ = (
     "render_pythreejs",
     "render_quak",
     "render_vizarr",
+    "render_rerun",
 )
 
 
@@ -2838,3 +2855,219 @@ def dataframe_to_keplergl(df: pd.DataFrame) -> KeplerGl:
     # Unlike keplergl's default JSON serialization, Arrow keeps missing values
     # (NaN isn't valid JSON) and is more compact
     return KeplerGl(data={"data": df}, use_arrow=True)
+
+
+class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
+    """
+    Reactively render a [rerun](https://rerun.io) viewer as a Shiny output.
+
+    rerun is a multimodal viewer for time-indexed data: you log 3D scenes,
+    images, tensors, timeseries, or text logs from Python, and the viewer lets
+    you scrub a timeline to see how it all evolved. Data logged to the viewer's
+    recording streams live to the browser, both during the initial render and
+    from later reactive updates.
+
+    The decorated function may return either a `rerun.notebook.Viewer` (the
+    recommended, high-level API; it is coerced to its inner widget) or a
+    `rerun_notebook.Viewer` widget directly. Both require ``pip install
+    'shinywidgets[rerun]'``.
+
+    .. important::
+        Create the `rerun.RecordingStream` inside the render function and pass
+        it to the viewer (``Viewer(recording=...)``), so each session gets its
+        own recording. rerun's usual ``rr.init()`` + ``rr.log()`` pattern
+        writes to a single process-global recording. That's fine in Jupyter,
+        where one kernel serves one person, but a Shiny process serves every
+        browser session at once -- with a global recording, one user's data
+        would appear in every other user's viewer.
+
+    Note that ``rr.notebook_show()`` does not work in Shiny: it renders through
+    Jupyter's display machinery (which Shiny never invokes), and it *drains*
+    the recording, producing a one-shot snapshot with no live updates. Always
+    construct a `rerun.notebook.Viewer` and return it from the render function
+    instead -- the viewer then stays connected, and data logged later streams
+    in live.
+
+    The decorated function also gains two read-only attributes: `.value`, the
+    value most recently returned by the render function, and `.widget`, the
+    rendered `rerun_notebook.Viewer` widget. Since `.widget` is the low-level
+    widget (not the `rerun.notebook.Viewer` wrapper), keep a reference to the
+    wrapper if you want to call its methods (`update_panels()`,
+    `set_time_ctrl()`, `send_table()`, ...) from later reactive updates.
+    Python-side trait updates (e.g., ``widget._width = 800``) also stream to
+    the browser.
+
+    To react to viewer interactions (play/pause, timeline scrubbing, selection
+    changes), register a callback with `rerun.notebook.Viewer.on_event()` and
+    set a `shiny.reactive.Value` inside it. These interactions reach Python as
+    one-off messages, not as synced widget state, so
+    :func:`~shinywidgets.reactive_read` can't see them -- it only reads synced
+    traits. rerun keeps high-frequency interactions off the synced-trait
+    channel by design (syncing every timeline tick would be expensive), and the
+    explicit callback lets you choose which events are worth reacting to:
+
+    ```python
+    from shiny import reactive
+
+    selection = reactive.Value(None)
+
+
+    @render_rerun
+    def viewer():
+        rec = rr.RecordingStream(application_id="my_app")
+        v = rr.notebook.Viewer(recording=rec)
+        v.on_event(lambda evt: selection.set(evt))
+        return v
+    ```
+
+    In a filling layout, the viewer fills its container when its width/height
+    are left at their defaults (or set to ``"auto"``); an explicit integer
+    ``width=``/``height=`` is respected instead. An explicit
+    ``output_widget(height=...)`` also fits the default-sized viewer to the
+    output's height. The viewer's JavaScript/Wasm
+    bundle (~55MB) loads from rerun's CDN by default; set the
+    ``RERUN_NOTEBOOK_ASSET`` environment variable to ``serve-local`` or
+    ``inline`` to serve it from the Shiny process instead (see the
+    [rerun-notebook docs](https://pypi.org/project/rerun-notebook/)).
+    Note that ``serve-local`` starts a loopback (``localhost``) server inside
+    the Shiny process, so the browser can only reach it when it runs on the
+    same host as the app (e.g., local development). For remote deployments,
+    use ``inline`` instead, unless the asset server is proxied to the client.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    import numpy as np
+    import rerun as rr
+    from rerun.notebook import Viewer
+    from shiny.express import ui
+    from shinywidgets import render_rerun
+
+
+    @render_rerun
+    def viewer():
+        rec = rr.RecordingStream(application_id="my_app")
+        rec.log("points", rr.Points3D(np.random.rand(100, 3)))
+        return Viewer(width="auto", height="auto", recording=rec)
+    ```
+    """
+
+
+class render_niivue(render_widget_base[ValueT, NiiVue]):
+    """
+    Reactively render a [NiiVue](https://niivue.com) neuroimaging viewer
+    (volumes, overlays, and meshes) as a Shiny output, via
+    [ipyniivue](https://github.com/niivue/ipyniivue).
+
+    The decorated function should return an `ipyniivue.NiiVue` widget with
+    volumes and/or meshes loaded (requires ``pip install
+    'shinywidgets[niivue]'``). In a filling layout, the viewer grows or
+    shrinks to fit its container (tracking resizes, including
+    ``full_screen``); an explicit ``output_widget(height=...)`` is respected
+    too. Don't pass ``height=`` to `NiiVue()` itself -- it sets the canvas's
+    pixel height, which disagrees with the output's height and causes
+    clipping or dead space.
+
+    The decorated function also gains two read-only attributes: `.value`, the
+    value most recently returned by the render function, and `.widget`, the
+    rendered `NiiVue` instance. Use `.widget` to update the viewer in place
+    without a re-render: ``.widget.set_colormap(volume_id, name)``,
+    ``.widget.set_opacity(index, value)``, ``.widget.set_gamma(value)``,
+    ``.widget.set_slice_type(SliceType.RENDER)``, and
+    ``.widget.move_crosshair_in_vox(dx, dy, dz)`` all apply live (trait
+    changes on the widget are synced to the browser).
+
+    Note
+    ---
+    **Reading the crosshair**: the crosshair position does *not* sync back
+    as a trait (``reactive_read(nv.widget.scene, "crosshair_pos")`` never
+    updates). Instead, register a callback with
+    ``@nv.on_location_change`` inside the render function and have it set a
+    session-scoped `reactive.Value` -- the payload includes fractional and
+    millimeter coordinates and the voxel intensities under the crosshair.
+    (Beware: exceptions raised inside these callbacks are swallowed by
+    ipywidgets, so a failing callback just looks like "no updates".)
+    Similarly, ``nv.frac2mm()``/``nv.mm2frac()`` don't work on Shiny (the
+    coordinate matrices exist only in the browser); use the millimeter
+    coordinates from the `on_location_change` payload instead.
+
+    **Data size**: each render sends the viewer's JavaScript bundle (~5 MB)
+    plus every volume (base64-encoded) to the browser, and the browser
+    uploads the decoded voxels back to Python, so re-renders are expensive
+    for large volumes. Prefer `Volume(url=...)` for remote data (the
+    browser fetches it directly), and prefer in-place ``.widget.set_*``
+    updates over re-rendering.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    from ipyniivue import NiiVue, Volume
+    from shiny import App, reactive, render, ui
+    from shinywidgets import output_widget, render_niivue
+
+    app_ui = ui.page_fluid(
+        output_widget("brain"),
+        ui.output_text_verbatim("crosshair"),
+    )
+
+
+    def server(input, output, session):
+        location = reactive.Value("Click the brain to inspect a voxel")
+
+        @render_niivue
+        def brain():
+            nv = NiiVue()
+            nv.load_volumes(
+                [Volume(url="https://niivue.com/demos/images/mni152.nii.gz")]
+            )
+
+            @nv.on_location_change
+            def _(loc):
+                location.set(loc["string"])
+
+            return nv
+
+        @render.text
+        def crosshair():
+            return location()
+
+
+    app = App(app_ui, server)
+    ```
+    """
