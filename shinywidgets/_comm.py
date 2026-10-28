@@ -46,8 +46,8 @@ class ShinyComm:
     # we don't have a kernel here, so give it a meaningless value.
     kernel = "Shiny"
 
-    _msg_callback: Optional[MsgCallback]
-    _close_callback: Optional[MsgCallback]
+    _msg_callback: Optional[MsgCallback] = None
+    _close_callback: Optional[MsgCallback] = None
     _closed: bool = False
     _closed_data: Dict[str, object] = {}
     # The header of the client message being handled, if any. ipywidgets answers
@@ -71,6 +71,27 @@ class ShinyComm:
         self.target_name = target_name
         self.session = session
         self.open(data=data, metadata=metadata, buffers=buffers, **keys)
+
+    @classmethod
+    def from_client(
+        cls,
+        comm_id: str,
+        comm_manager: ShinyCommManager,
+        target_name: str,
+        session: Session,
+    ) -> "ShinyComm":
+        """
+        A comm the browser opened (its model already exists there), so it's
+        registered without publishing a comm_open.
+        """
+        comm = cls.__new__(cls)
+        comm.comm_id = comm_id
+        comm.comm_manager = comm_manager
+        comm.target_name = target_name
+        comm.session = session
+        comm._closed = False
+        comm_manager.register_comm(comm)
+        return comm
 
     def open(
         self,
@@ -224,20 +245,34 @@ class ShinyComm:
         self._close_callback = callback
 
     def handle_msg(self, msg: Dict[str, object]) -> None:
-        if self._msg_callback is not None:
-            self._parent_header = msg.get("header")
-            scope = ClientMsgScope()
-            token = handling_client_msg.set(scope)
-            traitlets_level_patch.patch()
-            try:
-                self._msg_callback(msg)
-            finally:
-                self._parent_header = None
-                traitlets_level_patch.restore()
-                scope.active = False
-                handling_client_msg.reset(token)
+        callback = self._msg_callback
+        if callback is not None:
+            self.dispatch_client_msg(msg, lambda: callback(msg))
+
+    def dispatch_client_msg(
+        self, msg: Dict[str, object], fn: Callable[[], None]
+    ) -> None:
+        """
+        Run `fn` as the handling of client message `msg`: ipywidgets' replies
+        (e.g. echo_update) name the message in their parent_header, and
+        exceptions its callbacks swallow are rerouted to the shinywidgets logger.
+        """
+        self._parent_header = msg.get("header")
+        scope = ClientMsgScope()
+        token = handling_client_msg.set(scope)
+        traitlets_level_patch.patch()
+        try:
+            fn()
+        finally:
+            self._parent_header = None
+            traitlets_level_patch.restore()
+            scope.active = False
+            handling_client_msg.reset(token)
 
     def handle_close(self, msg: Dict[str, object]) -> None:
+        """The browser closed this comm: a later close() has nothing to publish."""
+        self._closed = True
+        self.comm_manager.unregister_comm(self)
         if self._close_callback is not None:
             self._close_callback(msg)
 

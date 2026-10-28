@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from base64 import b64decode
@@ -47,6 +48,8 @@ from ._dependencies import custom_elements_dependency, require_dependencies, wid
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
+
+logger = logging.getLogger("shinywidgets")
 
 __all__ = (
     "register_widget",
@@ -100,12 +103,9 @@ def init_shiny_widget(w: Widget):
         @reactive.effect
         @reactive.event(session.input.shinywidgets_comm_send)
         def _():
-            msg_txt = session.input.shinywidgets_comm_send()
-            msg = _decode_comm_buffers(json.loads(msg_txt))
-            comm_id = msg["content"]["comm_id"]
-            comm = COMM_MANAGERS[session.id].comms.get(comm_id)
-            if comm is not None:
-                comm.handle_msg(msg)
+            handle_client_comm_msg(
+                session, json.loads(session.input.shinywidgets_comm_send())
+            )
 
         def _cleanup_session_state():
             SESSIONS.remove(session)
@@ -123,6 +123,12 @@ def init_shiny_widget(w: Widget):
             KEPT_WIDGETS.pop(session.id, None)
 
         session.on_ended(_cleanup_session_state)
+
+    if isinstance(w.comm, ShinyComm):
+        # The browser opened this comm (see open_client_comm()) and already has
+        # the model, so there's nothing to send; just own it for session cleanup.
+        SESSION_WIDGET_ID_MAP.setdefault(session.id, []).append(w.comm.comm_id)
+        return
 
     # Make sure window.require() calls made by 3rd party widgets
     # (via handle_comm_open() -> new_model() -> loadClass() -> requireLoader())
@@ -289,6 +295,69 @@ def init_shiny_widget(w: Widget):
 
 # TODO: can we restore the widget constructor in a sensible way?
 Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
+
+
+def handle_client_comm_msg(session: Session, msg: Dict[str, Any]) -> None:
+    """Route a message the browser sent on the `shinywidgets_comm_send` input."""
+    msg = _decode_comm_buffers(msg)
+    header = msg.get("header")
+    msg_type = header.get("msg_type") if isinstance(header, dict) else None
+    if msg_type == "comm_open":
+        open_client_comm(session, msg)
+    elif msg_type == "comm_close":
+        close_client_comm(session, msg)
+    else:
+        comm = COMM_MANAGERS[session.id].comms.get(msg["content"]["comm_id"])
+        if comm is not None:
+            comm.handle_msg(msg)
+
+
+def open_client_comm(session: Session, msg: Dict[str, Any]) -> None:
+    """
+    Construct the Python counterpart of a model the browser created (e.g.
+    bqplot's toolbar PanZoom), the way a kernel's `jupyter.widget` comm target
+    does. Without it, the browser's `IPY_MODEL_<id>` references to the model
+    can't resolve on the Python side.
+    """
+    content = msg["content"]
+    comm_id = content["comm_id"]
+    target = content.get("target_name")
+    if target != "jupyter.widget":
+        logger.warning(
+            "Ignoring a browser comm_open for comm %s: unsupported target %r",
+            comm_id,
+            target,
+        )
+        return
+    manager = COMM_MANAGERS[session.id]
+    # The widget registry is process-wide, so this also covers widgets of other
+    # sessions and ones constructed here whose comm hasn't been opened yet.
+    if comm_id in manager.comms or comm_id in WIDGET_INSTANCE_MAP:
+        logger.warning(
+            "Ignoring a browser comm_open for comm %s, which is already in use",
+            comm_id,
+        )
+        return
+    comm = ShinyComm.from_client(comm_id, manager, target, session)
+    try:
+        comm.dispatch_client_msg(msg, lambda: Widget.handle_comm_opened(comm, msg))
+    except Exception:
+        logger.exception(
+            "Failed to construct the widget for browser-opened comm %s", comm_id
+        )
+        close_client_comm(session, msg)
+
+
+def close_client_comm(session: Session, msg: Dict[str, Any]) -> None:
+    """The browser closed a comm: close the widget without publishing a comm_close."""
+    comm_id = msg["content"]["comm_id"]
+    comm = COMM_MANAGERS[session.id].comms.get(comm_id)
+    if comm is None:
+        return
+    comm.handle_close(msg)
+    w = WIDGET_INSTANCE_MAP.get(comm_id)
+    if w is not None and w.comm is comm:
+        close_widget(w)
 
 
 def importing_lonboard() -> bool:

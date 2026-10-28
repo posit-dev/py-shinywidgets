@@ -803,11 +803,9 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
     ``bplt.figure(key=...)``) reuses one figure across renders, outputs and sessions,
     which fails after the first re-render.
 
-    The PanZoom and Reset buttons of a figure's built-in toolbar don't work in Shiny
-    (they create widgets from the browser, which shinywidgets doesn't support); pass
-    ``display_toolbar=False`` to the figure to hide the toolbar, and set
-    ``fig.interaction = bqplot.interacts.PanZoom(...)`` from Python to enable panning
-    and zooming.
+    The figure's built-in toolbar (``display_toolbar=True``) and a standalone
+    ``bqplot.Toolbar`` work, and the active ``PanZoom`` is readable with
+    ``reactive_read(fig.widget, "interaction")``.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
