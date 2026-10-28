@@ -44,6 +44,9 @@ bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 # embedding-atlas requires Python 3.11+, so it's not installable on 3.10
 embedding_atlas = ["embedding-atlas>=0.26; python_version >= '3.11'"]
 bqplot = ["bqplot"]
+# geolibre requires Python 3.11+; >=3.5.2 for blocking command methods
+# (fly_to(), get_center(), ...) from a worker thread outside Jupyter
+geolibre = ["geolibre>=3.5.2; python_version >= '3.11'"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
@@ -73,6 +76,7 @@ maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
 mols2grid = ["mols2grid>=2.2.0"]
 mosaic_widget = ["mosaic-widget"]
+obsplot = ["pyobsplot>=0.5.0"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
 # pyarrow is required for pandas DataFrame conversion (perspective-python
 # doesn't depend on it)
@@ -86,6 +90,8 @@ plotnine = ["plotnine", "ipympl"]
 pygwalker = ["pygwalker>=0.4.9.13", "duckdb>=0.10.4", "sqlglot>=23.15.8"]
 pythreejs = ["pythreejs"]
 quak = ["quak"]
+# vizarr pins zarr<3, so it is not in the shared test/dev groups
+vizarr = ["vizarr>=0.1.1"]
 test = [
   "altair",
   "bokeh",
@@ -97,6 +103,7 @@ test = [
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
   "embedding-atlas>=0.26; python_version >= '3.11'",
+  "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
@@ -127,6 +134,7 @@ test = [
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
+  "pyobsplot>=0.5.0",
   "plotly>=5.12.0",
   "plotnine",
   "polars",
@@ -151,6 +159,7 @@ dev = [
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
   "embedding-atlas>=0.26; python_version >= '3.11'",
+  "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
@@ -181,6 +190,7 @@ dev = [
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
+  "pyobsplot>=0.5.0",
   "plotly>=5.12.0",
   "plotnine",
   "polars",
@@ -208,6 +218,7 @@ test = [
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
   "embedding-atlas>=0.26; python_version >= '3.11'",
+  "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
   "ipyaladin",
@@ -240,6 +251,7 @@ test = [
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
+  "pyobsplot>=0.5.0",
   "plotly>=5.12.0",
   "plotnine",
   "polars",
