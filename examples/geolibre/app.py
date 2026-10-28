@@ -45,8 +45,8 @@ def _():
 # fly_to() blocks waiting for a reply from the app, so -- unlike set_center()
 # above -- it can never run on Shiny's event-loop thread (the wait would
 # block the loop that delivers the reply). Run it on a worker thread inside
-# an extended_task (needs a geolibre release containing
-# https://github.com/opengeos/GeoLibre/pull/3266; see README.md).
+# an extended_task (geolibre >= 3.5.2 polls for the reply instead of pumping
+# a Jupyter kernel; see README.md).
 @extended_task
 async def fly_to_city():
     lng, lat = CITIES[input.city()]

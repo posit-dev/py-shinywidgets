@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import json
 
 import pytest
@@ -146,17 +145,10 @@ def test_geolibre_local_cog_via_proxy(page: Page, local_app) -> None:
 def test_geolibre_blocking_methods_from_extended_task(page: Page, local_app) -> None:
     # geolibre's blocking command methods (fly_to(), get_center(), ...) wait
     # for a reply from the app, so they can only run off Shiny's event-loop
-    # thread -- and only with a geolibre release that sleep-polls for the
-    # reply instead of pumping a Jupyter kernel (opengeos/GeoLibre#3266,
-    # merged upstream; the first release after 3.5.1). Skip (rather than
-    # fail) on older geolibre so the suite stays green until that release.
-    geolibre = pytest.importorskip("geolibre")
-    src = inspect.getsource(geolibre.Map._wait_for_result)
-    if "No kernel pump available" not in src:
-        pytest.skip(
-            "geolibre without the worker-thread sleep-poll fallback "
-            "(needs a release containing opengeos/GeoLibre#3266)"
-        )
+    # thread -- and only with geolibre >= 3.5.2 (enforced by the geolibre
+    # extra), which sleep-polls for the reply instead of pumping a Jupyter
+    # kernel (opengeos/GeoLibre#3266).
+    pytest.importorskip("geolibre")
 
     page.goto(local_app.url)
     wait_for_app(page, "map")

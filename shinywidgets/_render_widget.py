@@ -869,14 +869,12 @@ class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
     and ``to_image()``. They do work from a worker thread (where the event
     loop stays free), e.g., inside `reactive.extended_task` via
     ``asyncio.get_running_loop().run_in_executor(None, map.widget.fly_to, ...)``
-    -- but that requires a geolibre release containing
-    https://github.com/opengeos/GeoLibre/pull/3266 (merged upstream; the
-    first release after 3.5.1), which polls for the reply instead of pumping
-    a Jupyter kernel event loop. On geolibre <= 3.5.1 they raise a
-    `jupyter_ui_poll` error wherever they're called, so prefer the
-    project-mutation alternatives (e.g., ``set_center()`` for ``fly_to()``,
-    ``fit_project_bounds()`` for ``fit_bounds()``), and read state from the
-    synced ``project`` trait instead of the query methods.
+    -- geolibre >= 3.5.2 (enforced by the ``shinywidgets[geolibre]`` extra)
+    polls for the reply instead of pumping a Jupyter kernel event loop, so
+    these work in Shiny from a worker thread. Where a non-blocking
+    alternative exists -- ``set_center()`` for ``fly_to()``,
+    ``fit_project_bounds()`` for ``fit_bounds()``, the synced ``project``
+    trait for the query methods -- it remains the cheaper option.
 
     **Reading map state**: user edits in the app (panning, zooming, adding or
     restyling layers) sync back to the ``project`` trait, so

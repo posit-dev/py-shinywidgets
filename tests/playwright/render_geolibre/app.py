@@ -135,7 +135,7 @@ def server(input, output, session):
     # Blocking command methods (fly_to(), get_center(), ...) must run off
     # Shiny's event-loop thread, so the reply can be delivered while they
     # wait. extended_task + run_in_executor puts them on a worker thread
-    # (requires a geolibre release containing opengeos/GeoLibre#3266).
+    # (requires geolibre >= 3.5.2, which sleep-polls for the reply).
     @extended_task
     async def fly_to_sf():
         loop = asyncio.get_running_loop()
