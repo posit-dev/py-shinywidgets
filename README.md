@@ -29,6 +29,7 @@ everything it needs:
 | `@render_ipycanvas` | `pip install 'shinywidgets[ipycanvas]'` |
 | `@render_ipycytoscape` | `pip install 'shinywidgets[ipycytoscape]'` |
 | `@render_ipydatagrid` | `pip install 'shinywidgets[ipydatagrid]'` |
+| `@render_ipyfilechooser` | `pip install 'shinywidgets[ipyfilechooser]'` |
 | `@render_ipyleaflet` | `pip install 'shinywidgets[ipyleaflet]'` |
 | `@render_ipysigma` | `pip install 'shinywidgets[ipysigma]'` |
 | `@render_ipyvolume` | `pip install 'shinywidgets[ipyvolume]'` |

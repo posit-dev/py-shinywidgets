@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from ipycanvas import MultiCanvas, MultiRoughCanvas, RoughCanvas
     from ipycytoscape import CytoscapeWidget
     from ipydatagrid import DataGrid
+    from ipyfilechooser import FileChooser
     from ipyleaflet import Map as LeafletMap
     from ipympl.backend_nbagg import Canvas as MplCanvas
     from ipysigma import Sigma
@@ -70,7 +71,9 @@ else:
         BokehModel
     ) = MapWidget = FigureWidget = DeckGLWidget = MosaicWidget = BqplotFigure = (
         CytoscapeWidget
-    ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = WalkerWidget = object
+    ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = WalkerWidget = (
+        FileChooser
+    ) = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
     ) = QuakWidget = PerspectiveWidget = GeolibreMap = IpyvolumeFigure = (
@@ -122,6 +125,7 @@ __all__ = (
     "render_ipycanvas",
     "render_ipycytoscape",
     "render_ipydatagrid",
+    "render_ipyfilechooser",
     "render_ipyleaflet",
     "render_ipysigma",
     "render_ipyvolume",
@@ -1921,6 +1925,76 @@ def dataframe_to_datagrid(df: pd.DataFrame) -> DataGrid:
             "shinywidgets (pip install 'shinywidgets[ipydatagrid]')."
         )
     return DataGrid(df)
+
+
+class render_ipyfilechooser(render_widget_base[ValueT, FileChooser]):
+    """
+    Reactively render an [ipyfilechooser](https://github.com/crahan/ipyfilechooser)
+    file chooser as a Shiny output.
+
+    The decorated function should return an `ipyfilechooser.FileChooser` widget
+    (requires ``pip install 'shinywidgets[ipyfilechooser]'``). The chooser is a
+    form control with a natural size, so the output doesn't fill its container;
+    size it with the chooser's own ``layout`` (e.g., ``layout=Layout(width='700px')``)
+    or with ``output_widget(width=..., height=...)``.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `FileChooser` instance. Note that the chooser's ``selected``,
+    ``selected_path`` and ``selected_filename`` are plain Python properties (not
+    widget traits), so they can't be read with
+    :func:`~shinywidgets.reactive_read`. To react to a selection, pass
+    ``.widget.register_callback()`` a function that sets a `reactive.value` (the
+    callback fires when the user confirms or changes a selection).
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    from ipyfilechooser import FileChooser
+    from shiny import App, reactive, render, ui
+    from shinywidgets import output_widget, render_ipyfilechooser
+
+    app_ui = ui.page_fluid(
+        output_widget("chooser"),
+        ui.output_text("selected"),
+    )
+
+
+    def server(input, output, session):
+        selected = reactive.value(None)
+
+        @render_ipyfilechooser
+        def chooser():
+            fc = FileChooser()
+            fc.register_callback(lambda fc: selected.set(fc.selected))
+            return fc
+
+        @render.text
+        def selected_():
+            return f"Selected: {selected()}"
+
+
+    app = App(app_ui, server)
+    ```
+    """
 
 
 class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
