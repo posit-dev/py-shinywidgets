@@ -780,6 +780,14 @@ def vizarr_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     if height is not None and height != widget.trait_defaults("height"):
         return False
     return fill
+def drawdata_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # drawdata's ScatterWidget/BarWidget always have an intrinsic pixel size
+    # (their own `width`/`height` traits, 800x400 / 800x550 by default) and
+    # their frontends cap (scatter, via max-width) or fix (bar, a fixed-size
+    # SVG with no viewBox) the drawing surface to it, so filling buys nothing.
+    # Worse, the generic 400px flex-basis clips BarWidget's default 550px
+    # height, so opt out of filling and let the output hug the widget.
+    return False
 
 
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
@@ -793,6 +801,7 @@ def vizarr_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
 _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "plotly": _plotly_layout_defaults,
     "altair": _altair_layout_defaults,
+    "drawdata": drawdata_layout_defaults,
     "geolibre": geolibre_layout_defaults,
     "ipyvolume": ipyvolume_layout_defaults,
     "ipyaladin": ipyaladin_layout_defaults,

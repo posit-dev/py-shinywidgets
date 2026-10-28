@@ -509,3 +509,14 @@ def test_pythreejs_explicit_size_stays_fixed_after_frontend_sync() -> None:
     renderer.set_state({"_width": 800, "_height": 600})
     _, fill = rwb.set_layout_defaults(renderer)
     assert fill is False
+def test_drawdata_widgets_do_not_fill() -> None:
+    # drawdata widgets always have an intrinsic pixel size (their own
+    # width/height traits), and BarWidget's default 550px height would clip at
+    # the generic 400px flex-basis, so they opt out of filling layouts.
+    pytest.importorskip("drawdata")
+    from drawdata import BarWidget, ScatterWidget
+
+    for cls in (ScatterWidget, BarWidget):
+        w = cls()
+        _, fill = rwb.set_layout_defaults(w)
+        assert fill is False

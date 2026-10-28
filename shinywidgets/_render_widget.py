@@ -26,6 +26,8 @@ if TYPE_CHECKING:
     import plotly.graph_objects as go
     from altair import JupyterChart
     from bqplot import Figure as BqplotFigure
+    from drawdata import BarWidget as DrawdataBarWidget
+    from drawdata import ScatterWidget as DrawdataScatterWidget
     from geolibre import Map as GeolibreMap
     from ipyaladin import Aladin
     from ipycanvas import Canvas as IpycanvasCanvas
@@ -109,6 +111,13 @@ IpycanvasCanvasT = TypeVar(
     "IpycanvasCanvasT",
     bound="Union[IpycanvasCanvas, MultiCanvas, RoughCanvas, MultiRoughCanvas]",
 )
+# String bound for the same reason as PlotlyValueT (drawdata is optional).
+# Both drawdata widgets are returned as-is (no coercion), so this bounds both
+# the render function's value and the rendered widget.
+DrawdataWidgetT = TypeVar(
+    "DrawdataWidgetT",
+    bound="Union[DrawdataScatterWidget, DrawdataBarWidget]",
+)
 
 __all__ = (
     "render_widget",
@@ -116,6 +125,7 @@ __all__ = (
     "render_bokeh",
     "render_embedding_atlas",
     "render_bqplot",
+    "render_drawdata",
     "render_geolibre",
     "render_holoviews",
     "render_ipyaladin",
@@ -196,6 +206,84 @@ class render_widget(render_widget_base[WidgetT, WidgetT]):
         @render_widget
         def slider():
             return widgets.IntSlider(value=5, min=0, max=10)
+
+
+    app = App(app_ui, server)
+    ```
+    """
+
+
+class render_drawdata(render_widget_base[DrawdataWidgetT, DrawdataWidgetT]):
+    """
+    Reactively render a [drawdata](https://github.com/koaning/drawdata) drawing
+    widget as a Shiny output.
+
+    The decorated function should return a `drawdata.ScatterWidget` or
+    `drawdata.BarWidget` (requires ``pip install 'shinywidgets[drawdata]'``).
+    Both widgets keep their intrinsic pixel size (their ``width``/``height``
+    traits, 800x400 and 800x550 by default), so the output hugs the widget
+    rather than filling its container; size the drawing surface through the
+    constructor's ``width``/``height``, and give a `BarWidget` room for its
+    full height (it renders a fixed-size SVG that does not shrink).
+
+    The decorated function also gains two read-only attributes: `.value` and
+    `.widget`, both the rendered widget. Use `.widget` to programmatically
+    update the widget in place, or to reactively read widget state (e.g., the
+    drawn points via ``"data"``) with :func:`~shinywidgets.reactive_read`.
+
+    Note
+    ---
+    **Drawn data syncs one batch behind** (upstream drawdata issue
+    [#40](https://github.com/koaning/drawdata/issues/40), any frontend):
+    `ScatterWidget`'s frontend mutates the model's ``data`` array in place, so
+    the change from the *first* drawing batch goes undetected and nothing
+    syncs until a second batch is drawn (from then on, every batch syncs in
+    full). The undo (pops one batch) and reset buttons sync immediately.
+    `BarWidget` is not affected.
+
+    Also note that `BarWidget` overwrites any ``data`` passed to its
+    constructor when its frontend initializes (all bins start at 0), and its
+    frontend ignores later Python-side trait updates until the next re-render
+    (it registers no ``change:`` handlers, unlike `ScatterWidget`).
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output hugs the widget's intrinsic height.
+    fill
+        Whether the output should grow or shrink to fit its parent container.
+        Defaults to ``False`` for drawdata widgets.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    from drawdata import ScatterWidget
+    from shiny import App, render, ui
+    from shinywidgets import output_widget, reactive_read, render_drawdata
+
+    app_ui = ui.page_fluid(
+        output_widget("canvas"),
+        ui.output_text_verbatim("n_points"),
+    )
+
+
+    def server(input, output, session):
+        @render_drawdata
+        def canvas():
+            return ScatterWidget()
+
+        @render.text
+        def n_points():
+            return len(reactive_read(canvas.widget, "data"))
 
 
     app = App(app_ui, server)
