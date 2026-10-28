@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### New features
 
+* Added a `@render_obsplot` decorator for rendering [Observable Plot](https://observablehq.com/plot/) charts created with [pyobsplot](https://juba.github.io/pyobsplot/) (`pip install 'shinywidgets[obsplot]'`).
+
 * Added per-renderer extras, so each `@render_*` decorator's widget dependencies can be installed in one command (e.g., `pip install 'shinywidgets[plotly]'` or `'shinywidgets[maplibre,bokeh]'`). See the README for the full list.
 * Added `shared_lifetime()`, a context manager for constructing one widget that every session displays (any user's interaction changes it for everyone, and it is never freed). Widgets that ipyvue and ipyvuetify share across the whole process (e.g., `ipyvuetify.theme` and custom `VueTemplate`s) now work across re-renders and sessions instead of hanging for 30 seconds. Ownership errors now explain both `session_lifetime()` and `shared_lifetime()`. (#348)
 
