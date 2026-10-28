@@ -753,6 +753,8 @@ def _track_pythreejs_sizing_intent(renderer: DOMWidget, intent: bool) -> None:
         )
 
     renderer.observe(update_intent, names=["width", "height"])
+
+
 def pyvista_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     from trame_pyvista.jupyter import EmbeddableWidget  # pyright: ignore[reportMissingImports]
 
