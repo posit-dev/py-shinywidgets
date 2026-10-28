@@ -4109,7 +4109,10 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         if isinstance(value, MolGrid):
             # A user-supplied MolGrid keeps its own name; mols2grid's default
             # name lives in a process-global selection registry, so it collides
-            # across sessions (and across multiple grids on one page)
+            # across sessions (and across multiple grids on one page).
+            # mols2grid 2.2.0 private trait: the 3.0 refactor
+            # (https://github.com/cbouy/mols2grid/pull/71) renames `grid_id`
+            # to `name`
             if value.widget.grid_id == "default":
                 raise ValueError(
                     "This mols2grid.MolGrid uses the default grid name ('default'), "
@@ -4175,6 +4178,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         session = get_current_session()
         if session is None or session.is_stub_session():
             return
+        # Private module path in mols2grid 2.2.0: the registry survives the 3.0
+        # refactor (https://github.com/cbouy/mols2grid/pull/71), where
+        # `register._init_grid` becomes `register.add_grid`
         from mols2grid.select import register
 
         session.on_ended(partial(register.SELECTIONS.pop, name, None))
@@ -4196,6 +4202,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         # mols2grid's marimo integration displays the two stacked, and an
         # ipywidgets Box does the same here. display() (rather than render())
         # escapes the document for the iframe's srcdoc attribute.
+        # mols2grid 2.2.0 internals: https://github.com/cbouy/mols2grid/pull/71
+        # ignores `use_iframe` and makes the widget render the grid itself, so
+        # render `grid.widget` directly instead of this stacking then.
         iframe = grid.display(use_iframe=True, **render_kwargs)
         # The inner width hint is load-bearing: ipywidgets renders HTML as an
         # inline-flex container, so without it the iframe collapses to its
