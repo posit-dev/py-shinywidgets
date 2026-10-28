@@ -143,8 +143,11 @@ def test_keplergl_rerender_lifecycle(page: Page, local_app) -> None:
         page.wait_for_function(KEPLER_MATCHES_CONTAINER_JS, arg="map", timeout=10000)
 
     # Re-rendering replaces the widget, but old views must be disposed (no
-    # accumulation of maps)
-    assert wait_for_stable_view_count(page) == initial_views
+    # accumulation of maps). Wait for the count to return to `initial_views`
+    # (and hold) rather than sampling "stable" then asserting: under load,
+    # view churn can stall longer than a poll interval and a transient count
+    # would look settled.
+    assert wait_for_stable_view_count(page, expected=initial_views) == initial_views
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
