@@ -1,15 +1,15 @@
+from itertools import islice
 from pathlib import Path
 
 from ipyfilechooser import FileChooser
 from shiny import App, reactive, render, ui
-
 from shinywidgets import output_widget, render_ipyfilechooser
 
 app_ui = ui.page_fluid(
     ui.h2("ipyfilechooser in Shiny"),
     ui.p(
-        "Browse the files on the server and select one. The chooser starts in "
-        "this app's own directory; try the sandboxed chooser below too."
+        "Browse the files on the server and select one. File previews are "
+        "limited to this app's own directory; try the sandboxed chooser below too."
     ),
     ui.card(
         ui.card_header("Pick a file"),
@@ -29,12 +29,17 @@ APP_DIR = Path(__file__).parent
 def read_first_lines(path: str | None, n: int = 5) -> str:
     if not path:
         return "No file selected yet"
+    resolved = Path(path).resolve()
+    # The first chooser is not sandboxed, so don't let it read just anywhere:
+    # only preview files under this app's own directory
+    if not resolved.is_relative_to(APP_DIR):
+        return f"{path}\n\n(can't read: previews are limited to {APP_DIR})"
     try:
-        with open(path) as f:
-            lines = [next(f) for _ in range(n)]
-        return f"{path}\n\n{''.join(lines)}"
-    except (OSError, StopIteration) as e:
-        return f"{path}\n\n(can't read: {e})"
+        with open(resolved) as f:
+            lines = list(islice(f, n))  # up to n lines; shorter files are fine
+        return f"{resolved}\n\n{''.join(lines)}"
+    except OSError as e:
+        return f"{resolved}\n\n(can't read: {e})"
 
 
 def server(input, output, session):
