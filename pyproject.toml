@@ -81,6 +81,7 @@ plotnine = ["plotnine", "ipympl"]
 # and sqlglot because shinywidgets validates the browser's SQL with it (see
 # validate_visitor_sql), not just transitively through pygwalker
 pygwalker = ["pygwalker>=0.4.9.13", "duckdb>=0.10.4", "sqlglot>=23.15.8"]
+pythreejs = ["pythreejs"]
 quak = ["quak"]
 test = [
   "altair",

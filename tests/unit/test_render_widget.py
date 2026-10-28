@@ -378,6 +378,11 @@ def test_render_perspective_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_pythreejs_is_render_widget_base() -> None:
+    renderer = rw.render_pythreejs()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_quak_is_render_widget_base() -> None:
     renderer = rw.render_quak()
     assert isinstance(renderer, rwb.render_widget_base)
@@ -553,6 +558,7 @@ def test_import_shinywidgets_without_optional_deps() -> None:
         "plotly",
         "plotnine",
         "pydeck",
+        "pythreejs",
         "quak",
     ]
     script = f"""

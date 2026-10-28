@@ -621,6 +621,69 @@ def leafmap_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+PYTHREEJS_DEFAULT_SIZE = 200
+
+# Attributes stashed on a pythreejs Renderer by _track_pythreejs_sizing_intent()
+_PYTHREEJS_FILL_INTENT = "_shinywidgets_pythreejs_fill"
+_PYTHREEJS_FRONTEND_UPDATE = "_shinywidgets_pythreejs_frontend_update"
+
+
+def pythreejs_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from pythreejs import Renderer
+
+    if not isinstance(widget, Renderer):
+        return fill
+
+    intent = cast(Optional[bool], getattr(widget, _PYTHREEJS_FILL_INTENT, None))
+    if intent is None:
+        # A pythreejs Renderer draws into a fixed pixel-size canvas, so an
+        # explicit width/height is a request for that size rather than
+        # filling. The 200x200 default can't be told apart from an explicit
+        # 200x200 (Renderer.__init__() sets it either way), so the default is
+        # treated as unset.
+        intent = (
+            widget.width == PYTHREEJS_DEFAULT_SIZE
+            and widget.height == PYTHREEJS_DEFAULT_SIZE
+        )
+        _track_pythreejs_sizing_intent(widget, intent)
+    return fill and intent
+
+
+def _track_pythreejs_sizing_intent(renderer: DOMWidget, intent: bool) -> None:
+    # setupPythreejsResize() (js/src/fill.ts) syncs a filling Renderer's pixel
+    # size back to Python, so the live width/height of a reused Renderer
+    # (e.g., one cached with session_lifetime() and returned on a later
+    # render) reflect its container, not the user's intent. Record the
+    # first-render decision and revisit it only on size changes that didn't
+    # come from the front-end (front-end state updates all arrive through
+    # Widget.set_state()), so an explicit user size change is still honored.
+    setattr(renderer, _PYTHREEJS_FILL_INTENT, intent)
+    setattr(renderer, _PYTHREEJS_FRONTEND_UPDATE, False)
+
+    set_state = renderer.set_state
+
+    def set_state_tracking_frontend(sync_data: dict[str, Jsonifiable]) -> None:
+        setattr(renderer, _PYTHREEJS_FRONTEND_UPDATE, True)
+        try:
+            set_state(sync_data)
+        finally:
+            setattr(renderer, _PYTHREEJS_FRONTEND_UPDATE, False)
+
+    renderer.set_state = set_state_tracking_frontend  # type: ignore[method-assign]
+
+    def update_intent(change: object) -> None:
+        if getattr(renderer, _PYTHREEJS_FRONTEND_UPDATE):
+            return
+        setattr(
+            renderer,
+            _PYTHREEJS_FILL_INTENT,
+            renderer.width == PYTHREEJS_DEFAULT_SIZE  # type: ignore[attr-defined]
+            and renderer.height == PYTHREEJS_DEFAULT_SIZE,  # type: ignore[attr-defined]
+        )
+
+    renderer.observe(update_intent, names=["width", "height"])
+
+
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
 # (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
 # in js/src/fill.ts). A handler receives the widget and the current fill
@@ -644,6 +707,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "jupyter_bokeh": bokeh_layout_defaults,
     "leafmap": leafmap_layout_defaults,
     "maplibre": maplibre_layout_defaults,
+    "pythreejs": pythreejs_layout_defaults,
 }
 
 
