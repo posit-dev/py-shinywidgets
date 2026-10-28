@@ -220,11 +220,13 @@ class render_drawdata(render_widget_base[DrawdataWidgetT, DrawdataWidgetT]):
 
     The decorated function should return a `drawdata.ScatterWidget` or
     `drawdata.BarWidget` (requires ``pip install 'shinywidgets[drawdata]'``).
-    Both widgets keep their intrinsic pixel size (their ``width``/``height``
-    traits, 800x400 and 800x550 by default), so the output hugs the widget
-    rather than filling its container; size the drawing surface through the
-    constructor's ``width``/``height``, and give a `BarWidget` room for its
-    full height (it renders a fixed-size SVG that does not shrink).
+    The widget fills the output's width while preserving its aspect ratio
+    (upstream, both widgets cap their display at their ``width``/``height``
+    traits; shinywidgets lifts that cap so they scale like other outputs).
+    The constructor's ``width``/``height`` define the drawing's *data
+    coordinate space* -- drawn points are stored in those coordinates, with
+    ``y`` pointing up -- and the aspect ratio, not the display size, so
+    choose them for the coordinate range and shape you want, not for pixels.
 
     The decorated function also gains two read-only attributes: `.value` and
     `.widget`, both the rendered widget. Use `.widget` to programmatically
@@ -253,11 +255,10 @@ class render_drawdata(render_widget_base[DrawdataWidgetT, DrawdataWidgetT]):
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
-        A CSS length unit for the output's height. When ``None`` (the default), the
-        output hugs the widget's intrinsic height.
+        A CSS length unit for the output's height. When ``None`` (the default),
+        the height follows from the filled width and the widget's aspect ratio.
     fill
         Whether the output should grow or shrink to fit its parent container.
-        Defaults to ``False`` for drawdata widgets.
     fillable
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if

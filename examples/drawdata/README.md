@@ -20,9 +20,11 @@ Two things to know about:
   stroke only reaches Python when a second is drawn (upstream drawdata
   [issue #40](https://github.com/koaning/drawdata/issues/40), which affects
   Jupyter too). The undo and reset buttons sync immediately.
-- Both widgets have an intrinsic pixel size, so the output hugs the widget
-  instead of filling its container. Size the drawing surface through the
-  constructor (`ScatterWidget(width=1000, height=500)`); `BarWidget` renders
-  a fixed-size SVG that doesn't shrink, so give it room (and note it
+- Both widgets fill their container's width while preserving aspect ratio
+  (upstream caps the display at the `width`/`height` traits; shinywidgets
+  lifts that cap). The constructor's `width`/`height`
+  (`ScatterWidget(width=1000, height=500)`) define the drawing's *data
+  coordinate space* -- drawn points come back in those coordinates, y-up --
+  and the aspect ratio, not the display size. Also note that `BarWidget`
   overwrites constructor-provided `data` at first render and ignores later
-  Python-side trait updates until the next re-render).
+  Python-side trait updates until the next re-render.

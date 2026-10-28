@@ -511,14 +511,16 @@ def test_pythreejs_explicit_size_stays_fixed_after_frontend_sync() -> None:
     assert fill is False
 
 
-def test_drawdata_widgets_do_not_fill() -> None:
-    # drawdata widgets always have an intrinsic pixel size (their own
-    # width/height traits), and BarWidget's default 550px height would clip at
-    # the generic 400px flex-basis, so they opt out of filling layouts.
+def test_drawdata_widgets_fill() -> None:
+    # drawdata widgets keep the generic fill decision: their frontends cap
+    # the display at their width/height traits (scatter's inline max-width,
+    # bar's fixed-size viewBox-less svg), but the JS-side drawdata behavior
+    # lifts those caps so the widgets scale to their container (the traits
+    # only define the data coordinate space and aspect ratio).
     pytest.importorskip("drawdata")
     from drawdata import BarWidget, ScatterWidget
 
     for cls in (ScatterWidget, BarWidget):
         w = cls()
         _, fill = rwb.set_layout_defaults(w)
-        assert fill is False
+        assert fill is True

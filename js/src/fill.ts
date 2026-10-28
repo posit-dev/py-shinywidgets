@@ -274,7 +274,59 @@ export const geolibreBehavior: WidgetBehavior = {
   },
 };
 
+// drawdata's widgets have an intrinsic pixel size (their width/height
+// traits, 800x400 / 800x550 by default) that their frontends also cap the
+// *display* to: ScatterWidget's <svg> gets an inline `max-width: {width}px`
+// (and .dd-scatter-container a CSS `max-width: 1200px`), and BarWidget's
+// chart <svg> gets fixed width/height attributes with no viewBox (and
+// .container a CSS `max-width: 800px`). The traits really define the *data
+// coordinate space* (drawn points are stored in viewBox coordinates), so
+// scaling the display around an unchanged viewBox is lossless (d3 resolves
+// pointer coordinates through the svg's CTM, so brushing/dragging still
+// works when scaled). Remove those caps so the widgets fill their
+// container's width, with aspect-ratio preserving the coordinate aspect.
+function relaxDrawdataSize({ lmWidget }: BehaviorContext): void {
+  // Lift the containers' CSS width caps (and BarWidget's 20px vertical
+  // margins, which just add slack in a sized output)
+  for (const container of lmWidget.querySelectorAll<HTMLElement>(
+    '.dd-scatter-container, .container'
+  )) {
+    container.style.maxWidth = 'none';
+    container.style.marginTop = '0';
+    container.style.marginBottom = '0';
+  }
+  for (const svg of lmWidget.querySelectorAll('svg')) {
+    if (svg.style.maxWidth.endsWith('px')) {
+      // ScatterWidget's chart svg: inline `max-width: {width}px` is the only
+      // thing stopping its width:100%/aspect-ratio sizing from growing past
+      // the trait width
+      svg.style.maxWidth = 'none';
+      continue;
+    }
+    // BarWidget's chart svg: fixed pixel width/height attributes, no
+    // viewBox (button icons are excluded -- they already have a viewBox).
+    // Give it one and let CSS scale it like ScatterWidget's.
+    const w = Number(svg.getAttribute('width'));
+    const h = Number(svg.getAttribute('height'));
+    if (svg.getAttribute('viewBox') === null && w > 0 && h > 0) {
+      svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+      svg.style.width = '100%';
+      svg.style.height = 'auto';
+      svg.style.aspectRatio = `${w} / ${h}`;
+    }
+  }
+}
+
+const drawdataBehavior: WidgetBehavior = {
+  setupFill: (ctx) => relaxDrawdataSize(ctx),
+  // Also relax in fixed-size outputs: BarWidget's fixed 800px width
+  // otherwise overflows narrow containers, and full-width rendering matches
+  // how other outputs (e.g., plotly) look in plain page flow.
+  setupFixedSize: (ctx) => relaxDrawdataSize(ctx),
+};
+
 export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
+  drawdata: drawdataBehavior,
   ipympl: ipymplBehavior,
   ipyvolume: ipyvolumeBehavior,
   jscatter: jscatterBehavior,
