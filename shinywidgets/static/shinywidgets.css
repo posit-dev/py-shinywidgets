@@ -141,6 +141,48 @@
   height: 100%;
 }
 
+/*
+* vizarr styles its viewer's root div with an inline `height` taken from the widget's
+* `height` trait (500px by default), which already shrinks and grows to fit a filling
+* container but overflows (and gets clipped by) an output with an explicit height. Fit
+* the viewer to the output instead. render_vizarr() marks the widget with
+* .shinywidgets-vizarr (see vizarr_layout_defaults); the viewer's root div is the
+* (anonymous) child of the widget element. The !important beats the inline style, which
+* would otherwise take precedence -- an explicit output height wins even over the
+* widget's own `height` trait (as in the perspective rule above). The
+* [style*="height:"] selector matches the inline style that output_widget(height=)
+* emits (keep in sync with _output_widget.py); intrinsic keyword heights (e.g. "auto")
+* are excluded, as in the ipydatagrid and ipycytoscape rules above, since 100% of an
+* indefinite height would collapse the viewer.
+*/
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .lm-Widget.shinywidgets-vizarr {
+  height: 100%;
+  min-height: 0;
+}
+
+.shiny-ipywidget-output[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .lm-Widget.shinywidgets-vizarr > div {
+  height: 100% !important;
+}
 
 /*
 * Embedding Atlas hard-codes a 650px (user-resizable) height on its container in an

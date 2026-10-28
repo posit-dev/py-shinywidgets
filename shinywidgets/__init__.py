@@ -50,6 +50,7 @@ from ._render_widget import (
     render_pygwalker,
     render_pythreejs,
     render_quak,
+    render_vizarr,
     render_widget,
 )
 from ._shinywidgets import (
@@ -94,6 +95,7 @@ __all__ = (
     "render_pygwalker",
     "render_pythreejs",
     "render_quak",
+    "render_vizarr",
     # Reactive read second
     "reactive_read",
     # UI methods third

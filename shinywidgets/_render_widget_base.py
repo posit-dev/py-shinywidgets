@@ -768,6 +768,20 @@ def _track_pythreejs_sizing_intent(renderer: DOMWidget, intent: bool) -> None:
     renderer.observe(update_intent, names=["width", "height"])
 
 
+def vizarr_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # vizarr's Viewer styles its root element with an inline `height` taken from
+    # its `height` trait (default "500px"), which the generic Layout check above
+    # can't see (the layout is an ordinary ipywidgets Layout). Only the
+    # untouched default counts as unset. The marker class lets shinywidgets.css
+    # fit the viewer to an output with an explicit height (which, unlike a
+    # filling layout, doesn't stretch the viewer on its own).
+    widget.add_class("shinywidgets-vizarr")
+    height = getattr(widget, "height", None)
+    if height is not None and height != widget.trait_defaults("height"):
+        return False
+    return fill
+
+
 # Per-package layout adjustments for filling layouts, keyed by widget_pkg()
 # (the same key used by AS_WIDGET_MAP in _as_widget.py and WIDGET_BEHAVIORS
 # in js/src/fill.ts). A handler receives the widget and the current fill
@@ -794,6 +808,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "leafmap": leafmap_layout_defaults,
     "maplibre": maplibre_layout_defaults,
     "pythreejs": pythreejs_layout_defaults,
+    "vizarr": vizarr_layout_defaults,
 }
 
 
