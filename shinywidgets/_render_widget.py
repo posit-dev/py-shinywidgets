@@ -3930,6 +3930,24 @@ def _attach_selection(widget: Widget, emit: Emit) -> Callable[[], None]:
     return lambda: grid_widget.unobserve(_on, names=["selection"])
 
 
+def _attach_clicked(widget: Widget, emit: Emit) -> Callable[[], None]:
+    grid_widget = _grid_widget_of(widget)
+
+    def _on(change: Any) -> None:
+        emit(change["new"])
+
+    grid_widget.observe(_on, names=["callback_kwargs"])
+    # No seeding: an event is None until it happens
+    return lambda: grid_widget.unobserve(_on, names=["callback_kwargs"])
+
+
+def _noop_click_callback(data: object) -> None:
+    # Enables mols2grid's per-cell click target (and so callback_kwargs
+    # posts) when the user asks for clicks but supplies no callback of their
+    # own; the clicks are consumed reactively via .clicked() instead
+    pass
+
+
 class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     """
     Reactively render a [mols2grid](https://mols2grid.readthedocs.io) molecule
@@ -3958,8 +3976,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     value most recently returned by the render function, `.widget`, the rendered
     `ipywidgets.Box` holding the output, and `.grid`, the `MolGrid` instance
     backing it -- plus a `.selection()` method for the current molecule
-    selection. The `MolGridWidget` that syncs selection state is
-    `.grid.widget`.
+    selection, and a `.clicked()` method for the most recently clicked
+    molecule's row data (with ``clicks=True``). The `MolGridWidget` that syncs
+    selection state is `.grid.widget`.
 
     * **Selection (browser -> Python):** ``grid.selection()`` gives the selected
       rows reactively, as a dict, e.g. ``{0: "CCO"}``. Row indices are
@@ -4028,6 +4047,10 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         ``smiles_col=None``, a SMILES column named ``"SMILES"`` is generated
         from the molecules (mols2grid itself mis-renders a ``None`` SMILES
         column).
+    clicks
+        Whether clicking a molecule's image posts its row data for
+        `.clicked()` to read. Adds a click target to each cell. Ignored when
+        an explicit ``callback`` is passed (which enables the same target).
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -4093,6 +4116,16 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             attach=_attach_selection,
             payload=_parse_trait_dict,
         ),
+        AccessorSpec(
+            name="clicked",
+            kind="event",
+            attach=_attach_clicked,
+            payload=_parse_trait_dict,
+            # Attach at render, not on first read: with no seeding (an event
+            # is None until it happens), a click that lands before the first
+            # read would otherwise never be emitted
+            eager=True,
+        ),
     )
 
     def __init__(
@@ -4101,6 +4134,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         *,
         smiles_col: Optional[str] = "SMILES",
         mol_col: Optional[str] = None,
+        clicks: bool = False,
         width: Optional[str] = None,
         height: Optional[str] = None,
         fill: Optional[bool] = None,
@@ -4120,6 +4154,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         )
         self.smiles_col = smiles_col
         self.mol_col = mol_col
+        self.clicks = clicks
         # The rendering options (subset, tooltip, sort_by, ...) belong to the
         # grid's rendering, while everything else belongs to MolGrid(), whose
         # remaining **kwargs are RDKit draw options -- split them the way
@@ -4199,6 +4234,21 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         ``.grid.get_selection()``.
         """
         return cast(Optional[Dict[int, str]], self._read_accessor("selection"))
+
+    def clicked(self) -> Optional[Dict[str, Any]]:
+        """
+        The row data of the molecule image most recently clicked since the
+        last render, or `None` if no click has happened yet (requires
+        ``clicks=True``).
+
+        Unlike `.selection()` (the checkbox set), a click is an event: it
+        carries the clicked row's data (every displayed column, plus
+        ``mols2grid-id``) and resets to `None` on re-render. All values are
+        strings except ``mols2grid-id`` (an int), and clicking the same
+        molecule twice in a row does not re-fire (a mols2grid limitation:
+        the trait only changes when the payload does).
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("clicked"))
 
     async def _render(self) -> Jsonifiable | None:
         # Reset before rendering, so `.grid` mirrors `.value`/`.widget` (readers
@@ -4356,6 +4406,11 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         self._grid = grid
 
         render_kwargs = dict(self.render_kwargs)
+        if self.clicks and not callable(render_kwargs.get("callback")):
+            # mols2grid only renders the per-cell click target (and so only
+            # posts callback_kwargs) when a Python callback is set; supply a
+            # no-op so .clicked() has a channel without an imperative callback
+            render_kwargs["callback"] = _noop_click_callback
         if not render_kwargs.pop("use_iframe", True):
             warnings.warn(
                 "@render_mols2grid always renders the grid in an iframe "

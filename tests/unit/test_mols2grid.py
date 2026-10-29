@@ -747,3 +747,91 @@ def test_grid_name_stable_within_and_unique_across_sessions(
 
     monkeypatch.setattr(rw, "get_current_session", lambda: None)
     assert rw.grid_name() == "shiny"
+
+
+def test_clicked_accessor_reads_clicked_row(widget_session: Session) -> None:
+    # Clicking a molecule's image (not its checkbox) posts the whole row to
+    # the callback_kwargs trait; .clicked() parses it reactively
+    r = rw.render_mols2grid(clicks=True)
+    render(r, lambda: DF, widget_session)
+
+    # An event accessor is None until the first click
+    assert r.clicked() is None
+
+    assert isinstance(r.grid, MolGrid)
+    row = {"mols2grid-id": 0, "ID": "ethanol", "SMILES": "CCO"}
+    r.grid.widget.callback_kwargs = str(row)
+    assert r.clicked() == row
+
+
+def test_clicked_accessor_resets_on_rerender(widget_session: Session) -> None:
+    # Events don't survive a re-render (a click refers to the grid as it was)
+    r = rw.render_mols2grid(clicks=True)
+    render(r, lambda: DF, widget_session)
+    assert isinstance(r.grid, MolGrid)
+    r.grid.widget.callback_kwargs = str({"mols2grid-id": 0, "ID": "ethanol"})
+    assert r.clicked() is not None
+
+    render(r, lambda: DF, widget_session)
+    assert r.clicked() is None
+
+
+def test_clicked_accessor_reactively_invalidates(widget_session: Session) -> None:
+    from shiny import reactive
+
+    r = rw.render_mols2grid(clicks=True)
+    render(r, lambda: DF, widget_session)
+
+    reads: list[Any] = []
+
+    with session_context(widget_session):
+
+        @reactive.Effect
+        def _() -> None:
+            reads.append(r.clicked())
+
+        async def main() -> None:
+            await reactive.flush()
+            assert reads == [None]
+            assert isinstance(r.grid, MolGrid)
+            r.grid.widget.callback_kwargs = str({"mols2grid-id": 1, "ID": "benzene"})
+            await reactive.flush()
+            assert reads == [None, {"mols2grid-id": 1, "ID": "benzene"}]
+
+        asyncio.run(main())
+
+
+def test_clicks_true_renders_the_click_target(widget_session: Session) -> None:
+    # mols2grid only renders a per-cell click target (and so only posts
+    # callback_kwargs) when a Python callback is set; clicks=True supplies a
+    # no-op one so the channel exists without an imperative callback.
+    # (The needle is the element, not the bare class name: the document's CSS
+    # styles .m2g-callback whether or not a callback is set)
+    import html as html_mod
+
+    r = rw.render_mols2grid(clicks=True)
+    render(r, lambda: DF, widget_session)
+    assert isinstance(r.widget, widgets.Box)
+    html = r.widget.children[1]
+    assert isinstance(html, widgets.HTML)
+    assert 'class="m2g-callback"' in html_mod.unescape(html.value)
+
+    r2 = rw.render_mols2grid()
+    render(r2, lambda: DF, widget_session)
+    assert isinstance(r2.widget, widgets.Box)
+    html2 = r2.widget.children[1]
+    assert isinstance(html2, widgets.HTML)
+    assert 'class="m2g-callback"' not in html_mod.unescape(html2.value)
+
+
+def test_clicks_true_does_not_clobber_explicit_callback(
+    widget_session: Session,
+) -> None:
+    # An explicit callback already enables the click target; clicks=True must
+    # not replace it with the no-op
+    calls: list[Any] = []
+    r = rw.render_mols2grid(clicks=True, callback=calls.append)
+    render(r, lambda: DF, widget_session)
+    assert isinstance(r.grid, MolGrid)
+    r.grid.widget.callback_kwargs = str({"mols2grid-id": 0})
+    assert calls == [{"mols2grid-id": 0}]
