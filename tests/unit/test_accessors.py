@@ -382,3 +382,15 @@ def test_payload_is_memoised_per_publish() -> None:
     assert builds == [1]
     cap.send(2)
     assert a.read("pts") == {"built": 2} and builds == [1, 2]
+
+
+def test_read_raw_skips_payload() -> None:
+    cap = Capture()
+    spec = acc.AccessorSpec(
+        name="pts", kind="event", attach=cap.attach, payload=lambda raw: {"built": raw}
+    )
+    a = acc.Accessors([spec], schedule=FakeSchedule())
+    a.on_render(object())
+    a.read("pts")
+    cap.send([1])
+    assert a.read("pts", raw=True) == [1]

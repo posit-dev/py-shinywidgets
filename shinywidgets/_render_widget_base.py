@@ -211,11 +211,11 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             "The `widget` attribute of a @render_widget function is read only."
         )
 
-    def _read_accessor(self, name: str) -> object:
+    def _read_accessor(self, name: str, *, raw: bool = False) -> object:
         # Depend on the widget too, so a re-render invalidates readers even
         # before the new widget reports anything.
         self._register_current_context()
-        return self._accessors.read(name)
+        return self._accessors.read(name, raw=raw)
 
     def _get_reactive_obj(self, x: T) -> T | None:
         self._register_current_context()

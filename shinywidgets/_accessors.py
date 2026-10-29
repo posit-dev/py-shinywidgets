@@ -163,7 +163,7 @@ class Accessors:
             if slot.spec.eager or slot.activated:
                 self._attach(slot)
 
-    def read(self, name: str) -> object:
+    def read(self, name: str, *, raw: bool = False) -> object:
         slot = self._slots[name]
         if self._widget is not None and slot.detach is None:
             # Attach before taking the dependency, so a value the attach
@@ -177,8 +177,8 @@ class Accessors:
                 box = value.get()
         if self._widget is None or slot.spec.not_ready(box.raw):
             req(False)
-        if box.raw is None:
-            return None
+        if box.raw is None or raw:
+            return box.raw
         if slot.memo_box is not box:
             slot.memo = slot.spec.payload(box.raw)
             slot.memo_box = box
