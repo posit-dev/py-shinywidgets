@@ -1,4 +1,5 @@
 import pytest
+import shinywidgets._accessors as acc
 import shinywidgets._shinywidgets as sw
 
 
@@ -108,3 +109,53 @@ def test_reactive_read_returns_values_in_order(monkeypatch) -> None:
 
     assert sw.reactive_read(w, "a") == 1  # type: ignore[arg-type]
     assert sw.reactive_read(w, ["a", "b"]) == (1, 2)  # type: ignore[arg-type]
+
+
+def test_reactive_depend_unlimited_without_policy(monkeypatch) -> None:
+    ctx = FakeContext()
+    monkeypatch.setattr(sw, "get_current_context", lambda: ctx)
+    w = FakeWidget({"x": 1})
+    sw.reactive_depend(w, "x")  # type: ignore[arg-type]
+    handler = w.observe_calls[0][0]
+    handler({})
+    handler({})
+    assert ctx.invalidated == 2
+
+
+def test_reactive_depend_debounces_when_renderer_registered_policy(
+    monkeypatch,
+) -> None:
+    timers = []
+    cancelled = []
+
+    def schedule(delay, fn):  # type: ignore[no-untyped-def]
+        timers.append((delay, fn))
+        return lambda: cancelled.append(fn)
+
+    monkeypatch.setattr(acc, "loop_schedule", schedule)
+    ctx = FakeContext()
+    monkeypatch.setattr(sw, "get_current_context", lambda: ctx)
+    w = FakeWidget({"x": 1})
+    acc.register_rate_policy(w, "debounce", 100)  # type: ignore[arg-type]
+    sw.reactive_depend(w, "x")  # type: ignore[arg-type]
+    handler = w.observe_calls[0][0]
+    handler({})
+    handler({})
+    assert ctx.invalidated == 0 and len(timers) == 2 and timers[-1][0] == 0.1
+    timers[-1][1]()
+    assert ctx.invalidated == 1
+
+    # Invalidation (from any source) also drops a pending timer.
+    handler({})
+    ctx.run_invalidate_callbacks()
+    assert cancelled[-1] is timers[-1][1]
+
+
+def test_register_none_removes_policy() -> None:
+    w = FakeWidget({})
+    acc.register_rate_policy(w, "throttle", 50)  # type: ignore[arg-type]
+    assert acc.rate_policy_for(w) == ("throttle", 50)  # type: ignore[arg-type]
+    acc.register_rate_policy(w, "debounce", None)  # type: ignore[arg-type]
+    assert acc.rate_policy_for(w) == ("debounce", 250)  # type: ignore[arg-type]
+    acc.register_rate_policy(w, None, None)  # type: ignore[arg-type]
+    assert acc.rate_policy_for(w) is None  # type: ignore[arg-type]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Literal, Optional, Sequence, Tuple
+from weakref import WeakKeyDictionary
 
 from shiny import reactive, req
 from shiny.reactive._core import (
@@ -85,6 +86,24 @@ class AccessorSpec:
             raise ValueError(
                 f"Accessor name {self.name!r} can't start with an underscore."
             )
+
+
+# The rate policy each renderer asked for, applied to `reactive_read()` on
+# its widget.
+RATE_POLICIES: WeakKeyDictionary[object, Tuple[RatePolicy, int]] = WeakKeyDictionary()
+
+
+def register_rate_policy(
+    widget: object, policy: Optional[RatePolicy], delay_ms: Optional[int]
+) -> None:
+    if policy is None:
+        RATE_POLICIES.pop(widget, None)
+    else:
+        RATE_POLICIES[widget] = (policy, 250 if delay_ms is None else delay_ms)
+
+
+def rate_policy_for(widget: object) -> Optional[Tuple[RatePolicy, int]]:
+    return RATE_POLICIES.get(widget)
 
 
 @dataclass

@@ -26,7 +26,7 @@ from shiny.reactive._core import (
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
 from shiny.session import get_current_session
 
-from ._accessors import Accessors, AccessorSpec, RatePolicy
+from ._accessors import Accessors, AccessorSpec, RatePolicy, register_rate_policy
 from ._as_widget import as_widget, refresh_stale_mpl_canvases
 from ._comm import OrphanedShinyComm
 from ._dependencies import widget_pkg
@@ -164,6 +164,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         widget, fill = set_layout_defaults(widget)
 
         self._widget = cast(WidgetT, widget)
+        register_rate_policy(widget, self.rate_policy, self.rate_delay)
         self._accessors.on_render(widget)
         if (
             session is not None

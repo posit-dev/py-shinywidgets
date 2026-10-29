@@ -353,3 +353,16 @@ def test_render_returning_none_cancels_accessor_reads(monkeypatch) -> None:
     monkeypatch.setattr(acc, "req", cancel)
     with pytest.raises(Cancel):
         r.clicked()
+
+
+def test_render_registers_rate_policy_for_its_widget(monkeypatch) -> None:
+    widget = FakeLiveWidget()
+    r = rwb.render_widget_base(rate_policy="throttle")
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: widget)
+    asyncio.run(r._render())
+    assert acc.rate_policy_for(widget) == ("throttle", 250)  # type: ignore[arg-type]

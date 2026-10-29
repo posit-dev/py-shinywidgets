@@ -44,6 +44,7 @@ from shiny.reactive._core import (
 )
 from shiny.session import get_current_session, require_active_session, session_context
 
+from ._accessors import RateLimiter, rate_policy_for
 from ._as_widget import as_widget, pydeck_has_widget
 from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
@@ -547,10 +548,10 @@ def prepare_to_serialize(w: Widget) -> None:
 
 def handle_client_comm_msg(session: Session, msg: Dict[str, Any]) -> None:
     """Route a message the browser sent on the `shinywidgets_comm_send` input."""
-    msg = _decode_comm_buffers(msg)
     header = msg.get("header")
     msg_type = header.get("msg_type") if isinstance(header, dict) else None
     try:
+        msg = _decode_comm_buffers(msg)
         if msg_type == "comm_open":
             open_client_comm(session, msg)
         elif msg_type == "comm_close":
@@ -1440,13 +1441,21 @@ def reactive_depend(
                 "For a list of widget traits, call `.trait_names()` on the widget."
             )
 
+    policy = rate_policy_for(widget)
+    limiter = RateLimiter(
+        ctx.invalidate,
+        policy=policy[0] if policy else None,
+        delay_ms=policy[1] if policy else 0,
+    )
+
     def invalidate(change: object):
-        ctx.invalidate()
+        limiter.call()
 
     widget.observe(invalidate, names, type)  # type: ignore
 
     def _():
         widget.unobserve(invalidate, names, type)  # type: ignore
+        limiter.cancel()
 
     ctx.on_invalidate(_)
 
