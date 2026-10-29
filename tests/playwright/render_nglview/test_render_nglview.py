@@ -297,6 +297,28 @@ def test_nglview_respects_assigned_layout(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_nglview_percentage_layout_resolves_once(page: Page, local_app) -> None:
+    # Layout(width="50%"): the root resolves it against the output, and the
+    # stage (a child of the root) must take the root's resolved pixels, not
+    # resolve the percentage a second time
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    expect(page.locator("#pct_sized canvas")).to_have_count(1, timeout=30000)
+
+    page.wait_for_function(
+        """() => {
+          const out = document.getElementById('pct_sized');
+          const c = out.querySelector('canvas').getBoundingClientRect();
+          const o = out.getBoundingClientRect();
+          return c.width > 0 && Math.abs(c.width - o.width / 2) <= 1
+            && Math.abs(c.height - 150) <= 1;
+        }""",
+        timeout=30000,
+    )
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_nglview_child_removal_disposes_stage(page: Page, local_app) -> None:
     # A container dropping a child calls view.remove() directly, which doesn't go
     # through the output binding's teardown; the stage must still be disposed

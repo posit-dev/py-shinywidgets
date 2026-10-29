@@ -56,6 +56,7 @@ app_ui = ui.page_fluid(
     output_widget("width_view"),
     output_widget("sized_both", height="400px"),
     output_widget("layout_sized"),
+    output_widget("pct_sized"),
     output_widget("custom_scheme"),
     output_widget("boxed"),
     ui.output_text("picked_atom"),
@@ -124,6 +125,15 @@ def server(input, output, session):
         # _ngl_msg_archive, which is not JSON serializable
         widget = nglview.NGLWidget(nglview.TextStructure(TINY_PDB))
         widget.layout = ipywidgets.Layout(width="200px", height="150px")
+        return widget
+
+    @render_nglview
+    def pct_sized():
+        # A percentage width must resolve once (against the output), not
+        # twice: the stage is a child of the view root, so copying "50%"
+        # onto it would give 50% of 50%
+        widget = nglview.NGLWidget(nglview.TextStructure(TINY_PDB))
+        widget.layout = ipywidgets.Layout(width="50%", height="150px")
         return widget
 
     @render_nglview

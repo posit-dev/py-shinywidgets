@@ -33,13 +33,21 @@ export function setupNglviewAutoSize(
     // `NGLWidget(width=...)` (the synced `_view_width` trait, which nglview
     // sizes the stage to itself), or a `Layout(width=...)` (an inline style
     // ipywidgets applies to the view root). Otherwise the stage's own fixed
-    // pixel width would overflow or underfill the output.
+    // pixel width would overflow or underfill the output. A percentage must
+    // be read as the root's resolved pixels: the stage is a *child* of the
+    // root, so copying "50%" onto it would resolve it a second time.
+    const layoutWidth = root.style.width.endsWith('%')
+      ? `${root.clientWidth}px`
+      : root.style.width;
     const width =
-      model.get('_view_width') || root.style.width || `${el.clientWidth}px`;
+      model.get('_view_width') || layoutWidth || `${el.clientWidth}px`;
+    const layoutHeight = root.style.height.endsWith('%')
+      ? `${root.clientHeight}px`
+      : root.style.height;
     const height = trackHeight
       ? `${el.clientHeight}px`
       : // A `Layout(height=...)` similarly wins over the stage's current size
-        root.style.height || stage.stage.viewer.container.style.height;
+        layoutHeight || stage.stage.viewer.container.style.height;
     stage.setSize(width, height);
   };
   const observer = new ResizeObserver(resize);
