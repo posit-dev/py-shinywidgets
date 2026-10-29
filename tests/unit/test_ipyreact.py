@@ -121,6 +121,44 @@ def test_define_module_opens_in_existing_sessions(
     assert mod.comm.has_session(other_session.id)
 
 
+def test_define_module_opens_in_sessions_initialized_before_flush(
+    ipyreact: Any,
+    widget_session: Session,
+    other_session: Session,
+    shared_state: None,
+) -> None:
+    # A and B are initialized, A defines a module, and C initializes before
+    # A's deferred open runs: C's init_session() adopts the module, giving
+    # it a SharedShinyComm. A's deferred open must still fan the module out
+    # to B (open_shared_in() is idempotent per session), not return early at
+    # the shared-comm check.
+    sw.init_session(other_session)
+    with session_context(widget_session):
+        mod = ipyreact.define_module("shinywidgets_test_mod7", code="export default 1")
+    third_session = App(ui.page_fluid(), widget_test_server)._create_session(
+        MockConnection()
+    )
+    try:
+        # C's first widget initializes its session, which adopts the module
+        import ipywidgets
+
+        with session_context(third_session):
+            ipywidgets.IntSlider()
+        from shinywidgets._comm import SharedShinyComm
+
+        assert isinstance(mod.comm, SharedShinyComm)
+        assert mod.comm.has_session(third_session.id)
+
+        from tests.unit.test_shared_widgets import flush
+
+        flush()
+        assert mod.comm.has_session(widget_session.id)
+        assert mod.comm.has_session(other_session.id)
+        assert mod.comm.has_session(third_session.id)
+    finally:
+        run(third_session.close())
+
+
 def test_registry_ignores_client_state_writes(
     ipyreact: Any, widget_session: Session, shared_state: None
 ) -> None:

@@ -228,19 +228,24 @@ def init_shiny_widget(w: Widget):
         if w is None or WIDGET_INSTANCE_MAP.get(id) is not w:
             return
 
+        # An ipyreact consumer waits on its registry widgets by name, not by
+        # widget reference, so the render-time walk that opens a shared
+        # widget in the other sessions never finds it: open it in every live
+        # session now, not just the one that defined it. This must come
+        # before the SharedShinyComm early return below: a session that
+        # initializes between the widget's construction and this flush
+        # adopts it (init_session), and returning early would then open it
+        # only in this session, leaving the other existing sessions without
+        # it indefinitely.
+        if is_ipyreact_registry_widget(w):
+            for s in list(SESSIONS):
+                open_shared_in(w, s)
+            return
+
         # Already opened in another session by open_shared_in(); a plain
         # ShinyComm here would cut that session off.
         if isinstance(w.comm, SharedShinyComm):
             open_shared_in(w, session)
-            return
-
-        # An ipyreact consumer waits on its registry widgets by name, not by
-        # widget reference, so the render-time walk that opens a shared
-        # widget in the other sessions never finds it: open it in every live
-        # session now, not just the one that defined it.
-        if is_ipyreact_registry_widget(w):
-            for s in list(SESSIONS):
-                open_shared_in(w, s)
             return
 
         # A shared widget's lazily created defaults (e.g. its Layout) are shared too
