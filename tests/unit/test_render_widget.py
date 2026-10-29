@@ -193,6 +193,19 @@ def test_render_ipydatagrid_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_ipyfilechooser_is_render_widget_base() -> None:
+    renderer = rw.render_ipyfilechooser()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
+def test_render_ipyfilechooser_exported_from_package() -> None:
+    import shinywidgets
+
+    assert shinywidgets.render_ipyfilechooser is rw.render_ipyfilechooser
+    assert "render_ipyfilechooser" in shinywidgets.__all__
+    assert "render_ipyfilechooser" in rw.__all__
+
+
 def test_render_ipydatagrid_exported_from_package() -> None:
     import shinywidgets
 
@@ -375,6 +388,11 @@ def test_render_pygwalker_is_render_widget_base() -> None:
 
 def test_render_matplotlib_is_render_widget_base() -> None:
     renderer = rw.render_matplotlib()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
+def test_render_nglview_is_render_widget_base() -> None:
+    renderer = rw.render_nglview()
     assert isinstance(renderer, rwb.render_widget_base)
 
 

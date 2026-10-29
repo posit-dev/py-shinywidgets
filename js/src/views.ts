@@ -65,6 +65,7 @@ export function disposeNative(view: WidgetView): void {
   }
 
   disposeLeafletMap(view);
+  disposeNglviewStage(view);
 }
 
 const patchedMplCanvasViews = new WeakSet<WidgetView>();
@@ -109,6 +110,49 @@ interface NativeLeafletMap {
   _sizeTimer?: ReturnType<typeof setTimeout>;
   off(events?: string): void;
   remove(): void;
+}
+
+// nglview's NGLView never overrides remove(), and nothing ever disposes its
+// NGL stage (nglview 4.0.1), so every removed viewer keeps its render loop and
+// WebGL context -- browsers cap the number of live contexts, so repeated
+// re-renders can exhaust them. `view.stage` is loosely typed because NGL
+// isn't a dependency of this bundle. Note the `stage` reference is left in
+// place after disposal: nglview's own pending callbacks (e.g. its deferred
+// camera-orientation sync) still read `this.stage.viewerControls` after the
+// view is gone, and would throw on a deleted stage.
+interface NativeNglStage {
+  dispose(): void;
+}
+
+function disposeNglviewStage(view: WidgetView): void {
+  const tracked = view as WidgetView & {
+    stage?: NativeNglStage;
+    __shinywidgetsNativeDisposed?: boolean;
+  };
+  const stage = tracked.stage;
+  if (
+    tracked.__shinywidgetsNativeDisposed ||
+    !view.model ||
+    view.model.get('_view_name') !== 'NGLView' ||
+    !stage ||
+    typeof stage.dispose !== 'function'
+  ) {
+    return;
+  }
+  tracked.__shinywidgetsNativeDisposed = true;
+  stage.dispose();
+}
+
+// Removing a view directly -- an ipywidgets container whose children change
+// calls remove() on the dropped child views itself -- never reaches
+// removeViewTree(), so hook the stage disposal into the view's own removal too.
+// disposeNglviewStage() is idempotent, so the teardown path may also dispose
+// before removing (as it does for plotly and leaflet).
+export function disposeNglviewStageOnRemove(view: WidgetView): void {
+  if (!view.model || view.model.get('_view_name') !== 'NGLView') {
+    return;
+  }
+  view.once('remove', () => disposeNglviewStage(view));
 }
 
 function disposeLeafletMap(view: WidgetView): void {

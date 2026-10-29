@@ -9,7 +9,9 @@ from tests.playwright.conftest import (
 )
 
 # Each lonboard map bundles its own copy of luma.gl, which logs this (harmless)
-# console error when a page shows more than one map
+# console error when a page shows more than one map. How many of them have
+# logged it by the time a test asserts depends on timing, so it can't be
+# asserted on exactly.
 LUMA_REINIT = "luma.gl: This version of luma.gl has already been initialized"
 
 MEASURE_JS = """(id) => {
@@ -49,9 +51,7 @@ def test_lonboard_renders_with_controls(page: Page, local_app) -> None:
         # display if shinywidgets gives each map its own copies
         expect(page.locator(f"#{id} .maplibregl-ctrl-fullscreen")).to_have_count(1)
 
-    assert_no_unexpected_errors(
-        [e for e in errors if LUMA_REINIT not in e], failed_requests
-    )
+    assert_no_unexpected_errors(errors, failed_requests, allowed_errors=(LUMA_REINIT,))
 
 
 def test_lonboard_fills_and_respects_explicit_heights(page: Page, local_app) -> None:
@@ -145,6 +145,4 @@ def test_lonboard_rerender_lifecycle(page: Page, local_app) -> None:
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
-    assert_no_unexpected_errors(
-        [e for e in errors if LUMA_REINIT not in e], failed_requests
-    )
+    assert_no_unexpected_errors(errors, failed_requests, allowed_errors=(LUMA_REINIT,))
