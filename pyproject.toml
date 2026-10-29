@@ -77,6 +77,7 @@ lonboard = ["lonboard; python_version < '3.15'"]
 maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
 mosaic_widget = ["mosaic-widget"]
+nglview = ["nglview"]
 niivue = ["ipyniivue>=2.4.0"]
 obsplot = ["pyobsplot>=0.5.0"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
@@ -133,6 +134,7 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "nglview",
   "pandas",
   "networkx",
   "mosaic-widget",
@@ -192,6 +194,7 @@ dev = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "nglview",
   "pandas",
   "networkx",
   "mosaic-widget",
@@ -256,6 +259,7 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "nglview",
   "pandas",
   "networkx",
   "mosaic-widget",

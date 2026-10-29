@@ -61,6 +61,13 @@ from ._dependencies import (
     require_dependencies,
     widget_pkg,
 )
+from ._nglview import (
+    guard_registry_state,
+    importing_nglview,
+    is_nglview_registry,
+    is_nglview_widget,
+    stop_threads_on_close,
+)
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -87,6 +94,13 @@ def init_shiny_widget(w: Widget):
     plotly_version = unsupported_plotly_version(w)
     if plotly_version is not None:
         raise RuntimeError(PLOTLY_VERSION_MESSAGE.format(version=plotly_version))
+    if is_nglview_registry(w):
+        # Install at construction, not only in open_shared_in(): when nglview
+        # is first imported inside a session, the deferred open below gives
+        # the registry a plain ShinyComm that never passes through
+        # open_shared_in(), leaving its state writable by that session's
+        # browser
+        guard_registry_state(w)
     session = get_current_session()
     shared = constructing_shared.get()
     if session is None:
@@ -96,7 +110,8 @@ def init_shiny_widget(w: Widget):
         # in every session would broadcast traffic meant to be swapped away
         # (see is_swapped_out_default()).
         if (
-            importing_lonboard()
+            importing_nglview()
+            or importing_lonboard()
             or importing_ipycanvas()
             or importing_ipyfilechooser()
             or importing_ipyvue()
@@ -145,7 +160,9 @@ def init_shiny_widget(w: Widget):
     id = cast(str, w._model_id)
     # The import's module-level widgets are process-global even when the first
     # import runs inside a session (e.g. a lazy import in a render function)
-    shared = shared or importing_ipyvue() or importing_ipyvuetify()
+    shared = (
+        shared or importing_ipyvue() or importing_ipyvuetify() or importing_nglview()
+    )
     if shared:
         SHARED_WIDGETS[id] = w
 
@@ -155,6 +172,12 @@ def init_shiny_widget(w: Widget):
         guard_widget_close(w)
     elif any(widget_pkg(cls) == "k3d" for cls in type(w).__mro__):
         close_comm_on_close(w)
+
+    if is_nglview_widget(w):
+        # nglview's close() doesn't stop the background threads it polls
+        # forever (see _nglview.py); hook the widget's own close() so an
+        # explicit close is covered, not just cleanup by render/session
+        stop_threads_on_close(w)
 
     # Since the actual ShinyComm() is initialized _after_ the Widget is initialized,
     # and Widget.__init__() includes a call to Widget.open() which opens an unnecessary
@@ -297,6 +320,11 @@ def open_shared_in(w: Widget, session: Session) -> None:
     # can construct widgets), whichever session's context we're called from
     with session_context(session):
         init_session(session)
+
+    if is_nglview_registry(w):
+        # Its archived messages are executed as JS by the hidden-view replay,
+        # so no session's browser may write its state (see _nglview.py)
+        guard_registry_state(w)
 
     comm = w.comm
     if not isinstance(comm, SharedShinyComm):
@@ -1033,6 +1061,7 @@ def close_render_widgets(session: Session, widgets: list[Widget]) -> None:
 def close_widget(w: Widget) -> None:
     """Close a widget, the same way whether its render was invalidated or its session ended."""
     model_id = w.model_id
+    # Also stops an NGLWidget's background threads (see init_shiny_widget)
     w.close()
     # By closing the widget, we also close the comm, which sets w.comm to
     # None. Unfortunately, the w.model_id property looks up w.comm.comm_id
@@ -1067,11 +1096,19 @@ def close_comm_on_close(w: Widget) -> None:
 
 
 # Packages that construct widgets while being imported (see importing_lonboard() etc.)
-IMPORT_TIME_WIDGET_PACKAGES = ("ipyvue", "ipyvuetify", "lonboard", "ipycanvas")
+IMPORT_TIME_WIDGET_PACKAGES = (
+    "ipyvue",
+    "ipyvuetify",
+    "lonboard",
+    "ipycanvas",
+    "nglview",
+)
 
 # The subset whose import-time widgets the frontend expects to simply exist in
-# the widget manager (e.g. ipyvuetify's view finds `theme` by scanning it)
-EAGERLY_SHARED_PACKAGES = ("ipyvue", "ipyvuetify")
+# the browser. ipyvuetify's view finds `theme` by scanning the widget manager;
+# nglview's ColormakerRegistry must be open (and its view rendered, see
+# js/src/nglview.ts) for its view to register custom color schemes
+EAGERLY_SHARED_PACKAGES = ("ipyvue", "ipyvuetify", "nglview")
 
 
 def is_process_global(w: Widget) -> bool:

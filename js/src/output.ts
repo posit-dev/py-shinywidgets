@@ -1,8 +1,9 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
 import { setConnected, ShinyComm } from './comm';
-import { ipyleafletBehavior, WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
+import { behaviorForModel, ipyleafletBehavior, WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
 import { isJQuery, jsonParse, lendDataTables, protectPageJQuery } from './utils';
-import { disposeNative, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
+import { NGLVIEW_COLORMAKER_REGISTRY_MODEL, renderHiddenColormakerRegistry } from './nglview';
+import { disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
 import { uuid } from '@jupyter-widgets/base';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
@@ -89,6 +90,9 @@ class OutputManager extends HTMLManager {
         }
         this._liveViews.add(view);
         view.once('remove', () => this._liveViews.delete(view));
+        // Disposes the NGL stage however this view goes away, including a
+        // container dropping it as a child (see disposeNglviewStageOnRemove)
+        disposeNglviewStageOnRemove(view);
       },
       () => {
         // View creation failed; create_view's own promise chain already logs it.
@@ -318,9 +322,6 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
       return;
     }
 
-    // Package-specific fill/resize behavior (see js/src/fill.ts)
-    const behavior = WIDGET_BEHAVIORS[data.widget_pkg];
-
     // geolibre's front-end probes for the app bundle that shinywidgets serves
     // at {baseUrl}geolibre/app/ (see geolibre_app_mount() in _dependencies.py),
     // reading baseUrl from the page's jupyter-config-data element (defaulting
@@ -347,6 +348,11 @@ class IPyWidgetOutput extends Shiny.OutputBinding {
     // At this time point, we should've already handled an 'open' message, and so
     // the model should be ready to use
     const model = await manager.get_model(data.model_id);
+
+    // Package-specific fill/resize behavior (see js/src/fill.ts). Falls back to
+    // matching on the model itself, for widget classes defined in app code (a
+    // subclass reports the app's module as its widget_pkg).
+    const behavior = WIDGET_BEHAVIORS[data.widget_pkg] ?? behaviorForModel(model);
 
     // N.B. no `{ el }` option: base-manager just passes options through to
     // `view.options`, which nothing reads; attachment happens in display_view
@@ -576,6 +582,14 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
   // renderValue() would render nothing for it.
   closedModels.delete(msg.content.comm_id);
   manager.handle_comm_open(comm, msg);
+  // nglview's process-global ColormakerRegistry is eagerly opened in every
+  // session; its custom color scheme handlers live on its (otherwise never
+  // displayed) view, so render it hidden as its model opens
+  if (msg.content.data?.state?._model_name === NGLVIEW_COLORMAKER_REGISTRY_MODEL) {
+    renderHiddenColormakerRegistry(manager, msg.content.comm_id).catch((err) =>
+      console.error('Error rendering hidden ColormakerRegistry view:', err)
+    );
+  }
 });
 
 // Handle any mutation of the model (e.g., add a marker to a map, without a full redraw)
