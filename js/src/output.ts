@@ -5,7 +5,7 @@ import { isJQuery, jsonParse, lendDataTables, protectPageJQuery } from './utils'
 import { NGLVIEW_COLORMAKER_REGISTRY_MODEL, renderHiddenColormakerRegistry } from './nglview';
 import { isPlotlyBindRequest, requestPlotlyEvents } from './plotly';
 import { isReactableBindRequest, requestReactableState } from './reactable';
-import { disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
+import { disposeMols2GridGlobalsOnRemove, disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
 import { uuid } from '@jupyter-widgets/base';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
@@ -95,6 +95,8 @@ class OutputManager extends HTMLManager {
         // Disposes the NGL stage however this view goes away, including a
         // container dropping it as a child (see disposeNglviewStageOnRemove)
         disposeNglviewStageOnRemove(view);
+        // Same for mols2grid's page globals (see disposeMols2GridGlobalsOnRemove)
+        disposeMols2GridGlobalsOnRemove(view);
       },
       () => {
         // View creation failed; create_view's own promise chain already logs it.

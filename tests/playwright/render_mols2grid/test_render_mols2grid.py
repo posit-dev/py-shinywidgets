@@ -105,3 +105,30 @@ def test_mols2grid_rerender_keeps_one_iframe(page: Page, local_app) -> None:
     expect(page.locator("#grid iframe")).to_have_count(1)
 
     assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_mols2grid_globals_cleaned_up_on_output_removal(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    wait_for_cells(page)
+
+    # mols2grid registers the iframe's list.js instance and the bridge model as
+    # page globals with no cleanup of its own; removing the output must drop
+    # both (otherwise removed grids pile up until page reload)
+    page.check("#show_grid2")
+    frame = page.frame_locator("#grid2 iframe")
+    expect(frame.locator(".m2g-cell:not(.m2g-phantom)")).to_have_count(
+        12, timeout=TIMEOUT
+    )
+    page.wait_for_function("Object.keys(window.mols2grid_lists).length === 2")
+    page.wait_for_function(
+        "Object.keys(window).filter((k) => k.startsWith('_MOLS2GRID_')).length === 2"
+    )
+
+    page.uncheck("#show_grid2")
+    page.wait_for_function("Object.keys(window.mols2grid_lists).length === 1")
+    page.wait_for_function(
+        "Object.keys(window).filter((k) => k.startsWith('_MOLS2GRID_')).length === 1"
+    )
+
+    assert_no_unexpected_errors(errors, failed_requests)

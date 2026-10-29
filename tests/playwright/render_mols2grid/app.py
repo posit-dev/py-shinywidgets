@@ -30,6 +30,8 @@ df = pd.DataFrame(
 app_ui = ui.page_fluid(
     ui.input_action_button("rerender", "Rerender"),
     ui.input_action_button("filter", "Filter MW < 50"),
+    ui.input_checkbox("show_grid2", "Show second grid", False),
+    ui.output_ui("grid2_container"),
     ui.output_text("render_count"),
     ui.output_text("selection"),
     ui.card(output_widget("grid"), height="650px"),
@@ -64,6 +66,17 @@ def server(input, output, session):
     def _filter():
         if grid.grid is not None:
             grid.grid.filter((df["MW"] < 50).tolist())
+
+    # A second grid with a distinct output id (hence a distinct grid name), to
+    # exercise browser-global cleanup when a grid output comes and goes
+    @render.ui
+    def grid2_container():
+        if input.show_grid2():
+            return ui.card(output_widget("grid2"), height="650px")
+
+    @render_mols2grid(subset=["ID"], tooltip=["ID"], n_items_per_page=12)
+    def grid2():
+        return df
 
 
 app = App(app_ui, server)

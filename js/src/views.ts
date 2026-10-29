@@ -155,6 +155,53 @@ export function disposeNglviewStageOnRemove(view: WidgetView): void {
   view.once('remove', () => disposeNglviewStage(view));
 }
 
+// mols2grid's MolGridWidget frontend registers page globals with no cleanup:
+// the bridge model at window['_MOLS2GRID_' + grid_id] (its own widget.js) and
+// the grid document's List instance at window.mols2grid_lists[grid_id] (the
+// iframe's interactive.js). Both outlive their views, retaining the detached
+// iframe and its molecule data until page reload. Drop them when the bridge
+// view goes away -- but only if no other live view still uses the grid name,
+// so a re-render (which replaces the views under the same name) can't lose
+// its replacement's globals. (Reference comparison against the bridge global
+// isn't possible: anywidget hands the frontend a facade, not the model.)
+export function disposeMols2GridGlobalsOnRemove(view: WidgetView): void {
+  const model = view.model;
+  if (!model) {
+    return;
+  }
+  // MolGridWidget is an anywidget (model name 'AnyModel'), so duck-type it
+  const gridId = model.get('grid_id');
+  if (
+    typeof gridId !== 'string' ||
+    model.get('selection') === undefined ||
+    model.get('callback_kwargs') === undefined
+  ) {
+    return;
+  }
+  view.once('remove', () => {
+    // The manager's live-view registry drops this view before 'remove'
+    // listeners run, so any same-named view left is a live replacement
+    const manager = model.widget_manager as unknown as {
+      _liveViews?: Set<WidgetView>;
+    };
+    const replaced =
+      manager._liveViews &&
+      [...manager._liveViews].some(
+        (v) => v !== view && v.model && v.model.get('grid_id') === gridId
+      );
+    if (replaced) {
+      return;
+    }
+    const win = window as unknown as Record<string, unknown> & {
+      mols2grid_lists?: Record<string, unknown>;
+    };
+    delete win['_MOLS2GRID_' + gridId];
+    if (win.mols2grid_lists) {
+      delete win.mols2grid_lists[gridId];
+    }
+  });
+}
+
 function disposeLeafletMap(view: WidgetView): void {
   const tracked = view as WidgetView & {
     obj?: NativeLeafletMap;

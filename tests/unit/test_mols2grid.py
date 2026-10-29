@@ -415,6 +415,50 @@ def test_selection_survives_rerender_with_generated_name(
     assert r.grid.widget.selection == str({0: "CCO"})
 
 
+def test_cached_selection_cleared_when_rows_change(
+    widget_session: Session,
+) -> None:
+    # A cached selection is positional ({0: "CCO"} refers to a row, not a
+    # molecule), so restoring it onto a different row-to-molecule mapping
+    # would select the wrong molecules
+    r = rw.render_mols2grid()
+    render(r, lambda: DF, widget_session)
+
+    assert isinstance(r.grid, MolGrid)
+    r.grid.widget.selection = str({0: "CCO"})
+
+    # Same rows, same order: preserved
+    render(r, lambda: DF.copy(), widget_session)
+    assert isinstance(r.grid, MolGrid)
+    assert r.grid.widget.selection == str({0: "CCO"})
+
+    # Reordered rows: the cached selection would now point at benzene
+    render(r, lambda: DF.iloc[::-1].reset_index(drop=True), widget_session)
+    assert isinstance(r.grid, MolGrid)
+    assert r.grid.widget.selection == "{}"
+
+
+def test_redisplay_does_not_accumulate_callback_observers(
+    widget_session: Session,
+) -> None:
+    # mols2grid's display() observes callback_kwargs with a new partial every
+    # time and never unobserves, so re-displaying a supplied grid would
+    # invoke the callback once per past display
+    calls: list[Any] = []
+
+    with session_context(widget_session):
+        grid = mols2grid.MolGrid(DF, name="callback-dedupe-grid")
+
+    r = rw.render_mols2grid(callback=calls.append)
+    render(r, lambda: grid, widget_session)
+    render(r, lambda: grid, widget_session)
+    render(r, lambda: grid, widget_session)
+
+    grid.widget.callback_kwargs = str({"idx": 0})
+
+    assert calls == [{"idx": 0}]
+
+
 def test_cache_selection_explicitly_disabled_clears_on_rerender(
     widget_session: Session,
 ) -> None:

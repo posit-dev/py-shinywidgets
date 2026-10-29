@@ -4064,6 +4064,14 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         # Grid names this renderer has already registered a selection-registry
         # cleanup for (see _cleanup_selection_registry)
         self._selection_cleanup_names: set[str] = set()
+        # Molecule-per-row fingerprint of the last DataFrame coerced to a grid,
+        # so a cached selection is only restored while it refers to the same
+        # molecules (see as_grid)
+        self._row_fingerprint: Optional[str] = None
+        # Widgets this renderer has already displayed: mols2grid's display()
+        # registers a callback observer each time, so re-displaying a supplied
+        # grid's widget needs the old one removed first (see _as_widget)
+        self._displayed_widgets: set[int] = set()
 
     # The session- and namespace-qualified output id, captured when the decorated
     # function is registered (see __call__ and _set_output_metadata). `output_id`
@@ -4200,6 +4208,17 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             # then chokes on) when smiles_col is None, so name the SMILES it
             # generates from the molecules instead
             smiles_col = "SMILES"
+        if grid_kwargs.get("cache_selection"):
+            # A cached selection is positional ({0: "CCO"} refers to a row, not
+            # a molecule), so restoring it is only sound while the
+            # row-to-molecule mapping is unchanged
+            fingerprint = _mols2grid_row_fingerprint(value, smiles_col, self.mol_col)
+            if (
+                self._row_fingerprint is not None
+                and fingerprint != self._row_fingerprint
+            ):
+                grid_kwargs["cache_selection"] = False
+            self._row_fingerprint = fingerprint
         return MolGrid(
             value,
             smiles_col=smiles_col,
@@ -4250,7 +4269,16 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         # mols2grid 2.2.0 internals: https://github.com/cbouy/mols2grid/pull/71
         # ignores `use_iframe` and makes the widget render the grid itself, so
         # render `grid.widget` directly instead of this stacking then.
+        if callable(render_kwargs.get("callback")) and id(grid.widget) in (
+            self._displayed_widgets
+        ):
+            # display() observes callback_kwargs with a new partial each time,
+            # and never unobserves: re-displaying a supplied grid would invoke
+            # the callback once per past display. Only the callback handler
+            # observes that trait, so dropping them all is safe
+            grid.widget.unobserve_all("callback_kwargs")
         iframe = grid.display(use_iframe=True, **render_kwargs)
+        self._displayed_widgets.add(id(grid.widget))
         # The inner width hint is load-bearing: ipywidgets renders HTML as an
         # inline-flex container, so without it the iframe collapses to its
         # 300px replaced-element default instead of filling the output
@@ -4326,6 +4354,32 @@ def _mols2grid_render_kwargs() -> frozenset[str]:
 
 
 _MOLS2GRID_NAME_SLUG = re.compile(r"[^0-9a-zA-Z_-]+")
+
+
+def _mols2grid_row_fingerprint(
+    df: "pd.DataFrame", smiles_col: str, mol_col: Optional[str]
+) -> str:
+    """
+    A digest of the molecule identity of each row of `df`, in row order.
+
+    mols2grid selections are positional (``{0: "CCO"}`` refers to a row, not a
+    molecule), so a cached selection stays valid only while the
+    row-to-molecule mapping does.
+    """
+    if smiles_col in df.columns:
+        col = df[smiles_col]
+    elif mol_col is not None and mol_col in df.columns:
+        # smiles_col=None: mols2grid generates the SMILES from the molecules,
+        # so the molecules are the identity
+        from rdkit import Chem
+
+        col = df[mol_col].map(lambda m: "" if m is None else Chem.MolToSmiles(m))
+    else:
+        # Nothing to fingerprint (mols2grid will raise on the missing column);
+        # an empty digest at least stays stable per renderer
+        return ""
+    # SMILES don't contain null bytes, so the joined values are unambiguous
+    return hashlib.sha256("\x00".join(map(str, col)).encode()).hexdigest()
 
 
 def grid_name() -> str:
