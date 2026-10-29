@@ -3059,20 +3059,34 @@ class render_vitessce(render_widget_base[VitessceValueT, VitessceWidget]):
     ---
     **Browser-to-Python state**: every interaction (pan, zoom, lasso,
     gene/cell-set selection) syncs the entire view config back to the
-    ``_config`` trait, so ``reactive_read(vit.widget, "_config")`` makes the
-    viewer a Shiny input -- read it in a `reactive.calc` and extract the
-    ``coordinationSpace`` values you need (the dict invalidates on every
-    interaction and carries everything).
+    ``_config`` trait. Despite the underscore, upstream documents and
+    designs this trait as the interaction-sync channel (the public
+    ``.config`` attribute is the originating `VitessceConfig` and is *not*
+    synced, so it goes stale on the first interaction; the only public
+    accessor, ``.widget.get_cell_selection()``, reads ``_config``
+    internally and covers just the one coordination type). So
+    ``reactive_read(vit.widget, "_config")`` makes the viewer a Shiny
+    input -- read it in a `reactive.calc` and extract the
+    ``coordinationSpace`` values you need (the dict carries everything).
+    The whole config syncs on every interaction frame, pan/zoom included,
+    so calcs on it invalidate at that rate -- keep them cheap and gate
+    expensive work behind explicit input.
 
-    **Python-to-browser updates**: assigning ``.widget._config`` only takes
-    effect in the viewer when the config's top-level ``uid`` changes (the
-    viewer remounts on `uid` change), so deep-copy the config, edit the
+    **Python-to-browser updates**: assigning ``.widget._config`` takes
+    effect via a remount of the viewer, which triggers when the config's
+    top-level ``uid`` changes -- or, if the config has no top-level
+    ``uid``, on any change to the config at all (``VitessceConfig``
+    doesn't emit one, so a fresh ``uid`` is belt-and-braces there but
+    required when one is present). Deep-copy the config, edit the
     ``coordinationSpace``, set a fresh ``uid``, and reassign. The remount
-    resets the view state (zoom, selections) and re-fetches data (warm from
-    cache), so it's unsuitable for high-frequency updates. Also don't write
-    ``_config`` from an immediate effect at render time: the viewer echoes
-    an upgraded config back on mount, which can clobber an early write --
-    write on user input instead.
+    resets the view state (zoom, selections) and re-fetches data (warm
+    from cache), so it's unsuitable for high-frequency updates. Don't
+    reach for ``config.widget(remount_on_uid_change=False)`` to avoid the
+    reset: with it, the viewer never adopts a new config, so Python-side
+    writes become no-ops. Also don't write ``_config`` from an immediate
+    effect at render time: the viewer echoes an upgraded config back on
+    mount, which can clobber an early write -- write on user input
+    instead.
 
     **Sizing**: the widget's ``height`` is pixels, read once at mount, and
     width is responsive. Pick ``config.widget(height=...)`` to match
