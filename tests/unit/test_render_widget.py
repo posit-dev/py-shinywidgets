@@ -378,6 +378,11 @@ def test_render_matplotlib_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_nglview_is_render_widget_base() -> None:
+    renderer = rw.render_nglview()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_perspective_is_render_widget_base() -> None:
     renderer = rw.render_perspective()
     assert isinstance(renderer, rwb.render_widget_base)
