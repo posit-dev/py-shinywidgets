@@ -15,6 +15,7 @@ import re
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence
 
 from ._accessors import AccessorSpec, Emit
+from ._comm import when_comm_open
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -102,7 +103,10 @@ def bridge_attach(
                 emit(None)
 
         widget.on_msg(on_msg)
-        widget.send({"shinywidgets": "bind", "events": [fires, *clears]})
+        events = [fires, *clears]
+        when_comm_open(
+            widget, lambda: widget.send({"shinywidgets": "bind", "events": events})
+        )
         return lambda: widget.on_msg(on_msg, remove=True)
 
     return attach

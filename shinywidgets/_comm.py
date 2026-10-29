@@ -277,6 +277,28 @@ class ShinyComm:
             self._close_callback(msg)
 
 
+# Work waiting for a widget's comm to open, by model id (see when_comm_open())
+COMM_OPEN_CALLBACKS: Dict[str, List[Callable[[], None]]] = {}
+
+
+def when_comm_open(widget: object, fn: Callable[[], None]) -> None:
+    """
+    Run `fn` once `widget`'s comm reaches the browser, e.g. to send it a custom
+    message. A widget built during a render gets its real comm only after the
+    render's flush; until then, sends are silently dropped.
+    """
+    comm = getattr(widget, "comm", None)
+    if isinstance(comm, OrphanedShinyComm):
+        COMM_OPEN_CALLBACKS.setdefault(comm.comm_id, []).append(fn)
+    else:
+        fn()
+
+
+def run_comm_open_callbacks(model_id: str) -> None:
+    for fn in COMM_OPEN_CALLBACKS.pop(model_id, []):
+        fn()
+
+
 @dataclass
 class OrphanedShinyComm:
     """

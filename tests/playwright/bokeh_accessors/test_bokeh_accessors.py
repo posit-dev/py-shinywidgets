@@ -5,7 +5,8 @@ from tests.playwright.conftest import assert_no_unexpected_errors, collect_error
 
 # Page coordinates of a data point, via the plot view's scales.
 POINT_JS = """([x, y]) => {
-  const view = [...window.Bokeh.index.values ? window.Bokeh.index.values() : Object.values(window.Bokeh.index)][0];
+  const views = [...window.Bokeh.index.values ? window.Bokeh.index.values() : Object.values(window.Bokeh.index)];
+  const view = views.filter((v) => v.canvas_view && v.canvas_view.el.isConnected).pop();
   const canvas = view.canvas_view.el.getBoundingClientRect();
   return [canvas.left + view.frame.x_scale.compute(x), canvas.top + view.frame.y_scale.compute(y)];
 }"""
@@ -40,5 +41,12 @@ def test_bokeh_accessors_follow_real_gestures(page: Page, local_app) -> None:
     page.mouse.move(*point(page, 5, 5))
     page.mouse.wheel(0, -200)
     expect(page.locator("#zoomed")).to_have_text("zoomed", timeout=5000)
+
+    # After a re-render, taps still reach the accessor
+    page.click("#rerender")
+    expect(page.locator("#tapped")).to_have_text("None", timeout=10000)
+    page.wait_for_timeout(1000)
+    page.mouse.click(*point(page, 8, 8))
+    expect(page.locator("#tapped")).to_have_text("8,8", timeout=5000)
 
     assert_no_unexpected_errors(errors, failed_requests)

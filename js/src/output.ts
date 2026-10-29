@@ -607,7 +607,9 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
     // Requests for shinywidgets' plotly event bridge are for us, not the model
     const data = msg.content.data;
     if (data?.method === "custom" && isPlotlyBindRequest(data.content)) {
-      await requestPlotlyEvents(m, data.content.events);
+      // Not awaited: binding waits for the plot to draw, which mustn't hold up
+      // Shiny's queue of later messages
+      void requestPlotlyEvents(m, data.content.events);
       return;
     }
     // @ts-ignore for some reason IClassicComm doesn't have this method, but we do

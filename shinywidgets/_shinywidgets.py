@@ -49,12 +49,14 @@ from ._as_widget import as_widget, pydeck_has_widget
 from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import (
+    COMM_OPEN_CALLBACKS,
     BufferType,
     DataType,
     OrphanedShinyComm,
     SharedShinyComm,
     ShinyComm,
     ShinyCommManager,
+    run_comm_open_callbacks,
 )
 from ._dependencies import (
     custom_elements_dependency,
@@ -211,12 +213,14 @@ def init_shiny_widget(w: Widget):
         # Closed before it was opened (explicitly, or because its render was
         # invalidated): leave it closed rather than reopening it.
         if w is None or WIDGET_INSTANCE_MAP.get(id) is not w:
+            COMM_OPEN_CALLBACKS.pop(id, None)
             return
 
         # Already opened in another session by open_shared_in(); a plain
         # ShinyComm here would cut that session off.
         if isinstance(w.comm, SharedShinyComm):
             open_shared_in(w, session)
+            run_comm_open_callbacks(id)
             return
 
         # A shared widget's lazily created defaults (e.g. its Layout) are shared too
@@ -255,6 +259,7 @@ def init_shiny_widget(w: Widget):
         )
 
         flush_ipycanvas_manager(w)
+        run_comm_open_callbacks(id)
 
     # If the widget initialized in a reactive _output_ context, then cleanup the widget
     # when the context gets invalidated. Use the render output's Context (captured by

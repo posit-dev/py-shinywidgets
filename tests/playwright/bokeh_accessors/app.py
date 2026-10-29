@@ -1,11 +1,15 @@
 from bokeh.models import ColumnDataSource
 from bokeh.plotting import figure
-from shiny.express import render
+from shiny.express import input, render, ui
 from shinywidgets import render_bokeh
+
+
+ui.input_action_button("rerender", "rerender")
 
 
 @render_bokeh(height="400px")
 def plot():
+    input.rerender()
     src = ColumnDataSource({"x": [2, 5, 8], "y": [2, 5, 8], "name": list("abc")})
     p = figure(
         x_range=(0, 10),
