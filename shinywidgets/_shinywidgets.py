@@ -1407,10 +1407,12 @@ def open_process_global_widgets(widget: Widget, session: Session) -> None:
     for w in walk_widget_tree([widget], prune=is_process_global):
         if is_process_global(w) and not is_swapped_out_default(w):
             open_shared_in(w, session)
-        # A consumer waits on its package's registry widgets by name, so the
-        # walk above can't find them. A registry defined outside any session
-        # (after this session was initialized) never fans out; rendering a
-        # consumer is what must open it here.
+    # A consumer waits on its package's registry widgets by name, so no
+    # widget-tree walk can find them; a registry defined outside any session
+    # (after this session was initialized) never fans out, so rendering a
+    # consumer is what must open it here. The consumer itself may hide inside
+    # a process-global container, so this traversal doesn't prune.
+    for w in walk_widget_tree([widget]):
         for is_consumer, source in _REGISTRY_SOURCES:
             if is_consumer(w):
                 for r in source():

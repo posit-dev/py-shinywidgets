@@ -256,3 +256,63 @@ def test_init_session_adopts_sessionless_ipyreact_widgets(
     assert sw.SHARED_WIDGETS.get(mod.layout.model_id) is mod.layout
     assert isinstance(mod.comm, SharedShinyComm)
     assert mod.comm.has_session(widget_session.id)
+
+
+def test_sessionless_module_discovered_in_second_session(
+    ipyreact: Any,
+    widget_session: Session,
+    other_session: Session,
+    shared_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sw.init_session(widget_session)
+    sw.init_session(other_session)
+    mod = ipyreact.define_module("shinywidgets_test_mod9", code="export default 1")
+    # ipyreact < 0.7 has no _module_widgets registry, so the sessionless scan
+    # is the only discovery path there (patch after define_module(), which
+    # would otherwise just re-register into the fresh dict)
+    import ipyreact.module
+
+    monkeypatch.setattr(ipyreact.module, "_module_widgets", {})
+
+    # A consumer render in the first session opens the module there...
+    with session_context(widget_session):
+        consumer_a = ipyreact.Widget(_esm="export default 1")
+        sw.open_process_global_widgets(consumer_a, widget_session)
+    from shinywidgets._comm import SharedShinyComm
+
+    assert isinstance(mod.comm, SharedShinyComm)
+    assert mod.comm.has_session(widget_session.id)
+
+    # ...and a consumer render in the second session must still discover it
+    # (it's no longer sessionless, and there's no registry to find it through)
+    with session_context(other_session):
+        consumer_b = ipyreact.Widget(_esm="export default 1")
+        sw.open_process_global_widgets(consumer_b, other_session)
+    assert mod.comm.has_session(other_session.id)
+
+
+def test_consumer_in_shared_container_discovers_module(
+    ipyreact: Any, widget_session: Session, shared_state: None
+) -> None:
+    with session_context(widget_session):
+        sw.init_session(widget_session)
+    # A module and a shared container holding its consumer, defined outside
+    # any session after the session initialized. The render-time walk prunes
+    # at the process-global container, so consumer discovery must use its
+    # own, unpruned traversal.
+    from shinywidgets import shared_lifetime
+
+    mod = ipyreact.define_module("shinywidgets_test_mod10", code="export default 1")
+    import ipywidgets
+
+    with shared_lifetime():
+        consumer = ipyreact.Widget(_esm="export default 1")
+        box = ipywidgets.VBox([consumer])
+
+    with session_context(widget_session):
+        sw.open_process_global_widgets(box, widget_session)
+    from shinywidgets._comm import SharedShinyComm
+
+    assert isinstance(mod.comm, SharedShinyComm)
+    assert mod.comm.has_session(widget_session.id)

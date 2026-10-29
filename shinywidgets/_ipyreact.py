@@ -18,7 +18,7 @@ from typing import List
 
 from ipywidgets import Widget
 
-from ._comm import is_sessionless
+from ._comm import SharedShinyComm, is_sessionless
 from ._dependencies import widget_pkg
 from ._utils import restrict_client_traits
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -77,11 +77,17 @@ def ipyreact_registry_widgets() -> List[Widget]:
     import_map_widget = getattr(importmap_mod, "_import_map_widget", None)
     if import_map_widget is not None:
         widgets.append(import_map_widget)
-    # Snapshot, since opening the widgets (by the caller) can construct widgets
+    # Snapshot, since opening the widgets (by the caller) can construct
+    # widgets. Already-shared registries (SharedShinyComm) must be discovered
+    # too: one opened in a session still needs opening in every other session
+    # that renders a consumer (ipyreact < 0.7 has no _module_widgets registry
+    # to find it through, and it may predate that registry regardless).
     widgets.extend(
         w
         for w in list(WIDGET_INSTANCE_MAP.values())
-        if is_sessionless(w) and is_ipyreact_registry_widget(w) and w not in widgets
+        if is_ipyreact_registry_widget(w)
+        and (is_sessionless(w) or isinstance(w.comm, SharedShinyComm))
+        and w not in widgets
     )
     return widgets
 
