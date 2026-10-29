@@ -46,6 +46,22 @@ def stop_threads_on_close(w: Widget) -> None:
 
     w.close = close_and_stop_threads  # type: ignore[method-assign]
 
+    # The close above can run before nglview starts its threads: a widget
+    # constructed in an already-invalidated render context is closed inside
+    # Widget.__init__ (Context.on_invalidate() fires its callback
+    # immediately), and nglview's own __init__ starts its second batch of
+    # threads only after super().__init__() returns. Stop threads started
+    # after a shutdown, too.
+    initialize_threads = getattr(w, "_initialize_threads", None)
+    if initialize_threads is not None:
+
+        def initialize_threads_stopped() -> None:
+            initialize_threads()
+            if getattr(w, "_shinywidgets_threads_stopped", False):
+                stop_nglview_threads(w)
+
+        w._initialize_threads = initialize_threads_stopped  # type: ignore[attr-defined]
+
 
 def stop_nglview_threads(w: Widget) -> None:
     """
@@ -58,10 +74,16 @@ def stop_nglview_threads(w: Widget) -> None:
     leak would grow for the life of the process.
 
     This is safe to call more than once (e.g. an explicit `close()` followed by
-    cleanup of the same widget).
+    cleanup of the same widget, or a close inside `Widget.__init__` followed
+    by nglview's second `_initialize_threads()` -- see stop_threads_on_close).
     """
     # nglview is optional, and this only runs for nglview widgets
     from nglview.remote_thread import RemoteCallThread
+
+    # Record the shutdown so threads started *after* this call (nglview's
+    # second _initialize_threads() runs after the close in some lifecycles)
+    # are stopped as they start
+    w._shinywidgets_threads_stopped = True  # type: ignore[attr-defined]
 
     # Release any wait on a browser acknowledgement that can no longer arrive
     # (the widget's comm is closed): a thread blocked in
