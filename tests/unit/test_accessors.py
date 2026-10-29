@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Callable, List, Tuple
 
+import pytest
+
 import shinywidgets._accessors as acc
 
 
@@ -87,3 +89,28 @@ def test_cancel_drops_pending_timer() -> None:
     assert s.timers == []
     s.fire()
     assert calls == []
+
+
+def noop_attach(widget: object, emit: Callable[[object], None]) -> Callable[[], None]:
+    return lambda: None
+
+
+def test_spec_rejects_reserved_names() -> None:
+    with pytest.raises(ValueError, match="value"):
+        acc.AccessorSpec(name="value", kind="state", attach=noop_attach)
+    with pytest.raises(ValueError, match="underscore"):
+        acc.AccessorSpec(name="_x", kind="state", attach=noop_attach)
+
+
+def test_payloads_equal_plain_and_identity() -> None:
+    assert acc.payloads_equal({"a": 1}, {"a": 1})
+    assert not acc.payloads_equal({"a": 1}, {"a": 2})
+    x = object()
+    assert acc.payloads_equal(x, x)
+
+
+def test_payloads_equal_tolerates_array_payloads() -> None:
+    np = pytest.importorskip("numpy")
+    assert acc.payloads_equal(np.array([1, 2]), np.array([1, 2]))
+    assert not acc.payloads_equal(np.array([1, 2]), np.array([1, 3]))
+    assert not acc.payloads_equal(np.array([1, 2]), [1, 2])
