@@ -6,10 +6,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Iterable, Iterator, List, Tuple
 
 import pytest
+import shinywidgets._shinywidgets as sw
 import traitlets
 from ipywidgets import IntSlider, Widget
 from shiny import Session
 from shiny.session import session_context
+from shinywidgets import shared_lifetime
 from shinywidgets._dependencies import (
     _LoopbackProxyApp,
     _rewrite_loopback_url,
@@ -33,8 +35,17 @@ class FakeTileClient:
         self.server_port = port
         self.filename = filename
 
-    def get_tile_url(self, *, client: bool = False, **kwargs: Any) -> str:
-        assert not kwargs
+    # Mirrors localtileserver 1.0.0's signature, in which `client` may be
+    # passed positionally (6th parameter)
+    def get_tile_url(
+        self,
+        indexes: Any = None,
+        colormap: Any = None,
+        vmin: Any = None,
+        vmax: Any = None,
+        nodata: Any = None,
+        client: bool = False,
+    ) -> str:
         return (
             f"http://127.0.0.1:{self.server_port}"
             f"/api/tiles/{{z}}/{{x}}/{{y}}.png?filename={self.filename}"
@@ -57,6 +68,11 @@ def proxy_routes(session: Session, port: int) -> List[Any]:
     return [r for r in routes if getattr(r, "path", "").rstrip("/") == f"/proxy/{port}"]
 
 
+def only_token(proxy: _LoopbackProxyApp) -> str:
+    assert len(proxy._capabilities) == 1
+    return next(iter(proxy._capabilities))
+
+
 # --- ASGI driving ----------------------------------------------------------
 
 
@@ -70,7 +86,7 @@ def _asgi_request(
 ) -> Tuple[int, Dict[bytes, bytes], bytes]:
     """Drive an ASGI app with a single request; return (status, headers, body)."""
     # Mirror the scope starlette's Mount passes to a mounted app: the full
-    # path, with the mount prefix moved into root_path
+    # (percent-decoded) path, with the mount prefix moved into root_path
     scope = {
         "type": "http",
         "http_version": "1.1",
@@ -108,11 +124,14 @@ def _asgi_request(
 
 @pytest.fixture
 def upstream_server() -> Iterator[int]:
-    """A stub loopback tile server on an ephemeral port; yields the port."""
+    """A stub loopback tile server on an ephemeral port; yields the port.
+
+    Echoes the raw request target it received, so tests can assert exactly
+    what the proxy forwarded."""
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
-            body = b"tile-bytes"
+            body = self.path.encode("latin-1")
             self.send_response(200)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -165,12 +184,12 @@ def test_rewrite_loopback_url() -> None:
 
 def test_mount_is_idempotent_and_unions_filenames(widget_session: Session) -> None:
     app = widget_session.app
-    mount_loopback_proxy(app, 8801, allowed_filenames={"a.tif"})
-    mount_loopback_proxy(app, 8801, allowed_filenames={"b.tif"})
+    first = mount_loopback_proxy(app, 8801, allowed_filenames={"a.tif"})
+    second = mount_loopback_proxy(app, 8801, allowed_filenames={"b.tif"})
     routes = proxy_routes(widget_session, 8801)
     assert len(routes) == 1
-    proxy = routes[0].app
-    assert proxy._allowed_filenames == {"a.tif", "b.tif"}
+    assert first is second is routes[0].app
+    assert first is not None and first._allowed_filenames == {"a.tif", "b.tif"}
 
 
 def test_mount_strengthens_hand_mounted_proxy(widget_session: Session) -> None:
@@ -188,9 +207,15 @@ def test_mount_strengthens_hand_mounted_proxy(widget_session: Session) -> None:
     # An unguarded mount request never *weakens* an existing guard
     mount_loopback_proxy(app, 8801)
     assert routes[0].app._allowed_filenames == {"a.tif"}
+    # ...but an empty iterable still strengthens an unguarded mount to guarded
+    app._dependency_handler.mount(  # type: ignore[attr-defined]
+        "/proxy/8802/", _LoopbackProxyApp(8802), name="localtileserver-proxy-2"
+    )
+    mount_loopback_proxy(app, 8802, allowed_filenames=())
+    assert proxy_routes(widget_session, 8802)[0].app._allowed_filenames == set()
 
 
-# --- the filename guard ------------------------------------------------------
+# --- the raster-source guard -------------------------------------------------
 
 
 def test_guard_blocks_unregistered_filenames(upstream_server: int) -> None:
@@ -200,13 +225,13 @@ def test_guard_blocks_unregistered_filenames(upstream_server: int) -> None:
         proxy, "api/metadata", query_string=b"filename=ok.tif"
     )
     assert status == 200
-    assert body == b"tile-bytes"
+    assert body == b"/api/metadata?filename=ok.tif"
 
     status, _, body = _asgi_request(
         proxy, "api/metadata", query_string=b"filename=%2Fetc%2Fpasswd"
     )
     assert status == 403
-    assert body == b"Forbidden: unregistered filename"
+    assert body == b"Forbidden: unregistered raster source"
 
     # SSRF via /vsicurl/-style remote URLs is blocked too
     status, _, _ = _asgi_request(
@@ -216,8 +241,8 @@ def test_guard_blocks_unregistered_filenames(upstream_server: int) -> None:
     )
     assert status == 403
 
-    # Requests without a filename pass (colormap lists, docs, etc.); every
-    # file-reading endpoint requires one
+    # Requests without a source selector pass (colormap lists, docs, etc.);
+    # every file-reading endpoint requires one
     status, _, _ = _asgi_request(proxy, "api/colormaps")
     assert status == 200
 
@@ -226,6 +251,47 @@ def test_guard_blocks_unregistered_filenames(upstream_server: int) -> None:
         proxy, "api/tiles", query_string=b"filename=ok.tif&filename=%2Fetc%2Fpasswd"
     )
     assert status == 403
+
+
+def test_guard_covers_every_source_selector(upstream_server: int) -> None:
+    # localtileserver 1.0.0 also reads rasters from `files` (comma-separated,
+    # mosaic endpoints) and `url` (server-side-fetched STAC URL, i.e. SSRF);
+    # a filename-only guard would leave those wide open
+    proxy = _LoopbackProxyApp(upstream_server, allowed_filenames={"a.tif", "b.tif"})
+
+    status, _, _ = _asgi_request(
+        proxy, "api/mosaic/tiles/0/0/0.png", query_string=b"files=a.tif,b.tif"
+    )
+    assert status == 200
+
+    status, _, _ = _asgi_request(
+        proxy,
+        "api/mosaic/tiles/0/0/0.png",
+        query_string=b"files=a.tif,%2Fetc%2Fpasswd",
+    )
+    assert status == 403
+
+    status, _, _ = _asgi_request(
+        proxy,
+        "api/stac/info",
+        query_string=b"url=https%3A%2F%2Fevil.example%2Fitem.json",
+    )
+    assert status == 403
+
+
+def test_guard_escaped_question_mark_cannot_smuggle_query(
+    upstream_server: int,
+) -> None:
+    # A request to /proxy/{port}/api/metadata%3Ffilename=... reaches the proxy
+    # with the (decoded) `?` in scope["path"] and an empty query string, so
+    # the guard sees no selector; forwarding the decoded path verbatim would
+    # turn it back into a query string upstream, bypassing the guard
+    proxy = _LoopbackProxyApp(upstream_server, allowed_filenames={"ok.tif"})
+    status, _, body = _asgi_request(proxy, "api/metadata?filename=/etc/passwd")
+    assert status == 200  # nothing to guard against in the real query string
+    # ...but the upstream receives an opaque encoded path, not a smuggled query
+    assert body.startswith(b"/api/metadata%3Ffilename%3D")
+    assert b"?" not in body
 
 
 def test_guard_matches_url_encoded_filenames(upstream_server: int) -> None:
@@ -249,51 +315,112 @@ def test_no_guard_when_filenames_not_given(upstream_server: int) -> None:
     assert status == 200
 
 
+# --- capability tokens --------------------------------------------------------
+
+
+def test_capability_tokens_authorize_exactly_their_files(
+    upstream_server: int,
+) -> None:
+    proxy = _LoopbackProxyApp(upstream_server, allowed_filenames=set())
+    token_a = proxy.register_filenames(["/home/alice/private.tif"])
+    token_b = proxy.register_filenames(["/home/bob/private.tif"])
+    # Re-registering the same set reuses the token
+    assert proxy.register_filenames(["/home/alice/private.tif"]) == token_a
+
+    def req(query: bytes) -> int:
+        status, _, _ = _asgi_request(proxy, "api/tiles", query_string=query)
+        return status
+
+    # A valid token reads exactly its own file...
+    assert req(b"filename=/home/alice/private.tif&sw_token=" + token_a.encode()) == 200
+    # ...and nothing else
+    assert req(b"filename=/home/bob/private.tif&sw_token=" + token_a.encode()) == 403
+    # Knowing or guessing a path (or the other session's path) is not enough
+    assert req(b"filename=/home/alice/private.tif") == 403
+    assert req(b"filename=%2Fetc%2Fpasswd&sw_token=" + token_a.encode()) == 403
+    # Unknown tokens authorize nothing
+    assert req(b"filename=/home/bob/private.tif&sw_token=forged") == 403
+    assert req(b"filename=/home/bob/private.tif&sw_token=" + token_b.encode()) == 200
+
+
 # --- localtileserver_layer_proxy ---------------------------------------------
 
 
-def test_layer_autowire(widget_session: Session) -> None:
-    layer, client = fake_layer(widget_session, 8801, "/tmp/ok.tif")
+def test_layer_autowire(widget_session: Session, upstream_server: int) -> None:
+    layer, client = fake_layer(widget_session, upstream_server, "/tmp/ok.tif")
 
     localtileserver_layer_proxy(layer, widget_session)
 
-    # Proxy mounted with the client's filename registered
-    routes = proxy_routes(widget_session, 8801)
+    # Proxy mounted, guarded; the filename is registered behind a capability
+    # token (not the app-wide plain allowlist)
+    routes = proxy_routes(widget_session, upstream_server)
     assert len(routes) == 1
-    assert routes[0].app._allowed_filenames == {"/tmp/ok.tif"}
+    proxy = routes[0].app
+    assert proxy._allowed_filenames == set()
+    token = only_token(proxy)
+    assert proxy.authorized_filenames(token) == frozenset({"/tmp/ok.tif"})
 
     # The layer's loopback URL was rewritten onto the proxy (relative, so it
-    # works under a path prefix)
-    assert layer.url == ("proxy/8801/api/tiles/{z}/{x}/{y}.png?filename=/tmp/ok.tif")
+    # works under a path prefix), with the capability token attached
+    assert layer.url == (
+        f"proxy/{upstream_server}/api/tiles/{{z}}/{{x}}/{{y}}.png"
+        f"?filename=/tmp/ok.tif&sw_token={token}"
+    )
 
-    # Restyle URLs (client=True) come out proxy-relative in a single step;
-    # server-side URLs (client=False) are untouched
-    assert client.get_tile_url(client=True).startswith("proxy/8801/")
-    assert client.get_tile_url().startswith("http://127.0.0.1:8801/")
+    # Restyle URLs (client=True) come out proxy-relative in a single step,
+    # whether `client` is passed by keyword or positionally; server-side URLs
+    # (client=False, the default) are untouched
+    for restyle_url in (
+        client.get_tile_url(client=True),
+        client.get_tile_url(None, None, None, None, None, True),
+    ):
+        assert restyle_url.startswith(f"proxy/{upstream_server}/")
+        assert f"sw_token={token}" in restyle_url
+    assert client.get_tile_url().startswith(f"http://127.0.0.1:{upstream_server}/")
+
+    # The rewritten URL is servable: token + registered filename passes the
+    # guard; the same request without the token is refused
+    status, _, _ = _asgi_request(
+        proxy,
+        "api/tiles/0/0/0.png",
+        query_string=f"filename=/tmp/ok.tif&sw_token={token}".encode(),
+    )
+    assert status == 200
+    status, _, _ = _asgi_request(
+        proxy, "api/tiles/0/0/0.png", query_string=b"filename=/tmp/ok.tif"
+    )
+    assert status == 403
 
     # Wiring again (e.g., a second session) doesn't double-wrap or re-mount
     wrapped = client.get_tile_url
     localtileserver_layer_proxy(layer, widget_session)
     assert client.get_tile_url is wrapped
-    assert len(proxy_routes(widget_session, 8801)) == 1
+    assert len(proxy_routes(widget_session, upstream_server)) == 1
 
 
-def test_observer_backstop_rewrites_but_never_registers(
+def test_observer_backstop_rewrites_and_reuses_only_existing_tokens(
     widget_session: Session, upstream_server: int
 ) -> None:
     layer, _ = fake_layer(widget_session, upstream_server, "/tmp/ok.tif")
     localtileserver_layer_proxy(layer, widget_session)
     proxy = proxy_routes(widget_session, upstream_server)[0].app
+    token = only_token(proxy)
 
-    # A direct assignment of a loopback URL (not via get_tile_url) is rewritten
+    # A direct assignment of a loopback URL (not via get_tile_url) is
+    # rewritten; since its filename was registered at wire-up, the existing
+    # token is re-attached (the browser already holds it, so this grants it
+    # nothing new)
     layer.url = f"http://127.0.0.1:{upstream_server}/api/tiles?filename=/tmp/ok.tif&colormap=magma"
     assert layer.url.startswith(f"proxy/{upstream_server}/")
+    assert f"sw_token={token}" in layer.url
 
-    # ...but the observed URL's filename is NOT registered: trait values can
-    # be pushed by the browser over the comm, so registering from them would
-    # let a client poison its own allowlist
+    # ...but an unregistered filename is rewritten WITHOUT a token and never
+    # registered: trait values can be pushed by the browser over the comm, so
+    # registering from them would let a client poison its own allowlist. The
+    # proxy refuses it (403) -- loudly, rather than leaking
     layer.url = f"http://127.0.0.1:{upstream_server}/api/tiles?filename=/etc/passwd"
     assert layer.url.startswith(f"proxy/{upstream_server}/")
+    assert "sw_token" not in layer.url
     status, _, _ = _asgi_request(
         proxy, "api/tiles", query_string=b"filename=%2Fetc%2Fpasswd"
     )
@@ -302,6 +429,28 @@ def test_observer_backstop_rewrites_but_never_registers(
     # Unrelated URLs pass through the observer untouched
     layer.url = "https://tiles.example.com/{z}/{x}/{y}.png"
     assert layer.url == "https://tiles.example.com/{z}/{x}/{y}.png"
+
+
+def test_shared_widget_layer_is_wired_on_open(
+    widget_session: Session, shared_state: None, upstream_server: int
+) -> None:
+    # Layers constructed in shared_lifetime() never open a ShinyComm, so the
+    # comm-open hook never fires for them; open_shared_in() must wire them
+    # before serializing their state, or deployed shared maps keep loopback
+    # URLs
+    with shared_lifetime():
+        layer = FakeTileLayer()
+    client = FakeTileClient(upstream_server, "/tmp/shared.tif")
+    layer.tile_server = client  # type: ignore[attr-defined]
+    layer.url = client.get_tile_url(client=True)
+
+    sw.open_shared_in(layer, widget_session)
+
+    assert layer.url.startswith(f"proxy/{upstream_server}/")
+    proxy = proxy_routes(widget_session, upstream_server)[0].app
+    token = only_token(proxy)
+    assert proxy.authorized_filenames(token) == frozenset({"/tmp/shared.tif"})
+    assert f"sw_token={token}" in layer.url
 
 
 def test_noop_for_other_widgets(widget_session: Session) -> None:

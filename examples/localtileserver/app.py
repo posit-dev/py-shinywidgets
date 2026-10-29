@@ -1,6 +1,6 @@
 # "Synthetic Sierra" — xarray -> COG -> localtileserver -> ipyleaflet in Shiny.
 #
-# Run:  uv run --with localtileserver,rioxarray,scipy shiny run app.py
+# Run:  uv run --with 'localtileserver>=1.0.0' --with rioxarray,scipy shiny run app.py
 #   (or: pip install -r requirements.txt && shiny run app.py)
 #
 # A synthetic xarray elevation dataset is written to a Cloud-Optimized GeoTIFF at

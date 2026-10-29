@@ -354,6 +354,10 @@ def open_shared_in(w: Widget, session: Session) -> None:
     mount_widget_deps(session, widget_deps)
     # Defaults first materialized while serializing must be shared as well
     with shared_construction():
+        # Shared widgets never open a ShinyComm, so _open_shiny_comm's hook
+        # never runs for them; wire localtileserver layers here too, before
+        # their state is serialized
+        localtileserver_layer_proxy(w, session)
         prepare_to_serialize(w)
         state, buffer_paths, buffers = _remove_buffers(w.get_state())
     comm.add(

@@ -1,5 +1,5 @@
 shiny
 shinywidgets[ipyleaflet]
-localtileserver
+localtileserver>=1.0.0  # get_leaflet_tile_layer sets tile_server unconditionally only since 1.0.0
 rioxarray
 scipy
