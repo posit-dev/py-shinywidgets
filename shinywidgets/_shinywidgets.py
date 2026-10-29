@@ -550,14 +550,35 @@ def handle_client_comm_msg(session: Session, msg: Dict[str, Any]) -> None:
     msg = _decode_comm_buffers(msg)
     header = msg.get("header")
     msg_type = header.get("msg_type") if isinstance(header, dict) else None
-    if msg_type == "comm_open":
-        open_client_comm(session, msg)
-    elif msg_type == "comm_close":
-        close_client_comm(session, msg)
-    else:
-        comm = COMM_MANAGERS[session.id].comms.get(msg["content"]["comm_id"])
-        if comm is not None:
-            comm.handle_msg(msg)
+    try:
+        if msg_type == "comm_open":
+            open_client_comm(session, msg)
+        elif msg_type == "comm_close":
+            close_client_comm(session, msg)
+        else:
+            comm = COMM_MANAGERS[session.id].comms.get(msg["content"]["comm_id"])
+            if comm is not None:
+                comm.handle_msg(msg)
+    finally:
+        msg_id = header.get("msg_id") if isinstance(header, dict) else None
+        if isinstance(msg_id, str):
+            ack_after_flush(session, msg["content"]["comm_id"], msg_id)
+
+
+def ack_after_flush(session: Session, comm_id: str, msg_id: str) -> None:
+    """
+    The browser fires the model's idle callback on this ack, which is what
+    restores ipywidgets' one-message-in-flight throttle. Registering after the
+    handler ran puts the ack behind any echoes it scheduled on the same flush,
+    as a kernel's idle status follows its iopub output.
+    """
+
+    async def send_ack() -> None:
+        await session.send_custom_message(
+            "shinywidgets_comm_ack", {"comm_id": comm_id, "msg_id": msg_id}
+        )
+
+    session.on_flushed(send_ack)
 
 
 def open_client_comm(session: Session, msg: Dict[str, Any]) -> None:
