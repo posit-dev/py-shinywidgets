@@ -394,3 +394,17 @@ def test_read_raw_skips_payload() -> None:
     a.read("pts")
     cap.send([1])
     assert a.read("pts", raw=True) == [1]
+
+
+def test_value_emitted_during_attach_skips_rate_limit() -> None:
+    def attach(widget: object, emit: Callable[[object], None]) -> Callable[[], None]:
+        emit("initial")
+        return lambda: None
+
+    spec = acc.AccessorSpec(
+        name="sel", kind="state", attach=attach, rate_policy="debounce"
+    )
+    s = FakeSchedule()
+    a = acc.Accessors([spec], schedule=s)
+    a.on_render(object())
+    assert a.read("sel") == "initial" and s.timers == []

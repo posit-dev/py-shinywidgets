@@ -199,13 +199,19 @@ class Accessors:
             if slot.spec.priority == "input" and payloads_equal(raw, slot.latest):
                 return
             slot.latest = raw
-            if slot.limiter is None:
+            # A value reported while attaching is the widget's current state,
+            # not part of a stream, so it shouldn't wait out a debounce.
+            if slot.limiter is None or attaching:
                 self._publish(slot)
             else:
                 slot.limiter.call()
 
         slot.activated = True
-        slot.detach = slot.spec.attach(self._widget, emit)
+        attaching = True
+        try:
+            slot.detach = slot.spec.attach(self._widget, emit)
+        finally:
+            attaching = False
 
     def _publish(self, slot: Slot) -> None:
         self.values[slot.spec.name].set(Box(slot.latest))

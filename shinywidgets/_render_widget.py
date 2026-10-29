@@ -61,6 +61,8 @@ if TYPE_CHECKING:
     from pydeck.widget import DeckGLWidget
     from pyobsplot.widget import ObsplotWidget
 
+    from ._altair import Selection
+
     # embedding-atlas requires Python 3.11+, so it's absent from 3.10 environments
     if sys.version_info >= (3, 11):
         from embedding_atlas.widget import EmbeddingAtlasWidget
@@ -98,6 +100,7 @@ else:
 from shiny.render.renderer import ValueFn
 
 from ._accessors import RatePolicy
+from ._altair import ALTAIR_ACCESSORS, chart_frame, filter_selection, pick_selection
 from ._as_widget import (
     PYDECK_NO_WIDGET_MESSAGE,
     as_widget_panel,
@@ -357,13 +360,11 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     Note
     ---
     **Selections and params**: name your selections and params (e.g.,
-    ``alt.selection_interval(name="brush")``), then read them with
-    ``reactive_read(chart.widget.selections, "brush").value``, or observe them on a
-    `JupyterChart` you build yourself (``jchart.selections.observe(fn, ["brush"])``).
-    Selections can't be set from Python, but params can: setting
-    ``chart.widget.params.<name> = value`` updates the chart in place without
-    re-sending its data. To throttle how often selections update Python while
-    dragging, return ``alt.JupyterChart(chart, debounce_wait=150)``. Prefer params
+    ``alt.selection_interval(name="brush")``), then read them reactively with
+    ``chart.selected("brush")``, or the rows they select with
+    ``chart.selected_rows("brush")`` (see the methods below). Selections can't be
+    set from Python, but params can: setting ``chart.widget.params.<name> =
+    value`` updates the chart in place without re-sending its data. Prefer params
     (or a re-render) over replacing ``chart.widget.chart``, which re-sends the data,
     drops the container sizing described below, and replaces
     ``chart.widget.selections`` and ``chart.widget.params``.
@@ -391,7 +392,52 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`selected` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce and leaves
+        ``reactive_read()`` unlimited.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        limiting.
     """
+
+    accessor_specs = ALTAIR_ACCESSORS
+
+    def selected(self, name: Optional[str] = None) -> Selection:
+        """
+        The current state of one of the chart's selections: an altair
+        `IntervalSelection`, `PointSelection`, or `IndexSelection` (see
+        `altair.utils.selection`), whose ``.value`` holds what's selected.
+
+        Unlike other renderers' accessors, this is never ``None`` once the
+        chart has rendered: until the user selects, it's an empty selection.
+        `name` is the name given to the selection (e.g.
+        ``alt.selection_interval(name="brush")``), and may be omitted when the
+        chart has only one. Always name selections: altair's generated names
+        change between renders. Debounced (250 ms) by default; see the
+        ``rate_policy`` and ``rate_delay`` parameters.
+        """
+        selections = cast(Dict[str, "Selection"], self._read_accessor("selected"))
+        return pick_selection(selections, name)
+
+    def selected_rows(
+        self, name: Optional[str] = None, df: Optional[IntoDataFrameT] = None
+    ) -> IntoDataFrameT:
+        """
+        The rows of `df` in a selection (see :meth:`selected`), evaluated the
+        way Vega-Lite does (including binned and temporal fields).
+
+        `df` defaults to the chart's own data frame (pandas or polars); pass it
+        for charts whose data is a URL, or that concatenate charts with
+        different data. Returns an empty frame while nothing is selected. Dates
+        are compared in UTC, reading time-zone-naive columns in the browser's
+        time zone, as Vega-Lite does.
+        """
+        selection = self.selected(name)
+        widget = cast(JupyterChart, self._widget)
+        frame = chart_frame(widget) if df is None else df
+        return filter_selection(selection, frame, widget.local_tz)
 
 
 class render_embedding_atlas(
