@@ -3,6 +3,7 @@ import { setupIpyvolumeAutoResize } from './ipyvolume';
 import { setupJscatterAutoHeight, setupJscatterFixedHeight } from './jscatter';
 import { setupKeplerAutoHeight } from './keplergl';
 import { setupMplAutoResize } from './mpl';
+import { setupNglviewAutoSize } from './nglview';
 import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { setupQuakFit } from './quak';
 
@@ -42,6 +43,12 @@ export interface PostDisplayContext extends BehaviorContext {
 }
 
 export interface WidgetBehavior {
+  // Identity check, consulted when the server-reported `widget_pkg` finds no
+  // behavior. A widget class defined outside the widget package (e.g. an
+  // NGLWidget subclass in app code) reports the app's module as its
+  // widget_pkg, so package-based dispatch can't see it; these behaviors match
+  // on what the widget inherits instead (e.g. the view name).
+  matches?(model: WidgetModel): boolean;
   // Runs (once the widget's implementation has rendered) when the output is
   // inside a fill container. May return a cleanup function, which the output
   // binding calls when the view is removed.
@@ -226,6 +233,23 @@ const keplerglBehavior: WidgetBehavior = {
   },
 };
 
+// nglview sizes its stage with fixed inline pixels (300px tall by default) and
+// never re-measures its parent, so drive the stage size from the output: both
+// dimensions when the output has a height of its own (a filling layout or an
+// explicit output_widget(height=)), otherwise just the width.
+const nglviewBehavior: WidgetBehavior = {
+  // An app-defined NGLWidget subclass reports the app's own module as its
+  // widget_pkg, but it inherits nglview's view
+  matches: (model) => model.get('_view_name') === 'NGLView',
+  setupFill: ({ el, view, model }) => setupNglviewAutoSize(el, view, model),
+  // Track the output's height only when the widget wants to fill and the
+  // output has a height of its own: a widget with a height of its own (e.g.
+  // `NGLWidget(height=...)` or `layout.height`) keeps it even inside an
+  // `output_widget(height=...)`, tracking only the width
+  setupFixedSize: ({ el, view, model, widgetWantsFill }) =>
+    setupNglviewAutoSize(el, view, model, widgetWantsFill && !!el.style.height),
+};
+
 // shinywidgets.css sizes an ipyleaflet map to its (non-filling) output's
 // definite height via flex layout, unless the map has an explicit
 // `Layout(height=...)` (an inline style), which takes precedence. A CSS
@@ -384,9 +408,18 @@ export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   ipyvolume: ipyvolumeBehavior,
   jscatter: jscatterBehavior,
   keplergl: keplerglBehavior,
+  nglview: nglviewBehavior,
   plotly: plotlyBehavior,
   pythreejs: pythreejsBehavior,
   quak: quakBehavior,
   ipyleaflet: ipyleafletBehavior,
   geolibre: geolibreBehavior,
 };
+
+// The behavior for a widget whose package key isn't in WIDGET_BEHAVIORS (see
+// WidgetBehavior.matches)
+export function behaviorForModel(model: WidgetModel): WidgetBehavior | undefined {
+  return Object.values(WIDGET_BEHAVIORS).find((behavior) =>
+    behavior.matches ? behavior.matches(model) : false
+  );
+}

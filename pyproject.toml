@@ -57,6 +57,7 @@ ipycytoscape = ["ipycytoscape"]
 # older versions raise "shinywidgets requires that all ipywidgets be
 # constructed within an active Shiny session" on `import ipydatagrid`. (#99)
 ipydatagrid = ["ipydatagrid>=1.2.0"]
+ipyfilechooser = ["ipyfilechooser"]
 ipyleaflet = ["ipyleaflet>=0.20.0"]
 ipysigma = ["ipysigma"]
 # ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
@@ -77,6 +78,7 @@ maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
 mols2grid = ["mols2grid>=2.2.0"]
 mosaic_widget = ["mosaic-widget"]
+nglview = ["nglview"]
 niivue = ["ipyniivue>=2.4.0"]
 obsplot = ["pyobsplot>=0.5.0"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
@@ -114,6 +116,7 @@ test = [
   "ipycanvas",
   "ipycytoscape",
   "ipydatagrid>=1.2.0",
+  "ipyfilechooser",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
@@ -133,6 +136,7 @@ test = [
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
   "mols2grid>=2.2.0",
+  "nglview",
   "pandas",
   "networkx",
   "mosaic-widget",
@@ -173,6 +177,7 @@ dev = [
   "ipycanvas",
   "ipycytoscape",
   "ipydatagrid>=1.2.0",
+  "ipyfilechooser",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
@@ -192,6 +197,7 @@ dev = [
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
   "mols2grid>=2.2.0",
+  "nglview",
   "pandas",
   "networkx",
   "mosaic-widget",
@@ -235,6 +241,7 @@ test = [
   "ipycanvas",
   "ipycytoscape",
   "ipydatagrid>=1.2.0",
+  "ipyfilechooser",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "ipyvue>=3",
@@ -256,6 +263,7 @@ test = [
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
   "mols2grid>=2.2.0",
+  "nglview",
   "pandas",
   "networkx",
   "mosaic-widget",
