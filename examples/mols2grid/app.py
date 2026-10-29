@@ -75,7 +75,7 @@ def server(input, output, session):
     # indices, so it can be located directly in the source DataFrame
     @reactive.calc
     def selected_rows() -> pd.DataFrame:
-        return MOLS.loc[[int(k) for k in (grid.selection or {})]]
+        return MOLS.loc[[int(k) for k in (grid.selection() or {})]]
 
     @render.text
     def n_selected():

@@ -3912,13 +3912,14 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     always displayed in an iframe (``use_iframe=True``), which keeps its
     jQuery/Bootstrap globals out of your app's page.
 
-    The decorated function also gains four read-only attributes: `.value`, the
+    The decorated function also gains three read-only attributes: `.value`, the
     value most recently returned by the render function, `.widget`, the rendered
-    `ipywidgets.Box` holding the output, `.grid`, the `MolGrid` instance
-    backing it, and `.selection`, the current molecule selection. The
-    `MolGridWidget` that syncs selection state is `.grid.widget`.
+    `ipywidgets.Box` holding the output, and `.grid`, the `MolGrid` instance
+    backing it -- plus a `.selection()` method for the current molecule
+    selection. The `MolGridWidget` that syncs selection state is
+    `.grid.widget`.
 
-    * **Selection (browser -> Python):** ``grid.selection`` gives the selected
+    * **Selection (browser -> Python):** ``grid.selection()`` gives the selected
       rows reactively, as a dict, e.g. ``{0: "CCO"}``. Row indices are
       positional against the rows *as rendered*. ``grid.grid.get_selection()``
       returns the selected rows as a DataFrame. (The underlying
@@ -4029,7 +4030,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
 
         @render.text
         def n_selected():
-            return f"{len(grid.selection or {})} molecule(s) selected"
+            return f"{len(grid.selection() or {})} molecule(s) selected"
 
 
     app = App(app_ui, server)
@@ -4117,13 +4118,11 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             "The `grid` attribute of a @render_mols2grid function is read only."
         )
 
-    @property
     def selection(self) -> Optional[Dict[int, str]]:
         """
-        The grid's current molecule selection, as ``{row_index: SMILES}``
-        (read-only).
+        The grid's current molecule selection, as ``{row_index: SMILES}``.
 
-        Read it in a reactive context (a render function, ``@reactive.Calc``,
+        Call it in a reactive context (a render function, ``@reactive.Calc``,
         or ``@reactive.Effect``) to be invalidated when the selection changes
         in the browser; outside a reactive context, it reads the current value
         without taking a dependency. Row indices are positional against the
@@ -4143,12 +4142,6 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         # The trait is a repr string with unquoted keys, not JSON, so parse it
         # with ast.literal_eval, as mols2grid itself does
         return ast.literal_eval(raw)
-
-    @selection.setter
-    def selection(self, selection: object):
-        raise RuntimeError(
-            "The `selection` attribute of a @render_mols2grid function is read only."
-        )
 
     async def _render(self) -> Jsonifiable | None:
         # Reset before rendering, so `.grid` mirrors `.value`/`.widget` (readers

@@ -444,18 +444,15 @@ def test_selection_property_reads_parsed_selection(
     r = rw.render_mols2grid()
     # Before the first render (and outside a reactive context), there is no
     # selection to read -- same as .value/.widget/.grid
-    assert r.selection is None
+    assert r.selection() is None
 
     render(r, lambda: DF, widget_session)
-    assert r.selection == {}
+    assert r.selection() == {}
 
-    # The property parses the widget's repr-string trait into a dict
+    # The method parses the widget's repr-string trait into a dict
     assert isinstance(r.grid, MolGrid)
     r.grid.widget.selection = str({0: "CCO"})
-    assert r.selection == {0: "CCO"}
-
-    with pytest.raises(RuntimeError, match="read only"):
-        r.selection = {}  # pyright: ignore[reportAttributeAccessIssue]
+    assert r.selection() == {0: "CCO"}
 
 
 def test_selection_property_reactively_invalidates(
@@ -472,7 +469,7 @@ def test_selection_property_reactively_invalidates(
 
         @reactive.Effect
         def _() -> None:
-            reads.append(r.selection)
+            reads.append(r.selection())
 
         async def main() -> None:
             await reactive.flush()
