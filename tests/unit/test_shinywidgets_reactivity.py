@@ -1,3 +1,5 @@
+import gc
+
 import pytest
 import shinywidgets._accessors as acc
 import shinywidgets._shinywidgets as sw
@@ -122,17 +124,26 @@ def test_reactive_depend_unlimited_without_policy(monkeypatch) -> None:
     assert ctx.invalidated == 2
 
 
+class FakeTimers:
+    def __init__(self) -> None:
+        self.timers: list = []
+
+    def __call__(self, delay, fn):  # type: ignore[no-untyped-def]
+        entry = (delay, fn)
+        self.timers.append(entry)
+        return lambda: self.timers.remove(entry) if entry in self.timers else None
+
+    def fire(self) -> None:
+        pending, self.timers = self.timers, []
+        for _, fn in pending:
+            fn()
+
+
 def test_reactive_depend_debounces_when_renderer_registered_policy(
     monkeypatch,
 ) -> None:
-    timers = []
-    cancelled = []
-
-    def schedule(delay, fn):  # type: ignore[no-untyped-def]
-        timers.append((delay, fn))
-        return lambda: cancelled.append(fn)
-
-    monkeypatch.setattr(acc, "loop_schedule", schedule)
+    timers = FakeTimers()
+    monkeypatch.setattr(acc, "loop_schedule", timers)
     ctx = FakeContext()
     monkeypatch.setattr(sw, "get_current_context", lambda: ctx)
     w = FakeWidget({"x": 1})
@@ -141,21 +152,73 @@ def test_reactive_depend_debounces_when_renderer_registered_policy(
     handler = w.observe_calls[0][0]
     handler({})
     handler({})
-    assert ctx.invalidated == 0 and len(timers) == 2 and timers[-1][0] == 0.1
-    timers[-1][1]()
+    assert ctx.invalidated == 0 and len(timers.timers) == 1
+    assert timers.timers[0][0] == 0.1
+    timers.fire()
     assert ctx.invalidated == 1
 
-    # Invalidation (from any source) also drops a pending timer.
+    # A context invalidated some other way isn't invalidated again later.
     handler({})
     ctx.run_invalidate_callbacks()
-    assert cancelled[-1] is timers[-1][1]
+    timers.fire()
+    assert ctx.invalidated == 1
+
+
+def test_reactive_depend_throttle_window_spans_reruns(monkeypatch) -> None:
+    timers = FakeTimers()
+    monkeypatch.setattr(acc, "loop_schedule", timers)
+    w = FakeWidget({"x": 1})
+    acc.register_rate_policy(w, "throttle", 1000)  # type: ignore[arg-type]
+
+    first = FakeContext()
+    monkeypatch.setattr(sw, "get_current_context", lambda: first)
+    sw.reactive_depend(w, "x")  # type: ignore[arg-type]
+    w.observe_calls[-1][0]({})
+    assert first.invalidated == 1  # leading edge
+    first.run_invalidate_callbacks()
+
+    # The reader re-runs and depends again, inside the same window
+    second = FakeContext()
+    monkeypatch.setattr(sw, "get_current_context", lambda: second)
+    sw.reactive_depend(w, "x")  # type: ignore[arg-type]
+    w.observe_calls[-1][0]({})
+    w.observe_calls[-1][0]({})
+    assert second.invalidated == 0
+    timers.fire()  # the window closes
+    assert second.invalidated == 1
+
+
+class UnhashableWidget(FakeWidget):
+    # Like plotly's FigureWidget, which defines __eq__ without __hash__
+    def __eq__(self, other: object) -> bool:
+        return self is other
+
+    __hash__ = None  # type: ignore[assignment]
+
+
+def test_register_policy_for_unhashable_widget() -> None:
+    w = UnhashableWidget({})
+    acc.register_rate_policy(w, "throttle", 50)  # type: ignore[arg-type]
+    rate = acc.rate_policy_for(w)  # type: ignore[arg-type]
+    assert rate is not None and (rate.policy, rate.delay_ms) == ("throttle", 50)
+    assert acc.rate_policy_for(UnhashableWidget({})) is None  # type: ignore[arg-type]
 
 
 def test_register_none_removes_policy() -> None:
     w = FakeWidget({})
-    acc.register_rate_policy(w, "throttle", 50)  # type: ignore[arg-type]
-    assert acc.rate_policy_for(w) == ("throttle", 50)  # type: ignore[arg-type]
     acc.register_rate_policy(w, "debounce", None)  # type: ignore[arg-type]
-    assert acc.rate_policy_for(w) == ("debounce", 250)  # type: ignore[arg-type]
+    rate = acc.rate_policy_for(w)  # type: ignore[arg-type]
+    assert rate is not None and (rate.policy, rate.delay_ms) == ("debounce", 250)
     acc.register_rate_policy(w, None, None)  # type: ignore[arg-type]
     assert acc.rate_policy_for(w) is None  # type: ignore[arg-type]
+
+
+def test_policy_is_forgotten_with_the_widget() -> None:
+
+    w = FakeWidget({})
+    acc.register_rate_policy(w, "debounce", 100)  # type: ignore[arg-type]
+    key = id(w)
+    assert key in acc.RATE_POLICIES
+    del w
+    gc.collect()
+    assert key not in acc.RATE_POLICIES

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Callable, List, Optional, Tuple, cast
 
 import pytest
@@ -304,27 +305,59 @@ def test_stale_generation_is_ignored() -> None:
     assert a.read("clicked") is None
 
 
-def test_clears_resets_named_accessors() -> None:
-    cap_c, cap_d = Capture(), Capture()
-    clicked = acc.AccessorSpec(name="clicked", kind="event", attach=cap_c.attach)
-    deselect = acc.AccessorSpec(
-        name="deselect",
-        kind="event",
-        attach=cap_d.attach,
-        priority="event",
-        clears=("clicked",),
-    )
-    a = acc.Accessors([clicked, deselect], schedule=FakeSchedule())
+def test_emitting_none_clears_and_the_same_value_refires() -> None:
+    a, cap, _ = make()
     a.on_render(object())
     a.read("clicked")
-    a.read("deselect")
-    cap_c.send({"x": 1})
-    assert a.read("clicked") == {"x": 1}
-    cap_d.send(True)
+    cap.send({"x": 1})
+    cap.send(None)  # e.g. plotly's double-click
     assert a.read("clicked") is None
     # Clicking the same point again after a clear is a change.
-    cap_c.send({"x": 1})
+    cap.send({"x": 1})
     assert a.read("clicked") == {"x": 1}
+
+
+def test_render_without_widget_does_not_reattach(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    a, cap, _ = make()
+    a.on_render(object())
+    a.read("clicked")
+    a.on_render(None)  # the render function returned None
+    assert cap.attached == 1
+    monkeypatch.setattr(acc, "req", raise_cancel)
+    with pytest.raises(Cancel):
+        a.read("clicked")
+
+
+class StateWidget:
+    def __init__(self, current: object) -> None:
+        self.current = current
+
+
+def test_rerender_while_debouncing_publishes_the_new_widgets_state() -> None:
+    emits: List[Callable[[object], None]] = []
+
+    def attach(
+        widget: StateWidget, emit: Callable[[object], None]
+    ) -> Callable[[], None]:
+        emits.append(emit)
+        emit(widget.current)
+        return lambda: None
+
+    spec = acc.AccessorSpec(
+        name="sel", kind="state", attach=attach, rate_policy="debounce"
+    )
+    s = FakeSchedule()
+    a = acc.Accessors([spec], schedule=s)
+    a.on_render(StateWidget("empty"))
+    assert a.read("sel") == "empty"
+    emits[-1]("brush")
+    s.fire()
+    assert a.read("sel") == "brush"
+    emits[-1]("empty")  # the user clears the brush; still debouncing
+    a.on_render(StateWidget("empty"))  # re-render before the timer fires
+    assert a.read("sel") == "empty"
 
 
 def test_state_is_kept_across_renders() -> None:
@@ -426,3 +459,54 @@ def test_failed_attach_is_not_retried_on_render() -> None:
         a.read("sel")
     a.on_render(object())  # must not raise from inside a render
     assert calls == [1]
+
+
+class IdleSession:
+    def __init__(self) -> None:
+        self.queued: List[Callable[[], object]] = []
+
+    def is_stub_session(self) -> bool:
+        return False
+
+    def root_scope(self) -> "IdleSession":
+        return self
+
+    def run_once_when_idle(self, fn: Callable[[], object]) -> None:
+        self.queued.append(fn)
+
+
+def test_loop_schedule_runs_through_the_sessions_idle_queue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = IdleSession()
+    monkeypatch.setattr(acc, "get_current_session", lambda: session)
+    calls: List[int] = []
+
+    async def main() -> None:
+        acc.loop_schedule(0, lambda: calls.append(1))
+        await asyncio.sleep(0.01)
+
+    asyncio.run(main())
+    # Reactive state changes at the start of a cycle, as py-shiny requires
+    # for changes made outside one
+    assert calls == [] and len(session.queued) == 1
+    session.queued[0]()
+    assert calls == [1]
+
+
+def test_loop_schedule_cancel_also_drops_a_queued_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = IdleSession()
+    monkeypatch.setattr(acc, "get_current_session", lambda: session)
+    calls: List[int] = []
+
+    async def main() -> Callable[[], None]:
+        cancel = acc.loop_schedule(0, lambda: calls.append(1))
+        await asyncio.sleep(0.01)
+        return cancel
+
+    cancel = asyncio.run(main())
+    cancel()  # e.g. a re-render between the timer and the next cycle
+    session.queued[0]()
+    assert calls == []

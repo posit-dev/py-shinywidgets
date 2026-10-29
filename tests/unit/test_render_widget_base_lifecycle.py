@@ -365,4 +365,5 @@ def test_render_registers_rate_policy_for_its_widget(monkeypatch) -> None:
 
     monkeypatch.setattr(rwb, "as_widget", lambda value: widget)
     asyncio.run(r._render())
-    assert acc.rate_policy_for(widget) == ("throttle", 250)  # type: ignore[arg-type]
+    rate = acc.rate_policy_for(widget)  # type: ignore[arg-type]
+    assert rate is not None and (rate.policy, rate.delay_ms) == ("throttle", 250)

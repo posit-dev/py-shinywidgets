@@ -44,7 +44,7 @@ from shiny.reactive._core import (
 )
 from shiny.session import get_current_session, require_active_session, session_context
 
-from ._accessors import RateLimiter, rate_policy_for
+from ._accessors import rate_policy_for
 from ._as_widget import as_widget, pydeck_has_widget
 from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
@@ -1443,21 +1443,20 @@ def reactive_depend(
                 "For a list of widget traits, call `.trait_names()` on the widget."
             )
 
-    policy = rate_policy_for(widget)
-    limiter = RateLimiter(
-        ctx.invalidate,
-        policy=policy[0] if policy else None,
-        delay_ms=policy[1] if policy else 0,
-    )
+    rate = rate_policy_for(widget)
 
     def invalidate(change: object):
-        limiter.call()
+        if rate is None:
+            ctx.invalidate()
+        else:
+            rate.invalidate(id(ctx), ctx.invalidate)
 
     widget.observe(invalidate, names, type)  # type: ignore
 
     def _():
         widget.unobserve(invalidate, names, type)  # type: ignore
-        limiter.cancel()
+        if rate is not None:
+            rate.discard(id(ctx))
 
     ctx.on_invalidate(_)
 

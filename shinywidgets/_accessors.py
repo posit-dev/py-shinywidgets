@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import weakref
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Literal, Optional, Sequence, Tuple
-from weakref import WeakKeyDictionary
 
 from shiny import reactive, req
 from shiny.reactive._core import (
     get_current_context,  # pyright: ignore[reportPrivateImportUsage]
 )
+from shiny.session import get_current_session
 
 RatePolicy = Literal["debounce", "throttle"]
 
@@ -56,8 +57,6 @@ class AccessorSpec:
     rate_policy, rate_delay
         Default rate limit (`rate_delay` in milliseconds), overridable by the
         renderer's kwargs.
-    clears
-        Names of accessors reset to `None` whenever this one publishes.
     eager
         Attach during render rather than on first read, for widgets whose
         events are lost unless a handler exists before the view is created.
@@ -73,7 +72,6 @@ class AccessorSpec:
     priority: Literal["input", "event"] = "input"
     rate_policy: Optional[RatePolicy] = None
     rate_delay: int = 250
-    clears: Tuple[str, ...] = ()
     eager: bool = False
     not_ready: Callable[[Any], bool] = never_ready_check
 
@@ -88,22 +86,57 @@ class AccessorSpec:
             )
 
 
-# The rate policy each renderer asked for, applied to `reactive_read()` on
-# its widget.
-RATE_POLICIES: WeakKeyDictionary[object, Tuple[RatePolicy, int]] = WeakKeyDictionary()
-
-
 def register_rate_policy(
     widget: object, policy: Optional[RatePolicy], delay_ms: Optional[int]
 ) -> None:
+    """
+    Rate-limit `reactive_read()` on `widget`, as the renderer that rendered it
+    asked (`policy=None` removes the limit).
+    """
+    key = id(widget)
+    delay_ms = 250 if delay_ms is None else delay_ms
+    current = RATE_POLICIES.get(key)
     if policy is None:
-        RATE_POLICIES.pop(widget, None)
-    else:
-        RATE_POLICIES[widget] = (policy, 250 if delay_ms is None else delay_ms)
+        RATE_POLICIES.pop(key, None)
+    elif current is None or (current.policy, current.delay_ms) != (policy, delay_ms):
+        if current is None:
+            # Keyed by id, since widgets may be unhashable (plotly's
+            # FigureWidget defines __eq__ without __hash__)
+            weakref.finalize(widget, RATE_POLICIES.pop, key, None)
+        RATE_POLICIES[key] = WidgetRate(policy, delay_ms)
 
 
-def rate_policy_for(widget: object) -> Optional[Tuple[RatePolicy, int]]:
-    return RATE_POLICIES.get(widget)
+def rate_policy_for(widget: object) -> Optional[WidgetRate]:
+    return RATE_POLICIES.get(id(widget))
+
+
+class WidgetRate:
+    """
+    One widget's rate limit for `reactive_read()`, shared by every reader so
+    that a throttle window outlives the reactive re-runs it causes.
+    """
+
+    def __init__(self, policy: RatePolicy, delay_ms: int) -> None:
+        self.policy: RatePolicy = policy
+        self.delay_ms = delay_ms
+        self._pending: Dict[int, Callable[[], None]] = {}
+        self._limiter = RateLimiter(self._fire, policy=policy, delay_ms=delay_ms)
+
+    def invalidate(self, key: int, fn: Callable[[], None]) -> None:
+        self._pending[key] = fn
+        self._limiter.call()
+
+    def discard(self, key: int) -> None:
+        self._pending.pop(key, None)
+
+    def _fire(self) -> None:
+        pending = list(self._pending.values())
+        self._pending.clear()
+        for fn in pending:
+            fn()
+
+
+RATE_POLICIES: Dict[int, WidgetRate] = {}
 
 
 @dataclass
@@ -160,7 +193,11 @@ class Accessors:
             slot.release()
             if slot.spec.kind == "event":
                 self._reset(slot)
-            if slot.spec.eager or slot.activated:
+            else:
+                # Drop a value the limiter was holding: the new widget reports
+                # its own state, which must not be deduped against it.
+                slot.latest = self._published(slot)
+            if widget is not None and (slot.spec.eager or slot.activated):
                 self._attach(slot)
 
     def read(self, name: str, *, raw: bool = False) -> object:
@@ -217,16 +254,15 @@ class Accessors:
 
     def _publish(self, slot: Slot) -> None:
         self.values[slot.spec.name].set(Box(slot.latest))
-        for name in slot.spec.clears:
-            self._reset(self._slots[name])
 
     def _reset(self, slot: Slot) -> None:
         slot.latest = None
-        value = self.values[slot.spec.name]
+        if self._published(slot) is not None:
+            self.values[slot.spec.name].set(Box(None))
+
+    def _published(self, slot: Slot) -> object:
         with reactive.isolate():
-            current = value.get()
-        if current.raw is not None:
-            value.set(Box(None))
+            return self.values[slot.spec.name].get().raw
 
 
 class Slot:
@@ -307,8 +343,29 @@ class RateLimiter:
 
 
 def loop_schedule(delay: float, fn: Callable[[], None]) -> Callable[[], None]:
-    handle = asyncio.get_running_loop().call_later(delay, fn)
-    return handle.cancel
+    cancelled = False
+
+    def run() -> None:
+        if not cancelled:
+            fn()
+
+    session = get_current_session()
+    if session is not None and not session.is_stub_session():
+        # A timer fires outside the session's cycle, where py-shiny only lets
+        # reactive state change at the start of the next one.
+        root = session.root_scope()
+        handle = asyncio.get_running_loop().call_later(
+            delay, lambda: root.run_once_when_idle(run)
+        )
+    else:
+        handle = asyncio.get_running_loop().call_later(delay, run)
+
+    def cancel() -> None:
+        nonlocal cancelled
+        cancelled = True
+        handle.cancel()
+
+    return cancel
 
 
 def payloads_equal(a: object, b: object) -> bool:
