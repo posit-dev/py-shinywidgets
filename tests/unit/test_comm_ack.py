@@ -82,3 +82,12 @@ def test_ack_registered_after_handler_scheduled_sends(session: FakeSession) -> N
         "echo",
         "shinywidgets_comm_ack",
     ]
+
+
+def test_ack_sent_even_when_buffer_decoding_fails(session: FakeSession) -> None:
+    msg = client_msg("c1")
+    msg["buffers"] = ["not base64!"]
+    with pytest.raises(ValueError):
+        handle(session, msg)
+    run_flushed(session)
+    assert [t for t, _ in session.custom_messages] == ["shinywidgets_comm_ack"]

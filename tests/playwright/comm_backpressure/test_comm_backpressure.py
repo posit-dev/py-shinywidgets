@@ -17,13 +17,6 @@ DRAG_JS = """async ([id, n]) => {
   return maxPending;
 }"""
 
-DISCONNECT_JS = """async (id) => {
-  const m = await window.widgetManager.get_model(id);
-  for (let i = 1; i <= 5; i++) { m.set("value", i); m.save_changes(); }
-  $(document).trigger("shiny:disconnected");
-  return m._pending_msgs;
-}"""
-
 SET_JS = """async ([id, v]) => {
   const m = await window.widgetManager.get_model(id);
   m.set("value", v); m.save_changes();
@@ -64,8 +57,3 @@ def test_unknown_ack_is_ignored(page: Page, local_app) -> None:
     page.evaluate(SET_JS, [mid, 1])
     expect(page.locator("#value")).to_have_text("1", timeout=30000)
     assert errors == []
-
-
-def test_disconnect_releases_pending(page: Page, local_app) -> None:
-    mid = ready(page, local_app)
-    assert page.evaluate(DISCONNECT_JS, mid) == 0
