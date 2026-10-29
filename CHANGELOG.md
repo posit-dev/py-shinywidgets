@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### New features
 
+* ipyleaflet layers created by [localtileserver](https://github.com/banesullivan/localtileserver)'s `get_leaflet_tile_layer()` now work in deployed apps with no extra code. shinywidgets mounts a same-origin loopback proxy for the layer's in-process tile server (as it already did for geolibre) and rewrites the layer's tile URLs onto it -- including restyle URLs from `client.get_tile_url()` -- so tiles load locally, on Posit Connect, and on shinyapps.io. Because localtileserver's tile API takes an unauthenticated `filename` query parameter (arbitrary local raster read + `/vsicurl/` SSRF once the port is proxied), the proxy only forwards requests whose `filename` the app itself registered. Set `SHINYWIDGETS_LOOPBACK_PROXY_DISABLE=1` to opt out. See `examples/localtileserver/`.
 * Added per-renderer extras, so each `@render_*` decorator's widget dependencies can be installed in one command (e.g., `pip install 'shinywidgets[plotly]'` or `'shinywidgets[maplibre,bokeh]'`). See the README for the full list.
 * Added `shared_lifetime()`, a context manager for constructing one widget that every session displays (any user's interaction changes it for everyone, and it is never freed). Widgets that ipyvue and ipyvuetify share across the whole process (e.g., `ipyvuetify.theme` and custom `VueTemplate`s) now work across re-renders and sessions instead of hanging for 30 seconds. Ownership errors now explain both `session_lifetime()` and `shared_lifetime()`. (#348)
 
