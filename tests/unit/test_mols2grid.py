@@ -378,6 +378,94 @@ def test_grid_names_follow_explicit_output_ids(widget_session: Session) -> None:
     assert "grid_b" in r2.grid.widget.grid_id
 
 
+def test_grid_names_disambiguate_unicode_output_ids(widget_session: Session) -> None:
+    # The name slug replaces non-ASCII with '-', so without a digest distinct
+    # ids like café/cafè would collapse to the same name and cross-wire
+    # their selections
+    def _():  # noqa: ANN202
+        return DF
+
+    with session_context(widget_session):
+        r1 = rw.render_mols2grid()(_)
+        r2 = rw.render_mols2grid()(_)
+        widget_session.output(id="café")(r1)
+        widget_session.output(id="cafè")(r2)
+        asyncio.run(r1._render())
+        asyncio.run(r2._render())
+
+    assert isinstance(r1.grid, MolGrid) and isinstance(r2.grid, MolGrid)
+    assert r1.grid.widget.grid_id != r2.grid.widget.grid_id
+
+
+def test_selection_survives_rerender_with_generated_name(
+    widget_session: Session,
+) -> None:
+    # The generated name is stable across re-renders, and the renderer defaults
+    # cache_selection=True so mols2grid restores the selection instead of
+    # clearing it (its own default) when the grid is reconstructed
+    r = rw.render_mols2grid()
+    render(r, lambda: DF, widget_session)
+
+    assert isinstance(r.grid, MolGrid)
+    r.grid.widget.selection = str({0: "CCO"})
+
+    render(r, lambda: DF, widget_session)
+
+    assert isinstance(r.grid, MolGrid)
+    assert r.grid.widget.selection == str({0: "CCO"})
+
+
+def test_cache_selection_explicitly_disabled_clears_on_rerender(
+    widget_session: Session,
+) -> None:
+    r = rw.render_mols2grid(cache_selection=False)
+    render(r, lambda: DF, widget_session)
+
+    assert isinstance(r.grid, MolGrid)
+    r.grid.widget.selection = str({0: "CCO"})
+
+    render(r, lambda: DF, widget_session)
+
+    assert isinstance(r.grid, MolGrid)
+    assert r.grid.widget.selection == "{}"
+
+
+def test_explicit_name_keeps_mols2grid_cache_default(
+    widget_session: Session,
+) -> None:
+    # An explicit name may be deliberately shared across grids, so the
+    # renderer must not force cache_selection on it
+    r = rw.render_mols2grid(name="no-forced-cache-grid")
+    render(r, lambda: DF, widget_session)
+
+    assert isinstance(r.grid, MolGrid)
+    r.grid.widget.selection = str({0: "CCO"})
+
+    render(r, lambda: DF, widget_session)
+
+    assert isinstance(r.grid, MolGrid)
+    assert r.grid.widget.selection == "{}"
+
+
+def test_session_end_prunes_selection_registry_for_supplied_grid(
+    widget_session: Session,
+) -> None:
+    from mols2grid.select import register
+
+    with session_context(widget_session):
+        grid = mols2grid.MolGrid(DF, name="supplied-cleanup-grid")
+
+    r = rw.render_mols2grid()
+    render(r, lambda: grid, widget_session)
+
+    grid.widget.selection = str({0: "CCO"})
+    assert register.SELECTIONS["supplied-cleanup-grid"] == {0: "CCO"}
+
+    asyncio.run(widget_session.close())
+
+    assert "supplied-cleanup-grid" not in register.SELECTIONS
+
+
 def test_session_end_prunes_selection_registry_for_explicit_name(
     widget_session: Session,
 ) -> None:

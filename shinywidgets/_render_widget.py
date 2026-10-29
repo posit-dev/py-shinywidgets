@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
 import re
 import sys
@@ -3934,12 +3935,16 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       so grids coerced from a DataFrame get a name unique to the session and
       the output (a stable ``"shiny-<session>-<id>"`` slug, where the id is
       the output's *namespaced* id, so two module instances' ``grid`` outputs
-      don't collide). A `MolGrid` you construct keeps its own ``name`` --
-      give it a unique one (a grid still named ``"default"`` is rejected
-      with an error, since it collides across sessions and across multiple
-      grids on a page), and note that a `MolGrid` is itself process-global
-      state, so construct it inside the render function, not at the top
-      level of the app.
+      don't collide). Since the generated name is stable across re-renders,
+      selections survive them (the renderer passes ``cache_selection=True``
+      unless you say otherwise; with an explicit ``name`` it defers to
+      mols2grid's default, since an explicit name may be deliberately
+      shared across grids). A `MolGrid` you construct keeps its own
+      ``name`` -- give it a unique one (a grid still named ``"default"``
+      is rejected with an error, since it collides across sessions and
+      across multiple grids on a page), and note that a `MolGrid` is
+      itself process-global state, so construct it inside the render
+      function, not at the top level of the app.
     * **Network access**: the grid's JavaScript (list.js, jQuery, RDKit
       MinimalLib, Bootstrap) loads from CDNs at render time, so the grid needs
       an internet connection (it renders empty, without an error, when the CDNs
@@ -4131,12 +4136,22 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
                     "which mols2grid stores in a process-global selection registry: "
                     "other sessions (and other grids on the same page) using the "
                     "same name would overwrite its selection, and this grid would "
-                    "read theirs. Either construct it with a unique name "
-                    "(mols2grid.MolGrid(df, name='my-grid')), or return the "
-                    "DataFrame instead and pass any constructor options to the "
-                    "decorator (e.g. @render_mols2grid(name='my-grid')), which "
-                    "gives the grid a collision-free generated name."
+                    "read theirs. Either construct it with a name that is unique "
+                    "per session and output (mols2grid.MolGrid(df, name=...)), or "
+                    "return the DataFrame instead and pass any constructor options "
+                    "to the decorator (e.g. @render_mols2grid(size=(150, 100))) -- "
+                    "the decorator gives the grid a collision-free generated name "
+                    "unless you override it with an explicit `name`."
                 )
+            # A supplied grid's selection entry lives in the same process-global
+            # registry, so prune it at session end too -- unless the grid is
+            # process-global itself (deliberately shared across sessions), where
+            # the one entry is bounded and still in use
+            # (local import: _shinywidgets imports this module)
+            from ._shinywidgets import is_process_global
+
+            if not is_process_global(value.widget):
+                self._cleanup_selection_registry(value.widget.grid_id)
             return value
         if not is_pandas_dataframe(value):
             raise TypeError(
@@ -4153,8 +4168,22 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         # (_grid_output_id/output_id are only set once the renderer decorates a
         # function)
         output_id = self._grid_output_id or getattr(self, "output_id", "grid")
-        name = _MOLS2GRID_NAME_SLUG.sub("-", f"{grid_name()}-{output_id}")
+        raw_name = f"{grid_name()}-{output_id}"
+        name = _MOLS2GRID_NAME_SLUG.sub("-", raw_name)
+        if name != raw_name:
+            # Sanitization was lossy: distinct ids can slug to the same name
+            # (e.g. café and cafè both become caf-), which would cross-wire
+            # their selections, so disambiguate with a stable digest
+            digest = hashlib.sha256(raw_name.encode()).hexdigest()[:8]
+            name = f"{name}-{digest}"
         grid_kwargs = {"name": name, **self.grid_kwargs}
+        if "name" not in self.grid_kwargs:
+            # The generated name is stable across re-renders of this output,
+            # and mols2grid restores a same-named grid's selection only with
+            # cache_selection=True (its default clears it), so selections
+            # survive re-renders. Explicit names may be shared across grids,
+            # so keep mols2grid's default there.
+            grid_kwargs.setdefault("cache_selection", True)
         # An explicit `name` replaces the generated one above, so register the
         # selection-registry cleanup under the effective name -- otherwise the
         # session-end callback would pop the wrong entry (or none), retaining the
