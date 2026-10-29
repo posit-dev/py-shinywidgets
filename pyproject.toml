@@ -99,10 +99,11 @@ vizarr = ["vizarr>=0.1.1"]
 # The pieces of vitessce[all] the widget + its three data modes need, without
 # [all]'s heavy/fragile deps (scanpy; oxc-py, which doesn't build on Python 3.15).
 # starlette/uvicorn power its local-data server, anndata
-# reads local AnnData files (Python 3.12+ only; 0.13 is the pandas-3-compatible
-# line), and jupyter-server-proxy is needed for proxy mode
+# reads local AnnData files (3.12-3.14 only: 0.13 is the pandas-3-compatible
+# line, and h5py has no cp315 wheels yet), and jupyter-server-proxy is needed
+# for proxy mode
 # (deployed local data)
-vitessce = ["vitessce>=3.5.0", "starlette>=0.14.0", "uvicorn>=0.17.0", "anndata>=0.13; python_version >= '3.12'", "jupyter-server-proxy>=1.5.2"]
+vitessce = ["vitessce>=3.5.0", "starlette>=0.14.0", "uvicorn>=0.17.0", "anndata>=0.13; python_version >= '3.12' and python_version < '3.15'", "jupyter-server-proxy>=1.5.2"]
 rerun = ["rerun-sdk[notebook]>=0.40; python_version >= '3.11'"]
 test = [
   "altair",
@@ -224,10 +225,11 @@ dev = [
 
 [dependency-groups]
 test = [
-  # vitessce/anndata need zarr>=3, conflicting with the vizarr extra (zarr<3),
-  # so they're in the uv dependency-group but not the shared pip extras
+  # vitessce needs zarr>=3, conflicting with the vizarr extra (zarr<3), so
+  # it's in the uv dependency-group but not the shared pip extras (anndata is
+  # left out even here: h5py has no cp315 Linux wheels, and the unit tests
+  # don't exercise local AnnData files)
   "vitessce>=3.5.0",
-  "anndata>=0.13; python_version >= '3.12'",
   "jupyter-server-proxy",
   "altair",
   "bokeh",
