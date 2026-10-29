@@ -481,6 +481,31 @@ def test_redisplay_preserves_app_callback_kwargs_observers(
     assert calls == [{"idx": 1}]
 
 
+def test_redisplay_of_supplied_grid_renders_current_selection(
+    widget_session: Session,
+) -> None:
+    # display() renders checkbox state from the constructor-time
+    # _cached_selection; a grid displayed before (with clicks since) would
+    # re-render with stale checkboxes unless it's synced from the widget
+    with session_context(widget_session):
+        grid = mols2grid.MolGrid(DF, name="redisplay-selection-grid")
+
+    r = rw.render_mols2grid()
+    render(r, lambda: grid, widget_session)
+    grid.widget.selection = str({0: "CCO"})
+
+    render(r, lambda: grid, widget_session)
+
+    import html as html_mod
+
+    assert isinstance(r.widget, widgets.Box)
+    html = r.widget.children[1]
+    assert isinstance(html, widgets.HTML)
+    doc = html_mod.unescape(html.value).replace(" ", "")
+    # The document restores the checkbox state from the cached selection
+    assert "SELECTION.multi_set([0],['CCO'])" in doc
+
+
 def test_redisplay_with_new_callback_retires_the_old_one(
     widget_session: Session,
 ) -> None:

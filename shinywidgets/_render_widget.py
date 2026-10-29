@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import inspect
 import re
@@ -4280,6 +4281,12 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         # render `grid.widget` directly instead of this stacking then.
         if callable(render_kwargs.get("callback")):
             _unobserve_mols2grid_callbacks(grid.widget)
+        # mols2grid 2.2.0 private attr: display() renders checkbox state from
+        # the constructor-time _cached_selection, but a supplied grid may have
+        # been displayed before, with a newer selection on its widget -- sync
+        # it, or the re-rendered document shows stale checkboxes while the
+        # widget trait says otherwise (parsed like mols2grid's own handler)
+        grid._cached_selection = ast.literal_eval(grid.widget.selection)
         iframe = grid.display(use_iframe=True, **render_kwargs)
         # The inner width hint is load-bearing: ipywidgets renders HTML as an
         # inline-flex container, so without it the iframe collapses to its
