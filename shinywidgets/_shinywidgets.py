@@ -65,6 +65,7 @@ from ._dependencies import (
 from ._ipyreact import (
     constructing_ipyreact_registry_widget,
     guard_ipyreact_registry_state,
+    ipyreact_imported,
     ipyreact_registry_widgets,
     is_ipyreact_registry_widget,
     is_ipyreact_widget,
@@ -244,18 +245,8 @@ def init_shiny_widget(w: Widget):
         if w is None or WIDGET_INSTANCE_MAP.get(id) is not w:
             return
 
-        # An ipyreact consumer waits on its registry widgets by name, not by
-        # widget reference, so the render-time walk that opens a shared
-        # widget in the other sessions never finds it: open it in every live
-        # session now, not just the one that defined it. This must come
-        # before the SharedShinyComm early return below: a session that
-        # initializes between the widget's construction and this flush
-        # adopts it (init_session), and returning early would then open it
-        # only in this session, leaving the other existing sessions without
-        # it indefinitely.
         if is_ipyreact_registry_widget(w):
-            for s in list(SESSIONS):
-                open_shared_in(w, s)
+            fan_out_ipyreact_registry(w)
             return
 
         # Already opened in another session by open_shared_in(); a plain
@@ -428,6 +419,28 @@ def open_shared_in(w: Widget, session: Session) -> None:
             )
 
 
+def fan_out_ipyreact_registry(w: Widget) -> None:
+    """
+    Open an ipyreact registry widget in every live session.
+
+    An ipyreact consumer waits on its registry widgets by name, not by
+    widget reference, so the render-time walk that opens a shared widget in
+    the other sessions never finds it: open it in every live session when
+    its deferred open flushes, not just the session that defined it. This
+    runs before the SharedShinyComm early return in the deferred open: a
+    session that initializes between the widget's construction and the flush
+    adopts it (init_session), and returning early would then open it only in
+    the defining session, leaving the other existing sessions without it
+    indefinitely.
+
+    Module-level, not inline in the deferred-open effect: Shiny's OTEL
+    source extraction re-tokenizes the effect function's source on every
+    widget construction, so that closure is kept short.
+    """
+    for s in list(SESSIONS):
+        open_shared_in(w, s)
+
+
 def guard_shared_send(comm: SharedShinyComm, data: DataType) -> None:
     """
     Keep an update fanned out to several sessions from dangling in any of their
@@ -464,13 +477,17 @@ def guard_shared_send(comm: SharedShinyComm, data: DataType) -> None:
 
 
 # Packages with process-global "registry" widgets that consumers wait on by
-# name (not by widget reference, so no widget-tree walk can find them): a
-# (consumer predicate, registry discovery) pair per package. init_session()
+# name (not by widget reference, so no widget-tree walk can find them): an
+# (is-active, consumer predicate, registry discovery) triple per package.
+# is_active() is an O(1) check (e.g. the package is imported) gating the
+# per-render tree walk and per-session discovery below, so an app that never
+# uses the package pays nothing for its registry support. init_session()
 # opens every discovered registry in each new session; rendering a consumer
 # opens its package's registries (open_process_global_widgets()).
 _REGISTRY_SOURCES: tuple[
-    tuple[Callable[[Widget], bool], Callable[[], List[Widget]]], ...
-] = ((is_ipyreact_widget, ipyreact_registry_widgets),)
+    tuple[Callable[[], bool], Callable[[Widget], bool], Callable[[], List[Widget]]],
+    ...,
+] = ((ipyreact_imported, is_ipyreact_widget, ipyreact_registry_widgets),)
 
 
 def adopt_process_global(w: Widget, session: Session) -> None:
@@ -551,7 +568,9 @@ def init_session(session: Session) -> None:
     # predate our construction hook or a stub session (an import cached in
     # sys.modules doesn't re-run for the real session); consumers wait on
     # them by name, so each session needs them open.
-    for _consumer_pred, source in _REGISTRY_SOURCES:
+    for is_active, _consumer_pred, source in _REGISTRY_SOURCES:
+        if not is_active():
+            continue
         for w in source():
             if w.comm is None:  # closed by the user
                 continue
@@ -1411,18 +1430,27 @@ def open_process_global_widgets(widget: Widget, session: Session) -> None:
     # widget-tree walk can find them; a registry defined outside any session
     # (after this session was initialized) never fans out, so rendering a
     # consumer is what must open it here. The consumer itself may hide inside
-    # a process-global container, so this traversal doesn't prune.
-    matched = set()
-    for w in walk_widget_tree([widget]):
-        for is_consumer, source in _REGISTRY_SOURCES:
-            # Discovery scans every live widget, so run it once per source,
-            # not once per consumer in the tree
-            if source not in matched and is_consumer(w):
-                matched.add(source)
-    for source in matched:
-        for r in source():
-            if r.comm is not None:  # not closed by the user
-                open_shared_in(r, session)
+    # a process-global container, so this traversal doesn't prune. Skip it
+    # entirely when no registry-owning package is in play: the walk costs
+    # O(tree size) per render, which an app that can't have a consumer (its
+    # package was never imported) shouldn't pay.
+    active = [
+        (is_consumer, source)
+        for is_active, is_consumer, source in _REGISTRY_SOURCES
+        if is_active()
+    ]
+    if active:
+        matched = set()
+        for w in walk_widget_tree([widget]):
+            for is_consumer, source in active:
+                # Discovery scans every live widget, so run it once per source,
+                # not once per consumer in the tree
+                if source not in matched and is_consumer(w):
+                    matched.add(source)
+        for source in matched:
+            for r in source():
+                if r.comm is not None:  # not closed by the user
+                    open_shared_in(r, session)
 
 
 # One comm manager per session (keyed by session id), so a client can only reach

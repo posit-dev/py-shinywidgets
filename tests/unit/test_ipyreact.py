@@ -317,3 +317,32 @@ def test_consumer_in_shared_container_discovers_module(
 
     assert isinstance(mod.comm, SharedShinyComm)
     assert mod.comm.has_session(widget_session.id)
+
+
+def test_support_short_circuits_until_ipyreact_is_imported(
+    monkeypatch: pytest.MonkeyPatch, widget_session: Session
+) -> None:
+    # No ipyreact widget can exist before ipyreact is imported, so every
+    # predicate and the registry discovery gate on it: apps that never import
+    # ipyreact shouldn't pay a per-widget predicate on every render, or a
+    # scan of every live widget at session init, for this support.
+    import sys
+
+    import ipywidgets
+    from shinywidgets._ipyreact import (
+        ipyreact_imported,
+        ipyreact_registry_widgets,
+        is_ipyreact_registry_widget,
+        is_ipyreact_widget,
+    )
+
+    for name in [
+        n for n in sys.modules if n == "ipyreact" or n.startswith("ipyreact.")
+    ]:
+        monkeypatch.delitem(sys.modules, name)
+    assert not ipyreact_imported()
+    with session_context(widget_session):
+        w = ipywidgets.IntSlider()
+    assert not is_ipyreact_widget(w)
+    assert not is_ipyreact_registry_widget(w)
+    assert ipyreact_registry_widgets() == []

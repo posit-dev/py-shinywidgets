@@ -24,14 +24,28 @@ from ._utils import restrict_client_traits
 from ._widget_registry import WIDGET_INSTANCE_MAP
 
 
+def ipyreact_imported() -> bool:
+    """
+    Has ipyreact been imported in this process?
+
+    Until it has, no ipyreact widget can exist, so the predicates and
+    discovery below all short-circuit on it: an app that never imports
+    ipyreact pays nothing for this support (the consumer predicate otherwise
+    runs per widget per render, and discovery scans every live widget).
+    """
+    return "ipyreact" in sys.modules
+
+
 def is_ipyreact_widget(w: Widget) -> bool:
     """Is `w` any ipyreact widget (i.e., a consumer of the registry widgets)?"""
-    return any(widget_pkg(cls) == "ipyreact" for cls in type(w).__mro__)
+    return ipyreact_imported() and any(
+        widget_pkg(cls) == "ipyreact" for cls in type(w).__mro__
+    )
 
 
 def is_ipyreact_registry_widget(w: Widget) -> bool:
     """Is `w` one of ipyreact's process-global dependency widgets?"""
-    return any(
+    return ipyreact_imported() and any(
         widget_pkg(cls) == "ipyreact" and cls.__name__ in ("Module", "ImportMap")
         for cls in type(w).__mro__
     )
@@ -70,6 +84,8 @@ def ipyreact_registry_widgets() -> List[Widget]:
     already-registered widget instead of constructing a new one): the ones in
     ipyreact's own registries, plus any sessionless Module/ImportMap.
     """
+    if not ipyreact_imported():
+        return []
     widgets: List[Widget] = []
     module_mod = sys.modules.get("ipyreact.module")
     widgets.extend(getattr(module_mod, "_module_widgets", {}).values())
