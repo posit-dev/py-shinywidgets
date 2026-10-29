@@ -221,10 +221,10 @@ def test_init_session_adoption_installs_guard(
     # imported before shinywidgets): nothing guarded it or registered it in
     # SHARED_WIDGETS. The adoption in init_session() must guard it before
     # opening it in the session.
-    real_guard = sw.guard_ipyreact_registry_state
-    monkeypatch.setattr(sw, "guard_ipyreact_registry_state", lambda w: None)
+    real_guards = sw._STATE_GUARDS
+    monkeypatch.setattr(sw, "_STATE_GUARDS", ())
     mod = ipyreact.define_module("shinywidgets_test_mod6", code="export default 1")
-    monkeypatch.setattr(sw, "guard_ipyreact_registry_state", real_guard)
+    monkeypatch.setattr(sw, "_STATE_GUARDS", real_guards)
     assert not getattr(mod, "_shinywidgets_ipyreact_guarded", False)
     sw.SHARED_WIDGETS.pop(mod.model_id, None)
     sw.SHARED_WIDGETS.pop(mod.layout.model_id, None)

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import sys
 import threading
-from typing import Any, Dict
 
 from ipywidgets import Widget
 
 from ._dependencies import widget_pkg
+from ._utils import restrict_client_traits
 
 
 def is_nglview_widget(w: object) -> bool:
@@ -148,17 +148,6 @@ def guard_registry_state(w: Widget) -> None:
     session could write it through the usual `update` comm message -- and the
     hidden-view replay executes archived `executeCode` messages as JS in
     every later session. Python is the only legitimate author of everything
-    but `_ready` (which the view sets when it finishes rendering), so reject
-    the rest at the point they'd be applied. Filtering here, before
-    `set_state()`, also keeps rejected writes out of the echo update the
-    shared comm would fan out to the other sessions.
+    but `_ready` (which the view sets when it finishes rendering).
     """
-    if getattr(w, "_shinywidgets_registry_guarded", False):
-        return
-    set_state = w.set_state
-
-    def guarded_set_state(sync_data: Dict[str, Any]) -> None:
-        set_state({k: v for k, v in sync_data.items() if k in _REGISTRY_CLIENT_TRAITS})
-
-    w.set_state = guarded_set_state  # type: ignore[method-assign]
-    w._shinywidgets_registry_guarded = True  # type: ignore[attr-defined]
+    restrict_client_traits(w, _REGISTRY_CLIENT_TRAITS, "_shinywidgets_registry_guarded")
