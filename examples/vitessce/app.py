@@ -85,10 +85,11 @@ def server(input, output, session):
 
     # Python -> browser: rewrite featureSelection in a copy of the config and
     # reassign the `_config` trait. NOTE: the Vitessce viewer applies a new
-    # config prop by remounting, triggered by a top-level `uid` change (or,
-    # when the config has no `uid`, by any config change -- so the bump is
-    # belt-and-braces here but required in general). The remount resets the
-    # view state (zoom, selections) and re-fetches data (warm from cache).
+    # config prop by remounting, keyed on the config's top-level `uid` --
+    # the viewer assigns a `uid` on mount and echoes it back to `_config`,
+    # so the bump is required (without it, the write is a no-op). The
+    # remount resets the view state (zoom, selections) and re-fetches data
+    # (warm from cache).
     @reactive.effect
     @reactive.event(input.gene)
     def _():

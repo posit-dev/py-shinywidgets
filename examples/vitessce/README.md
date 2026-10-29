@@ -17,8 +17,8 @@ selection syncs the entire view config back to the `_config` trait, so
 `reactive_read(widget, "_config")` lets other outputs react to where the
 user is looking. Picking a gene in the sidebar updates the viewer from
 Python (note the `uid` bump in the config edit — the viewer applies a new
-config by remounting, and a top-level `uid` change is what reliably
-triggers that remount).
+config by remounting, keyed on the top-level `uid`, which the viewer
+assigns on mount and echoes back — so the bump is required).
 
 Two things to know about:
 
