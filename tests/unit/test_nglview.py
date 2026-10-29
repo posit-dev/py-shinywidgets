@@ -12,7 +12,7 @@ import pytest
 import shinywidgets
 import shinywidgets._render_widget as rw
 from ipywidgets import Widget
-from shiny import Session
+from shiny import Session, reactive
 from shiny.reactive import Context
 from shiny.session import session_context
 from shinywidgets._render_widget_base import WidgetRenderContext
@@ -98,6 +98,10 @@ def test_nglview_subclass_stops_its_threads(
     for t in threads:
         t.join(timeout=2)
     assert not any(t.is_alive() for t in threads)
+
+
+def flush() -> None:
+    asyncio.get_event_loop().run_until_complete(reactive.flush())
 
 
 def remote_call_threads(widget: Widget) -> list[threading.Thread]:
@@ -251,6 +255,67 @@ def test_session_end_stops_nglview_threads(
 
     asyncio.run(widget_session.close())
 
+    for t in threads:
+        t.join(timeout=2)
+    assert not any(t.is_alive() for t in threads)
+
+
+def test_registry_constructed_in_session_is_guarded(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # When nglview is first imported inside a session (lazy import), the
+    # registry's deferred open gives it a plain ShinyComm that never passes
+    # through open_shared_in(); the guard must already be installed at
+    # construction. Simulate that path with a fresh registry instance (the
+    # module-level name is a singleton factory).
+    import shinywidgets._shinywidgets as sw
+    from nglview.color import ColormakerRegistry
+
+    with session_context(widget_session):
+        registry = type(ColormakerRegistry)()
+    assert getattr(registry, "_shinywidgets_registry_guarded", False)
+
+    # The deferred open gives it a plain (not shared) comm ...
+    flush()
+    from shinywidgets._comm import SharedShinyComm, ShinyComm
+
+    assert isinstance(registry.comm, ShinyComm)
+    assert not isinstance(registry.comm, SharedShinyComm)
+
+    # ... whose browser still can't write the archive the replay executes
+    poison = {
+        "header": {"msg_id": "poison-2", "msg_type": "comm_msg"},
+        "content": {
+            "comm_id": registry.model_id,
+            "data": {
+                "method": "update",
+                "state": {"_msg_ar": [{"methodName": "executeCode"}]},
+                "buffer_paths": [],
+            },
+        },
+        "buffers": [],
+    }
+    with session_context(widget_session):
+        sw.handle_client_comm_msg(widget_session, poison)
+    assert list(registry._msg_ar) == []
+
+
+def test_viewer_constructed_in_invalidated_context_stops_its_threads(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # A widget constructed in an already-invalidated render context is closed
+    # inside Widget.__init__ (Context.on_invalidate() fires immediately) --
+    # before nglview's constructor starts its second batch of threads. Those
+    # late-starting threads must be stopped too.
+    with session_context(widget_session):
+        context = Context()
+        with context():
+            context.invalidate()
+            with WidgetRenderContext():
+                widget = nglview.show_text(TINY_PDB, ext="pdb")
+
+    threads = remote_call_threads(widget)
+    assert threads
     for t in threads:
         t.join(timeout=2)
     assert not any(t.is_alive() for t in threads)

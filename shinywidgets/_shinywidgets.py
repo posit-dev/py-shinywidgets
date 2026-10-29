@@ -93,6 +93,13 @@ def init_shiny_widget(w: Widget):
     plotly_version = unsupported_plotly_version(w)
     if plotly_version is not None:
         raise RuntimeError(PLOTLY_VERSION_MESSAGE.format(version=plotly_version))
+    if is_nglview_registry(w):
+        # Install at construction, not only in open_shared_in(): when nglview
+        # is first imported inside a session, the deferred open below gives
+        # the registry a plain ShinyComm that never passes through
+        # open_shared_in(), leaving its state writable by that session's
+        # browser
+        guard_registry_state(w)
     session = get_current_session()
     shared = constructing_shared.get()
     if session is None:
