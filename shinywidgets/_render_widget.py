@@ -96,6 +96,7 @@ else:
 
 from shiny.render.renderer import ValueFn
 
+from ._accessors import RatePolicy
 from ._as_widget import (
     PYDECK_NO_WIDGET_MESSAGE,
     as_widget_panel,
@@ -214,6 +215,15 @@ class render_widget(render_widget_base[WidgetT, WidgetT]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit accessors on this renderer that declare a default
+        policy, and :func:`~shinywidgets.reactive_read` on its widget. ``None``
+        (the default) leaves each accessor's own default in place and
+        ``reactive_read()`` unlimited.
+    rate_delay
+        The rate-limit window in milliseconds. ``0`` disables rate limiting.
+        Defaults to each accessor's own setting (250 ms for those that declare
+        one).
 
     Examples
     --------
@@ -457,9 +467,19 @@ class render_embedding_atlas(
         height: Optional[str] = None,
         fill: Optional[bool] = None,
         fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[int] = None,
         allow_unrestricted_connection: bool = False,
     ):
-        super().__init__(_fn, width=width, height=height, fill=fill, fillable=fillable)
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+        )
         self.allow_unrestricted_connection = allow_unrestricted_connection
 
     def _as_widget(self, value: EmbeddingAtlasWidget) -> EmbeddingAtlasWidget:
@@ -2421,6 +2441,8 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
         height: Optional[str] = None,
         fill: Optional[bool] = None,
         fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[int] = None,
     ):
         warnings.warn(
             "render_pydeck is deprecated: pydeck v0.9 removed its Jupyter widget, so "
@@ -2430,7 +2452,15 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
             DeprecationWarning,
             stacklevel=2,
         )
-        super().__init__(_fn, width=width, height=height, fill=fill, fillable=fillable)
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+        )
 
     def _as_widget(self, value: ValueT) -> DeckGLWidget:
         # A DeckGLWidget (which as_widget() passes through) can't render either

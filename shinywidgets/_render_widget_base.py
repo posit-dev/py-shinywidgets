@@ -6,6 +6,7 @@ from contextvars import ContextVar, Token
 from typing import (
     TYPE_CHECKING,
     Callable,
+    ClassVar,
     Generic,
     Iterator,
     Optional,
@@ -25,6 +26,7 @@ from shiny.reactive._core import (
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
 from shiny.session import get_current_session
 
+from ._accessors import Accessors, AccessorSpec, RatePolicy
 from ._as_widget import as_widget, refresh_stale_mpl_canvases
 from ._comm import OrphanedShinyComm
 from ._dependencies import widget_pkg
@@ -63,7 +65,13 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     Handles coercion of the render function's return value into an ipywidget (via
     `_as_widget()`), applies smart layout defaults, and produces the payload that the
     browser-side output binding uses to display the widget.
+
+    Subclasses declare accessors (methods such as `clicked()` that read widget
+    events reactively) in `accessor_specs`, and implement each one as
+    `self._read_accessor(name)`.
     """
+
+    accessor_specs: ClassVar[Tuple[AccessorSpec, ...]] = ()
 
     def auto_output_ui(self) -> Tag:
         return output_widget(
@@ -82,16 +90,24 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         height: Optional[str] = None,
         fill: Optional[bool] = None,
         fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[int] = None,
     ):
         super().__init__(_fn)
         self.width = width
         self.height = height
         self.fill = fill
         self.fillable = fillable
+        self.rate_policy: Optional[RatePolicy] = rate_policy
+        self.rate_delay = rate_delay
 
         self._value: ValueT | None = None
         self._widget: WidgetT | None = None
         self._contexts: set[Context] = set()
+        self._accessors = Accessors(
+            type(self).accessor_specs, rate_policy=rate_policy, rate_delay=rate_delay
+        )
+        self._closes_accessors_on_session_end = False
 
     async def render(self) -> Jsonifiable | None:
         with WidgetRenderContext():
@@ -108,6 +124,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._invalidate_contexts()
 
         if value is None:
+            self._accessors.on_render(None)
             return None
 
         # Ensure we have a widget & smart layout defaults
@@ -147,6 +164,14 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         widget, fill = set_layout_defaults(widget)
 
         self._widget = cast(WidgetT, widget)
+        self._accessors.on_render(widget)
+        if (
+            session is not None
+            and not session.is_stub_session()
+            and not self._closes_accessors_on_session_end
+        ):
+            session.on_ended(self._accessors.close)
+            self._closes_accessors_on_session_end = True
 
         # Don't actually display anything unless this is a DOMWidget
         if not isinstance(widget, DOMWidget):
@@ -184,6 +209,12 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         raise RuntimeError(
             "The `widget` attribute of a @render_widget function is read only."
         )
+
+    def _read_accessor(self, name: str) -> object:
+        # Depend on the widget too, so a re-render invalidates readers even
+        # before the new widget reports anything.
+        self._register_current_context()
+        return self._accessors.read(name)
 
     def _get_reactive_obj(self, x: T) -> T | None:
         self._register_current_context()

@@ -1,7 +1,9 @@
 import asyncio
 
 import pytest
+import shinywidgets._accessors as acc
 import shinywidgets._render_widget_base as rwb
+from shiny import reactive as shiny_reactive
 
 
 class FakeLiveWidget:
@@ -261,3 +263,93 @@ def test_render_wraps_in_widget_render_context_and_restores_on_error(
         asyncio.run(r.render())
 
     assert rwb.WidgetRenderContext.is_rendering_widget() is False
+
+
+class RecordingAttach:
+    def __init__(self) -> None:
+        self.widgets: list[object] = []
+        self.emit = None
+
+    def __call__(self, widget, emit):  # type: ignore[no-untyped-def]
+        self.widgets.append(widget)
+        self.emit = emit
+        return lambda: None
+
+
+def renderer_with_clicked(att: RecordingAttach):  # type: ignore[no-untyped-def]
+    class R(rwb.render_widget_base):
+        accessor_specs = (
+            acc.AccessorSpec(name="clicked", kind="event", attach=att, eager=True),
+        )
+
+        def clicked(self):  # type: ignore[no-untyped-def]
+            return self._read_accessor("clicked")
+
+    return R()
+
+
+def test_rate_kwargs_are_stored_and_default_none() -> None:
+    r = rwb.render_widget_base()
+    assert r.rate_policy is None and r.rate_delay is None
+    r2 = rwb.render_widget_base(rate_policy="throttle", rate_delay=100)
+    assert r2.rate_policy == "throttle" and r2.rate_delay == 100
+
+
+def test_render_attaches_accessors_to_the_coerced_widget(monkeypatch) -> None:
+    att = RecordingAttach()
+    r = renderer_with_clicked(att)
+    widget = FakeLiveWidget()
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: widget)
+    asyncio.run(r._render())
+    assert att.widgets == [widget]
+    assert r.clicked() is None
+    att.emit({"x": 1})
+    assert r.clicked() == {"x": 1}
+
+
+def test_accessor_read_registers_current_context(monkeypatch) -> None:
+    att = RecordingAttach()
+    r = renderer_with_clicked(att)
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
+    asyncio.run(r._render())
+    ctx = FakeContext()
+    monkeypatch.setattr(rwb, "get_current_context", lambda: ctx)
+    with shiny_reactive.isolate():
+        r.clicked()
+    assert ctx in r._contexts
+
+
+def test_render_returning_none_cancels_accessor_reads(monkeypatch) -> None:
+    att = RecordingAttach()
+    r = renderer_with_clicked(att)
+    state = {"val": 1}
+
+    @r
+    async def _():  # noqa: ANN202
+        return state["val"]
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
+    asyncio.run(r._render())
+    att.emit({"x": 1})
+    state["val"] = None
+    asyncio.run(r._render())
+
+    class Cancel(Exception):
+        pass
+
+    def cancel(*args):  # type: ignore[no-untyped-def]
+        raise Cancel()
+
+    monkeypatch.setattr(acc, "req", cancel)
+    with pytest.raises(Cancel):
+        r.clicked()
