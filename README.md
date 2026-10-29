@@ -56,6 +56,45 @@ everything it needs:
 | `@render_vizarr` | `pip install 'shinywidgets[vizarr]'` |
 | `@render_rerun` | `pip install 'shinywidgets[rerun]'` (Python >= 3.11) |
 
+## Reacting to widgets
+
+Some renderers have *accessors*: methods on the output that read what the user
+did, the way `input.foo()` reads an input. Call them in a reactive context;
+each returns `None` until the interaction happens (wrap in `req()` to wait for
+it).
+
+```python
+import plotly.express as px
+from shiny import req
+from shiny.express import render
+from shinywidgets import render_plotly
+
+@render_plotly
+def plot():
+    # custom_data ties each point back to a row of df
+    return px.scatter(df, x="x", y="y", custom_data=[df.index])
+
+@render.data_frame
+def picked():
+    return plot.selected_rows(df)  # empty until the user selects
+```
+
+| Renderer | Accessors |
+| --- | --- |
+| `@render_plotly` | `clicked()`, `selected()`, `selecting()`, `brushed()`, `brushing()`, `relayout()`, `selected_rows(df)` |
+| `@render_altair` | `selected(name)`, `selected_rows(name)` |
+| `@render_bokeh` | `selected()`, `selected_rows()`, `tapped()`, `zoomed()` |
+
+Streaming selections (plotly's `selecting()` and `brushing()`, altair's
+`selected()`, bokeh's `selected()`) are debounced by 250 ms. Change that per
+output with `rate_policy` (`"debounce"` or `"throttle"`) and `rate_delay`
+(milliseconds, `0` to disable), e.g. `@render_plotly(rate_delay=0)`.
+
+For anything else, read a widget trait reactively with
+`reactive_read(output.widget, "trait")`. The same `rate_policy` and
+`rate_delay` arguments rate-limit `reactive_read()` on that output's widget,
+which helps with chatty traits such as a map's `center`.
+
 ## Development
 
 If you want to do development on `{shinywidgets}`, run:
