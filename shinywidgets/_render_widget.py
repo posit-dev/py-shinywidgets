@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
+    from bokeh.events import RangesUpdate, Tap
     from bqplot import Figure as BqplotFigure
     from drawdata import BarWidget as DrawdataBarWidget
     from drawdata import ScatterWidget as DrawdataScatterWidget
@@ -109,6 +110,7 @@ from ._as_widget import (
     pydeck_has_widget,
 )
 from ._bokeh import _bokeh_dependency
+from ._bokeh_accessors import BOKEH_ACCESSORS, selected_frame
 from ._dependencies import widget_pkg
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
@@ -1826,9 +1828,10 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
     The decorated function also gains two read-only attributes: `.value`, the bokeh
     object most recently returned by the render function, and `.widget`, the rendered
     `BokehModel` instance. Bokeh model properties are not widget traits, so instead
-    of :func:`~shinywidgets.reactive_read`, use bokeh's own callbacks to react to user
-    interaction (e.g., ``source.selected.on_change("indices", lambda attr, old, new:
-    selected.set(new))``, or ``fig.on_event(Tap, ...)``). These callbacks may set
+    of :func:`~shinywidgets.reactive_read`, read user interaction with the
+    output's accessors (e.g., ``plot.selected()``, ``plot.selected_rows()``,
+    ``plot.tapped()``; see the methods below), or use bokeh's own callbacks
+    (e.g., ``source.selected.on_change("indices", ...)``), which may set
     `reactive.value`s. To update the plot without re-rendering, modify the bokeh
     models in place (e.g., ``source.data = ...``). Plots that share a
     `ColumnDataSource` (e.g., for linked selection) must be returned together, in
@@ -1853,7 +1856,55 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`selected` (debounced by default):
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps the
+        debounce.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        limiting.
     """
+
+    accessor_specs = BOKEH_ACCESSORS
+
+    def selected(self) -> Optional[List[int]]:
+        """
+        The row indices (into the plot's `ColumnDataSource`) of the most recent
+        selection, from a tap, box, or lasso select tool.
+
+        Returns ``None`` until the user selects, even if the source's selection
+        was set in Python, and ``[]`` after a selection that caught nothing.
+        Requires a plot (or layout) with exactly one `ColumnDataSource`.
+        Debounced (250 ms) by default; see the ``rate_policy`` and
+        ``rate_delay`` parameters.
+        """
+        return cast(Optional[List[int]], self._read_accessor("selected"))
+
+    def selected_rows(self) -> pd.DataFrame:
+        """
+        The selected rows (see :meth:`selected`) of the plot's
+        `ColumnDataSource`, as a pandas data frame (``source.to_df()``). Empty
+        while nothing is selected.
+        """
+        indices = self.selected()
+        return selected_frame(cast("BokehModel", self._widget), indices)
+
+    def tapped(self) -> Optional[Tap]:
+        """
+        The most recent tap on a plot, as a `bokeh.events.Tap` (``.x`` and
+        ``.y`` in data units, ``.model`` the plot). Returns ``None`` until the
+        user taps. Not rate-limited.
+        """
+        return cast(Optional["Tap"], self._read_accessor("tapped"))
+
+    def zoomed(self) -> Optional[RangesUpdate]:
+        """
+        The plot ranges after the most recent zoom or pan, as a
+        `bokeh.events.RangesUpdate` (``.x0``, ``.x1``, ``.y0``, ``.y1``,
+        ``.model``). Returns ``None`` until the user zooms or pans. Not
+        rate-limited (bokeh reports once per gesture).
+        """
+        return cast(Optional["RangesUpdate"], self._read_accessor("zoomed"))
 
     def auto_output_ui(self) -> Tag:
         res = super().auto_output_ui()

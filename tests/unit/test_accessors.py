@@ -408,3 +408,21 @@ def test_value_emitted_during_attach_skips_rate_limit() -> None:
     a = acc.Accessors([spec], schedule=s)
     a.on_render(object())
     assert a.read("sel") == "initial" and s.timers == []
+
+
+def test_failed_attach_is_not_retried_on_render() -> None:
+    calls: List[int] = []
+
+    def attach(widget: object, emit: Callable[[object], None]) -> Callable[[], None]:
+        calls.append(1)
+        raise TypeError("unsupported layout")
+
+    a = acc.Accessors(
+        [acc.AccessorSpec(name="sel", kind="event", attach=attach)],
+        schedule=FakeSchedule(),
+    )
+    a.on_render(object())
+    with pytest.raises(TypeError):
+        a.read("sel")
+    a.on_render(object())  # must not raise from inside a render
+    assert calls == [1]

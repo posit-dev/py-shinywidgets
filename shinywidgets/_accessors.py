@@ -206,12 +206,14 @@ class Accessors:
             else:
                 slot.limiter.call()
 
-        slot.activated = True
         attaching = True
         try:
             slot.detach = slot.spec.attach(self._widget, emit)
         finally:
             attaching = False
+        # Only now: an attach that raised (e.g. an unsupported layout) must
+        # not be retried, and raise, inside a later render.
+        slot.activated = True
 
     def _publish(self, slot: Slot) -> None:
         self.values[slot.spec.name].set(Box(slot.latest))
