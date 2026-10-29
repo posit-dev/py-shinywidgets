@@ -4068,10 +4068,6 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         # so a cached selection is only restored while it refers to the same
         # molecules (see as_grid)
         self._row_fingerprint: Optional[str] = None
-        # Widgets this renderer has already displayed: mols2grid's display()
-        # registers a callback observer each time, so re-displaying a supplied
-        # grid's widget needs the old one removed first (see _as_widget)
-        self._displayed_widgets: set[int] = set()
 
     # The session- and namespace-qualified output id, captured when the decorated
     # function is registered (see __call__ and _set_output_metadata). `output_id`
@@ -4151,13 +4147,26 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
                     "the decorator gives the grid a collision-free generated name "
                     "unless you override it with an explicit `name`."
                 )
+            # local imports: _shinywidgets imports this module
+            from ._shinywidgets import (
+                foreign_or_closed_widget,
+                is_process_global,
+                ownership_error,
+            )
+
+            # The base renderer rejects foreign/closed widgets, but only after
+            # _as_widget() returns -- and the cleanup registration below is a
+            # side effect on the owning session's state, so validate ownership
+            # first: a rejected render must not touch another session's registry
+            session = get_current_session()
+            if session is not None and not session.is_stub_session():
+                bad = foreign_or_closed_widget(value.widget, session.root_scope())
+                if bad is not None:
+                    raise ownership_error(bad)
             # A supplied grid's selection entry lives in the same process-global
             # registry, so prune it at session end too -- unless the grid is
             # process-global itself (deliberately shared across sessions), where
             # the one entry is bounded and still in use
-            # (local import: _shinywidgets imports this module)
-            from ._shinywidgets import is_process_global
-
             if not is_process_global(value.widget):
                 self._cleanup_selection_registry(value.widget.grid_id)
             return value
@@ -4269,16 +4278,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         # mols2grid 2.2.0 internals: https://github.com/cbouy/mols2grid/pull/71
         # ignores `use_iframe` and makes the widget render the grid itself, so
         # render `grid.widget` directly instead of this stacking then.
-        if callable(render_kwargs.get("callback")) and id(grid.widget) in (
-            self._displayed_widgets
-        ):
-            # display() observes callback_kwargs with a new partial each time,
-            # and never unobserves: re-displaying a supplied grid would invoke
-            # the callback once per past display. Only the callback handler
-            # observes that trait, so dropping them all is safe
-            grid.widget.unobserve_all("callback_kwargs")
+        if callable(render_kwargs.get("callback")):
+            _unobserve_mols2grid_callbacks(grid.widget)
         iframe = grid.display(use_iframe=True, **render_kwargs)
-        self._displayed_widgets.add(id(grid.widget))
         # The inner width hint is load-bearing: ipywidgets renders HTML as an
         # inline-flex container, so without it the iframe collapses to its
         # 300px replaced-element default instead of filling the output
@@ -4373,13 +4375,40 @@ def _mols2grid_row_fingerprint(
         # so the molecules are the identity
         from rdkit import Chem
 
-        col = df[mol_col].map(lambda m: "" if m is None else Chem.MolToSmiles(m))
+        # Missing molecules (None/NaN/pd.NA -- mols2grid drops them before
+        # drawing) all fingerprint the same; only actual mols get hashed
+        col = df[mol_col].map(
+            lambda m: Chem.MolToSmiles(m) if isinstance(m, Chem.Mol) else ""
+        )
     else:
         # Nothing to fingerprint (mols2grid will raise on the missing column);
         # an empty digest at least stays stable per renderer
         return ""
     # SMILES don't contain null bytes, so the joined values are unambiguous
     return hashlib.sha256("\x00".join(map(str, col)).encode()).hexdigest()
+
+
+def _unobserve_mols2grid_callbacks(widget: Widget) -> None:
+    """
+    Remove the callback observers mols2grid's display() installed on `widget`.
+
+    display() observes ``callback_kwargs`` with a fresh
+    ``partial(callback_handler, callback)`` every time and never unobserves,
+    so re-displaying a supplied grid would invoke the callback once per past
+    display. Remove only those partials -- not application observers of the
+    same trait (``unobserve_all()`` would also drop ``widget.observe()``
+    subscriptions the app added itself).
+    """
+    # unobserve() needs the exact partial object, so read traitlets' notifier
+    # registry (private, but stable across traitlets 5). mols2grid 2.2.0
+    # private function: callback_handler is what to_interactive() partials in
+    from mols2grid.utils import callback_handler
+
+    notifiers = widget._trait_notifiers.get("callback_kwargs", {})  # pyright: ignore[reportPrivateUsage]
+    for handlers in notifiers.values():
+        for handler in list(handlers):
+            if isinstance(handler, partial) and handler.func is callback_handler:
+                widget.unobserve(handler, names=["callback_kwargs"])
 
 
 def grid_name() -> str:

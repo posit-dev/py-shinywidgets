@@ -78,6 +78,11 @@ class OutputManager extends HTMLManager {
     viewPromise.then(
       (view) => {
         patchMplCanvasRemove(view);
+        // Register before the orphan check below: an orphaned late view is
+        // torn down without ever reaching the bottom of this callback, but
+        // its grid's page globals still need cleaning up
+        // (see disposeMols2GridGlobalsOnRemove)
+        disposeMols2GridGlobalsOnRemove(view);
         // An ancestor may have been removed while this view was still being
         // created (e.g. dynamic UI removed the output mid-render).
         // removeViewTree() only sweeps views live at the time, so tear the
@@ -95,8 +100,6 @@ class OutputManager extends HTMLManager {
         // Disposes the NGL stage however this view goes away, including a
         // container dropping it as a child (see disposeNglviewStageOnRemove)
         disposeNglviewStageOnRemove(view);
-        // Same for mols2grid's page globals (see disposeMols2GridGlobalsOnRemove)
-        disposeMols2GridGlobalsOnRemove(view);
       },
       () => {
         // View creation failed; create_view's own promise chain already logs it.

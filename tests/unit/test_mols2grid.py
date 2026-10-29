@@ -459,6 +459,90 @@ def test_redisplay_does_not_accumulate_callback_observers(
     assert calls == [{"idx": 0}]
 
 
+def test_redisplay_preserves_app_callback_kwargs_observers(
+    widget_session: Session,
+) -> None:
+    # The dedupe above must remove only mols2grid's own callback observers,
+    # not observers the app subscribed to the same trait
+    events: list[Any] = []
+    calls: list[Any] = []
+
+    with session_context(widget_session):
+        grid = mols2grid.MolGrid(DF, name="observer-preservation-grid")
+    grid.widget.observe(lambda e: events.append(e.new), names=["callback_kwargs"])
+
+    r = rw.render_mols2grid(callback=calls.append)
+    render(r, lambda: grid, widget_session)
+    render(r, lambda: grid, widget_session)
+
+    grid.widget.callback_kwargs = str({"idx": 1})
+
+    assert events == [str({"idx": 1})]
+    assert calls == [{"idx": 1}]
+
+
+def test_redisplay_with_new_callback_retires_the_old_one(
+    widget_session: Session,
+) -> None:
+    calls1: list[Any] = []
+    calls2: list[Any] = []
+
+    with session_context(widget_session):
+        grid = mols2grid.MolGrid(DF, name="callback-change-grid")
+
+    r1 = rw.render_mols2grid(callback=calls1.append)
+    render(r1, lambda: grid, widget_session)
+    r2 = rw.render_mols2grid(callback=calls2.append)
+    render(r2, lambda: grid, widget_session)
+
+    grid.widget.callback_kwargs = str({"idx": 2})
+
+    assert calls1 == []
+    assert calls2 == [{"idx": 2}]
+
+
+def test_foreign_supplied_grid_raises_before_cleanup_registration(
+    widget_session: Session,
+) -> None:
+    from mols2grid.select import register
+    from shiny import App, ui
+    from shiny._connection import MockConnection
+
+    from tests.unit.conftest import widget_test_server
+
+    # A grid owned by session A can't be rendered in session B; the rejection
+    # must happen before any side effect on A's selection registry entry
+    with session_context(widget_session):
+        grid = mols2grid.MolGrid(DF, name="foreign-grid")
+    render(rw.render_mols2grid(), lambda: grid, widget_session)
+    grid.widget.selection = str({0: "CCO"})
+    assert register.SELECTIONS["foreign-grid"] == {0: "CCO"}
+
+    session_b = App(ui.page_fluid(), widget_test_server)._create_session(
+        MockConnection()
+    )
+    with pytest.raises(RuntimeError, match="displayed"):
+        render(rw.render_mols2grid(), lambda: grid, session_b)
+
+    asyncio.run(session_b.close())
+    assert register.SELECTIONS["foreign-grid"] == {0: "CCO"}
+
+
+def test_row_fingerprint_tolerates_missing_molecules() -> None:
+    # Missing molecules (None/NaN/pd.NA) must not break the fingerprint
+    # (mols2grid 2.2.0's own mol->SMILES coercion raises on them, but that's
+    # upstream behavior -- the fingerprint just can't add a failure of its own)
+    from rdkit import Chem
+
+    df = pd.DataFrame({"mol": [Chem.MolFromSmiles("CCO"), None, float("nan"), pd.NA]})
+    fingerprint = rw._mols2grid_row_fingerprint(df, "SMILES", "mol")
+    assert fingerprint
+    assert rw._mols2grid_row_fingerprint(df, "SMILES", "mol") == fingerprint
+    assert rw._mols2grid_row_fingerprint(df.iloc[::-1], "SMILES", "mol") != (
+        fingerprint
+    )
+
+
 def test_cache_selection_explicitly_disabled_clears_on_rerender(
     widget_session: Session,
 ) -> None:
