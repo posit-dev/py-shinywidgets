@@ -1412,12 +1412,17 @@ def open_process_global_widgets(widget: Widget, session: Session) -> None:
     # (after this session was initialized) never fans out, so rendering a
     # consumer is what must open it here. The consumer itself may hide inside
     # a process-global container, so this traversal doesn't prune.
+    matched = set()
     for w in walk_widget_tree([widget]):
         for is_consumer, source in _REGISTRY_SOURCES:
-            if is_consumer(w):
-                for r in source():
-                    if r.comm is not None:  # not closed by the user
-                        open_shared_in(r, session)
+            # Discovery scans every live widget, so run it once per source,
+            # not once per consumer in the tree
+            if source not in matched and is_consumer(w):
+                matched.add(source)
+    for source in matched:
+        for r in source():
+            if r.comm is not None:  # not closed by the user
+                open_shared_in(r, session)
 
 
 # One comm manager per session (keyed by session id), so a client can only reach
