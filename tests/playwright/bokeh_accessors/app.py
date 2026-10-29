@@ -3,7 +3,6 @@ from bokeh.plotting import figure
 from shiny.express import input, render, ui
 from shinywidgets import render_bokeh
 
-
 ui.input_action_button("rerender", "rerender")
 
 

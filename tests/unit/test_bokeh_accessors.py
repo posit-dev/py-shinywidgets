@@ -5,7 +5,6 @@ from typing import Any, List, Tuple
 import pandas as pd
 import pytest
 import shinywidgets._bokeh_accessors as sb
-from shinywidgets._comm import run_comm_open_callbacks
 from bokeh.events import RangesUpdate, Tap
 from bokeh.layouts import row
 from bokeh.models import ColumnDataSource
@@ -13,6 +12,7 @@ from bokeh.plotting import figure
 from jupyter_bokeh import BokehModel
 from shiny import Session
 from shiny.session import session_context
+from shinywidgets._comm import run_comm_open_callbacks
 
 
 def plot() -> Tuple[Any, ColumnDataSource]:
