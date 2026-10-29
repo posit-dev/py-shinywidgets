@@ -57,6 +57,7 @@ ipycytoscape = ["ipycytoscape"]
 # older versions raise "shinywidgets requires that all ipywidgets be
 # constructed within an active Shiny session" on `import ipydatagrid`. (#99)
 ipydatagrid = ["ipydatagrid>=1.2.0"]
+ipyfilechooser = ["ipyfilechooser"]
 ipyleaflet = ["ipyleaflet>=0.20.0"]
 ipysigma = ["ipysigma"]
 # ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
@@ -114,6 +115,7 @@ test = [
   "ipycanvas",
   "ipycytoscape",
   "ipydatagrid>=1.2.0",
+  "ipyfilechooser",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
@@ -173,6 +175,7 @@ dev = [
   "ipycanvas",
   "ipycytoscape",
   "ipydatagrid>=1.2.0",
+  "ipyfilechooser",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
@@ -235,6 +238,7 @@ test = [
   "ipycanvas",
   "ipycytoscape",
   "ipydatagrid>=1.2.0",
+  "ipyfilechooser",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "ipyvue>=3",
