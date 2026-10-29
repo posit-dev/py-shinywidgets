@@ -2442,12 +2442,19 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         """
         The rows of `df` that the user selected (see :meth:`selected`).
 
-        Each selected point's ``customdata`` is matched to a row of `df`: by
-        row position, or by the values of the `key` column when given. So the
-        figure must carry it, e.g. ``px.scatter(df, x=..., y=...,
-        custom_data=[df.index])`` (pandas, default index) or, for polars,
-        ``df.with_row_index()`` plus ``custom_data=["index"]``. Returns an empty
-        frame when nothing is selected. Works with pandas and polars frames.
+        Plotly reports points of the plot, not rows of your data, so each point
+        must carry its row's identity as ``customdata``, which is matched to
+        `df`:
+
+        * pandas: ``px.scatter(df, ..., custom_data=[df.index])``. Matched to
+          `df`'s index labels, so this also works on a filtered or sorted `df`.
+        * polars: ``df.with_row_index()`` plus ``custom_data=["index"]``.
+          Matched to row positions.
+        * Any key column: ``custom_data=["id"]`` with ``key="id"``. Matched to
+          that column's values.
+
+        Returns an empty frame while nothing is selected, so it can be passed
+        straight to ``@render.data_frame``.
         """
         points = self._read_accessor("selected", raw=True)
         return select_rows(cast(Optional[List[Point]], points), df, key)
