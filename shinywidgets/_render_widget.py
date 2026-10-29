@@ -4061,21 +4061,33 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         self._selection_cleanup_names: set[str] = set()
 
     # The session- and namespace-qualified output id, captured when the decorated
-    # function is registered (see __call__). `output_id` alone isn't unique: two
-    # module instances in one session can each have an output named "grid"
+    # function is registered (see __call__ and _set_output_metadata). `output_id`
+    # alone isn't unique: two module instances in one session can each have an
+    # output named "grid"
     _grid_output_id: Optional[str] = None
 
     def __call__(
         self, _fn: ValueFn[Mols2GridValueT]
     ) -> "render_mols2grid[Mols2GridValueT]":
         super().__call__(_fn)
-        session = get_current_session()
-        if session is not None and not session.is_stub_session():
-            # A module's server function runs with its SessionProxy in context, so
-            # that's where the namespace is known; rendering runs with the root
-            # session, so this has to be captured now, not in as_grid()
-            self._grid_output_id = str(session.ns(self.output_id))
+        self._capture_grid_output_id(self.output_id)
         return self
+
+    def _set_output_metadata(self, *, output_id: str) -> None:
+        super()._set_output_metadata(output_id=output_id)
+        # The id captured in __call__ is only the function's name: @output(id=...)
+        # assigns the final id afterwards, so capture it here too -- otherwise two
+        # functions with the same name under different explicit ids would share a
+        # grid name, cross-wiring their selections
+        self._capture_grid_output_id(output_id)
+
+    def _capture_grid_output_id(self, output_id: str) -> None:
+        # A module's server function runs with its SessionProxy in context, so
+        # that's where the namespace is known; rendering runs with the root
+        # session, so this has to be captured at registration, not in as_grid()
+        session = getattr(self, "_session", None) or get_current_session()
+        if session is not None and not session.is_stub_session():
+            self._grid_output_id = str(session.ns(output_id))
 
     @property
     def grid(self) -> Optional[MolGrid]:
@@ -4142,8 +4154,12 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         # function)
         output_id = self._grid_output_id or getattr(self, "output_id", "grid")
         name = _MOLS2GRID_NAME_SLUG.sub("-", f"{grid_name()}-{output_id}")
-        self._cleanup_selection_registry(name)
         grid_kwargs = {"name": name, **self.grid_kwargs}
+        # An explicit `name` replaces the generated one above, so register the
+        # selection-registry cleanup under the effective name -- otherwise the
+        # session-end callback would pop the wrong entry (or none), retaining the
+        # selection indefinitely
+        self._cleanup_selection_registry(grid_kwargs["name"])
         smiles_col = self.smiles_col
         if smiles_col is None:
             if self.mol_col is None:

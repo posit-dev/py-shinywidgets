@@ -358,6 +358,45 @@ def test_grid_names_are_namespaced_per_module(widget_session: Session) -> None:
     assert "mod_b" in names["mod_b"]
 
 
+def test_grid_names_follow_explicit_output_ids(widget_session: Session) -> None:
+    # @output(id=...) assigns the final output id after the renderer is created,
+    # so two functions with the same name (e.g. `_`) registered under different
+    # explicit ids must still get distinct grid names
+    def _():  # noqa: ANN202
+        return DF
+
+    with session_context(widget_session):
+        r1 = rw.render_mols2grid()(_)
+        r2 = rw.render_mols2grid()(_)
+        widget_session.output(id="grid_a")(r1)
+        widget_session.output(id="grid_b")(r2)
+        asyncio.run(r1._render())
+        asyncio.run(r2._render())
+
+    assert isinstance(r1.grid, MolGrid) and isinstance(r2.grid, MolGrid)
+    assert "grid_a" in r1.grid.widget.grid_id
+    assert "grid_b" in r2.grid.widget.grid_id
+
+
+def test_session_end_prunes_selection_registry_for_explicit_name(
+    widget_session: Session,
+) -> None:
+    from mols2grid.select import register
+
+    # An explicit `name` replaces the generated one, so the session-end cleanup
+    # has to be registered under the effective name, not the generated one
+    r = rw.render_mols2grid(name="explicit-name-cleanup-grid")
+    render(r, lambda: DF, widget_session)
+
+    assert isinstance(r.grid, MolGrid)
+    r.grid.widget.selection = str({0: "CCO"})
+    assert register.SELECTIONS["explicit-name-cleanup-grid"] == {0: "CCO"}
+
+    asyncio.run(widget_session.close())
+
+    assert "explicit-name-cleanup-grid" not in register.SELECTIONS
+
+
 def test_grid_name_stable_within_and_unique_across_sessions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
