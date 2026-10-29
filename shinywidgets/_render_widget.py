@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     from maplibre.ipywidget import MapWidget
     from maplibre.map import Map as MaplibreMap
     from mosaic_widget import MosaicWidget
+    from narwhals.typing import IntoDataFrameT
     from nglview import NGLWidget
     from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
@@ -106,6 +107,7 @@ from ._as_widget import (
 )
 from ._bokeh import _bokeh_dependency
 from ._dependencies import widget_pkg
+from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
 if TYPE_CHECKING:
@@ -2200,12 +2202,10 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
 
     Note
     ---
-    **Events**: to respond to user interaction, return a `go.FigureWidget` and
-    register plotly callbacks on it (e.g., ``fig.data[0].on_click(fn)``,
-    ``fig.data[0].on_selection(fn)``, or ``fig.layout.xaxis.on_change(fn,
-    "range")``), typically setting a `reactive.value` inside the callback.
-    Callbacks registered on a `go.Figure` don't carry over when it's coerced to a
-    `FigureWidget`, so they never fire.
+    **Events**: to respond to user interaction, read the output's accessors in
+    a reactive context, e.g. ``plot.clicked()``, ``plot.selected()``, or
+    ``plot.selected_rows(df)`` (see the methods below). Each returns ``None``
+    until the interaction happens.
 
     **Updating in place**: re-rendering rebuilds the figure, resetting zoom and
     selection. To change a displayed figure instead, read inputs under
@@ -2243,6 +2243,14 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`selecting` and :meth:`brushing` (debounced by
+        default) and :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps each
+        accessor's own default and leaves ``reactive_read()`` unlimited.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        limiting.
 
     Examples
     --------
@@ -2264,6 +2272,88 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     app = App(app_ui, server)
     ```
     """
+
+    accessor_specs = PLOTLY_ACCESSORS
+
+    def clicked(self) -> Optional[pd.DataFrame]:
+        """
+        The points of the most recent click, one row per point.
+
+        Columns are ``trace_index``, ``point_index`` (the point's position
+        within its trace, not a row of your data), ``x``, ``y``, and ``z`` and
+        ``customdata`` when the figure has them. Returns ``None`` until the user
+        clicks, and again after a double-click or deselect, so use
+        ``req(plot.clicked())`` to wait for a click. Clicking the same point
+        twice doesn't fire twice. Not rate-limited. Requires pandas.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("clicked"))
+
+    def selected(self) -> Optional[pd.DataFrame]:
+        """
+        The points of the most recent box or lasso selection, once the gesture
+        ends, with the same columns as :meth:`clicked`.
+
+        Returns ``None`` until the user selects, and again after a deselect
+        (double-click); an empty frame for a selection that caught no points.
+        Not rate-limited. Requires pandas. See :meth:`selected_rows` for rows of
+        your data.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("selected"))
+
+    def selecting(self) -> Optional[pd.DataFrame]:
+        """
+        Like :meth:`selected`, but updates while the user drags the selection.
+        Debounced (250 ms) by default; see the ``rate_policy`` and
+        ``rate_delay`` parameters.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("selecting"))
+
+    def brushed(self) -> Optional[Dict[str, Any]]:
+        """
+        The region of the most recent selection, once the gesture ends:
+        ``{"range": {"x": [x0, x1], "y": [y0, y1]}}`` for a box, or
+        ``{"lassoPoints": {"x": [...], "y": [...]}}`` for a lasso, in data
+        coordinates (as plotly.js reports them).
+
+        Returns ``None`` until the user selects, and again after a deselect.
+        Not rate-limited.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("brushed"))
+
+    def brushing(self) -> Optional[Dict[str, Any]]:
+        """
+        Like :meth:`brushed`, but updates while the user drags the selection.
+        Debounced (250 ms) by default; see the ``rate_policy`` and
+        ``rate_delay`` parameters.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("brushing"))
+
+    def relayout(self) -> Optional[Dict[str, Any]]:
+        """
+        The axis changes of the most recent zoom, pan, or autoscale, as
+        plotly.js reports them: keys like ``"xaxis.range[0]"`` and
+        ``"xaxis.autorange"`` (other relayout keys are dropped).
+
+        Returns ``None`` until the user changes an axis. Not rate-limited
+        (plotly.js reports once per gesture).
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("relayout"))
+
+    def selected_rows(
+        self, df: IntoDataFrameT, key: Optional[str] = None
+    ) -> IntoDataFrameT:
+        """
+        The rows of `df` that the user selected (see :meth:`selected`).
+
+        Each selected point's ``customdata`` is matched to a row of `df`: by
+        row position, or by the values of the `key` column when given. So the
+        figure must carry it, e.g. ``px.scatter(df, x=..., y=...,
+        custom_data=[df.index])`` (pandas, default index) or, for polars,
+        ``df.with_row_index()`` plus ``custom_data=["index"]``. Returns an empty
+        frame when nothing is selected. Works with pandas and polars frames.
+        """
+        points = self._read_accessor("selected", raw=True)
+        return select_rows(cast(Optional[List[Point]], points), df, key)
 
     def _as_widget(self, value: PlotlyValueT) -> FigureWidget:
         fig, config = _split_config(value)

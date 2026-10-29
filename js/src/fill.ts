@@ -4,7 +4,7 @@ import { setupJscatterAutoHeight, setupJscatterFixedHeight } from './jscatter';
 import { setupKeplerAutoHeight } from './keplergl';
 import { setupMplAutoResize } from './mpl';
 import { setupNglviewAutoSize } from './nglview';
-import { findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
+import { bindPlotlyEvents, findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { setupQuakFit } from './quak';
 
 /**
@@ -90,7 +90,10 @@ const plotlyBehavior: WidgetBehavior = {
       return;
     }
 
-    void waitForPlotlyReadyToReveal(plotEl, ctx.dispatchResize).finally(ctx.reveal);
+    void waitForPlotlyReadyToReveal(plotEl, ctx.dispatchResize).finally(() => {
+      bindPlotlyEvents(plotEl, ctx.model);
+      ctx.reveal();
+    });
   },
 };
 

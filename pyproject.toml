@@ -81,7 +81,7 @@ panel = ["panel", "jupyter_bokeh>=4.1"]
 # pyarrow is required for pandas DataFrame conversion (perspective-python
 # doesn't depend on it)
 perspective = ["perspective-python>=3.0", "pyarrow"]
-plotly = ["plotly>=5.12.0"]
+plotly = ["plotly>=5.12.0", "narwhals"]
 plotnine = ["plotnine", "ipympl"]
 # duckdb is listed because the security model requires apps to `import duckdb`
 # and lock down the default connection themselves (see render_pygwalker's docs),
