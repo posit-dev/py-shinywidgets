@@ -3073,11 +3073,11 @@ class render_vitessce(render_widget_base[VitessceValueT, VitessceWidget]):
     expensive work behind explicit input.
 
     **Python-to-browser updates**: assigning ``.widget._config`` takes
-    effect via a remount of the viewer, which triggers when the config's
-    top-level ``uid`` changes -- or, if the config has no top-level
-    ``uid``, on any change to the config at all (``VitessceConfig``
-    doesn't emit one, so a fresh ``uid`` is belt-and-braces there but
-    required when one is present). Deep-copy the config, edit the
+    effect via a remount of the viewer, which is keyed on the config's
+    top-level ``uid``. ``VitessceConfig.to_dict()`` doesn't emit one, but
+    the viewer adds a ``uid`` on mount and echoes it back to ``_config``,
+    so in practice any config you read from the widget has one and the
+    bump is required: deep-copy the config, edit the
     ``coordinationSpace``, set a fresh ``uid``, and reassign. The remount
     resets the view state (zoom, selections) and re-fetches data (warm
     from cache), so it's unsuitable for high-frequency updates. Don't
