@@ -438,6 +438,29 @@ def test_cached_selection_cleared_when_rows_change(
     assert r.grid.widget.selection == "{}"
 
 
+def test_cached_selection_cleared_when_rows_change_via_rename(
+    widget_session: Session,
+) -> None:
+    # MolGrid applies `rename` in its constructor, so the fingerprint must be
+    # computed against the renamed columns -- otherwise the molecule column
+    # isn't found, the fingerprint is constant, and a stale positional
+    # selection is restored onto different molecules
+    df = DF.rename(columns={"SMILES": "sm"})
+    r = rw.render_mols2grid(rename={"sm": "SMILES"})
+    render(r, lambda: df, widget_session)
+
+    assert isinstance(r.grid, MolGrid)
+    r.grid.widget.selection = str({0: "CCO"})
+
+    # Same columns, but row 0 is now ethane: the cached selection must clear
+    df2 = df.copy()
+    df2["sm"] = ["CC", "c1ccccc1", "CCC(C)CC"]
+    render(r, lambda: df2, widget_session)
+
+    assert isinstance(r.grid, MolGrid)
+    assert r.grid.widget.selection == "{}"
+
+
 def test_redisplay_does_not_accumulate_callback_observers(
     widget_session: Session,
 ) -> None:

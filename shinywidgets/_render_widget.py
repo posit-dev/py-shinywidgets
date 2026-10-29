@@ -4221,8 +4221,14 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         if grid_kwargs.get("cache_selection"):
             # A cached selection is positional ({0: "CCO"} refers to a row, not
             # a molecule), so restoring it is only sound while the
-            # row-to-molecule mapping is unchanged
-            fingerprint = _mols2grid_row_fingerprint(value, smiles_col, self.mol_col)
+            # row-to-molecule mapping is unchanged. Fingerprint the columns
+            # MolGrid will actually see: it applies a `rename` option in its
+            # constructor, so a molecule column that only gets its expected
+            # name via rename otherwise isn't found, leaving the fingerprint
+            # constant while molecules change
+            rename = grid_kwargs.get("rename")
+            fp_value = value.rename(columns=rename) if rename else value
+            fingerprint = _mols2grid_row_fingerprint(fp_value, smiles_col, self.mol_col)
             if (
                 self._row_fingerprint is not None
                 and fingerprint != self._row_fingerprint
