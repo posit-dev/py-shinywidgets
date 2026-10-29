@@ -12,6 +12,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    ClassVar,
     Dict,
     Iterable,
     List,
@@ -126,7 +127,7 @@ from ipywidgets.widgets import HTML, Box, Layout
 from shiny.render.renderer import Jsonifiable, ValueFn
 from shiny.session import get_current_session
 
-from ._accessors import RatePolicy
+from ._accessors import AccessorSpec, Emit, RatePolicy
 from ._altair import ALTAIR_ACCESSORS, chart_frame, filter_selection, pick_selection
 from ._as_widget import (
     PYDECK_NO_WIDGET_MESSAGE,
@@ -154,7 +155,6 @@ from ._reactable import REACTABLE_ACCESSORS
 from ._render_widget_base import (
     ValueT,
     WidgetT,
-    has_current_context,
     render_widget_base,
 )
 from ._rerun import SELECTION
@@ -3888,6 +3888,48 @@ class render_vizarr(render_widget_base[ValueT, VizarrViewer]):
     """
 
 
+def _grid_widget_of(box: Widget) -> Any:
+    """
+    The MolGridWidget inside the composite Box that _as_widget() returns
+    (Box([grid.widget, html])).
+
+    Attach functions for render_mols2grid's accessors receive the composite
+    Box, so they locate the bridge widget structurally; an isinstance check
+    (rather than children[0]) fails loudly if the composite ever changes.
+    """
+    # local import: mols2grid is an optional extra
+    from mols2grid.widget import MolGridWidget
+
+    for child in getattr(box, "children", ()):
+        if isinstance(child, MolGridWidget):
+            return child
+    raise RuntimeError(
+        "render_mols2grid's composite widget does not hold a MolGridWidget; "
+        "the Box structure in _as_widget() must have changed."
+    )
+
+
+def _parse_trait_dict(raw: object) -> object:
+    # The selection/callback_kwargs traits are repr strings with unquoted
+    # keys, not JSON, so parse them with ast.literal_eval, as mols2grid itself
+    # does
+    return ast.literal_eval(str(raw))
+
+
+def _attach_selection(widget: Widget, emit: Emit) -> Callable[[], None]:
+    grid_widget = _grid_widget_of(widget)
+
+    def _on(change: Any) -> None:
+        emit(change["new"])
+
+    grid_widget.observe(_on, names=["selection"])
+    # A state accessor reads correctly from mount: publish the current value
+    # at attach, or selection() is None until the first checkbox toggle (and
+    # after every re-render, since the runtime re-attaches)
+    emit(grid_widget.selection)
+    return lambda: grid_widget.unobserve(_on, names=["selection"])
+
+
 class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     """
     Reactively render a [mols2grid](https://mols2grid.readthedocs.io) molecule
@@ -3999,6 +4041,13 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
+        ``reactive_read()`` unlimited.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        limiting.
     kwargs
         Extra keyword arguments forwarded to mols2grid (split between
         `MolGrid()` and its rendering, as described above). The split is by
@@ -4037,6 +4086,15 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     ```
     """
 
+    accessor_specs: ClassVar[tuple[AccessorSpec, ...]] = (
+        AccessorSpec(
+            name="selection",
+            kind="state",
+            attach=_attach_selection,
+            payload=_parse_trait_dict,
+        ),
+    )
+
     def __init__(
         self,
         _fn: Optional[ValueFn[Mols2GridValueT]] = None,
@@ -4047,9 +4105,19 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         height: Optional[str] = None,
         fill: Optional[bool] = None,
         fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[int] = None,
         **kwargs: Any,
     ):
-        super().__init__(_fn, width=width, height=height, fill=fill, fillable=fillable)
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+        )
         self.smiles_col = smiles_col
         self.mol_col = mol_col
         # The rendering options (subset, tooltip, sort_by, ...) belong to the
@@ -4130,18 +4198,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         to a different molecule. For the selected rows as a DataFrame, use
         ``.grid.get_selection()``.
         """
-        grid = self.grid
-        if grid is None:
-            return None
-        # local import: _shinywidgets imports this module
-        from ._shinywidgets import reactive_read
-
-        raw = grid.widget.selection
-        if has_current_context():
-            raw = reactive_read(grid.widget, "selection")
-        # The trait is a repr string with unquoted keys, not JSON, so parse it
-        # with ast.literal_eval, as mols2grid itself does
-        return ast.literal_eval(raw)
+        return cast(Optional[Dict[int, str]], self._read_accessor("selection"))
 
     async def _render(self) -> Jsonifiable | None:
         # Reset before rendering, so `.grid` mirrors `.value`/`.widget` (readers

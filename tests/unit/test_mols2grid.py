@@ -438,24 +438,47 @@ def test_cached_selection_cleared_when_rows_change(
     assert r.grid.widget.selection == "{}"
 
 
-def test_selection_property_reads_parsed_selection(
+def test_selection_accessor_reads_parsed_selection(
     widget_session: Session,
 ) -> None:
+    from shiny.types import SilentException
+
     r = rw.render_mols2grid()
-    # Before the first render (and outside a reactive context), there is no
-    # selection to read -- same as .value/.widget/.grid
-    assert r.selection() is None
+    # Before the first render there is no value to read: the accessor
+    # req()s, like reading a not-yet-rendered output in a reactive context
+    with pytest.raises(SilentException):
+        r.selection()
 
     render(r, lambda: DF, widget_session)
+    # Reading outside a reactive context returns the current value without
+    # taking a dependency (matching .value/.widget)
     assert r.selection() == {}
 
-    # The method parses the widget's repr-string trait into a dict
+    # The accessor parses the widget's repr-string trait into a dict
     assert isinstance(r.grid, MolGrid)
     r.grid.widget.selection = str({0: "CCO"})
     assert r.selection() == {0: "CCO"}
 
 
-def test_selection_property_reactively_invalidates(
+def test_selection_accessor_seeds_current_value_on_reattach(
+    widget_session: Session,
+) -> None:
+    # A state accessor must publish the trait's current value at attach
+    # time, or a re-render would reset the readable selection to None until
+    # the next checkbox toggle
+    r = rw.render_mols2grid()
+    render(r, lambda: DF, widget_session)
+    assert isinstance(r.grid, MolGrid)
+    r.grid.widget.selection = str({0: "CCO"})
+    assert r.selection() == {0: "CCO"}
+
+    render(r, lambda: DF, widget_session)
+    assert isinstance(r.grid, MolGrid)
+    assert r.grid.widget.selection == str({0: "CCO"})
+    assert r.selection() == {0: "CCO"}
+
+
+def test_selection_accessor_reactively_invalidates(
     widget_session: Session,
 ) -> None:
     from shiny import reactive
