@@ -25,7 +25,7 @@ def load_config():
     """Fetch the demo view config (a JS module) and parse it as a dict."""
     import json5
 
-    src = urllib.request.urlopen(CONFIG_URL).read().decode()
+    src = urllib.request.urlopen(CONFIG_URL, timeout=30).read().decode()
     src = re.sub(r"^export const \w+ = ", "", src).rstrip().rstrip(";")
     cfg = json5.loads(src)
     for d in cfg["datasets"]:
@@ -84,10 +84,11 @@ def server(input, output, session):
         )
 
     # Python -> browser: rewrite featureSelection in a copy of the config and
-    # reassign the `_config` trait. NOTE: the Vitessce viewer only applies a
-    # new config prop when its top-level `uid` changes (remountOnUidChange),
-    # so bump `uid` -- this remounts the viewer (view state resets, data is
-    # re-fetched from cache). Without it, the write is a no-op in the browser.
+    # reassign the `_config` trait. NOTE: the Vitessce viewer applies a new
+    # config prop by remounting, triggered by a top-level `uid` change (or,
+    # when the config has no `uid`, by any config change -- so the bump is
+    # belt-and-braces here but required in general). The remount resets the
+    # view state (zoom, selections) and re-fetches data (warm from cache).
     @reactive.effect
     @reactive.event(input.gene)
     def _():

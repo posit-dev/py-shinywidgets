@@ -16,8 +16,9 @@ Shiny output that is also an *input* — every pan, zoom, lasso, and gene/cell
 selection syncs the entire view config back to the `_config` trait, so
 `reactive_read(widget, "_config")` lets other outputs react to where the
 user is looking. Picking a gene in the sidebar updates the viewer from
-Python (note the `uid` bump in the config edit — the viewer only applies a
-new config when its top-level `uid` changes).
+Python (note the `uid` bump in the config edit — the viewer applies a new
+config by remounting, and a top-level `uid` change is what reliably
+triggers that remount).
 
 Two things to know about:
 
