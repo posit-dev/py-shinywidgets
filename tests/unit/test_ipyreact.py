@@ -159,6 +159,26 @@ def test_define_module_opens_in_sessions_initialized_before_flush(
         run(third_session.close())
 
 
+def test_sessionless_define_module_opens_on_consumer_render(
+    ipyreact: Any, widget_session: Session, shared_state: None
+) -> None:
+    # A sessionless define_module() after the session initialized gets no
+    # construction-time fan-out: rendering a consumer is what must open the
+    # module in the session (its frontend waits on the module by name).
+    with session_context(widget_session):
+        sw.init_session(widget_session)
+    mod = ipyreact.define_module("shinywidgets_test_mod8", code="export default 1")
+    from shinywidgets._comm import SharedShinyComm, ShinyComm
+
+    assert not isinstance(mod.comm, (ShinyComm, SharedShinyComm))
+
+    with session_context(widget_session):
+        consumer = ipyreact.Widget(_esm="export default 1")
+        sw.open_process_global_widgets(consumer, widget_session)
+    assert isinstance(mod.comm, SharedShinyComm)
+    assert mod.comm.has_session(widget_session.id)
+
+
 def test_registry_ignores_client_state_writes(
     ipyreact: Any, widget_session: Session, shared_state: None
 ) -> None:

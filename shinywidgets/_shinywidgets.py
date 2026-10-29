@@ -1471,6 +1471,14 @@ def open_process_global_widgets(widget: Widget, session: Session) -> None:
     for w in walk_widget_tree([widget], prune=is_process_global):
         if is_process_global(w) and not is_swapped_out_default(w):
             open_shared_in(w, session)
+        if any(widget_pkg(cls) == "ipyreact" for cls in type(w).__mro__):
+            # An ipyreact consumer waits on its registry widgets by name, so
+            # the walk above can't find them. A define_module() made outside
+            # any session (after this session was initialized) never fans
+            # out; rendering a consumer is what must open it here.
+            for r in ipyreact_registry_widgets():
+                if r.comm is not None:  # not closed by the user
+                    open_shared_in(r, session)
 
 
 # One comm manager per session (keyed by session id), so a client can only reach
