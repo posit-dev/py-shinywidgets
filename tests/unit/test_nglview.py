@@ -1,0 +1,370 @@
+from __future__ import annotations
+
+import asyncio
+import importlib.util
+import subprocess
+import sys
+import threading
+import time
+from types import ModuleType
+
+import pytest
+import shinywidgets
+import shinywidgets._render_widget as rw
+from ipywidgets import Widget
+from shiny import Session, reactive
+from shiny.reactive import Context
+from shiny.session import session_context
+from shinywidgets._render_widget_base import WidgetRenderContext
+
+TINY_PDB = (
+    "ATOM      1  N   ALA A   1      11.104   6.134  -6.504  1.00  0.00           N\n"
+    "ATOM      2  CA  ALA A   1      11.639   6.071  -5.147  1.00  0.00           C\n"
+    "END\n"
+)
+
+
+@pytest.fixture(scope="module")
+def nglview() -> ModuleType:
+    return pytest.importorskip("nglview")
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("nglview") is None, reason="nglview not installed"
+)
+def test_nglview_can_be_imported_after_shinywidgets() -> None:
+    # nglview constructs a (global) widget at import time, outside any session
+    result = subprocess.run(
+        [sys.executable, "-c", "import shinywidgets; import nglview"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_render_nglview_is_exported() -> None:
+    assert shinywidgets.render_nglview is rw.render_nglview
+    assert "render_nglview" in shinywidgets.__all__
+
+
+def test_render_nglview_renders_widget_that_fills(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    r = rw.render_nglview()
+
+    @r
+    def _():  # noqa: ANN202
+        return nglview.show_text(TINY_PDB, ext="pdb")
+
+    with session_context(widget_session):
+        res = asyncio.run(r._render())
+
+    assert isinstance(res, dict)
+    assert res["widget_pkg"] == "nglview"
+    assert res["fill"] is True
+    assert isinstance(r.widget, nglview.NGLWidget)
+
+
+def test_constructor_height_opts_out_of_fill(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    from shinywidgets._render_widget_base import set_layout_defaults
+
+    with session_context(widget_session):
+        filling = nglview.show_text(TINY_PDB, ext="pdb")
+        fixed = nglview.NGLWidget(height="200px")
+
+    assert set_layout_defaults(filling)[1] is True
+    assert set_layout_defaults(fixed)[1] is False
+
+
+def test_nglview_subclass_stops_its_threads(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # widget_pkg() of an app-defined subclass is the app's module, not
+    # "nglview", but retirement must still stop its background threads
+    class MyNGLWidget(nglview.NGLWidget):
+        pass
+
+    with session_context(widget_session):
+        context = Context()
+        with context(), WidgetRenderContext():
+            widget = MyNGLWidget()
+        threads = remote_call_threads(widget)
+        assert threads
+
+        context.invalidate()
+
+    for t in threads:
+        t.join(timeout=2)
+    assert not any(t.is_alive() for t in threads)
+
+
+def flush() -> None:
+    asyncio.get_event_loop().run_until_complete(reactive.flush())
+
+
+def remote_call_threads(widget: Widget) -> list[threading.Thread]:
+    from nglview.remote_thread import RemoteCallThread
+
+    return [
+        t
+        for t in threading.enumerate()
+        if isinstance(t, RemoteCallThread) and t.view is widget
+    ]
+
+
+def test_retired_nglview_widget_stops_its_threads(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    with session_context(widget_session):
+        context = Context()
+        with context(), WidgetRenderContext():
+            widget = nglview.show_text(TINY_PDB, ext="pdb")
+        threads = remote_call_threads(widget)
+        assert threads
+
+        # Retiring the render closes the widget, which must also end the
+        # threads nglview polls (and keeps the widget alive) from
+        context.invalidate()
+
+    for t in threads:
+        t.join(timeout=2)
+    assert not any(t.is_alive() for t in threads)
+
+
+def test_direct_close_stops_nglview_threads(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # Closing the widget directly (rather than via render/session cleanup) must
+    # stop its threads too: cleanup never revisits an already-closed widget
+    with session_context(widget_session):
+        widget = nglview.show_text(TINY_PDB, ext="pdb")
+        threads = remote_call_threads(widget)
+        assert threads
+
+        widget.close()
+
+    for t in threads:
+        t.join(timeout=2)
+    assert not any(t.is_alive() for t in threads)
+
+
+def test_colormaker_registry_is_eagerly_shared(nglview: ModuleType) -> None:
+    # The registry registers custom color schemes from its frontend view, so
+    # every session must open it (see EAGERLY_SHARED_PACKAGES), and no render
+    # or session may close it
+    import shinywidgets._shinywidgets as sw
+
+    registry = nglview.color.ColormakerRegistry
+    assert sw.is_process_global(registry)
+    assert "nglview" in sw.IMPORT_TIME_WIDGET_PACKAGES
+    assert "nglview" in sw.EAGERLY_SHARED_PACKAGES
+    assert not sw.is_swapped_out_default(registry)
+
+
+def test_session_start_opens_colormaker_registry(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # Deliberately no shared_state fixture: the registry is a genuine
+    # process-global singleton, and shared_state would close it (leaving it
+    # comm-less) for later tests
+    import shinywidgets._shinywidgets as sw
+
+    registry = nglview.color.ColormakerRegistry
+    with session_context(widget_session):
+        # The first widget constructed in a session runs init_session(),
+        # which eagerly opens the registry
+        Widget()
+    assert registry.model_id in sw.COMM_MANAGERS[widget_session.id].comms
+
+
+def test_nglview_shutdown_releases_in_flight_acknowledgement_wait(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # A worker blocked in _wait_until_finished() (e.g. mid-loadFile) is waiting
+    # on a browser acknowledgement that can't arrive once the comm is closed
+    from shinywidgets._nglview import stop_nglview_threads
+
+    with session_context(widget_session):
+        widget = nglview.show_text(TINY_PDB, ext="pdb")
+    released = threading.Event()
+
+    def wait_for_acknowledgement() -> None:
+        widget._wait_until_finished()
+        released.set()
+
+    waiter = threading.Thread(target=wait_for_acknowledgement, daemon=True)
+    waiter.start()
+    time.sleep(0.05)
+    assert not released.is_set()
+
+    stop_nglview_threads(widget)
+
+    assert released.wait(timeout=2)
+    waiter.join(timeout=2)
+    assert not waiter.is_alive()
+
+
+def test_nglview_shutdown_prevents_later_acknowledgement_waits(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # nglview's _wait_until_finished() clears the event before waiting, so a
+    # worker that starts waiting *after* shutdown would block forever
+    from shinywidgets._nglview import stop_nglview_threads
+
+    with session_context(widget_session):
+        widget = nglview.show_text(TINY_PDB, ext="pdb")
+    stop_nglview_threads(widget)
+    released = threading.Event()
+    waiter = threading.Thread(
+        target=lambda: (widget._wait_until_finished(), released.set()), daemon=True
+    )
+    waiter.start()
+
+    assert released.wait(timeout=2)
+    waiter.join(timeout=2)
+    assert not waiter.is_alive()
+
+
+def test_close_widget_ignores_non_viewer_nglview_widgets(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # Non-viewer nglview widgets (e.g. the global _ColormakerRegistry, or a
+    # RepresentationControl) match a package-wide MRO check but have no
+    # background threads (or `_event`); closing them must not raise.
+    from nglview.color import ColormakerRegistry
+    from shinywidgets._shinywidgets import close_widget
+
+    # nglview decorates the registry class with a singleton factory, so call
+    # the class itself (via the instance's type) for a fresh widget: closing
+    # the singleton would mutate process-global state other tests rely on
+    with session_context(widget_session):
+        widget = type(ColormakerRegistry)()
+    close_widget(widget)  # would raise AttributeError on w._event pre-fix
+    assert widget.comm is not None
+
+
+def test_session_end_stops_nglview_threads(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    with session_context(widget_session):
+        widget = nglview.show_text(TINY_PDB, ext="pdb")
+    threads = remote_call_threads(widget)
+    assert threads
+
+    asyncio.run(widget_session.close())
+
+    for t in threads:
+        t.join(timeout=2)
+    assert not any(t.is_alive() for t in threads)
+
+
+def test_registry_constructed_in_session_is_guarded(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # When nglview is first imported inside a session (lazy import), the
+    # registry's deferred open gives it a plain ShinyComm that never passes
+    # through open_shared_in(); the guard must already be installed at
+    # construction. Simulate that path with a fresh registry instance (the
+    # module-level name is a singleton factory).
+    import shinywidgets._shinywidgets as sw
+    from nglview.color import ColormakerRegistry
+
+    with session_context(widget_session):
+        registry = type(ColormakerRegistry)()
+    assert getattr(registry, "_shinywidgets_registry_guarded", False)
+
+    # The deferred open gives it a plain (not shared) comm ...
+    flush()
+    from shinywidgets._comm import SharedShinyComm, ShinyComm
+
+    assert isinstance(registry.comm, ShinyComm)
+    assert not isinstance(registry.comm, SharedShinyComm)
+
+    # ... whose browser still can't write the archive the replay executes
+    poison = {
+        "header": {"msg_id": "poison-2", "msg_type": "comm_msg"},
+        "content": {
+            "comm_id": registry.model_id,
+            "data": {
+                "method": "update",
+                "state": {"_msg_ar": [{"methodName": "executeCode"}]},
+                "buffer_paths": [],
+            },
+        },
+        "buffers": [],
+    }
+    with session_context(widget_session):
+        sw.handle_client_comm_msg(widget_session, poison)
+    assert list(registry._msg_ar) == []
+
+
+def test_viewer_constructed_in_invalidated_context_stops_its_threads(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # A widget constructed in an already-invalidated render context is closed
+    # inside Widget.__init__ (Context.on_invalidate() fires immediately) --
+    # before nglview's constructor starts its second batch of threads. Those
+    # late-starting threads must be stopped too.
+    with session_context(widget_session):
+        context = Context()
+        with context():
+            context.invalidate()
+            with WidgetRenderContext():
+                widget = nglview.show_text(TINY_PDB, ext="pdb")
+
+    threads = remote_call_threads(widget)
+    assert threads
+    for t in threads:
+        t.join(timeout=2)
+    assert not any(t.is_alive() for t in threads)
+
+
+def test_registry_ignores_client_state_writes(
+    nglview: ModuleType, widget_session: Session
+) -> None:
+    # The shared ColormakerRegistry's archived _call()s are executed as JS by
+    # the hidden-view replay, so a browser must not be able to write _msg_ar
+    # (a synced trait) through an ordinary `update` comm message. `_ready`
+    # must still get through: the registry's view sets it once rendered.
+    import shinywidgets._shinywidgets as sw
+    from nglview.color import ColormakerRegistry as registry
+
+    msg_ar_before = list(registry._msg_ar)
+    ready_before = registry._ready
+
+    # The session's first widget opens the import-time registry in the
+    # session (init_session), which installs the guard
+    with session_context(widget_session):
+        import ipywidgets
+
+        ipywidgets.IntSlider()
+    assert getattr(registry, "_shinywidgets_registry_guarded", False)
+
+    poison = {
+        "type": "callMethod",
+        "methodName": "executeCode",
+        "args": ["window.pwned = true"],
+        "kwargs": {},
+    }
+    update = {
+        "header": {"msg_id": "poison-1", "msg_type": "comm_msg"},
+        "content": {
+            "comm_id": registry.model_id,
+            "data": {
+                "method": "update",
+                "state": {"_msg_ar": [poison], "_ready": True},
+                "buffer_paths": [],
+            },
+        },
+        "buffers": [],
+    }
+    try:
+        with session_context(widget_session):
+            sw.handle_client_comm_msg(widget_session, update)
+        assert list(registry._msg_ar) == msg_ar_before
+        assert registry._ready is True
+    finally:
+        # Restore the process-global registry for other tests
+        registry._ready = ready_before

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import os
@@ -60,6 +61,13 @@ from ._dependencies import (
     require_dependencies,
     widget_pkg,
 )
+from ._nglview import (
+    guard_registry_state,
+    importing_nglview,
+    is_nglview_registry,
+    is_nglview_widget,
+    stop_threads_on_close,
+)
 from ._render_widget_base import WidgetRenderContext, is_closed_widget
 from ._utils import package_dir
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -86,6 +94,13 @@ def init_shiny_widget(w: Widget):
     plotly_version = unsupported_plotly_version(w)
     if plotly_version is not None:
         raise RuntimeError(PLOTLY_VERSION_MESSAGE.format(version=plotly_version))
+    if is_nglview_registry(w):
+        # Install at construction, not only in open_shared_in(): when nglview
+        # is first imported inside a session, the deferred open below gives
+        # the registry a plain ShinyComm that never passes through
+        # open_shared_in(), leaving its state writable by that session's
+        # browser
+        guard_registry_state(w)
     session = get_current_session()
     shared = constructing_shared.get()
     if session is None:
@@ -95,8 +110,10 @@ def init_shiny_widget(w: Widget):
         # in every session would broadcast traffic meant to be swapped away
         # (see is_swapped_out_default()).
         if (
-            importing_lonboard()
+            importing_nglview()
+            or importing_lonboard()
             or importing_ipycanvas()
+            or importing_ipyfilechooser()
             or importing_ipyvue()
             or importing_ipyvuetify()
         ):
@@ -155,6 +172,7 @@ def init_shiny_widget(w: Widget):
         or importing_ipyvuetify()
         or is_ipyreact_registry_widget(w)
         or constructing_ipyreact_registry_widget()
+        or importing_nglview()
     )
     if shared:
         SHARED_WIDGETS[id] = w
@@ -165,6 +183,12 @@ def init_shiny_widget(w: Widget):
         guard_widget_close(w)
     elif any(widget_pkg(cls) == "k3d" for cls in type(w).__mro__):
         close_comm_on_close(w)
+
+    if is_nglview_widget(w):
+        # nglview's close() doesn't stop the background threads it polls
+        # forever (see _nglview.py); hook the widget's own close() so an
+        # explicit close is covered, not just cleanup by render/session
+        stop_threads_on_close(w)
 
     # Since the actual ShinyComm() is initialized _after_ the Widget is initialized,
     # and Widget.__init__() includes a call to Widget.open() which opens an unnecessary
@@ -281,6 +305,10 @@ def init_shiny_widget(w: Widget):
     if any(widget_pkg(cls) == "ipycanvas" for cls in type(w).__mro__):
         own_ipycanvas_manager(w)
 
+    # Same idea for a FileChooser's default layout (see own_ipyfilechooser_layout)
+    if any(widget_pkg(cls) == "ipyfilechooser" for cls in type(w).__mro__):
+        own_ipyfilechooser_layout(w)
+
     # Some widget's JS make external requests for static files (e.g.,
     # ipyleaflet markers) under this resource path. Note that this assumes that
     # we're setting the data-base-url attribute on the <body> (which we should
@@ -303,6 +331,11 @@ def open_shared_in(w: Widget, session: Session) -> None:
     # can construct widgets), whichever session's context we're called from
     with session_context(session):
         init_session(session)
+
+    if is_nglview_registry(w):
+        # Its archived messages are executed as JS by the hidden-view replay,
+        # so no session's browser may write its state (see _nglview.py)
+        guard_registry_state(w)
 
     comm = w.comm
     if not isinstance(comm, SharedShinyComm):
@@ -542,6 +575,9 @@ def prepare_to_serialize(w: Widget) -> None:
     # manager
     if "ipycanvas" in pkgs:
         own_ipycanvas_manager(w)
+    # Same idea for a FileChooser's default layout
+    if "ipyfilechooser" in pkgs:
+        own_ipyfilechooser_layout(w)
 
 
 def handle_client_comm_msg(session: Session, msg: Dict[str, Any]) -> None:
@@ -634,6 +670,22 @@ def importing_ipycanvas() -> bool:
     canvas_mod = sys.modules.get("ipycanvas.canvas")
     # _CANVAS_MANAGER is only bound once canvas.py has finished executing
     return canvas_mod is not None and not hasattr(canvas_mod, "_CANVAS_MANAGER")
+
+
+def importing_ipyfilechooser() -> bool:
+    """
+    Is ipyfilechooser's `filechooser` module executing (i.e., is ipyfilechooser
+    mid-import)?
+
+    That module's `FileChooser.__init__` has a mutable default argument,
+    `layout=Layout(width='500px')`, constructed when the class body executes
+    (outside any session). Every default-constructed FileChooser shares it, so
+    it can't belong to a session anyway: `own_ipyfilechooser_layout()` swaps it
+    for a per-instance copy before display.
+    """
+    fc_mod = sys.modules.get("ipyfilechooser.filechooser")
+    # FileChooser is only bound once filechooser.py's class body has executed
+    return fc_mod is not None and not hasattr(fc_mod, "FileChooser")
 
 
 def importing_ipyvue() -> bool:
@@ -749,6 +801,32 @@ def own_ipycanvas_manager(w: Widget) -> None:
     if getattr(w, "_canvas_manager", None) is not shared:
         return
     setattr(w, "_canvas_manager", type(shared)(caching=True))
+
+
+def own_ipyfilechooser_layout(w: Widget) -> None:
+    """
+    Give a FileChooser its own copy of ipyfilechooser's shared default layout.
+
+    `FileChooser.__init__` defaults `layout` to a `Layout` constructed once at
+    import time (outside any session, so it has no comm, and layout changes on
+    one chooser would leak into every other default-constructed one). Replace
+    it with a fresh copy, constructed here (inside the session, so it gets a
+    comm of its own) before the chooser's initial state is serialized.
+    """
+    fc_mod = sys.modules.get("ipyfilechooser.filechooser")
+    fc_cls = getattr(fc_mod, "FileChooser", None) if fc_mod else None
+    if fc_cls is None:
+        return
+    try:
+        shared = inspect.signature(fc_cls.__init__).parameters["layout"].default
+    except (KeyError, ValueError):
+        return
+    if not isinstance(shared, Layout):
+        return
+    if getattr(w, "layout", None) is not shared:
+        return
+    names = [k for k in shared.trait_names(sync=True) if not k.startswith("_")]
+    setattr(w, "layout", type(shared)(**{k: getattr(shared, k) for k in names}))
 
 
 def flush_ipycanvas_manager(w: Widget) -> None:
@@ -1080,6 +1158,7 @@ def close_render_widgets(session: Session, widgets: list[Widget]) -> None:
 def close_widget(w: Widget) -> None:
     """Close a widget, the same way whether its render was invalidated or its session ended."""
     model_id = w.model_id
+    # Also stops an NGLWidget's background threads (see init_shiny_widget)
     w.close()
     # By closing the widget, we also close the comm, which sets w.comm to
     # None. Unfortunately, the w.model_id property looks up w.comm.comm_id
@@ -1114,11 +1193,19 @@ def close_comm_on_close(w: Widget) -> None:
 
 
 # Packages that construct widgets while being imported (see importing_lonboard() etc.)
-IMPORT_TIME_WIDGET_PACKAGES = ("ipyvue", "ipyvuetify", "lonboard", "ipycanvas")
+IMPORT_TIME_WIDGET_PACKAGES = (
+    "ipyvue",
+    "ipyvuetify",
+    "lonboard",
+    "ipycanvas",
+    "nglview",
+)
 
 # The subset whose import-time widgets the frontend expects to simply exist in
-# the widget manager (e.g. ipyvuetify's view finds `theme` by scanning it)
-EAGERLY_SHARED_PACKAGES = ("ipyvue", "ipyvuetify")
+# the browser. ipyvuetify's view finds `theme` by scanning the widget manager;
+# nglview's ColormakerRegistry must be open (and its view rendered, see
+# js/src/nglview.ts) for its view to register custom color schemes
+EAGERLY_SHARED_PACKAGES = ("ipyvue", "ipyvuetify", "nglview")
 
 
 def is_process_global(w: Widget) -> bool:
