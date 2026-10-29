@@ -438,6 +438,54 @@ def test_cached_selection_cleared_when_rows_change(
     assert r.grid.widget.selection == "{}"
 
 
+def test_selection_property_reads_parsed_selection(
+    widget_session: Session,
+) -> None:
+    r = rw.render_mols2grid()
+    # Before the first render (and outside a reactive context), there is no
+    # selection to read -- same as .value/.widget/.grid
+    assert r.selection is None
+
+    render(r, lambda: DF, widget_session)
+    assert r.selection == {}
+
+    # The property parses the widget's repr-string trait into a dict
+    assert isinstance(r.grid, MolGrid)
+    r.grid.widget.selection = str({0: "CCO"})
+    assert r.selection == {0: "CCO"}
+
+    with pytest.raises(RuntimeError, match="read only"):
+        r.selection = {}  # pyright: ignore[reportAttributeAccessIssue]
+
+
+def test_selection_property_reactively_invalidates(
+    widget_session: Session,
+) -> None:
+    from shiny import reactive
+
+    r = rw.render_mols2grid()
+    render(r, lambda: DF, widget_session)
+
+    reads: list[Any] = []
+
+    with session_context(widget_session):
+
+        @reactive.Effect
+        def _() -> None:
+            reads.append(r.selection)
+
+        async def main() -> None:
+            await reactive.flush()
+            assert reads == [{}]
+            assert isinstance(r.grid, MolGrid)
+            r.grid.widget.selection = str({0: "CCO"})
+            await reactive.flush()
+            # The trait change must invalidate the dependency .selection took
+            assert reads == [{}, {0: "CCO"}]
+
+        asyncio.run(main())
+
+
 def test_cached_selection_cleared_when_rows_change_via_rename(
     widget_session: Session,
 ) -> None:

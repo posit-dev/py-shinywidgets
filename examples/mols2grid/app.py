@@ -1,11 +1,9 @@
-import ast
-
 import mols2grid
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import Descriptors
 from shiny import App, reactive, render, ui
-from shinywidgets import output_widget, reactive_read, render_mols2grid
+from shinywidgets import output_widget, render_mols2grid
 
 
 def load_molecules() -> pd.DataFrame:
@@ -73,17 +71,11 @@ def server(input, output, session):
             mask &= MOLS["Class"] == input.cls()
         grid_obj.filter(mask.tolist())
 
-    # browser -> Python: the selection lives on the widget's `selection` trait
+    # browser -> Python: the selection is the rendered rows' positional
+    # indices, so it can be located directly in the source DataFrame
     @reactive.calc
     def selected_rows() -> pd.DataFrame:
-        widget = grid.grid.widget if grid.grid is not None else None
-        if widget is None:
-            return MOLS.iloc[0:0]
-        # The trait is mols2grid's own repr-ish dict string: {0: "CCO", 1: "c1ccccc1"}
-        # (unquoted keys, so it is NOT valid JSON) -- parse it with
-        # ast.literal_eval(), like mols2grid itself does
-        selection = ast.literal_eval(reactive_read(widget, "selection"))
-        return MOLS.loc[[int(k) for k in selection]]
+        return MOLS.loc[[int(k) for k in (grid.selection or {})]]
 
     @render.text
     def n_selected():

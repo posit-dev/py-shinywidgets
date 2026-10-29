@@ -151,7 +151,12 @@ from ._niivue import LOCATION
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._pythreejs import CAMERA as PYTHREEJS_CAMERA
 from ._reactable import REACTABLE_ACCESSORS
-from ._render_widget_base import ValueT, WidgetT, render_widget_base
+from ._render_widget_base import (
+    ValueT,
+    WidgetT,
+    has_current_context,
+    render_widget_base,
+)
 from ._rerun import SELECTION
 
 if TYPE_CHECKING:
@@ -3907,18 +3912,19 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     always displayed in an iframe (``use_iframe=True``), which keeps its
     jQuery/Bootstrap globals out of your app's page.
 
-    The decorated function also gains three read-only attributes: `.value`, the
+    The decorated function also gains four read-only attributes: `.value`, the
     value most recently returned by the render function, `.widget`, the rendered
-    `ipywidgets.Box` holding the output, and `.grid`, the `MolGrid` instance
-    backing it. The `MolGridWidget` that syncs selection state is
-    `.grid.widget`.
+    `ipywidgets.Box` holding the output, `.grid`, the `MolGrid` instance
+    backing it, and `.selection`, the current molecule selection. The
+    `MolGridWidget` that syncs selection state is `.grid.widget`.
 
-    * **Selection (browser -> Python):**
-      ``ast.literal_eval(reactive_read(grid.grid.widget, "selection"))`` gives a
-      dict of selected rows, e.g. ``{0: "CCO"}`` (the trait is a repr string
-      with unquoted keys, not JSON, so parse it with `ast.literal_eval`, as
-      mols2grid itself does). ``grid.grid.get_selection()`` returns the selected
-      rows as a DataFrame.
+    * **Selection (browser -> Python):** ``grid.selection`` gives the selected
+      rows reactively, as a dict, e.g. ``{0: "CCO"}``. Row indices are
+      positional against the rows *as rendered*. ``grid.grid.get_selection()``
+      returns the selected rows as a DataFrame. (The underlying
+      ``grid.grid.widget.selection`` trait is a repr string with unquoted keys,
+      not JSON; if you read it directly with `reactive_read()`, parse it with
+      `ast.literal_eval`, as mols2grid itself does.)
     * **Filtering (Python -> browser):** ``grid.grid.filter(mask)`` (a boolean
       mask, Series, or list) hides non-matching molecules in the already
       rendered grid, without re-rendering. The mask is positional against the
@@ -4004,11 +4010,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     Examples
     --------
     ```python
-    import ast
-
     import mols2grid
     from shiny import App, reactive, render, ui
-    from shinywidgets import output_widget, reactive_read, render_mols2grid
+    from shinywidgets import output_widget, render_mols2grid
 
     mols = mols2grid.sdf_to_dataframe(mols2grid.datafiles.SOLUBILITY_SDF)
 
@@ -4025,8 +4029,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
 
         @render.text
         def n_selected():
-            selection = ast.literal_eval(reactive_read(grid.grid.widget, "selection"))
-            return f"{len(selection)} molecule(s) selected"
+            return f"{len(grid.selection or {})} molecule(s) selected"
 
 
     app = App(app_ui, server)
@@ -4112,6 +4115,39 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     def grid(self, grid: object):
         raise RuntimeError(
             "The `grid` attribute of a @render_mols2grid function is read only."
+        )
+
+    @property
+    def selection(self) -> Optional[Dict[int, str]]:
+        """
+        The grid's current molecule selection, as ``{row_index: SMILES}``
+        (read-only).
+
+        Read it in a reactive context (a render function, ``@reactive.Calc``,
+        or ``@reactive.Effect``) to be invalidated when the selection changes
+        in the browser; outside a reactive context, it reads the current value
+        without taking a dependency. Row indices are positional against the
+        rows *as rendered* -- after the data changes, the same index can refer
+        to a different molecule. For the selected rows as a DataFrame, use
+        ``.grid.get_selection()``.
+        """
+        grid = self.grid
+        if grid is None:
+            return None
+        # local import: _shinywidgets imports this module
+        from ._shinywidgets import reactive_read
+
+        raw = grid.widget.selection
+        if has_current_context():
+            raw = reactive_read(grid.widget, "selection")
+        # The trait is a repr string with unquoted keys, not JSON, so parse it
+        # with ast.literal_eval, as mols2grid itself does
+        return ast.literal_eval(raw)
+
+    @selection.setter
+    def selection(self, selection: object):
+        raise RuntimeError(
+            "The `selection` attribute of a @render_mols2grid function is read only."
         )
 
     async def _render(self) -> Jsonifiable | None:
