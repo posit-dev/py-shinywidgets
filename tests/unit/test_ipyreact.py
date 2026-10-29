@@ -270,10 +270,11 @@ def test_sessionless_module_discovered_in_second_session(
     mod = ipyreact.define_module("shinywidgets_test_mod9", code="export default 1")
     # ipyreact < 0.7 has no _module_widgets registry, so the sessionless scan
     # is the only discovery path there (patch after define_module(), which
-    # would otherwise just re-register into the fresh dict)
+    # would otherwise just re-register into the fresh dict; raising=False
+    # since the attribute doesn't exist at all on those versions)
     import ipyreact.module
 
-    monkeypatch.setattr(ipyreact.module, "_module_widgets", {})
+    monkeypatch.setattr(ipyreact.module, "_module_widgets", {}, raising=False)
 
     # A consumer render in the first session opens the module there...
     with session_context(widget_session):
