@@ -82,21 +82,101 @@ def test_define_module_in_session_is_shared(
         assert sw.SHARED_WIDGETS.get(mod.model_id) is mod
         assert sw.is_process_global(mod)
 
-    # The deferred open gives it a live comm in this session...
+    # The deferred open fans it out to every live session (here just this
+    # one; the other session hasn't initialized shinywidgets yet)
     from tests.unit.test_shared_widgets import flush
 
     flush()
-    from shinywidgets._comm import ShinyComm
-
-    assert isinstance(mod.comm, ShinyComm)
-
-    # ...and a later session gets it too (fanned out over a SharedShinyComm)
     from shinywidgets._comm import SharedShinyComm
 
+    assert isinstance(mod.comm, SharedShinyComm)
+    assert mod.comm.has_session(widget_session.id)
+
+    # ...and a session initialized later gets it too
     sw.open_shared_in(mod, other_session)
+    assert mod.comm.has_session(widget_session.id)
+    assert mod.comm.has_session(other_session.id)
+
+
+def test_define_module_opens_in_existing_sessions(
+    ipyreact: Any,
+    widget_session: Session,
+    other_session: Session,
+    shared_state: None,
+) -> None:
+    # Both sessions are already initialized when the module is defined. A
+    # consumer in the other session waits on the module by name (there is no
+    # widget reference the render-time walk could follow), so the deferred
+    # open must fan out to it immediately.
+    sw.init_session(other_session)
+    with session_context(widget_session):
+        mod = ipyreact.define_module("shinywidgets_test_mod4", code="export default 1")
+    from tests.unit.test_shared_widgets import flush
+
+    flush()
+    from shinywidgets._comm import SharedShinyComm
+
     assert isinstance(mod.comm, SharedShinyComm)
     assert mod.comm.has_session(widget_session.id)
     assert mod.comm.has_session(other_session.id)
+
+
+def test_registry_ignores_client_state_writes(
+    ipyreact: Any, widget_session: Session, shared_state: None
+) -> None:
+    # A Module's `code` is executed as JavaScript in every session's browser,
+    # so no session's browser may rewrite it through an ordinary `update`
+    # comm message (the guard is installed at construction, before the
+    # deferred open gives the widget a comm). `status` must still get
+    # through: ipyreact's frontend reports module load progress with it.
+    with session_context(widget_session):
+        mod = ipyreact.define_module("shinywidgets_test_mod5", code="export default 1")
+    assert getattr(mod, "_shinywidgets_ipyreact_guarded", False)
+    from tests.unit.test_shared_widgets import flush
+
+    flush()
+    poison = {
+        "header": {"msg_id": "poison-ipyreact", "msg_type": "comm_msg"},
+        "content": {
+            "comm_id": mod.model_id,
+            "data": {
+                "method": "update",
+                "state": {"code": "window.pwned = true", "status": "Loaded module!"},
+                "buffer_paths": [],
+            },
+        },
+        "buffers": [],
+    }
+    with session_context(widget_session):
+        sw.handle_client_comm_msg(widget_session, poison)
+    assert mod.code == "export default 1"
+    assert mod.status == "Loaded module!"
+
+
+def test_init_session_adoption_installs_guard(
+    ipyreact: Any,
+    widget_session: Session,
+    shared_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Simulate a Module that predates our construction hook (ipyreact
+    # imported before shinywidgets): nothing guarded it or registered it in
+    # SHARED_WIDGETS. The adoption in init_session() must guard it before
+    # opening it in the session.
+    real_guard = sw.guard_ipyreact_registry_state
+    monkeypatch.setattr(sw, "guard_ipyreact_registry_state", lambda w: None)
+    mod = ipyreact.define_module("shinywidgets_test_mod6", code="export default 1")
+    monkeypatch.setattr(sw, "guard_ipyreact_registry_state", real_guard)
+    assert not getattr(mod, "_shinywidgets_ipyreact_guarded", False)
+    sw.SHARED_WIDGETS.pop(mod.model_id, None)
+    sw.SHARED_WIDGETS.pop(mod.layout.model_id, None)
+
+    with session_context(widget_session):
+        sw.init_session(widget_session)
+    assert getattr(mod, "_shinywidgets_ipyreact_guarded", False)
+    from shinywidgets._comm import SharedShinyComm
+
+    assert isinstance(mod.comm, SharedShinyComm)
 
 
 def test_init_session_adopts_sessionless_ipyreact_widgets(

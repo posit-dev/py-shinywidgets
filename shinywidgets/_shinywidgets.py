@@ -101,6 +101,11 @@ def init_shiny_widget(w: Widget):
         # open_shared_in(), leaving its state writable by that session's
         # browser
         guard_registry_state(w)
+    if is_ipyreact_registry_widget(w):
+        # Same reason as the nglview guard above: the registry is
+        # process-global, and a Module's code is executed as JS in every
+        # session's browser, so no session's browser may write it
+        guard_ipyreact_registry_state(w)
     session = get_current_session()
     shared = constructing_shared.get()
     if session is None:
@@ -229,6 +234,15 @@ def init_shiny_widget(w: Widget):
             open_shared_in(w, session)
             return
 
+        # An ipyreact consumer waits on its registry widgets by name, not by
+        # widget reference, so the render-time walk that opens a shared
+        # widget in the other sessions never finds it: open it in every live
+        # session now, not just the one that defined it.
+        if is_ipyreact_registry_widget(w):
+            for s in list(SESSIONS):
+                open_shared_in(w, s)
+            return
+
         # A shared widget's lazily created defaults (e.g. its Layout) are shared too
         with (
             shared_construction() if shared else WidgetRenderContext.resumed(render_ctx)
@@ -336,6 +350,10 @@ def open_shared_in(w: Widget, session: Session) -> None:
         # Its archived messages are executed as JS by the hidden-view replay,
         # so no session's browser may write its state (see _nglview.py)
         guard_registry_state(w)
+    if is_ipyreact_registry_widget(w):
+        # The adoption path (init_session) reaches registries the
+        # construction-time guard missed (they predate our hook) here
+        guard_ipyreact_registry_state(w)
 
     comm = w.comm
     if not isinstance(comm, SharedShinyComm):
@@ -761,6 +779,43 @@ def ipyreact_registry_widgets() -> List[Widget]:
     if import_map_widget is not None:
         widgets.append(import_map_widget)
     return widgets
+
+
+# The one synced trait an ipyreact registry widget's frontend may write: its
+# Module model reports load progress through `status`. Everything else
+# (Module.code/url, ImportMap.import_map) the browser executes as JavaScript,
+# so only Python may author it.
+_IPYREACT_REGISTRY_CLIENT_TRAITS = frozenset({"status"})
+
+
+def guard_ipyreact_registry_state(w: Widget) -> None:
+    """
+    Drop client-authored state updates to an ipyreact registry, except `status`.
+
+    `code`/`url`/`import_map` are synced traits, so any session's browser
+    could rewrite them through an ordinary `update` comm message -- and the
+    registry is process-global, so every later session would load that
+    JavaScript. Python is the only legitimate author of everything but
+    `status` (which ipyreact's frontend sets to report load progress), so
+    reject the rest at the point they'd be applied. Filtering here, before
+    `set_state()`, also keeps rejected writes out of the echo update the
+    shared comm fans out to the other sessions.
+    """
+    if getattr(w, "_shinywidgets_ipyreact_guarded", False):
+        return
+    set_state = w.set_state
+
+    def guarded_set_state(sync_data: Dict[str, Any]) -> None:
+        set_state(
+            {
+                k: v
+                for k, v in sync_data.items()
+                if k in _IPYREACT_REGISTRY_CLIENT_TRAITS
+            }
+        )
+
+    w.set_state = guarded_set_state  # type: ignore[method-assign]
+    w._shinywidgets_ipyreact_guarded = True  # type: ignore[attr-defined]
 
 
 def importing_ipyvuetify() -> bool:
