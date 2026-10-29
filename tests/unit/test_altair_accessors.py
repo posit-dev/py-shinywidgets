@@ -177,3 +177,38 @@ def sa_box(raw: object) -> Any:
     from shinywidgets._accessors import Box
 
     return Box(raw)
+
+
+def test_naive_dates_across_a_dst_change_dont_raise() -> None:
+    # 2024-11-03 01:00-02:00 happens twice in America/Chicago
+    df = pd.DataFrame(
+        {"t": pd.date_range("2024-11-02 22:00", periods=8, freq="h"), "y": range(8)}
+    )
+    brush = [
+        entry(("t", "R", ["2024-11-03T05:00:00.000Z", "2024-11-03T09:00:00.000Z"]))
+    ]
+    out = sa.filter_selection(interval(brush), df, local_tz="America/Chicago")
+    # 05:00Z = 00:00 CDT and 09:00Z = 03:00 CST, in naive local time
+    assert out["y"].tolist() == [2, 3, 4, 5]
+
+
+def test_tz_aware_columns_compare_in_their_own_zone() -> None:
+    df = pd.DataFrame(
+        {
+            "t": pd.date_range("2024-01-01", periods=4, freq="h", tz="Asia/Tokyo"),
+            "y": range(4),
+        }
+    )
+    brush = [entry(("t", "R", ["2023-12-31T15:30:00Z", "2023-12-31T17:00:00Z"]))]
+    assert sa.filter_selection(interval(brush), df, None)["y"].tolist() == [1, 2]
+
+
+def test_temporal_point_selection_with_epoch_ms() -> None:
+    sel = point([entry(("date", "E", [1704153600000]))])  # 2024-01-02T00:00Z
+    assert sa.filter_selection(sel, DATES, local_tz="UTC")["y"].tolist() == [1]
+
+
+def test_date_strings_in_a_text_column_raise_a_clear_error() -> None:
+    df = pd.DataFrame({"date": ["2024-01-01", "2024-01-02"], "y": [1, 2]})
+    with pytest.raises(ValueError, match="parse"):
+        sa.filter_selection(interval(DATE_BRUSH), df, "UTC")

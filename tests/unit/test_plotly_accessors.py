@@ -147,7 +147,7 @@ def test_relayout_filters_to_axis_ranges_and_skips_the_rest() -> None:
 
 
 def test_selected_rows_by_position_pandas() -> None:
-    df = pd.DataFrame({"a": [10, 20, 30]}, index=["r0", "r1", "r2"])
+    df = pd.DataFrame({"a": [10, 20, 30]})
     out = sp.select_rows(CLICK_POINTS, df, key=None)
     assert out["a"].tolist() == [10, 30]  # original order, not selection order
 
@@ -225,3 +225,19 @@ def test_selected_rows_by_position_accepts_float_customdata_polars() -> None:
     df = pl.DataFrame({"a": [10, 20, 30]})
     pts = [{"trace_index": 0, "point_index": 0, "x": 0, "y": 0, "customdata": [2.0]}]
     assert sp.select_rows(pts, df, key=None)["a"].to_list() == [30]
+
+
+def test_selected_rows_matches_pandas_index_labels() -> None:
+    df = pd.DataFrame({"a": range(10)}).iloc[5:]  # labels 5..9
+    pts = [{"trace_index": 0, "point_index": 0, "x": 0, "y": 0, "customdata": [5]}]
+    assert sp.select_rows(pts, df, key=None)["a"].tolist() == [5]
+    labelled = pd.DataFrame({"a": [1, 2]}, index=["p", "q"])
+    pts = [{"trace_index": 0, "point_index": 0, "x": 0, "y": 0, "customdata": ["q"]}]
+    assert sp.select_rows(pts, labelled, key=None)["a"].tolist() == [2]
+
+
+def test_selected_rows_positions_must_be_integers_polars() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    pts = [{"trace_index": 0, "point_index": 0, "x": 0, "y": 0, "customdata": ["q"]}]
+    with pytest.raises(ValueError, match="key="):
+        sp.select_rows(pts, df, key=None)

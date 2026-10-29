@@ -9,7 +9,8 @@ a frame by a selection's Vega "store", porting Vega's `selectionTest`.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Literal, Optional, Union
+from zoneinfo import ZoneInfo
 
 from ._accessors import AccessorSpec, Emit
 
@@ -134,42 +135,65 @@ def field_test(
         )
     col = nw.col(name)
     dtype = frame.schema[name]
-    temporal = dtype == nw.Date or dtype == nw.Datetime
-    if temporal:
-        # Vega compares dates as UTC epoch milliseconds, reading tz-naive
-        # values in the browser's time zone.
-        if dtype == nw.Date or getattr(dtype, "time_zone", None) is None:
-            col = col.cast(nw.Datetime("us")).dt.replace_time_zone(local_tz or "UTC")
-        col = col.dt.timestamp("ms")
-        value = to_epoch_ms(value)
-
     kind = field["type"]
+    if dtype == nw.Date or dtype == nw.Datetime:
+        if dtype == nw.Date:
+            col = col.cast(nw.Datetime("us"))
+        # Convert the selection's UTC bounds to the column's time, rather than
+        # the column to UTC: localizing naive times can fail at DST changes.
+        value = to_column_time(value, getattr(dtype, "time_zone", None), local_tz)
+    elif kind.startswith("R") and any(isinstance(v, str) for v in value):
+        raise ValueError(
+            f"The selection on {name!r} is a range of dates, but that column holds "
+            f"{dtype}, not dates. Parse it as dates, e.g. with `pd.to_datetime()` "
+            "or `read_csv(..., parse_dates=[...])`."
+        )
+
     if kind == "E":
-        return col.is_in(value) if isinstance(value, list) else col == value
-    if kind.startswith("R"):
+        return col.is_in(value) if isinstance(value, list) else col == nw.lit(value)
+    if kind in CLOSED:
         lo, hi = sorted(value)
-        closed = {"R": "both", "R-RE": "left", "R-LE": "right", "R-E": "none"}[kind]
-        return col.is_between(lo, hi, closed=closed)  # type: ignore[arg-type]  # closed is one of the Literal values
+        return col.is_between(nw.lit(lo), nw.lit(hi), closed=CLOSED[kind])
     if kind == "E-LT":
-        return col < value
+        return col < nw.lit(value)
     if kind == "E-LTE":
-        return col <= value
+        return col <= nw.lit(value)
     if kind == "E-GT":
-        return col > value
+        return col > nw.lit(value)
     if kind == "E-GTE":
-        return col >= value
+        return col >= nw.lit(value)
     if kind == "E-VALID":
         return ~col.is_null()
     raise ValueError(f"Unsupported Vega selection field type {kind!r}.")
 
 
-def to_epoch_ms(value: Any) -> Any:
+# Vega's range types, by which ends are included
+CLOSED: Dict[str, Literal["both", "left", "right", "none"]] = {
+    "R": "both",
+    "R-RE": "left",
+    "R-LE": "right",
+    "R-E": "none",
+}
+
+
+def to_column_time(value: Any, zone: Optional[str], local_tz: Optional[str]) -> Any:
+    """
+    A Vega date (an ISO string or epoch milliseconds, always UTC) as a
+    datetime comparable to a column in time zone `zone`, or, for a tz-naive
+    column, as naive time in the browser's zone (`local_tz`), which is how
+    Vega reads naive dates.
+    """
     if isinstance(value, list):
-        return [to_epoch_ms(v) for v in value]
+        return [to_column_time(v, zone, local_tz) for v in value]
     if isinstance(value, str):
         # Python < 3.11 can't parse a trailing Z
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.timestamp() * 1000
-    return value
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+    elif isinstance(value, (int, float)):
+        moment = datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+    else:
+        return value
+    if zone is not None:
+        return moment.astimezone(ZoneInfo(zone))
+    return moment.astimezone(ZoneInfo(local_tz or "UTC")).replace(tzinfo=None)
