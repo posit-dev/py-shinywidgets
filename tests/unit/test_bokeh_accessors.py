@@ -89,3 +89,10 @@ def test_selected_rows(widget_session: Session) -> None:
     src.selected.indices = [2, 0]
     assert r.selected() == [2, 0]
     assert r.selected_rows()["x"].tolist() == [3, 1]
+
+
+def test_selected_frame_drops_indices_past_the_end(widget_session: Session) -> None:
+    p, src = plot()
+    w = widget(widget_session, p)
+    src.data = {"x": [1], "y": [4]}  # shrunk in place; the selection lags
+    assert sb.selected_frame(w, [0, 2])["x"].tolist() == [1]

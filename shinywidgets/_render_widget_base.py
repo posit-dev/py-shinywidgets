@@ -57,6 +57,12 @@ The type of the widget created from the renderer's ValueT
 """
 T = TypeVar("T", bound=object)
 
+# The renderer whose render function is running (per task, so concurrent
+# renders don't see each other)
+rendering_renderer: ContextVar[Optional[object]] = ContextVar(
+    "rendering_renderer", default=None
+)
+
 
 class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     """
@@ -114,7 +120,11 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             return await self._render()
 
     async def _render(self) -> Jsonifiable | None:
-        value = await self.fn()
+        token = rendering_renderer.set(self)
+        try:
+            value = await self.fn()
+        finally:
+            rendering_renderer.reset(token)
 
         # Attach value/widget attributes to user func so they can be accessed (in other reactive contexts)
         self._value = value
@@ -212,6 +222,16 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         )
 
     def _read_accessor(self, name: str, *, raw: bool = False) -> object:
+        if rendering_renderer.get() is self:
+            # It would cancel (no widget yet) or reset (a new widget), so the
+            # output would never render
+            raise RuntimeError(
+                f"`{self.output_id}.{name}()` can't be read inside "
+                f"`{self.output_id}`'s own render function, which builds a new "
+                "widget each time it runs. Read it in another output or an effect; "
+                f"to change the plot in response, update `{self.output_id}.widget` "
+                "in place from a `reactive.effect`."
+            )
         # Depend on the widget too, so a re-render invalidates readers even
         # before the new widget reports anything.
         self._register_current_context()
@@ -234,7 +254,10 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     def _register_current_context(self) -> None:
         if not has_current_context():
             return
-        self._contexts.add(get_current_context())
+        ctx = get_current_context()
+        if ctx not in self._contexts:
+            self._contexts.add(ctx)
+            ctx.on_invalidate(lambda: self._contexts.discard(ctx))
 
 
 def has_current_context() -> bool:

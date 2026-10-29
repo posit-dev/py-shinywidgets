@@ -367,3 +367,27 @@ def test_render_registers_rate_policy_for_its_widget(monkeypatch) -> None:
     asyncio.run(r._render())
     rate = acc.rate_policy_for(widget)  # type: ignore[arg-type]
     assert rate is not None and (rate.policy, rate.delay_ms) == ("throttle", 250)
+
+
+def test_reading_an_accessor_in_its_own_render_raises(monkeypatch) -> None:
+    att = RecordingAttach()
+    r = renderer_with_clicked(att)
+
+    @r
+    async def _():  # noqa: ANN202
+        r.clicked()
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
+    with pytest.raises(RuntimeError, match="own render function"):
+        asyncio.run(r._render())
+
+
+def test_invalidated_reader_contexts_are_forgotten(monkeypatch) -> None:
+    r = rwb.render_widget_base()
+    ctx = FakeContext()
+    monkeypatch.setattr(rwb, "get_current_context", lambda: ctx)
+    r._register_current_context()
+    assert ctx in r._contexts
+    ctx.run_invalidate_callbacks()
+    assert ctx not in r._contexts

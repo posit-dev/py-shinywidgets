@@ -79,7 +79,9 @@ def single_source(model: Any) -> ColumnDataSource:
 
 def selected_frame(widget: BokehModel, indices: Optional[List[int]]) -> Any:
     df = single_source(widget._model).to_df()
-    return df.iloc[indices or []]
+    # After `source.data` shrinks in place, the browser prunes the selection,
+    # but the pruned indices arrive later (debounced)
+    return df.iloc[[i for i in indices or [] if i < len(df)]]
 
 
 SELECTED = AccessorSpec(
