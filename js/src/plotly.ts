@@ -48,7 +48,10 @@ export async function requestPlotlyEvents(
   for (const viewPromise of Object.values((model as any).views ?? {})) {
     try {
       const view: any = await viewPromise;
-      const plotEl = findPlotlyGraphDiv(view.el);
+      // The view can exist well before Plotly draws its graph div into it
+      // (e.g., while its JS is still loading); wait for the draw rather than
+      // skipping the view, or the events would never get bound.
+      const plotEl = await waitForPlotlyGraphDiv(view.el);
       if (!plotEl) continue;
       await waitForPlotlyAfterPlot(plotEl);
       bindPlotlyEvents(plotEl, model);
@@ -56,6 +59,33 @@ export async function requestPlotlyEvents(
       console.error("Error binding plotly events:", err);
     }
   }
+}
+
+const plotlyGraphDivTimeoutMs = 30000;
+
+// Like findPlotlyGraphDiv, but waits (a bounded time) for the graph div to
+// appear: Plotly draws asynchronously after the view is displayed, and a
+// caller that gives up before then never gets another chance to bind.
+export function waitForPlotlyGraphDiv(
+  root: HTMLElement,
+  timeoutMs: number = plotlyGraphDivTimeoutMs,
+): Promise<HTMLElement | null> {
+  const existing = findPlotlyGraphDiv(root);
+  if (existing) return Promise.resolve(existing);
+
+  return new Promise((resolve) => {
+    const finish = (el: HTMLElement | null) => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+      resolve(el);
+    };
+    const observer = new MutationObserver(() => {
+      const el = findPlotlyGraphDiv(root);
+      if (el) finish(el);
+    });
+    const timer = window.setTimeout(() => finish(null), timeoutMs);
+    observer.observe(root, { childList: true, subtree: true });
+  });
 }
 
 export function bindPlotlyEvents(plotEl: HTMLElement, model: WidgetModel): void {

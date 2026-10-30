@@ -93,7 +93,9 @@ def test_plotly_accessors_on_an_app_defined_figure_subclass(
     page: Page, local_app
 ) -> None:
     page.goto(local_app.url)
-    expect(page.locator("#sub_plot .js-plotly-plot")).to_have_count(1, timeout=30000)
+    # A still-hidden (pre-reveal) graph can't receive mouse events, so wait
+    # for the reveal, not just the element
+    expect(page.locator("#sub_plot .js-plotly-plot")).to_be_visible(timeout=30000)
     expect(page.locator("#sub_clicked")).to_have_text("None", timeout=10000)
 
     page.locator("#sub_plot").scroll_into_view_if_needed()
