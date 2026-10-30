@@ -53,7 +53,6 @@ def test_clicked_skips_toolbar_drags_and_limits_follow(page: Page, local_app) ->
     limits_before = page.locator("#limits").inner_text()
 
     # Activate the toolbar's zoom-to-rect mode and drag a rectangle
-    toolbar = page.locator("#plot .jupyter-matplotlib-toolbar")
     zoom = page.locator("#plot [title^='Zoom to rectangle']")
     expect(zoom).to_be_visible(timeout=10000)
     zoom.click()
@@ -61,7 +60,9 @@ def test_clicked_skips_toolbar_drags_and_limits_follow(page: Page, local_app) ->
     assert box is not None
     page.mouse.move(box["x"] + box["width"] * 0.3, box["y"] + box["height"] * 0.3)
     page.mouse.down()
-    page.mouse.move(box["x"] + box["width"] * 0.6, box["y"] + box["height"] * 0.6, steps=8)
+    page.mouse.move(
+        box["x"] + box["width"] * 0.6, box["y"] + box["height"] * 0.6, steps=8
+    )
     page.mouse.up()
 
     # The drag was a zoom, not a click; limits update (after the 250 ms debounce)
@@ -79,7 +80,9 @@ def test_picked_reports_point_index(page: Page, local_app) -> None:
     expect(page.locator("#picked")).to_have_text("None")
 
     click_center(page)  # the horizontal line runs through the canvas center
-    expect(page.locator("#picked")).to_have_text(re.compile(r"^\d+(,\d+)*$"), timeout=10000)
+    expect(page.locator("#picked")).to_have_text(
+        re.compile(r"^\d+(,\d+)*$"), timeout=10000
+    )
 
     assert_no_unexpected_errors(errors, failed_requests)
 
