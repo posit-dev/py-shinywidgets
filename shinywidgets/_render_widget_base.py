@@ -246,7 +246,9 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         return None
 
     def _invalidate_contexts(self) -> None:
-        for ctx in self._contexts:
+        # Copy: invalidate() runs the on_invalidate callback that drops the
+        # context from this set
+        for ctx in list(self._contexts):
             ctx.invalidate()
 
     # If the widget/value is read in a reactive context, then we'll need to invalidate

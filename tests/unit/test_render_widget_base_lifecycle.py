@@ -4,6 +4,7 @@ import pytest
 import shinywidgets._accessors as acc
 import shinywidgets._render_widget_base as rwb
 from shiny import reactive as shiny_reactive
+from shiny.reactive._core import Context
 
 
 class FakeLiveWidget:
@@ -391,3 +392,28 @@ def test_invalidated_reader_contexts_are_forgotten(monkeypatch) -> None:
     assert ctx in r._contexts
     ctx.run_invalidate_callbacks()
     assert ctx not in r._contexts
+
+
+def test_rerender_invalidates_real_contexts_that_unregister_themselves(
+    monkeypatch,
+) -> None:
+    # A real Context runs its on_invalidate callbacks (which drop it from
+    # _contexts) synchronously inside invalidate()
+    r = rwb.render_widget_base()
+    contexts = [Context(), Context()]
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
+    asyncio.run(r._render())
+
+    for ctx in contexts:
+        monkeypatch.setattr(rwb, "get_current_context", lambda: ctx)
+        _ = r.value
+
+    asyncio.run(r._render())
+
+    assert all(ctx._invalidated for ctx in contexts)
+    assert r._contexts == set()
