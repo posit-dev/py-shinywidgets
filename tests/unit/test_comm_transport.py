@@ -399,3 +399,28 @@ def test_shared_comm_close_is_noop():
     for s in sessions.values():
         assert s._flushed_handlers == []
         assert s._flush_handlers == []
+
+
+def test_when_comm_open_waits_for_the_real_comm() -> None:
+    from shinywidgets._comm import (
+        OrphanedShinyComm,
+        run_comm_open_callbacks,
+        when_comm_open,
+    )
+
+    class W:
+        comm: object = OrphanedShinyComm("m1")
+
+    calls: list[int] = []
+    when_comm_open(W(), lambda: calls.append(1))
+    assert calls == []
+    run_comm_open_callbacks("m1")
+    assert calls == [1]
+    run_comm_open_callbacks("m1")  # runs once
+    assert calls == [1]
+
+    class Open:
+        comm: object = object()
+
+    when_comm_open(Open(), lambda: calls.append(2))
+    assert calls == [1, 2]

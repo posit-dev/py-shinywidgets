@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
+    from bokeh.events import RangesUpdate, Tap
     from bqplot import Figure as BqplotFigure
     from drawdata import BarWidget as DrawdataBarWidget
     from drawdata import ScatterWidget as DrawdataScatterWidget
@@ -56,11 +57,14 @@ if TYPE_CHECKING:
     from maplibre.ipywidget import MapWidget
     from maplibre.map import Map as MaplibreMap
     from mosaic_widget import MosaicWidget  # pyright: ignore[reportMissingImports]
+    from narwhals.typing import IntoDataFrameT
     from nglview import NGLWidget
     from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
     from pyobsplot.widget import ObsplotWidget
+
+    from ._altair import Selection
 
     # embedding-atlas requires Python 3.11+, so it's absent from 3.10 environments
     if sys.version_info >= (3, 11):
@@ -100,6 +104,8 @@ else:
 
 from shiny.render.renderer import ValueFn
 
+from ._accessors import RatePolicy
+from ._altair import ALTAIR_ACCESSORS, chart_frame, filter_selection, pick_selection
 from ._as_widget import (
     PYDECK_NO_WIDGET_MESSAGE,
     as_widget_panel,
@@ -108,7 +114,9 @@ from ._as_widget import (
     pydeck_has_widget,
 )
 from ._bokeh import _bokeh_dependency
+from ._bokeh_accessors import BOKEH_ACCESSORS, selected_frame
 from ._dependencies import widget_pkg
+from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
 if TYPE_CHECKING:
@@ -225,6 +233,15 @@ class render_widget(render_widget_base[WidgetT, WidgetT]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit accessors on this renderer that declare a default
+        policy, and :func:`~shinywidgets.reactive_read` on its widget. ``None``
+        (the default) leaves each accessor's own default in place, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds. ``0`` disables rate limiting.
+        Defaults to each accessor's own setting (0.25 for those that declare
+        one).
 
     Examples
     --------
@@ -355,14 +372,33 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
 
     Note
     ---
-    **Selections and params**: name your selections and params (e.g.,
-    ``alt.selection_interval(name="brush")``), then read them with
-    ``reactive_read(chart.widget.selections, "brush").value``, or observe them on a
-    `JupyterChart` you build yourself (``jchart.selections.observe(fn, ["brush"])``).
-    Selections can't be set from Python, but params can: setting
+    **Reacting to selections**: give each selection a name (e.g.,
+    ``alt.selection_interval(name="brush")``; altair's generated names change
+    between renders). Then read it in a reactive function (a ``@render.*``
+    function, ``@reactive.calc``, or ``@reactive.effect``), which re-runs
+    whenever the user changes it, much like ``input.my_slider()``:
+
+    * ``chart.selected("brush")``: the selection's current state.
+    * ``chart.selected_rows("brush")``: the rows of the chart's data it selects,
+      evaluated the way Vega-Lite does (including binned and date fields).
+
+    How they behave:
+
+    * Unlike other renderers' accessors, ``selected()`` isn't ``None`` once the
+      chart has rendered: altair reports its selections from the start, so it's
+      an empty selection (and ``selected_rows()`` an empty frame) until the user
+      selects.
+    * A re-render (e.g. when the render function reads an input) gives the user
+      a new chart, whose selections start out empty.
+    * While the user drags, they update at most once the user pauses for 250 ms
+      (see ``rate_policy`` and ``rate_delay``).
+    * They can't be read inside this output's own render function, which builds
+      a new chart each time it runs. To change the chart in response, set a
+      param (below) from a ``@reactive.effect``.
+
+    **Params**: selections can't be set from Python, but params can: setting
     ``chart.widget.params.<name> = value`` updates the chart in place without
-    re-sending its data. To throttle how often selections update Python while
-    dragging, return ``alt.JupyterChart(chart, debounce_wait=150)``. Prefer params
+    re-sending its data. Prefer params
     (or a re-render) over replacing ``chart.widget.chart``, which re-sends the data,
     drops the container sizing described below, and replaces
     ``chart.widget.selections`` and ``chart.widget.params``.
@@ -390,7 +426,52 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`selected` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = ALTAIR_ACCESSORS
+
+    def selected(self, name: Optional[str] = None) -> Selection:
+        """
+        The current state of one of the chart's selections: an altair
+        `IntervalSelection`, `PointSelection`, or `IndexSelection` (see
+        `altair.utils.selection`), whose ``.value`` holds what's selected.
+
+        Unlike other renderers' accessors, this is never ``None`` once the
+        chart has rendered: until the user selects, it's an empty selection.
+        `name` is the name given to the selection (e.g.
+        ``alt.selection_interval(name="brush")``), and may be omitted when the
+        chart has only one. Always name selections: altair's generated names
+        change between renders. Debounced (250 ms) by default; see the
+        ``rate_policy`` and ``rate_delay`` parameters.
+        """
+        selections = cast(Dict[str, "Selection"], self._read_accessor("selected"))
+        return pick_selection(selections, name)
+
+    def selected_rows(
+        self, name: Optional[str] = None, *, df: Optional[IntoDataFrameT] = None
+    ) -> IntoDataFrameT:
+        """
+        The rows of `df` in a selection (see :meth:`selected`), evaluated the
+        way Vega-Lite does (including binned and temporal fields).
+
+        `df` defaults to the chart's own data frame (pandas or polars); pass it
+        for charts whose data is a URL, or that concatenate charts with
+        different data. Returns an empty frame while nothing is selected. Dates
+        are compared in UTC, reading time-zone-naive columns in the browser's
+        time zone, as Vega-Lite does.
+        """
+        selection = self.selected(name)
+        widget = cast(JupyterChart, self._widget)
+        frame = chart_frame(widget) if df is None else df
+        return filter_selection(selection, frame, widget.local_tz)
 
 
 class render_embedding_atlas(
@@ -468,9 +549,19 @@ class render_embedding_atlas(
         height: Optional[str] = None,
         fill: Optional[bool] = None,
         fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[float] = None,
         allow_unrestricted_connection: bool = False,
     ):
-        super().__init__(_fn, width=width, height=height, fill=fill, fillable=fillable)
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+        )
         self.allow_unrestricted_connection = allow_unrestricted_connection
 
     def _as_widget(self, value: EmbeddingAtlasWidget) -> EmbeddingAtlasWidget:
@@ -1768,18 +1859,51 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
 
     The decorated function also gains two read-only attributes: `.value`, the bokeh
     object most recently returned by the render function, and `.widget`, the rendered
-    `BokehModel` instance. Bokeh model properties are not widget traits, so instead
-    of :func:`~shinywidgets.reactive_read`, use bokeh's own callbacks to react to user
-    interaction (e.g., ``source.selected.on_change("indices", lambda attr, old, new:
-    selected.set(new))``, or ``fig.on_event(Tap, ...)``). These callbacks may set
-    `reactive.value`s. To update the plot without re-rendering, modify the bokeh
-    models in place (e.g., ``source.data = ...``). Plots that share a
+    `BokehModel` instance. To update the plot without re-rendering, modify the
+    bokeh models in place (e.g., ``source.data = ...``). Plots that share a
     `ColumnDataSource` (e.g., for linked selection) must be returned together, in
     one layout, from a single render function. Create bokeh models per session
     (e.g., inside the render function), not at the top level of a Shiny Core app,
     where every visitor would share them.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Reacting to user interaction**: bokeh model properties aren't widget
+    traits, so :func:`~shinywidgets.reactive_read` can't see them. Instead, the
+    output has methods that read what the user does in the plot, much like
+    ``input.my_slider()`` reads an input. Call them in a reactive function (a
+    ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``), which
+    then re-runs whenever the interaction changes:
+
+    * ``selected()``: the indices of the selected rows of the plot's
+      `ColumnDataSource` (from the tap, box, or lasso select tools), and
+      ``selected_rows()``: those rows, as a data frame. These need a plot with
+      exactly one `ColumnDataSource`.
+    * ``tapped()``: the most recent tap, with its ``.x`` and ``.y`` in data
+      units.
+    * ``zoomed()``: the plot's ranges after a zoom or pan.
+
+    How they behave:
+
+    * Each returns ``None`` until the interaction happens (``selected_rows()``
+      an empty frame). That's a normal state, not an error, so check for it, or
+      use ``req(plot.tapped())`` to wait for it.
+    * A re-render (e.g. when the render function reads an input) gives the user
+      a new plot, so they all start over.
+    * Selecting the same points again isn't a change, so readers of
+      ``selected()`` don't re-run. Every tap, zoom, or pan re-runs readers of
+      ``tapped()`` and ``zoomed()``.
+    * ``selected()`` updates at most once the user pauses for 250 ms (see
+      ``rate_policy`` and ``rate_delay``).
+    * They can't be read inside this output's own render function, which builds
+      a new plot each time it runs. To change the plot in response, modify the
+      bokeh models from a ``@reactive.effect`` instead.
+
+    For anything else, bokeh's own callbacks (e.g.,
+    ``source.selected.on_change("indices", ...)``) work too, and may set
+    `reactive.value`s.
 
     Parameters
     ----------
@@ -1796,7 +1920,57 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`selected` (debounced by default):
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps the
+        debounce.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = BOKEH_ACCESSORS
+
+    def selected(self) -> Optional[List[int]]:
+        """
+        The row indices (into the plot's `ColumnDataSource`) of the most recent
+        selection, from a tap, box, or lasso select tool.
+
+        Returns ``None`` until the user selects, and ``[]`` after a selection
+        that caught nothing.
+        Requires a plot (or layout) with exactly one `ColumnDataSource`.
+        Debounced (250 ms) by default; see the ``rate_policy`` and
+        ``rate_delay`` parameters.
+        """
+        return cast(Optional[List[int]], self._read_accessor("selected"))
+
+    def selected_rows(self) -> pd.DataFrame:
+        """
+        The selected rows (see :meth:`selected`) of the plot's
+        `ColumnDataSource`, as a pandas data frame (``source.to_df()``). Empty
+        while nothing is selected. Readers also re-run when ``source.data``
+        changes.
+        """
+        indices = self.selected()
+        self._read_accessor("source_data")
+        return selected_frame(cast("BokehModel", self._widget), indices)
+
+    def tapped(self) -> Optional[Tap]:
+        """
+        The most recent tap on a plot, as a `bokeh.events.Tap` (``.x`` and
+        ``.y`` in data units, ``.model`` the plot). Returns ``None`` until the
+        user taps. Not rate-limited.
+        """
+        return cast(Optional["Tap"], self._read_accessor("tapped"))
+
+    def zoomed(self) -> Optional[RangesUpdate]:
+        """
+        The plot ranges after the most recent zoom or pan, as a
+        `bokeh.events.RangesUpdate` (``.x0``, ``.x1``, ``.y0``, ``.y1``,
+        ``.model``). Returns ``None`` until the user zooms or pans. Not
+        rate-limited (bokeh reports once per gesture).
+        """
+        return cast(Optional["RangesUpdate"], self._read_accessor("zoomed"))
 
     def auto_output_ui(self) -> Tag:
         res = super().auto_output_ui()
@@ -2191,12 +2365,37 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
 
     Note
     ---
-    **Events**: to respond to user interaction, return a `go.FigureWidget` and
-    register plotly callbacks on it (e.g., ``fig.data[0].on_click(fn)``,
-    ``fig.data[0].on_selection(fn)``, or ``fig.layout.xaxis.on_change(fn,
-    "range")``), typically setting a `reactive.value` inside the callback.
-    Callbacks registered on a `go.Figure` don't carry over when it's coerced to a
-    `FigureWidget`, so they never fire.
+    **Reacting to user interaction**: the output has methods that read what the
+    user does in the plot, much like ``input.my_slider()`` reads an input. Call
+    them in a reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which then re-runs whenever the interaction changes:
+
+    * ``clicked()``: the clicked points.
+    * ``selected()``: the points of a box or lasso selection, once the drag ends
+      (``selecting()``: the same, while the user drags).
+    * ``brushed()``: the selected region itself (``brushing()``: while dragging).
+    * ``relayout()``: the axis ranges after a zoom, pan, or autoscale.
+    * ``selected_rows(df)``: the rows of your data the user selected. This needs
+      each point to carry its row as ``customdata``, e.g.
+      ``px.scatter(df, ..., custom_data=[df.index])``; see the method for
+      details.
+
+    How they behave:
+
+    * Each returns ``None`` until the interaction happens. That's a normal
+      state, not an error, so check for it (``req(pts is not None)``; not
+      ``req(pts)``, since a data frame has no truth value).
+    * A re-render (e.g. when the render function reads an input) gives the user
+      a new plot, so they all start over at ``None``.
+    * Repeating an interaction (clicking the same point twice) isn't a change,
+      so readers don't re-run.
+    * As in the plot itself, a double-click clears ``clicked()``, and a deselect
+      (double-clicking after a selection) clears the selection accessors.
+    * The streaming ones, ``selecting()`` and ``brushing()``, update at most
+      once the user pauses for 250 ms (see ``rate_policy`` and ``rate_delay``).
+    * They can't be read inside this output's own render function, which builds
+      a new plot each time it runs. To change the plot in response to a click,
+      modify ``.widget`` from a ``@reactive.effect`` instead (see the example).
 
     **Updating in place**: re-rendering rebuilds the figure, resetting zoom and
     selection. To change a displayed figure instead, read inputs under
@@ -2234,6 +2433,15 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`selecting` and :meth:`brushing` (debounced by
+        default) and :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps each
+        accessor's own default, and debounces ``reactive_read()`` only if
+        ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
 
     Examples
     --------
@@ -2254,7 +2462,125 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
 
     app = App(app_ui, server)
     ```
+
+    Reacting to clicks and selections:
+
+    ```python
+    import plotly.express as px
+    from shiny import reactive, req
+    from shiny.express import render
+    from shinywidgets import render_plotly
+
+    df = px.data.iris()
+
+
+    @render_plotly
+    def plot():
+        fig = px.scatter(df, x="sepal_width", y="sepal_length", custom_data=[df.index])
+        return fig.update_layout(dragmode="select")
+
+
+    @render.data_frame
+    def picked():
+        return plot.selected_rows(df)  # empty until the user selects
+
+
+    @reactive.effect
+    def _():
+        pts = plot.clicked()
+        req(pts is not None)
+        plot.widget.layout.title.text = f"Clicked x={pts['x'].iloc[0]}"
+    ```
     """
+
+    _accessor_specs = PLOTLY_ACCESSORS
+
+    def clicked(self) -> Optional[pd.DataFrame]:
+        """
+        The points of the most recent click, one row per point.
+
+        Columns are ``trace_index``, ``point_index`` (the point's position
+        within its trace, not a row of your data), ``x``, ``y``, and ``z`` and
+        ``customdata`` when the figure has them. Returns ``None`` until the user
+        clicks, and again after a double-click or deselect, so check for
+        ``None`` (e.g. ``req(pts is not None)``) to wait for a click. Clicking
+        the same point twice doesn't fire twice. Not rate-limited. Requires
+        pandas.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("clicked"))
+
+    def selected(self) -> Optional[pd.DataFrame]:
+        """
+        The points of the most recent box or lasso selection, once the gesture
+        ends, with the same columns as :meth:`clicked`.
+
+        Returns ``None`` until the user selects, and again after a deselect
+        (double-click); an empty frame for a selection that caught no points.
+        Not rate-limited. Requires pandas. See :meth:`selected_rows` for rows of
+        your data.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("selected"))
+
+    def selecting(self) -> Optional[pd.DataFrame]:
+        """
+        Like :meth:`selected`, but updates while the user drags the selection.
+        Debounced (250 ms) by default; see the ``rate_policy`` and
+        ``rate_delay`` parameters.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("selecting"))
+
+    def brushed(self) -> Optional[Dict[str, Any]]:
+        """
+        The region of the most recent selection, once the gesture ends:
+        ``{"range": {"x": [x0, x1], "y": [y0, y1]}}`` for a box, or
+        ``{"lassoPoints": {"x": [...], "y": [...]}}`` for a lasso, in data
+        coordinates (as plotly.js reports them).
+
+        Returns ``None`` until the user selects, and again after a deselect.
+        Not rate-limited.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("brushed"))
+
+    def brushing(self) -> Optional[Dict[str, Any]]:
+        """
+        Like :meth:`brushed`, but updates while the user drags the selection.
+        Debounced (250 ms) by default; see the ``rate_policy`` and
+        ``rate_delay`` parameters.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("brushing"))
+
+    def relayout(self) -> Optional[Dict[str, Any]]:
+        """
+        The axis changes of the most recent zoom, pan, or autoscale, as
+        plotly.js reports them: keys like ``"xaxis.range[0]"`` and
+        ``"xaxis.autorange"`` (other relayout keys are dropped).
+
+        Returns ``None`` until the user changes an axis. Not rate-limited
+        (plotly.js reports once per gesture).
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("relayout"))
+
+    def selected_rows(
+        self, df: IntoDataFrameT, *, key: Optional[str] = None
+    ) -> IntoDataFrameT:
+        """
+        The rows of `df` that the user selected (see :meth:`selected`).
+
+        Plotly reports points of the plot, not rows of your data, so each point
+        must carry its row's identity as ``customdata``, which is matched to
+        `df`:
+
+        * pandas: ``px.scatter(df, ..., custom_data=[df.index])``. Matched to
+          `df`'s index labels, so this also works on a filtered or sorted `df`.
+        * Any frame (e.g., polars), by a key column: ``custom_data=["id"]``
+          with ``key="id"``. Matched to that column's values. Without an id
+          column, add one with ``df.with_row_index("id")``.
+
+        Returns an empty frame while nothing is selected, so it can be passed
+        straight to ``@render.data_frame``.
+        """
+        points = self._read_accessor("selected", raw=True)
+        return select_rows(cast(Optional[List[Point]], points), df, key)
 
     def _as_widget(self, value: PlotlyValueT) -> FigureWidget:
         fig, config = _split_config(value)
@@ -2432,6 +2758,8 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
         height: Optional[str] = None,
         fill: Optional[bool] = None,
         fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[float] = None,
     ):
         warnings.warn(
             "render_pydeck is deprecated: pydeck v0.9 removed its Jupyter widget, so "
@@ -2441,7 +2769,15 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
             DeprecationWarning,
             stacklevel=2,
         )
-        super().__init__(_fn, width=width, height=height, fill=fill, fillable=fillable)
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+        )
 
     def _as_widget(self, value: ValueT) -> DeckGLWidget:
         # A DeckGLWidget (which as_widget() passes through) can't render either

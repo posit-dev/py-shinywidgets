@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 
 class FakeContext:
@@ -72,6 +72,7 @@ class FakeSession:
         self._ended_handlers: List[Callable[[], None]] = []
         self._flush_handlers: List[Callable[[], Any]] = []
         self._flushed_handlers: List[Callable[[], Any]] = []
+        self.custom_messages: List[Tuple[str, Any]] = []
 
         # Used by init_shiny_widget() to embed deps into comm-open metadata.
         self._process_ui_calls: List[Any] = []
@@ -97,9 +98,8 @@ class FakeSession:
     def on_flushed(self, fn: Callable[[], Any]) -> None:
         self._flushed_handlers.append(fn)
 
-    async def send_custom_message(self, msg_type: str, msg_txt: str) -> None:
-        # Unit tests inspect scheduled callbacks; they do not need to execute sends.
-        return None
+    async def send_custom_message(self, msg_type: str, message: Any) -> None:
+        self.custom_messages.append((msg_type, message))
 
     def _process_ui(self, x: Any) -> Dict[str, Any]:
         self._process_ui_calls.append(x)

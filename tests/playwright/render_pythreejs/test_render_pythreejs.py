@@ -187,9 +187,11 @@ def test_pythreejs_camera_swap_tracks_container_aspect(page: Page, local_app) ->
     expect(page.locator("#fill_scene canvas")).to_have_count(1, timeout=30000)
     page.wait_for_function(CANVAS_FILLS_OUTPUT_JS, timeout=30000)
 
-    # The initial camera's aspect tracks the (much wider than tall) container
+    # The initial camera's aspect tracks the (much wider than tall) container.
+    # Wait past the camera's default (1.0): the browser may still be holding the
+    # container-driven aspect back, behind an unacked message.
     expect(page.locator("#camera_aspect")).to_have_text(
-        re.compile(r"^\d+\.\d{4}$"), timeout=30000
+        re.compile(r"^(?!1\.0000$)\d+\.\d{4}$"), timeout=30000
     )
     initial_text = page.locator("#camera_aspect").inner_text()
     assert float(initial_text) != 1.0
@@ -287,6 +289,13 @@ def test_pythreejs_cached_renderer_keeps_user_camera_aspect(
     canvas = page.locator("#cached_scene canvas")
     expect(canvas).to_have_count(1, timeout=30000)
     page.wait_for_function(canvas_fills_output_js("#cached_scene"), timeout=30000)
+    # Wait for Python to see the container-driven aspect (the camera starts at
+    # 1.0): until then the browser may still hold it back, behind an unacked
+    # message, and send it after the click below, where it would overwrite 1.5
+    # (the same last-writer-wins race as a busy Jupyter kernel)
+    expect(page.locator("#cached_camera_aspect")).to_have_text(
+        re.compile(r"^(?!1\.0000$)\d+\.\d{4}$"), timeout=30000
+    )
 
     # The container-driven aspect is nowhere near 1.5 (the card is much wider
     # than tall), so this is unambiguously a user-set value

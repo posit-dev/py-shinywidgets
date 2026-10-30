@@ -6,6 +6,7 @@ from contextvars import ContextVar, Token
 from typing import (
     TYPE_CHECKING,
     Callable,
+    ClassVar,
     Generic,
     Iterator,
     Optional,
@@ -25,6 +26,7 @@ from shiny.reactive._core import (
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
 from shiny.session import get_current_session
 
+from ._accessors import Accessors, AccessorSpec, RatePolicy, register_rate_policy
 from ._as_widget import as_widget, refresh_stale_mpl_canvases
 from ._comm import OrphanedShinyComm
 from ._dependencies import widget_pkg
@@ -55,6 +57,12 @@ The type of the widget created from the renderer's ValueT
 """
 T = TypeVar("T", bound=object)
 
+# The renderer whose render function is running (per task, so concurrent
+# renders don't see each other)
+rendering_renderer: ContextVar[Optional[object]] = ContextVar(
+    "rendering_renderer", default=None
+)
+
 
 class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     """
@@ -63,7 +71,13 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     Handles coercion of the render function's return value into an ipywidget (via
     `_as_widget()`), applies smart layout defaults, and produces the payload that the
     browser-side output binding uses to display the widget.
+
+    Subclasses declare accessors (methods such as `clicked()` that read widget
+    events reactively) in `_accessor_specs`, and implement each one as
+    `self._read_accessor(name)`.
     """
+
+    _accessor_specs: ClassVar[Tuple[AccessorSpec, ...]] = ()
 
     def auto_output_ui(self) -> Tag:
         return output_widget(
@@ -82,23 +96,39 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         height: Optional[str] = None,
         fill: Optional[bool] = None,
         fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[float] = None,
     ):
         super().__init__(_fn)
         self.width = width
         self.height = height
         self.fill = fill
         self.fillable = fillable
+        # For `reactive_read()` on the widget, where (unlike accessors) there's
+        # no default policy for `rate_delay` alone to adjust
+        self._rate_policy: Optional[RatePolicy] = rate_policy or (
+            None if rate_delay is None else "debounce"
+        )
+        self._rate_delay = rate_delay
 
         self._value: ValueT | None = None
         self._widget: WidgetT | None = None
         self._contexts: set[Context] = set()
+        self._accessors = Accessors(
+            type(self)._accessor_specs, rate_policy=rate_policy, rate_delay=rate_delay
+        )
+        self._closes_accessors_on_destroy = False
 
     async def render(self) -> Jsonifiable | None:
         with WidgetRenderContext():
             return await self._render()
 
     async def _render(self) -> Jsonifiable | None:
-        value = await self.fn()
+        token = rendering_renderer.set(self)
+        try:
+            value = await self.fn()
+        finally:
+            rendering_renderer.reset(token)
 
         # Attach value/widget attributes to user func so they can be accessed (in other reactive contexts)
         self._value = value
@@ -108,6 +138,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._invalidate_contexts()
 
         if value is None:
+            self._accessors.on_render(None)
             return None
 
         # Ensure we have a widget & smart layout defaults
@@ -147,6 +178,17 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         widget, fill = set_layout_defaults(widget)
 
         self._widget = cast(WidgetT, widget)
+        register_rate_policy(widget, self._rate_policy, self._rate_delay)
+        self._accessors.on_render(widget)
+        if (
+            session is not None
+            and not session.is_stub_session()
+            and not self._closes_accessors_on_destroy
+        ):
+            # Fires at session end, and when a module's scope is destroyed
+            # (whose values then raise if a listener or timer sets them)
+            session.on_destroy(self._accessors.close)
+            self._closes_accessors_on_destroy = True
 
         # Don't actually display anything unless this is a DOMWidget
         if not isinstance(widget, DOMWidget):
@@ -185,6 +227,22 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             "The `widget` attribute of a @render_widget function is read only."
         )
 
+    def _read_accessor(self, name: str, *, raw: bool = False) -> object:
+        if rendering_renderer.get() is self:
+            # It would cancel (no widget yet) or reset (a new widget), so the
+            # output would never render
+            raise RuntimeError(
+                f"`{self.output_id}.{name}()` can't be read inside "
+                f"`{self.output_id}`'s own render function, which builds a new "
+                "widget each time it runs. Read it in another output or an effect; "
+                f"to change the plot in response, update `{self.output_id}.widget` "
+                "in place from a `reactive.effect`."
+            )
+        # Depend on the widget too, so a re-render invalidates readers even
+        # before the new widget reports anything.
+        self._register_current_context()
+        return self._accessors.read(name, raw=raw)
+
     def _get_reactive_obj(self, x: T) -> T | None:
         self._register_current_context()
         if x is not None:
@@ -194,7 +252,9 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         return None
 
     def _invalidate_contexts(self) -> None:
-        for ctx in self._contexts:
+        # Copy: invalidate() runs the on_invalidate callback that drops the
+        # context from this set
+        for ctx in list(self._contexts):
             ctx.invalidate()
 
     # If the widget/value is read in a reactive context, then we'll need to invalidate
@@ -202,7 +262,17 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     def _register_current_context(self) -> None:
         if not has_current_context():
             return
-        self._contexts.add(get_current_context())
+        ctx = get_current_context()
+        if ctx in self._contexts:
+            return
+        self._contexts.add(ctx)
+        try:
+            ctx.on_invalidate(lambda: self._contexts.discard(ctx))
+        except RuntimeError:
+            # An extended task's body runs under a context that refuses
+            # dependencies; still let it reach `.widget` (e.g. to call
+            # geolibre's blocking methods)
+            self._contexts.discard(ctx)
 
 
 def has_current_context() -> bool:

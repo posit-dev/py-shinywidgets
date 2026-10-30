@@ -1,7 +1,12 @@
 import asyncio
 
 import pytest
+import shinywidgets._accessors as acc
 import shinywidgets._render_widget_base as rwb
+import shinywidgets._shinywidgets as sw
+from shiny import reactive as shiny_reactive
+from shiny.reactive._core import Context
+from shiny.reactive._extended_task import DenialContext
 
 
 class FakeLiveWidget:
@@ -261,3 +266,239 @@ def test_render_wraps_in_widget_render_context_and_restores_on_error(
         asyncio.run(r.render())
 
     assert rwb.WidgetRenderContext.is_rendering_widget() is False
+
+
+class RecordingAttach:
+    def __init__(self) -> None:
+        self.widgets: list[object] = []
+        self.emit = None
+
+    def __call__(self, widget, emit):  # type: ignore[no-untyped-def]
+        self.widgets.append(widget)
+        self.emit = emit
+        return lambda: None
+
+
+def renderer_with_clicked(att: RecordingAttach):  # type: ignore[no-untyped-def]
+    class R(rwb.render_widget_base):
+        _accessor_specs = (
+            acc.AccessorSpec(name="clicked", kind="event", attach=att, eager=True),
+        )
+
+        def clicked(self):  # type: ignore[no-untyped-def]
+            return self._read_accessor("clicked")
+
+    return R()
+
+
+def test_render_attaches_accessors_to_the_coerced_widget(monkeypatch) -> None:
+    att = RecordingAttach()
+    r = renderer_with_clicked(att)
+    widget = FakeLiveWidget()
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: widget)
+    asyncio.run(r._render())
+    assert att.widgets == [widget]
+    assert r.clicked() is None
+    att.emit({"x": 1})
+    assert r.clicked() == {"x": 1}
+
+
+class ModuleScope:
+    """A module's session: destroying it doesn't end the root session."""
+
+    def __init__(self) -> None:
+        self.on_destroy_fns: list = []
+
+    def is_stub_session(self) -> bool:
+        return False
+
+    def root_scope(self) -> "ModuleScope":
+        return self
+
+    def on_ended(self, fn) -> None:  # type: ignore[no-untyped-def]
+        pass
+
+    def on_destroy(self, fn) -> None:  # type: ignore[no-untyped-def]
+        self.on_destroy_fns.append(fn)
+
+    def destroy(self) -> None:
+        for fn in self.on_destroy_fns:
+            fn()
+
+
+def test_destroying_the_module_scope_detaches_accessors(monkeypatch) -> None:
+    # A destroyed scope's reactive values raise when set, so a listener (or a
+    # pending debounce) publishing after destroy() would error
+    att = RecordingAttach()
+    r = renderer_with_clicked(att)
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    scope = ModuleScope()
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
+    monkeypatch.setattr(rwb, "get_current_session", lambda: scope)
+    monkeypatch.setattr(sw, "foreign_or_closed_widget", lambda widget, root: None)
+    monkeypatch.setattr(sw, "open_process_global_widgets", lambda widget, root: None)
+    asyncio.run(r._render())
+    scope.destroy()
+    att.emit({"x": 1})
+    with shiny_reactive.isolate():
+        assert r._accessors.values["clicked"].get().raw is None
+
+
+def test_accessor_read_registers_current_context(monkeypatch) -> None:
+    att = RecordingAttach()
+    r = renderer_with_clicked(att)
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
+    asyncio.run(r._render())
+    ctx = FakeContext()
+    monkeypatch.setattr(rwb, "get_current_context", lambda: ctx)
+    with shiny_reactive.isolate():
+        r.clicked()
+    assert ctx in r._contexts
+
+
+def test_render_returning_none_cancels_accessor_reads(monkeypatch) -> None:
+    att = RecordingAttach()
+    r = renderer_with_clicked(att)
+    state = {"val": 1}
+
+    @r
+    async def _():  # noqa: ANN202
+        return state["val"]
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
+    asyncio.run(r._render())
+    att.emit({"x": 1})
+    state["val"] = None
+    asyncio.run(r._render())
+
+    class Cancel(Exception):
+        pass
+
+    def cancel(*args):  # type: ignore[no-untyped-def]
+        raise Cancel()
+
+    monkeypatch.setattr(acc, "req", cancel)
+    with pytest.raises(Cancel):
+        r.clicked()
+
+
+def test_render_registers_rate_policy_for_its_widget(monkeypatch) -> None:
+    widget = FakeLiveWidget()
+    r = rwb.render_widget_base(rate_policy="throttle")
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: widget)
+    asyncio.run(r._render())
+    rate = acc.rate_policy_for(widget)  # type: ignore[arg-type]
+    assert rate is not None and (rate.policy, rate.delay) == ("throttle", 0.25)
+
+
+def test_rate_delay_alone_debounces_reactive_read(monkeypatch) -> None:
+    widget = FakeLiveWidget()
+    r = rwb.render_widget_base(rate_delay=0.5)
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: widget)
+    asyncio.run(r._render())
+    rate = acc.rate_policy_for(widget)  # type: ignore[arg-type]
+    assert rate is not None and (rate.policy, rate.delay) == ("debounce", 0.5)
+
+
+def test_no_rate_kwargs_leave_reactive_read_unlimited(monkeypatch) -> None:
+    widget = FakeLiveWidget()
+    r = rwb.render_widget_base()
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: widget)
+    asyncio.run(r._render())
+    assert acc.rate_policy_for(widget) is None  # type: ignore[arg-type]
+
+
+def test_reading_an_accessor_in_its_own_render_raises(monkeypatch) -> None:
+    att = RecordingAttach()
+    r = renderer_with_clicked(att)
+
+    @r
+    async def _():  # noqa: ANN202
+        r.clicked()
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
+    with pytest.raises(RuntimeError, match="own render function"):
+        asyncio.run(r._render())
+
+
+def test_invalidated_reader_contexts_are_forgotten(monkeypatch) -> None:
+    r = rwb.render_widget_base()
+    ctx = FakeContext()
+    monkeypatch.setattr(rwb, "get_current_context", lambda: ctx)
+    r._register_current_context()
+    assert ctx in r._contexts
+    ctx.run_invalidate_callbacks()
+    assert ctx not in r._contexts
+
+
+def test_rerender_invalidates_real_contexts_that_unregister_themselves(
+    monkeypatch,
+) -> None:
+    # A real Context runs its on_invalidate callbacks (which drop it from
+    # _contexts) synchronously inside invalidate()
+    r = rwb.render_widget_base()
+    contexts = [Context(), Context()]
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
+    asyncio.run(r._render())
+
+    for ctx in contexts:
+        monkeypatch.setattr(rwb, "get_current_context", lambda: ctx)
+        _ = r.value
+
+    asyncio.run(r._render())
+
+    assert all(ctx._invalidated for ctx in contexts)
+    assert r._contexts == set()
+
+
+def test_widget_is_readable_inside_an_extended_task(monkeypatch) -> None:
+    # An extended task's body runs under a context that refuses dependencies;
+    # e.g. geolibre's blocking methods must be called (on `.widget`) from one
+    r = rwb.render_widget_base()
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    widget = FakeLiveWidget()
+    monkeypatch.setattr(rwb, "as_widget", lambda value: widget)
+    asyncio.run(r._render())
+
+    monkeypatch.setattr(rwb, "get_current_context", lambda: DenialContext())
+    assert r.widget is widget
+    assert r._contexts == set()
