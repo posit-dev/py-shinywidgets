@@ -4117,7 +4117,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     ```
     """
 
-    accessor_specs: ClassVar[tuple[AccessorSpec, ...]] = (
+    _accessor_specs: ClassVar[tuple[AccessorSpec, ...]] = (
         AccessorSpec(
             name="selection",
             kind="state",
