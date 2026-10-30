@@ -203,6 +203,19 @@ def test_tz_aware_columns_compare_in_their_own_zone() -> None:
     assert sa.filter_selection(interval(brush), df, None)["y"].tolist() == [1, 2]
 
 
+def test_fixed_offset_columns_compare_in_their_offset() -> None:
+    # pandas names a parsed "+02:00" column's zone "UTC+02:00", which isn't a
+    # ZoneInfo key
+    df = pd.DataFrame(
+        {
+            "t": pd.to_datetime([f"2024-01-01T0{h}:00:00+02:00" for h in range(4)]),
+            "y": range(4),
+        }
+    )
+    brush = [entry(("t", "R", ["2023-12-31T22:30:00Z", "2024-01-01T00:00:00Z"]))]
+    assert sa.filter_selection(interval(brush), df, None)["y"].tolist() == [1, 2]
+
+
 def test_temporal_point_selection_with_epoch_ms() -> None:
     sel = point([entry(("date", "E", [1704153600000]))])  # 2024-01-02T00:00Z
     assert sa.filter_selection(sel, DATES, local_tz="UTC")["y"].tolist() == [1]

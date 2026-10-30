@@ -461,6 +461,25 @@ def test_failed_attach_is_not_retried_on_render() -> None:
     assert calls == [1]
 
 
+def test_attach_failing_on_a_new_widget_raises_at_the_read_not_the_render() -> None:
+    # e.g. selected() was read on a one-source bokeh plot, and the next render
+    # returns a two-source layout
+    def attach(widget: object, emit: Callable[[object], None]) -> Callable[[], None]:
+        if widget == "unsupported":
+            raise TypeError("unsupported layout")
+        return lambda: None
+
+    a = acc.Accessors(
+        [acc.AccessorSpec(name="sel", kind="event", attach=attach)],
+        schedule=FakeSchedule(),
+    )
+    a.on_render("supported")
+    a.read("sel")
+    a.on_render("unsupported")  # must not raise from inside a render
+    with pytest.raises(TypeError):
+        a.read("sel")
+
+
 class IdleSession:
     def __init__(self) -> None:
         self.queued: List[Callable[[], object]] = []

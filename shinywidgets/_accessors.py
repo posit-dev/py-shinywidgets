@@ -198,7 +198,12 @@ class Accessors:
                 # its own state, which must not be deduped against it.
                 slot.latest = self._published(slot)
             if widget is not None and (slot.spec.eager or slot.activated):
-                self._attach(slot)
+                try:
+                    self._attach(slot)
+                except Exception:
+                    # e.g. a layout this accessor doesn't support: render it
+                    # anyway, and let the next read retry the attach and raise
+                    slot.activated = False
 
     def read(self, name: str, *, raw: bool = False) -> object:
         slot = self._slots[name]

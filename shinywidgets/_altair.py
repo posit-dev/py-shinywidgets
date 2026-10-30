@@ -8,7 +8,8 @@ a frame by a selection's Vega "store", porting Vega's `selectionTest`.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import TYPE_CHECKING, Any, Callable, Dict, Literal, Optional, Union
 from zoneinfo import ZoneInfo
 
@@ -195,5 +196,15 @@ def to_column_time(value: Any, zone: Optional[str], local_tz: Optional[str]) -> 
     else:
         return value
     if zone is not None:
-        return moment.astimezone(ZoneInfo(zone))
+        return moment.astimezone(column_zone(zone))
     return moment.astimezone(ZoneInfo(local_tz or "UTC")).replace(tzinfo=None)
+
+
+def column_zone(zone: str) -> tzinfo:
+    # pandas names a fixed-offset zone (e.g. from parsing "...+02:00") like
+    # "UTC+02:00", which isn't a ZoneInfo key
+    offset = re.fullmatch(r"UTC([+-])(\d{2}):(\d{2})", zone)
+    if offset is None:
+        return ZoneInfo(zone)
+    sign = 1 if offset[1] == "+" else -1
+    return timezone(sign * timedelta(hours=int(offset[2]), minutes=int(offset[3])))
