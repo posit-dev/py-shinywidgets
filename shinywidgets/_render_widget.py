@@ -8,6 +8,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Iterable,
     List,
     Optional,
     Tuple,
@@ -1166,7 +1167,9 @@ class render_k3d(render_widget_base[ValueT, K3dPlot]):
         Never returns ``None`` once it returns. Not rate-limited (k3d
         throttles camera updates to roughly one per 200 ms upstream).
         """
-        return cast(List[float], self._read_accessor("camera"))
+        # The camera trait (ListOrArray) accepts numpy arrays, so normalize
+        # to the documented plain list
+        return list(cast(Iterable[float], self._read_accessor("camera")))
 
     def _as_widget(self, value: ValueT) -> K3dPlot:
         try:

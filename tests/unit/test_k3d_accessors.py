@@ -33,3 +33,21 @@ def test_camera_not_ready_tolerates_lists_and_arrays() -> None:
     assert sk.CAMERA.not_ready(np.array([]))
     assert not sk.CAMERA.not_ready([0] * 9)
     assert not sk.CAMERA.not_ready(np.zeros(9))
+
+
+def test_camera_normalizes_arrays_to_plain_lists(widget_session: Session) -> None:
+    # k3d's camera trait (ListOrArray) stores ndarrays as-is, but camera()
+    # documents List[float]
+    import k3d
+    import numpy as np
+
+    with session_context(widget_session):
+        plot = k3d.plot()
+        plot += k3d.points([[0, 0, 0]])
+    r = rw.render_k3d()
+    r._widget = plot  # stands in for _render()
+    r._accessors.on_render(plot)
+    plot.camera = np.arange(9, dtype=float)
+    cam = r.camera()
+    assert type(cam) is list
+    assert cam == [float(v) for v in range(9)]
