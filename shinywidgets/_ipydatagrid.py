@@ -55,4 +55,32 @@ CELL_EDITED = AccessorSpec(
     attach=attach_cell_edited,
 )
 
-IPYDATAGRID_ACCESSORS = (SELECTIONS, CELL_CLICKED, CELL_EDITED)
+
+def attach_visible_rows(widget: DataGrid, emit: Emit) -> Callable[[], None]:
+    # `_visible_rows` is upstream-internal (like `_predicate` in
+    # embedding-atlas); fail loudly if ipydatagrid removes it rather than
+    # silently stop invalidating `visible_data()` readers
+    if getattr(widget, "_visible_rows", None) is None:
+        raise TypeError(
+            "`visible_data()` relies on ipydatagrid's (upstream-internal) "
+            "`_visible_rows` trait, which this version of ipydatagrid doesn't "
+            "have. If ipydatagrid renamed or removed this trait, please report it."
+        )
+
+    def on_change(change: dict[str, object]) -> None:
+        emit(change["new"])
+
+    widget.observe(on_change, "_visible_rows")
+    emit(widget._visible_rows)
+    return lambda: widget.unobserve(on_change, "_visible_rows")
+
+
+# The observed value is only an invalidation trigger; the method reads the
+# frame from the widget at read time (no frame per browser message)
+VISIBLE_ROWS = AccessorSpec(
+    name="visible_data",
+    kind="state",
+    attach=attach_visible_rows,
+)
+
+IPYDATAGRID_ACCESSORS = (SELECTIONS, CELL_CLICKED, CELL_EDITED, VISIBLE_ROWS)

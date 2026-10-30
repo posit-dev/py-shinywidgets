@@ -90,3 +90,25 @@ def test_ipydatagrid_accessors(widget_session: Session) -> None:
     r._accessors.on_render(grid(widget_session))
     assert r.cell_clicked() is None and r.cell_edited() is None
     assert r.selections() == []
+
+
+def test_visible_data_follows_the_visible_row_map(widget_session: Session) -> None:
+    g = grid(widget_session)
+    emitted: list[object] = []
+    detach = sd.VISIBLE_ROWS.attach(g, emitted.append)
+    assert emitted == [[]]  # [] until the first sort/filter/edit (all rows)
+    g._visible_rows = [2, 1, 0]  # what a descending sort syncs
+    assert emitted[-1] == [2, 1, 0]
+    detach()
+
+
+def test_visible_data_accessor(widget_session: Session) -> None:
+    from shinywidgets import render_ipydatagrid
+
+    g = grid(widget_session)
+    r = render_ipydatagrid()
+    r._widget = g  # stands in for _render()
+    r._accessors.on_render(g)
+    assert r.visible_data()["a"].tolist() == [1, 2, 3]
+    g._visible_rows = [2, 1, 0]
+    assert r.visible_data()["a"].tolist() == [3, 2, 1]

@@ -2334,7 +2334,8 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
       `selections` stays empty; return ``DataGrid(df, selection_mode="row")`` (or
       ``"cell"``/``"column"``) to let users select.
     * `selections` index the grid as displayed (after any sort or filter), so map
-      them through ``.widget.get_visible_data()``.
+      them through ``.widget.get_visible_data()``; ``.visible_data()`` returns
+      those displayed rows as a data frame, reactively.
     * ``DataGrid.select()``, ``DataGrid.clear_selection()`` and cell edits modify the
       widget's state in place, which doesn't trigger
       :func:`~shinywidgets.reactive_read`. Assign a new list to ``.widget.selections``
@@ -2409,6 +2410,20 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         ``set_cell_value*()`` calls. Not rate-limited.
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("cell_edited"))
+
+    def visible_data(self) -> "pd.DataFrame":
+        """
+        The grid's rows as currently displayed (after its sort and filter),
+        as a pandas data frame — the ``selections()`` rectangles' coordinate
+        space, so ``visible_data().iloc[r1:r2 + 1]`` maps a selection to rows.
+
+        The whole frame until the user sorts, filters, or edits. Backed by
+        ipydatagrid's private ``_visible_rows`` trait (the one public
+        alternative, ``get_visible_data()``, isn't reactive on its own);
+        raises if ipydatagrid removes it. Not rate-limited.
+        """
+        self._read_accessor("visible_data", raw=True)
+        return cast("DataGrid", self._widget).get_visible_data()
 
     # A DataFrame is a generic type (several renderers accept one), so it isn't
     # registered with as_widget()
