@@ -408,6 +408,33 @@
 }
 
 /*
+* A plotly FigureWidget's view root IS the .js-plotly-plot graph div, and without
+* a definite height plotly draws it at its 360px fallback, overflowing (and getting
+* clipped by) an output with an explicit height. Fit the graph div to the output
+* instead (plotly is responsive, so it draws at the size it's given; the output
+* binding also resizes it directly before revealing). Filling outputs are excluded
+* (their flex rules already size the div). An explicit figure height
+* (layout.height=) wins: plotly.js puts it on the div as an inline style. The
+* [style*="height:"] selector matches the inline style output_widget(height=)
+* emits (keep in sync with _output_widget.py); intrinsic heights (`auto`,
+* `fit-content`, ...) are excluded, as in the bqplot rule above, since 100% of an
+* indefinite height would collapse the plot.
+*/
+.shiny-ipywidget-output:not(.forward-fill-potential)[style*="height:"]:not(
+    [style*="height:auto"],
+    [style*="height: auto"],
+    [style*="height:fit-content"],
+    [style*="height: fit-content"],
+    [style*="height:min-content"],
+    [style*="height: min-content"],
+    [style*="height:max-content"],
+    [style*="height: max-content"]
+  )
+  > .lm-Widget.js-plotly-plot {
+  height: 100%;
+}
+
+/*
 * Our fill.css ends up overriding this rule from bqplot...
 * https://github.com/bqplot/bqplot/blob/c186fcd/js/less/bqplot.less#L170
 */
