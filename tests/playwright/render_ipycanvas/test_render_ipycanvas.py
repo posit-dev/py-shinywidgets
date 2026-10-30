@@ -167,9 +167,11 @@ def test_ipycanvas_mouse_events_roundtrip_to_python(page: Page, local_app) -> No
         timeout=30000,
     )
 
-    box = canvas.bounding_box()
-    assert box is not None
-    page.mouse.click(box["x"] + 30, box["y"] + 40)
+    # Click via the locator: its position is resolved at click time, after
+    # Playwright's stability checks. A pre-measured bounding box goes stale
+    # when the layout shifts between measurement and click (the click then
+    # lands a few pixels off, e.g. 30,46 instead of 30,40)
+    canvas.click(position={"x": 30, "y": 40})
     expect(page.locator("#mouse_pos")).to_have_text("30,40", timeout=30000)
 
     assert_no_unexpected_errors(errors, failed_requests)
