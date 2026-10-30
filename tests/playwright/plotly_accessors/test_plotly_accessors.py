@@ -104,7 +104,9 @@ def test_plotly_accessors_on_an_app_defined_figure_subclass(
     page.route("**/shinywidgets/output.js", expose_manager)
     page.goto(local_app.url)
     try:
-        expect(page.locator("#sub_plot .js-plotly-plot")).to_have_count(1, timeout=30000)
+        expect(page.locator("#sub_plot .js-plotly-plot")).to_have_count(
+            1, timeout=30000
+        )
         expect(page.locator("#sub_clicked")).to_have_text("None", timeout=10000)
 
         page.locator("#sub_plot").scroll_into_view_if_needed()
