@@ -68,7 +68,9 @@ if TYPE_CHECKING:
     else:
         from ipywidgets import Widget as EmbeddingAtlasWidget
     from pythreejs import Renderer as PythreejsRenderer
+    from pyvista import Plotter as PyvistaPlotter  # pyright: ignore[reportMissingImports]
     from quak import Widget as QuakWidget  # pyright: ignore[reportMissingImports]
+    from trame_pyvista.jupyter import EmbeddableWidget as PyvistaHtmlWidget  # pyright: ignore[reportMissingImports]
 
     # rerun requires Python 3.11+, so it's absent from 3.10 environments
     if sys.version_info >= (3, 11):
@@ -92,9 +94,9 @@ else:
         LonboardMap
     ) = QuakWidget = PerspectiveWidget = GeolibreMap = IpyvolumeFigure = (
         PythreejsRenderer
-    ) = ObsplotWidget = VizarrViewer = RerunViewer = RerunNotebookViewer = NiiVue = (
-        object
-    )
+    ) = PyvistaPlotter = PyvistaHtmlWidget = ObsplotWidget = VizarrViewer = (
+        RerunViewer
+    ) = RerunNotebookViewer = NiiVue = object
 
 from shiny.render.renderer import ValueFn
 
@@ -140,6 +142,12 @@ DrawdataWidgetT = TypeVar(
 # itself. String bound since rerun is an optional dependency.
 RerunValueT = TypeVar("RerunValueT", bound="Union[RerunViewer, RerunNotebookViewer]")
 
+if TYPE_CHECKING:
+    # The values a @render_pyvista render function may return (bound below):
+    # a pyvista Plotter or the pre-exported html-backend widget itself.
+    PyvistaValue = Union[PyvistaPlotter, PyvistaHtmlWidget]
+PyvistaValueT = TypeVar("PyvistaValueT", bound="PyvistaValue")
+
 __all__ = (
     "render_widget",
     "render_altair",
@@ -176,6 +184,7 @@ __all__ = (
     "render_pydeck",
     "render_pygwalker",
     "render_pythreejs",
+    "render_pyvista",
     "render_quak",
     "render_vizarr",
     "render_rerun",
@@ -3041,6 +3050,84 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
         rec = rr.RecordingStream(application_id="my_app")
         rec.log("points", rr.Points3D(np.random.rand(100, 3)))
         return Viewer(width="auto", height="auto", recording=rec)
+    ```
+    """
+
+
+class render_pyvista(render_widget_base[PyvistaValueT, PyvistaHtmlWidget]):
+    """
+    Reactively render a [pyvista](https://pyvista.org) 3D plot as a Shiny output.
+
+    The decorated function may return either a `pyvista.Plotter` (which is
+    coerced to an ipywidget via pyvista's ``jupyter_backend="html"`` export;
+    requires ``pip install 'shinywidgets[pyvista]'``) or the exported
+    `trame_pyvista.jupyter.EmbeddableWidget` itself. In a filling layout, the
+    view fills its container unless an explicit ``height`` is given. On a
+    headless server, set ``pyvista.OFF_SCREEN = True`` before plotting.
+
+    Return the `Plotter` itself -- do not call `Plotter.show()`. Outside
+    Jupyter, `show()` ignores ``jupyter_backend``, returns `None`, and the
+    output renders nothing. If you pre-build the widget (e.g., via
+    ``trame_pyvista.jupyter.show_trame(pl, mode="html")``), pass
+    ``width="100%", height="100%"`` or it keeps the plotter's pixel
+    ``window_size`` instead of filling the container.
+
+    The export is a self-contained, client-side vtk.js view: camera
+    interaction (rotate/zoom/pan) happens entirely in the browser, and no
+    widget state is synced back to Python, so there is nothing to read with
+    :func:`~shinywidgets.reactive_read`. Each render embeds the entire scene
+    in the widget state (roughly 1 MB even for a trivial mesh, growing with
+    scene size), so prefer fewer, larger re-renders over frequent small ones.
+    For fully server-driven interactivity (e.g., picking, server-side
+    rendering), use pyvista's ``jupyter_backend="trame"`` with a trame server
+    embedded via ``shiny.ui.tags.iframe`` instead (shinywidgets can't host
+    trame's websocket server).
+
+    The decorated function also gains two read-only attributes: `.value`, the
+    value most recently returned by the render function, and `.widget`, the
+    rendered `EmbeddableWidget` instance. Note that, unlike most other
+    ``render_*`` decorators, the widget has no live connection to the plotter,
+    so the scene can't be updated in place via `.widget` -- re-render instead.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    import pyvista as pv
+    from shiny import App, ui
+    from shinywidgets import output_widget, render_pyvista
+
+    pv.OFF_SCREEN = True
+
+    app_ui = ui.page_fillable(output_widget("plot"))
+
+
+    def server(input, output, session):
+        @render_pyvista
+        def plot():
+            pl = pv.Plotter()
+            pl.add_mesh(pv.Sphere(), show_edges=True)
+            return pl
+
+
+    app = App(app_ui, server)
     ```
     """
 

@@ -89,6 +89,9 @@ plotnine = ["plotnine", "ipympl"]
 # validate_visitor_sql), not just transitively through pygwalker
 pygwalker = ["pygwalker>=0.4.9.13", "duckdb>=0.10.4", "sqlglot>=23.15.8"]
 pythreejs = ["pythreejs"]
+# vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
+# so pyvista can't be installed there
+pyvista = ["pyvista[jupyter]; python_version < '3.15'"]
 quak = ["quak"]
 # vizarr pins zarr<3, so it is not in the shared test/dev groups
 vizarr = ["vizarr>=0.1.1"]
@@ -156,6 +159,9 @@ test = [
   "pytest-timeout>=2.2",
   "pytest-xdist>=3.5",
   "pythreejs",
+  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
+  # so pyvista can't be installed there
+  "pyvista[jupyter]; python_version < '3.15'",
   "quak; python_version < '3.15'",
   "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "tox-uv>=1",
@@ -223,6 +229,9 @@ dev = [
   "pytest-timeout>=2.2",
   "pytest-xdist>=3.5",
   "pythreejs",
+  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
+  # so pyvista can't be installed there
+  "pyvista[jupyter]; python_version < '3.15'",
   "quak; python_version < '3.15'",
   "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "ruff>=0.6.5",
@@ -296,6 +305,9 @@ test = [
   "pytest-timeout>=2.2",
   "pytest-xdist>=3.5",
   "pythreejs",
+  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
+  # so pyvista can't be installed there
+  "pyvista[jupyter]; python_version < '3.15'",
   "quak; python_version < '3.15'",
   "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "tox-uv>=1",
