@@ -551,6 +551,13 @@ def as_widget_plotly(x: object) -> Optional[Widget]:
     return go.FigureWidget(x.data, x.layout)  # type: ignore
 
 
+# Serializes the process-wide TRAME_ARGS override in
+# _isolated_trame_cli_args(): overlapping server startups (distinct server
+# names) could otherwise interleave the save/override/restore sequence and
+# leak sys.argv into trame's parsing or restore the wrong value
+_TRAME_CLI_ARGS_LOCK = threading.Lock()
+
+
 @contextmanager
 def _isolated_trame_cli_args() -> Iterator[None]:
     """Point trame's CLI parsing at an empty argument list.
@@ -563,15 +570,16 @@ def _isolated_trame_cli_args() -> Iterator[None]:
     outside Shiny's authentication. TRAME_ARGS takes precedence over
     sys.argv, so set it to an empty list while trame parses.
     """
-    previous = os.environ.get("TRAME_ARGS")
-    os.environ["TRAME_ARGS"] = ""
-    try:
-        yield
-    finally:
-        if previous is None:
-            del os.environ["TRAME_ARGS"]
-        else:
-            os.environ["TRAME_ARGS"] = previous
+    with _TRAME_CLI_ARGS_LOCK:
+        previous = os.environ.get("TRAME_ARGS")
+        os.environ["TRAME_ARGS"] = ""
+        try:
+            yield
+        finally:
+            if previous is None:
+                del os.environ["TRAME_ARGS"]
+            else:
+                os.environ["TRAME_ARGS"] = previous
 
 
 class _PyvistaTrameServerStartup:
