@@ -22,11 +22,9 @@ def test_perspective_accessors_follow_viewer_edits(page: Page, local_app) -> Non
     # Add a filter through the settings panel: drag the column onto the
     # filter field, keep the `==` operator, and type the value. Done first:
     # the drag is unreliable right after a sort re-renders the datagrid.
-    page.locator(
-        ".column-selector-column", has_text="category"
-    ).locator(".column-selector-draggable").drag_to(
-        page.locator("#top_panel #filter .column-empty-input")
-    )
+    page.locator(".column-selector-column", has_text="category").locator(
+        ".column-selector-draggable"
+    ).drag_to(page.locator("#top_panel #filter .column-empty-input"))
     value_input = page.locator("#top_panel #filter input.string-filter")
     value_input.click()
     value_input.fill("A")

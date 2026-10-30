@@ -10,9 +10,7 @@ def test_ipyleaflet_accessors_follow_gestures(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
     expect(page.locator("#map .leaflet-container")).to_have_count(1, timeout=30000)
-    expect(page.locator("#leaf_map .leaflet-container")).to_have_count(
-        1, timeout=30000
-    )
+    expect(page.locator("#leaf_map .leaflet-container")).to_have_count(1, timeout=30000)
 
     # Seeds: bounds cancels until the browser reports, then appears; zoom and
     # center read the constructor values

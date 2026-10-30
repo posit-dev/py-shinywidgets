@@ -26,9 +26,7 @@ def test_lonboard_accessors_follow_gestures(page: Page, local_app) -> None:
     # picks a row. The map is centered on (20, 40), so the distinct
     # magnitudes catch a lat/lng swap.
     page.mouse.click(cx, cy)
-    expect(page.locator("#picked")).to_have_text(
-        re.compile(r"^[0-4]$"), timeout=5000
-    )
+    expect(page.locator("#picked")).to_have_text(re.compile(r"^[0-4]$"), timeout=5000)
     lng, lat = ast.literal_eval(page.locator("#clicked").inner_text())
     assert 15 < lng < 25 and 35 < lat < 45, (lng, lat)
 
