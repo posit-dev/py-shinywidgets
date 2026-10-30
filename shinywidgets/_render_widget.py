@@ -21,8 +21,7 @@ from ipywidgets.widgets.widget import Widget
 from packaging.version import Version
 
 if TYPE_CHECKING:
-    # Absent from 3.15+ environments (duckdb has no cp315 wheels, so its
-    # dependents are excluded there; see pyproject.toml)
+    # duckdb ships with the embedding-atlas extra, so it may be absent
     import duckdb  # pyright: ignore[reportMissingImports]
     import numpy as np
     import pandas as pd
@@ -2464,8 +2463,8 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
 
         The whole frame until the user sorts, filters, or edits, and an
         empty frame when the filter matches nothing. Backed by ipydatagrid's
-        private ``_visible_rows`` and ``_transforms`` traits plus the grid's
-        cell-change notification (the one public alternative,
+        private ``_visible_rows``, ``_transforms``, and ``_data`` traits plus
+        the grid's cell-change notification (the one public alternative,
         ``get_visible_data()``, isn't reactive on its own, and returns the
         whole frame for an empty filtered view); raises if ipydatagrid
         removes the traits. May be briefly stale after a Python-side data

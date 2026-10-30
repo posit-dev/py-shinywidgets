@@ -9,7 +9,9 @@ from tests.playwright.conftest import assert_no_unexpected_errors, collect_error
 # into the viewport: the header row is 20px tall (its center at +10), body
 # rows are 20px each starting right below it, and the columns start at
 # ~x+75 (`a`, with its menu icon at the header's right edge, x+124), ~x+130
-# (`b`), ~x+200 (`c`)
+# (`b`), ~x+200 (`c`). These are ipydatagrid 1.4.0's lumino defaults
+# (base_row_size/base_column_header_size = 20), so they need re-measuring if
+# ipydatagrid changes them.
 HEADER_Y = 10
 ROW_Y = [30 + 20 * r for r in range(20)]
 COL_A_X = 100
