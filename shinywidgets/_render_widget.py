@@ -64,11 +64,11 @@ if TYPE_CHECKING:
     from pydeck.widget import DeckGLWidget
     from pyobsplot.widget import ObsplotWidget
 
-    from ._altair import Selection
-
     # reactable isn't in the dev/test groups (see pyproject.toml)
     from reactable import Reactable  # pyright: ignore[reportMissingImports]
     from reactable.widgets import ReactableWidget  # pyright: ignore[reportMissingImports]
+
+    from ._altair import Selection
 
     # embedding-atlas requires Python 3.11+, so it's absent from 3.10 environments
     if sys.version_info >= (3, 11):
@@ -122,6 +122,7 @@ from ._bokeh import _bokeh_dependency
 from ._bokeh_accessors import BOKEH_ACCESSORS, selected_frame
 from ._dependencies import widget_pkg
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
+from ._reactable import REACTABLE_ACCESSORS
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
 if TYPE_CHECKING:
@@ -3510,9 +3511,34 @@ class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
         tbl.widget.props = {**tbl.widget.props, "defaultPageSize": input.page_size()}
     ```
 
-    Table state (selected rows, current page, sort) is not reported back to
-    Python: reactable-py sends no widget events, so there is currently nothing
-    to read with :func:`~shinywidgets.reactive_read`.
+    Note
+    ---
+    **Table state**: to respond to user interaction, read the output's
+    accessors in a reactive context, e.g. ``tbl.selected_rows()`` or
+    ``tbl.sorted()`` (see the methods below). Each silently cancels (like
+    ``req(False)``) until the browser has reported the table's state, shortly
+    after the table first renders.
+
+    Row *clicks* aren't part of the reported state, but reactable's own
+    ``on_click=JS(...)`` prop can forward them as an ordinary Shiny input:
+
+    ```python
+    Reactable(
+        df,
+        on_click=JS(
+            "function(rowInfo, colInfo, state) {"
+            "  Shiny.setInputValue('row_clicked', {row: rowInfo.index, col: colInfo.id}, {priority: 'event'});"
+            "}"
+        ),
+    )
+    ```
+
+    Note
+    ---
+    The accessors address the table through its ``element_id`` prop, so
+    ``render_reactable`` defaults it to a unique value when unset (a
+    user-provided ``element_id`` is respected, and must be unique per page,
+    as in R).
 
     In a filling layout, the table fills its container. Setting reactable's own
     ``height=`` prop opts out of filling (akin to an explicit ipywidgets
@@ -3557,13 +3583,81 @@ class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
     ```
     """
 
+    accessor_specs = REACTABLE_ACCESSORS
+
+    def selected_rows(self) -> List[int]:
+        """
+        The currently selected rows, as 0-based positions in the table's data.
+
+        Positions are in *data* coordinates (like ``df.iloc``), not display
+        coordinates: sorting, filtering, or paging the table doesn't change
+        them. Empty when nothing is selected. Requires the table's
+        ``selection=`` prop to be set. Silently cancels (``req(False)``) until
+        the browser first reports the table's state, shortly after render. Not
+        rate-limited.
+        """
+        return cast("List[int]", self._read_accessor("selected_rows"))
+
+    def page(self) -> int:
+        """
+        The current page, 0-based (reactable's own convention; add 1 to match
+        the page numbers the table displays).
+
+        Silently cancels (``req(False)``) until the browser first reports the
+        table's state, shortly after render. Not rate-limited.
+        """
+        return cast("int", self._read_accessor("page"))
+
+    def sorted(self) -> List[Dict[str, Any]]:
+        """
+        The current sort, as a list of ``{"id": column, "desc": bool}``
+        entries (one per sorted column, in priority order; empty when unsorted).
+
+        Silently cancels (``req(False)``) until the browser first reports the
+        table's state, shortly after render. Not rate-limited.
+        """
+        return cast("List[Dict[str, Any]]", self._read_accessor("sorted"))
+
+    def filtered(self) -> List[Dict[str, Any]]:
+        """
+        The current per-column filters, as a list of ``{"id": column,
+        "value": filter}`` entries (empty when unfiltered).
+
+        Silently cancels (``req(False)``) until the browser first reports the
+        table's state, shortly after render. Debounced (250 ms) by default,
+        since filters update per keystroke; see the ``rate_policy`` and
+        ``rate_delay`` parameters.
+        """
+        return cast("List[Dict[str, Any]]", self._read_accessor("filtered"))
+
+    def search(self) -> str:
+        """
+        The current global search string (``""`` when the search box is
+        empty).
+
+        Silently cancels (``req(False)``) until the browser first reports the
+        table's state, shortly after render. Debounced (250 ms) by default,
+        since search updates per keystroke; see the ``rate_policy`` and
+        ``rate_delay`` parameters.
+        """
+        return cast("str", self._read_accessor("search"))
+
     def _as_widget(self, value: ReactableValueT) -> ReactableWidget:
         # Both accepted value types route through as_widget() (a ReactableWidget
         # is returned as-is; a Reactable goes to as_widget_reactable()). The
         # reactable stylesheet rides along with every widget open (see
         # widget_open_extras()), not auto_output_ui(), so it's also present in
         # core-UI apps that write output_widget() themselves.
-        return cast("ReactableWidget", super()._as_widget(value))
+        widget = cast("ReactableWidget", super()._as_widget(value))
+        # The state bridge addresses tables by their elementId prop (see
+        # shinywidgets/_reactable.py); default it to a unique value when unset
+        # so the accessors work without the user setting one.
+        props = dict(widget.props or {})
+        if not props.get("elementId"):
+            comm_id = getattr(widget.comm, "comm_id", None)
+            props["elementId"] = f"shinywidgets-reactable-{comm_id or id(widget)}"
+            widget.props = props
+        return widget
 
 
 class render_niivue(render_widget_base[ValueT, NiiVue]):

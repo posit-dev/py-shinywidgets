@@ -4,6 +4,7 @@ import { behaviorForModel, ipyleafletBehavior, WIDGET_BEHAVIORS, type PostDispla
 import { isJQuery, jsonParse, lendDataTables, protectPageJQuery } from './utils';
 import { NGLVIEW_COLORMAKER_REGISTRY_MODEL, renderHiddenColormakerRegistry } from './nglview';
 import { isPlotlyBindRequest, requestPlotlyEvents } from './plotly';
+import { isReactableBindRequest, requestReactableState } from './reactable';
 import { disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
 import { uuid } from '@jupyter-widgets/base';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
@@ -604,12 +605,16 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
   }
   try {
     const m = await manager.get_model(id);
-    // Requests for shinywidgets' plotly event bridge are for us, not the model
+    // Requests for shinywidgets' event/state bridges are for us, not the model
     const data = msg.content.data;
     if (data?.method === "custom" && isPlotlyBindRequest(data.content)) {
       // Not awaited: binding waits for the plot to draw, which mustn't hold up
       // Shiny's queue of later messages
       void requestPlotlyEvents(m, data.content.events);
+      return;
+    }
+    if (data?.method === "custom" && isReactableBindRequest(data.content)) {
+      await requestReactableState(m);
       return;
     }
     // @ts-ignore for some reason IClassicComm doesn't have this method, but we do

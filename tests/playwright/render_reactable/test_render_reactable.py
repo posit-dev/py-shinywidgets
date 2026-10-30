@@ -102,3 +102,85 @@ def test_reactable_height_prop_disables_fill(page: Page, local_app) -> None:  # 
     assert abs(height - 250) < 2
 
     assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_reactable_state_accessors(page: Page, local_app) -> None:  # noqa: ANN001
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    wait_for_table(page, "tbl")
+
+    state = page.locator("#tbl_state")
+
+    # The browser seeds its state shortly after the table first renders
+    expect(state).to_have_text("page=0 sorted=[] filtered=[] search=", timeout=30000)
+
+    # Sort by name (ascending)
+    page.locator("#tbl .ReactTable .rt-th", has_text="name").first.click()
+    expect(state).to_have_text(
+        "page=0 sorted=[{'id': 'name', 'desc': False}] filtered=[] search="
+    )
+
+    # Paginate (the in-place page-size effect starts at 4 rows of 6)
+    page.locator("#tbl .ReactTable button", has_text="Next").click()
+    expect(state).to_have_text(
+        "page=1 sorted=[{'id': 'name', 'desc': False}] filtered=[] search="
+    )
+
+    # Per-column filter (debounced, so press_sequentially over fill)
+    filt = (
+        page.locator("#tbl .ReactTable .rt-thead .rt-tr").nth(1).locator("input").first
+    )
+    filt.press_sequentially("alp")
+    expect(state).to_have_text(
+        "page=0 sorted=[{'id': 'name', 'desc': False}] "
+        "filtered=[{'id': 'name', 'value': 'alp'}] search="
+    )
+
+    # Global search (per keystroke, debounced)
+    page.locator("#tbl .ReactTable .rt-search").press_sequentially("zeta")
+    expect(state).to_have_text(
+        "page=0 sorted=[{'id': 'name', 'desc': False}] "
+        "filtered=[{'id': 'name', 'value': 'alp'}] search=zeta"
+    )
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_reactable_selected_rows_accessor(page: Page, local_app) -> None:  # noqa: ANN001
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    wait_for_table(page, "sel")
+
+    state = page.locator("#sel_state")
+    expect(state).to_have_text("selected=[]", timeout=30000)
+
+    # Select the first two rows; positions are data coordinates
+    boxes = page.locator("#sel .ReactTable .rt-tbody input[type=checkbox]")
+    boxes.nth(0).check()
+    expect(state).to_have_text("selected=[0]")
+    boxes.nth(1).check()
+    expect(state).to_have_text("selected=[0, 1]")
+    boxes.nth(0).uncheck()
+    expect(state).to_have_text("selected=[1]")
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_reactable_accessors_survive_rerender(page: Page, local_app) -> None:  # noqa: ANN001
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    wait_for_table(page, "tbl")
+
+    state = page.locator("#tbl_state")
+    expect(state).to_have_text("page=0 sorted=[] filtered=[] search=", timeout=30000)
+
+    # Re-render: the accessor re-binds to the new widget and keeps reporting
+    page.locator("#rerender").click()
+    wait_for_table(page, "tbl")
+    expect(state).to_have_text("page=0 sorted=[] filtered=[] search=", timeout=30000)
+    page.locator("#tbl .ReactTable .rt-th", has_text="name").first.click()
+    expect(state).to_have_text(
+        "page=0 sorted=[{'id': 'name', 'desc': False}] filtered=[] search="
+    )
+
+    assert_no_unexpected_errors(errors, failed_requests)
