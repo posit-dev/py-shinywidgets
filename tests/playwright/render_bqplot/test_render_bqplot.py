@@ -150,8 +150,14 @@ def test_bqplot_rerender_lifecycle(page: Page, local_app) -> None:
     initial = wait_for_stable_view_count(page)
 
     for i in range(1, 4):
+        old = page.locator("#fig .bqplot").element_handle()
         page.click("#rerender")
         expect(page.locator("#render_count")).to_have_text(str(i))
+        # The render_count/dot checks are satisfied by the old figure while
+        # the new one renders asynchronously, so wait for the old figure to
+        # actually leave the DOM. Otherwise the view-count wait below can
+        # start before any churn and pass on the pre-rerender count.
+        page.wait_for_function("(el) => !el.isConnected", arg=old, timeout=30000)
         expect(page.locator("#fig .dot")).to_have_count(4)
 
     # Re-rendering replaces the figure; the old views must be disposed. Wait

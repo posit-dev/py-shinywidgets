@@ -309,6 +309,17 @@ def jscatter_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def nglview_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # nglview's own `height=`/`width=` constructor arguments are stored on the
+    # synced `_view_height`/`_view_width` traits (default ''), not on
+    # `layout.height`, so the Layout check above can't see them. Treat them as
+    # a user-specified height that opts out of filling (the browser keeps the
+    # stage at that height; see nglview in js/src/fill.ts).
+    if getattr(widget, "_view_height", ""):
+        return False
+    return fill
+
+
 def _altair_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # altair, confusingly, isn't setup to fill it's Layout() container by default. I
     # can't imagine a situation where you'd actually want it to _not_ fill the parent
@@ -848,6 +859,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "jupyter_bokeh": bokeh_layout_defaults,
     "leafmap": leafmap_layout_defaults,
     "maplibre": maplibre_layout_defaults,
+    "nglview": nglview_layout_defaults,
     "pythreejs": pythreejs_layout_defaults,
     # pyvista's html jupyter backend widget lives in the trame_pyvista package
     "trame_pyvista": pyvista_layout_defaults,
