@@ -6,6 +6,7 @@ import { setupMplAutoResize } from './mpl';
 import { setupNglviewAutoSize } from './nglview';
 import { bindPlotlyEvents, findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
 import { setupQuakFit } from './quak';
+import { bindReactableState } from './reactable';
 
 /**
  * Per-package fill/resize behavior for widget outputs, keyed by `widget_pkg`
@@ -132,6 +133,18 @@ const ipyvolumeBehavior: WidgetBehavior = {
 const quakBehavior: WidgetBehavior = {
   setupFill: ({ el, lmWidget }) => setupQuakFit(el, lmWidget, true),
   setupFixedSize: ({ el, lmWidget }) => setupQuakFit(el, lmWidget, false),
+};
+
+// A bind request for the reactable state bridge may arrive before the view
+// exists (an accessor can be read during the first render), so (re-)attempt
+// the bind once the table has rendered; it's a no-op unless requested.
+const reactableBehavior: WidgetBehavior = {
+  onDisplayed: (ctx) => {
+    void bindReactableState(ctx.model).finally(() => {
+      ctx.dispatchResize();
+      ctx.reveal();
+    });
+  },
 };
 
 // Aspect-management ownership per camera, persisted across view lifetimes
@@ -418,6 +431,7 @@ export const WIDGET_BEHAVIORS: Record<string, WidgetBehavior> = {
   plotly: plotlyBehavior,
   pythreejs: pythreejsBehavior,
   quak: quakBehavior,
+  reactable: reactableBehavior,
   ipyleaflet: ipyleafletBehavior,
   geolibre: geolibreBehavior,
 };

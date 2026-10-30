@@ -55,6 +55,7 @@ from ._render_widget import (
     render_pythreejs,
     render_pyvista,
     render_quak,
+    render_reactable,
     render_rerun,
     render_vizarr,
     render_widget,
@@ -106,6 +107,7 @@ __all__ = (
     "render_pythreejs",
     "render_pyvista",
     "render_quak",
+    "render_reactable",
     "render_vizarr",
     "render_rerun",
     # Reactive read second

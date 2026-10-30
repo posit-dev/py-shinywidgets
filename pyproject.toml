@@ -93,6 +93,14 @@ pythreejs = ["pythreejs"]
 # so pyvista can't be installed there
 pyvista = ["pyvista[jupyter]; python_version < '3.15'"]
 quak = ["quak"]
+# reactable 0.1.6 pins ipyreact<=0.4.1 (unnecessarily -- it works with the
+# ipyreact>=0.6 that the test/dev groups require, verified with 0.4.1 and 0.7.0).
+# The tool.uv override below relaxes the pin so the lock resolves, but reactable
+# still isn't in the shared test/dev groups: importing it constructs a
+# process-global ipyreact Module widget that order-sensitive unit tests
+# (FakeSession-based) don't expect. Run its tests with
+# `uv run --with reactable pytest tests/unit/test_reactable.py`
+reactable = ["reactable>=0.1.6"]
 # vizarr pins zarr<3, so it is not in the shared test/dev groups
 vizarr = ["vizarr>=0.1.1"]
 rerun = ["rerun-sdk[notebook]>=0.40; python_version >= '3.11'"]
@@ -326,7 +334,12 @@ constraint-dependencies = ["narwhals>=2.22"]
 # keeps torch (and CUDA wheels on Linux) out of the dev/CI env, and keeps litellm's
 # fastuuid dependency (no cp315 wheels) from breaking Python 3.15 installs.
 # uv-only: the published package metadata is unaffected.
+# reactable 0.1.6 pins ipyreact<=0.4.1, but it works with the ipyreact>=0.6 the
+# test/dev groups require (verified with 0.4.1 and 0.7.0). Drop this once
+# upstream relaxes the pin (machow/reactable-py still has it on main).
+# uv-only: the published package metadata is unaffected.
 override-dependencies = [
+  "ipyreact>=0.6",
   "torch; python_version < '0'",
   "sentence-transformers; python_version < '0'",
   "umap-learn; python_version < '0'",
