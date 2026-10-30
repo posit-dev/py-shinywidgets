@@ -156,6 +156,8 @@ def make_widget(session):  # noqa: ANN001, ANN202
 def test_renderer_declares_the_accessors() -> None:
     r = render_reactable()
     assert rw.render_reactable._accessor_specs == sr.REACTABLE_ACCESSORS
+    # The original bug: the specs sat on a dead `accessor_specs` attribute
+    assert not hasattr(r, "accessor_specs")
     assert set(r._accessors.values) == {s.name for s in sr.REACTABLE_ACCESSORS}
     for name in ("selected_rows", "page", "sorted", "filtered", "search"):
         assert callable(getattr(r, name))
