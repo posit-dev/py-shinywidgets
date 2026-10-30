@@ -185,12 +185,18 @@ def test_nglview_rerender_releases_old_views(page: Page, local_app) -> None:
     initial = wait_for_stable_view_count(page)
 
     for i in range(1, 4):
+        old = page.locator("#view > .lm-Widget").element_handle()
         page.click("#rerender")
         expect(page.locator("#render_count")).to_have_text(str(i))
+        # The render_count/canvas checks are satisfied by the old widget while
+        # the new one renders asynchronously, so wait for the old widget to
+        # actually leave the DOM. Otherwise the view-count wait below can
+        # start before any churn and pass on the pre-rerender count.
+        page.wait_for_function("(el) => !el.isConnected", arg=old, timeout=30000)
         expect(page.locator("#view canvas")).to_have_count(1, timeout=30000)
 
     expect(page.locator("#view > .lm-Widget")).to_have_count(1)
-    assert wait_for_stable_view_count(page) == initial
+    assert wait_for_stable_view_count(page, expected=initial) == initial
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
     assert_no_unexpected_errors(errors, failed_requests)
