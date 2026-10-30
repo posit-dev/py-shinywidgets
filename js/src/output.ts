@@ -5,7 +5,7 @@ import { isJQuery, jsonParse, lendDataTables, protectPageJQuery } from './utils'
 import { NGLVIEW_COLORMAKER_REGISTRY_MODEL, renderHiddenColormakerRegistry } from './nglview';
 import { isPlotlyBindRequest, requestPlotlyEvents } from './plotly';
 import { isReactableBindRequest, requestReactableState } from './reactable';
-import { disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
+import { disposeMols2GridGlobalsOnRemove, disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
 import { uuid } from '@jupyter-widgets/base';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
@@ -78,6 +78,11 @@ class OutputManager extends HTMLManager {
     viewPromise.then(
       (view) => {
         patchMplCanvasRemove(view);
+        // Register before the orphan check below: an orphaned late view is
+        // torn down without ever reaching the bottom of this callback, but
+        // its grid's page globals still need cleaning up
+        // (see disposeMols2GridGlobalsOnRemove)
+        disposeMols2GridGlobalsOnRemove(view);
         // An ancestor may have been removed while this view was still being
         // created (e.g. dynamic UI removed the output mid-render).
         // removeViewTree() only sweeps views live at the time, so tear the
