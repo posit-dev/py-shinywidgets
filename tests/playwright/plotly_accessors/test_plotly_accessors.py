@@ -17,18 +17,20 @@ def expose_manager(route: Route) -> None:
         original,
         "const manager = window.widgetManager = new OutputManager({ loader: shinyRequireLoader });",
     )
+    # The bundle holds each module's source inside an eval("...") string, so
+    # inserted code must escape its double quotes.
     patches = [
         (
             "async function requestPlotlyEvents(model, events) {",
-            'async function requestPlotlyEvents(model, events) {(window.__bindLog = window.__bindLog || []).push(["request", events, Object.keys(model.views || {}).length]);',
+            'async function requestPlotlyEvents(model, events) {(window.__bindLog = window.__bindLog || []).push([\\"request\\", events, Object.keys(model.views || {}).length]);',
         ),
         (
             "function bindPlotlyEvents(plotEl, model) {",
-            'function bindPlotlyEvents(plotEl, model) {(window.__bindLog = window.__bindLog || []).push(["bind", requestedEvents.get(model) ? [...requestedEvents.get(model)] : null, !!plotEl.on]);',
+            'function bindPlotlyEvents(plotEl, model) {(window.__bindLog = window.__bindLog || []).push([\\"bind\\", requestedEvents.get(model) ? [...requestedEvents.get(model)] : null, !!plotEl.on]);',
         ),
         (
             "onDisplayed: (ctx) => {",
-            'onDisplayed: (ctx) => {(window.__bindLog = window.__bindLog || []).push(["onDisplayed"]);',
+            'onDisplayed: (ctx) => {(window.__bindLog = window.__bindLog || []).push([\\"onDisplayed\\"]);',
         ),
     ]
     for old, new in patches:
