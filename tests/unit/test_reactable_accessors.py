@@ -155,8 +155,8 @@ def make_widget(session):  # noqa: ANN001, ANN202
 
 def test_renderer_declares_the_accessors() -> None:
     r = render_reactable()
-    assert r.accessor_specs == sr.REACTABLE_ACCESSORS
-    assert rw.render_reactable.accessor_specs == sr.REACTABLE_ACCESSORS
+    assert rw.render_reactable._accessor_specs == sr.REACTABLE_ACCESSORS
+    assert set(r._accessors.values) == {s.name for s in sr.REACTABLE_ACCESSORS}
     for name in ("selected_rows", "page", "sorted", "filtered", "search"):
         assert callable(getattr(r, name))
 
