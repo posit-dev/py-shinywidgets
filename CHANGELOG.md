@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug fixes
 
+* `@render_matplotlib` now hides the canvas header (the "Figure N" title) by default, like `@render_plotnine` already did. A `Canvas` you construct yourself keeps its own settings; pass one with `header_visible=True` to keep the title.
 * Widgets built on [ipyreact](https://github.com/widgetti/ipyreact) (e.g., [reactable-py](https://github.com/machow/reactable-py)) now work. `ipyreact.define_module()` and `define_import_map()` construct process-global `Module`/`ImportMap` widgets (usually at import time) whose browser models register ES modules with the import shim; previously, importing such a package after shinywidgets raised "shinywidgets requires that all ipywidgets be constructed within an active Shiny session", and any widget depending on those modules never rendered. These dependency widgets are now mirrored into every session, like `shared_lifetime()` widgets. (#160)
 * Widgets whose JavaScript creates models in the browser (e.g., bqplot's toolbar PanZoom, pythreejs light targets and shadows) now get a Python counterpart, so their state syncs instead of raising `TraitError`s about unresolved `IPY_MODEL_` references, and models the browser closes are closed on the server too.
 * Widget updates made from a background thread (e.g., nglview's remote-call thread, or your own `threading.Thread`) are now delivered to the browser promptly instead of waiting for the next unrelated input.

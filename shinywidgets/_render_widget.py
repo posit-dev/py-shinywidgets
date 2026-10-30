@@ -2138,7 +2138,9 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     widget. Figures and axes are coerced to a `Canvas` (requires ``pip install
     'shinywidgets[matplotlib]'``),
     so this also works with libraries built on matplotlib (e.g., seaborn or
-    ``pandas.DataFrame.plot()``). In a filling layout, the figure is resized to fit its
+    ``pandas.DataFrame.plot()``). A coerced canvas's header (the "Figure N"
+    title) is hidden by default; a `Canvas` you construct yourself keeps its
+    own settings (e.g., ``header_visible=True``). In a filling layout, the figure is resized to fit its
     container. With an explicit ``height``, the figure keeps its ``figsize`` unless the
     output is also ``fillable=True``.
 
