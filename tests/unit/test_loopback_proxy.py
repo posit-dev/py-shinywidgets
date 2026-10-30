@@ -312,6 +312,37 @@ def test_guard_blocks_xarray_routes(upstream_server: int) -> None:
     assert status == 200
 
 
+def test_guard_requires_selector_on_raster_routes(upstream_server: int) -> None:
+    # Selector-free requests to raster-reading routes fall back *upstream* to
+    # a default source (the public SF Bay sample, or app.state.mosaic_assets —
+    # another session's registered mosaic), so guarded proxies refuse them;
+    # selector-free access is only for non-reading routes (palettes, docs)
+    proxy = _LoopbackProxyApp(upstream_server, allowed_filenames={"ok.tif"})
+    for path in (
+        "api/tiles/1/2/3.png",
+        "api/metadata",
+        "api/thumbnail.png",
+        "api/mosaic/tiles/1/2/3.png",
+        "api/stac/info",
+    ):
+        status, _, _ = _asgi_request(proxy, path)
+        assert status == 403, path
+    # ...even with a capability token: tokens authorize sources, not defaults
+    token = proxy.register_filenames(["ok.tif"])
+    status, _, _ = _asgi_request(
+        proxy, "api/tiles/1/2/3.png", query_string=b"sw_token=" + token.encode()
+    )
+    assert status == 403
+    # Non-reading routes still pass selector-free
+    status, _, _ = _asgi_request(proxy, "api/palettes")
+    assert status == 200
+    # And an authorized selector still passes
+    status, _, _ = _asgi_request(
+        proxy, "api/tiles/1/2/3.png", query_string=b"filename=ok.tif"
+    )
+    assert status == 200
+
+
 def test_guard_escaped_question_mark_cannot_smuggle_query(
     upstream_server: int,
 ) -> None:
@@ -320,10 +351,14 @@ def test_guard_escaped_question_mark_cannot_smuggle_query(
     # the guard sees no selector; forwarding the decoded path verbatim would
     # turn it back into a query string upstream, bypassing the guard
     proxy = _LoopbackProxyApp(upstream_server, allowed_filenames={"ok.tif"})
-    status, _, body = _asgi_request(proxy, "api/metadata?filename=/etc/passwd")
-    assert status == 200  # nothing to guard against in the real query string
-    # ...but the upstream receives an opaque encoded path, not a smuggled query
-    assert body.startswith(b"/api/metadata%3Ffilename%3D")
+    # A raster route with no real selector is refused outright...
+    status, _, _ = _asgi_request(proxy, "api/metadata?filename=/etc/passwd")
+    assert status == 403
+    # ...and on non-raster routes, where the request is forwarded, the
+    # upstream receives an opaque encoded path, not a smuggled query
+    status, _, body = _asgi_request(proxy, "api/palettes?filename=/etc/passwd")
+    assert status == 200
+    assert body.startswith(b"/api/palettes%3Ffilename%3D")
     assert b"?" not in body
 
 
@@ -518,6 +553,12 @@ def test_observer_backstop_rewrites_and_reuses_only_existing_tokens(
         proxy, "api/tiles", query_string=b"filename=%2Fetc%2Fpasswd"
     )
     assert status == 403
+
+    # A STAC-style URL (raster source in the `url` param) for a registered
+    # source gets the existing token re-attached too
+    layer.url = f"http://127.0.0.1:{upstream_server}/api/stac/tiles/{{z}}/{{x}}/{{y}}.png?url=/tmp/ok.tif"
+    assert layer.url.startswith(f"proxy/{upstream_server}/")
+    assert f"sw_token={token}" in layer.url
 
     # Unrelated URLs pass through the observer untouched
     layer.url = "https://tiles.example.com/{z}/{x}/{y}.png"

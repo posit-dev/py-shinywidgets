@@ -406,6 +406,26 @@ _LOOPBACK_PROXY_SOURCE_PARAMS = ("filename", "url", "filenameA", "filenameB")
 # off, so guarded proxies refuse the whole prefix until one exists.
 _LOOPBACK_PROXY_BLOCKED_PREFIX = "/api/xarray/"
 
+# Raster-reading route prefixes in localtileserver 1.0.0 (web/routers/*.py).
+# Selector-free requests to these fall back *upstream* to a default source —
+# the public SF Bay sample dataset, or `app.state.mosaic_assets` (another
+# session's registered mosaic) — so on guarded proxies they must carry at
+# least one authorized selector. Selector-free access is only safe on the
+# remaining routes (palette/colormap lists, docs, viewer HTML), which read
+# no rasters.
+_LOOPBACK_PROXY_READER_PREFIXES = (
+    "/api/tiles/",
+    "/api/metadata",
+    "/api/bounds",
+    "/api/validate",
+    "/api/statistics",
+    "/api/thumbnail.",
+    "/api/part.",
+    "/api/feature.",
+    "/api/mosaic/",
+    "/api/stac/",
+)
+
 # Query parameter carrying a `_LoopbackProxyApp` capability token
 _LOOPBACK_PROXY_TOKEN_PARAM = "sw_token"
 
@@ -542,6 +562,13 @@ class _LoopbackProxyApp:
             ):
                 await self._simple_response(
                     send, 403, b"Forbidden: unregistered raster source"
+                )
+                return
+            if not sources and any(
+                path.startswith(p) for p in _LOOPBACK_PROXY_READER_PREFIXES
+            ):
+                await self._simple_response(
+                    send, 403, b"Forbidden: raster route requires a source selector"
                 )
                 return
         # Re-encode: `path` is percent-decoded, so forwarding it verbatim
@@ -860,11 +887,11 @@ def localtileserver_layer_proxy(w: Widget, session: Session) -> None:
 
 
 def _url_sources(url: str) -> List[str]:
-    """The raster sources (`filename`/`files`) a localtileserver URL reads."""
+    """The raster sources (`filename`/`files`/`url`) a localtileserver URL reads."""
     from urllib.parse import urlparse
 
     params = parse_qs(urlparse(url).query)
-    sources = params.get("filename", [])
+    sources = params.get("filename", []) + params.get("url", [])
     for part in params.get("files", []):
         sources.extend(part.split(","))
     return sources
