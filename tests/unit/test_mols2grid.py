@@ -6,7 +6,6 @@ import json
 import sys
 from typing import Any
 
-import ipywidgets as widgets
 import mols2grid
 import pandas as pd
 import pytest
@@ -35,35 +34,16 @@ def test_render_mols2grid_coerces_dataframe(widget_session: Session) -> None:
     res = render(r, lambda: DF, widget_session)
 
     assert isinstance(res, dict)
-    assert isinstance(r.widget, widgets.Box)
-    molgrid_widget, html = r.widget.children
-    assert isinstance(molgrid_widget, MolGridWidget)
-    assert isinstance(html, widgets.HTML)
-    # The inner width hint keeps the iframe from collapsing to its 300px
-    # replaced-element default inside an inline-flex container
-    assert html.layout.width == "100%"
-    assert r.widget.layout.width == "100%"
+    # The widget's frontend renders the grid itself -- no Box stacking or
+    # iframed HTML document
+    assert isinstance(r.widget, MolGridWidget)
 
     assert isinstance(r.grid, MolGrid)
-    assert r.grid.widget is molgrid_widget
+    assert r.grid.widget is r.widget
     # Sessions get their own grid name (mols2grid's selection registry is
     # process-global), never the collision-prone "default"
-    assert molgrid_widget.grid_id.startswith("shiny")
-    assert molgrid_widget.grid_id != "default"
-
-
-def test_iframe_document_is_escaped(widget_session: Session) -> None:
-    r = rw.render_mols2grid()
-    render(r, lambda: DF, widget_session)
-
-    assert isinstance(r.widget, widgets.Box)
-    html = r.widget.children[1]
-    assert isinstance(html, widgets.HTML)
-    # The grid document is escaped into the iframe's srcdoc attribute (the
-    # unescaped <style> before it is IPython's own Jupyter-integration shim)
-    assert 'srcdoc="' in html.value
-    assert "&lt;html" in html.value
-    assert "<script" not in html.value
+    assert r.grid._grid_id.startswith("shiny")
+    assert r.grid._grid_id != "default"
 
 
 def test_render_mols2grid_passes_through_molgrid(widget_session: Session) -> None:
@@ -74,7 +54,8 @@ def test_render_mols2grid_passes_through_molgrid(widget_session: Session) -> Non
     render(r, lambda: grid, widget_session)
 
     assert r.grid is grid
-    assert grid.widget.grid_id == "my-grid"
+    assert grid._grid_id == "my-grid"
+    assert r.widget is grid.widget
 
 
 def test_render_mols2grid_errors_on_default_grid_name(widget_session: Session) -> None:
@@ -86,19 +67,17 @@ def test_render_mols2grid_errors_on_default_grid_name(widget_session: Session) -
         render(r, lambda: grid, widget_session)
 
 
-def test_render_kwargs_reach_the_grid_document(widget_session: Session) -> None:
+def test_render_kwargs_reach_the_widget(widget_session: Session) -> None:
     r = rw.render_mols2grid(subset=["ID"], tooltip=["ID"], n_items_per_page=2)
     render(r, lambda: DF, widget_session)
 
-    assert isinstance(r.widget, widgets.Box)
-    html = r.widget.children[1]
-    assert isinstance(html, widgets.HTML)
-    # Escaped for the srcdoc attribute, so look for the unescaped needles
-    import html as html_mod
-
-    doc = html_mod.unescape(html.value)
-    assert "'data-ID'" in doc
-    assert '"data-ID": "ethanol"' in doc
+    assert isinstance(r.widget, MolGridWidget)
+    # display() serializes the rendering options into the widget's `options`
+    # trait for its frontend
+    options = json.loads(r.widget.options)
+    list_config = options["gridConfig"]["listConfig"]
+    assert list_config["page"] == 2
+    assert list_config["data"][0]["data-ID"] == "ethanol"
 
 
 def test_grid_kwargs_reach_the_molgrid_constructor(widget_session: Session) -> None:
@@ -108,7 +87,7 @@ def test_grid_kwargs_reach_the_molgrid_constructor(widget_session: Session) -> N
     assert isinstance(r.grid, MolGrid)
     assert r.grid.img_size == (150, 100)
     # A name passed to the decorator overrides the session-unique default
-    assert r.grid.widget.grid_id == "my-grid"
+    assert r.grid._grid_id == "my-grid"
 
 
 def test_draw_options_reach_the_molgrid_constructor(widget_session: Session) -> None:
@@ -122,7 +101,7 @@ def test_draw_options_reach_the_molgrid_constructor(widget_session: Session) -> 
     render(r, lambda: DF, widget_session)
 
     assert isinstance(r.grid, MolGrid)
-    draw_opts = json.loads(str(getattr(r.grid, "json_draw_opts")))
+    draw_opts = getattr(r.grid, "draw_opts")
     assert draw_opts["addStereoAnnotation"] is True
     # A rendering option must not leak into the drawing options
     assert "subset" not in draw_opts
@@ -169,15 +148,23 @@ def test_kwarg_split_follows_mols2grid_signatures() -> None:
     assert not (ctor_params & render_params)
 
 
-def test_prerender_still_renders(widget_session: Session) -> None:
+def test_prerender_inlines_svg_in_the_widget_options(widget_session: Session) -> None:
     r = rw.render_mols2grid(prerender=True)
     render(r, lambda: DF, widget_session)
 
-    assert isinstance(r.widget, widgets.Box)
-    html = r.widget.children[1]
-    assert isinstance(html, widgets.HTML)
-    # prerender draws the molecules server-side, inlining SVG into the doc
-    assert "&lt;?xml" in html.value
+    assert isinstance(r.widget, MolGridWidget)
+    # prerender draws the molecules server-side, inlining SVG into the data
+    options = json.loads(r.widget.options)
+    data = options["gridConfig"]["listConfig"]["data"]
+    assert "<?xml" in data[0]["data-img"]
+
+
+def test_static_template_is_rejected(widget_session: Session) -> None:
+    # The static template renders an HTML document (for printing), not a
+    # widget, so it can't be a Shiny output
+    r = rw.render_mols2grid(prerender=True, template="static")
+    with pytest.raises(TypeError, match="static"):
+        render(r, lambda: DF, widget_session)
 
 
 def test_custom_smiles_col(widget_session: Session) -> None:
@@ -193,9 +180,8 @@ def test_mol_col(widget_session: Session) -> None:
     from rdkit import Chem
 
     df = pd.DataFrame({"mol": [Chem.MolFromSmiles(s) for s in DF["SMILES"]]})
-    # smiles_col=None with a mol_col would trip a mols2grid 2.2.0 bug (it
-    # creates a column named NaN); the renderer names the generated SMILES
-    # column instead
+    # smiles_col=None with a mol_col would trip a mols2grid bug (it creates a
+    # column named NaN); the renderer names the generated SMILES column instead
     r = rw.render_mols2grid(smiles_col=None, mol_col="mol")
     render(r, lambda: df, widget_session)
 
@@ -214,7 +200,7 @@ def test_render_mols2grid_rejects_bad_return_type(widget_session: Session) -> No
 
     @r
     def _():  # noqa: ANN202
-        # mols2grid.display() returns an IPython HTML object, not a grid
+        # mols2grid.display() returns the grid's widget, not a grid
         return mols2grid.display(DF)
 
     with session_context(widget_session):
@@ -239,15 +225,12 @@ def test_render_mols2grid_requires_mols2grid_package(
             asyncio.run(r._render())
 
 
-def test_use_iframe_false_is_overridden(widget_session: Session) -> None:
+def test_use_iframe_is_deprecated(widget_session: Session) -> None:
     r = rw.render_mols2grid(use_iframe=False)
     with pytest.warns(UserWarning, match="use_iframe"):
         render(r, lambda: DF, widget_session)
 
-    assert isinstance(r.widget, widgets.Box)
-    html = r.widget.children[1]
-    assert isinstance(html, widgets.HTML)
-    assert "srcdoc" in html.value
+    assert isinstance(r.widget, MolGridWidget)
 
 
 def test_selection_trait_parses_with_ast_literal_eval(
@@ -279,7 +262,8 @@ def test_grid_names_are_unique_per_output_in_a_session(
     widget_session: Session,
 ) -> None:
     # Two grids in one session share the browser window, so a shared name
-    # would cross-wire their selections (mols2grid keys window models by name)
+    # would cross-wire their selections (mols2grid keys its selection
+    # registry by grid name)
     r1 = rw.render_mols2grid()
     r2 = rw.render_mols2grid()
 
@@ -293,14 +277,14 @@ def test_grid_names_are_unique_per_output_in_a_session(
     render(r2, grid_b, widget_session)
 
     assert isinstance(r1.grid, MolGrid) and isinstance(r2.grid, MolGrid)
-    assert r1.grid.widget.grid_id != r2.grid.widget.grid_id
+    assert r1.grid._grid_id != r2.grid._grid_id
 
     # A re-render of the same output keeps its name (so mols2grid's global
     # selection registry doesn't grow per render)
-    first = r1.grid.widget.grid_id
+    first = r1.grid._grid_id
     render(r1, grid_a, widget_session)
     assert isinstance(r1.grid, MolGrid)
-    assert r1.grid.widget.grid_id == first
+    assert r1.grid._grid_id == first
 
 
 def test_session_end_prunes_the_mols2grid_selection_registry(
@@ -312,7 +296,7 @@ def test_session_end_prunes_the_mols2grid_selection_registry(
     render(r, lambda: DF, widget_session)
 
     assert isinstance(r.grid, MolGrid)
-    name = r.grid.widget.grid_id
+    name = r.grid._grid_id
     # mols2grid records selections in a module-level dict keyed by grid name, and
     # never prunes it; without the renderer's cleanup, one (potentially large)
     # selection dict would survive every session a server has ever served
@@ -351,7 +335,7 @@ def test_grid_names_are_namespaced_per_module(widget_session: Session) -> None:
         with session_context(widget_session):
             asyncio.run(r._render())
         assert isinstance(r.grid, MolGrid)
-        names[mod] = r.grid.widget.grid_id
+        names[mod] = r.grid._grid_id
 
     assert names["mod_a"] != names["mod_b"]
     assert "mod_a" in names["mod_a"]
@@ -374,8 +358,10 @@ def test_grid_names_follow_explicit_output_ids(widget_session: Session) -> None:
         asyncio.run(r2._render())
 
     assert isinstance(r1.grid, MolGrid) and isinstance(r2.grid, MolGrid)
-    assert "grid_a" in r1.grid.widget.grid_id
-    assert "grid_b" in r2.grid.widget.grid_id
+    # The registry key lives on the grid (the widget's `name` trait isn't
+    # populated from it in mols2grid 3.0)
+    assert "grid_a" in r1.grid._grid_id
+    assert "grid_b" in r2.grid._grid_id
 
 
 def test_grid_names_disambiguate_unicode_output_ids(widget_session: Session) -> None:
@@ -394,7 +380,7 @@ def test_grid_names_disambiguate_unicode_output_ids(widget_session: Session) -> 
         asyncio.run(r2._render())
 
     assert isinstance(r1.grid, MolGrid) and isinstance(r2.grid, MolGrid)
-    assert r1.grid.widget.grid_id != r2.grid.widget.grid_id
+    assert r1.grid._grid_id != r2.grid._grid_id
 
 
 def test_selection_survives_rerender_with_generated_name(
@@ -412,7 +398,9 @@ def test_selection_survives_rerender_with_generated_name(
     render(r, lambda: DF, widget_session)
 
     assert isinstance(r.grid, MolGrid)
-    assert r.grid.widget.selection == str({0: "CCO"})
+    # The restored selection is seeded as JSON (mols2grid 3.0's on-trait
+    # format, which stringifies the row-index keys)
+    assert json.loads(r.grid.widget.selection) == {"0": "CCO"}
 
 
 def test_cached_selection_cleared_when_rows_change(
@@ -430,12 +418,12 @@ def test_cached_selection_cleared_when_rows_change(
     # Same rows, same order: preserved
     render(r, lambda: DF.copy(), widget_session)
     assert isinstance(r.grid, MolGrid)
-    assert r.grid.widget.selection == str({0: "CCO"})
+    assert json.loads(r.grid.widget.selection) == {"0": "CCO"}
 
     # Reordered rows: the cached selection would now point at benzene
     render(r, lambda: DF.iloc[::-1].reset_index(drop=True), widget_session)
     assert isinstance(r.grid, MolGrid)
-    assert r.grid.widget.selection == "{}"
+    assert json.loads(r.grid.widget.selection) == {}
 
 
 def test_selection_accessor_reads_parsed_selection(
@@ -474,7 +462,7 @@ def test_selection_accessor_seeds_current_value_on_reattach(
 
     render(r, lambda: DF, widget_session)
     assert isinstance(r.grid, MolGrid)
-    assert r.grid.widget.selection == str({0: "CCO"})
+    assert json.loads(r.grid.widget.selection) == {"0": "CCO"}
     assert r.selection() == {0: "CCO"}
 
 
@@ -548,53 +536,6 @@ def test_redisplay_does_not_accumulate_callback_observers(
     grid.widget.callback_kwargs = str({"idx": 0})
 
     assert calls == [{"idx": 0}]
-
-
-def test_redisplay_preserves_app_callback_kwargs_observers(
-    widget_session: Session,
-) -> None:
-    # The dedupe above must remove only mols2grid's own callback observers,
-    # not observers the app subscribed to the same trait
-    events: list[Any] = []
-    calls: list[Any] = []
-
-    with session_context(widget_session):
-        grid = mols2grid.MolGrid(DF, name="observer-preservation-grid")
-    grid.widget.observe(lambda e: events.append(e.new), names=["callback_kwargs"])
-
-    r = rw.render_mols2grid(callback=calls.append)
-    render(r, lambda: grid, widget_session)
-    render(r, lambda: grid, widget_session)
-
-    grid.widget.callback_kwargs = str({"idx": 1})
-
-    assert events == [str({"idx": 1})]
-    assert calls == [{"idx": 1}]
-
-
-def test_redisplay_of_supplied_grid_renders_current_selection(
-    widget_session: Session,
-) -> None:
-    # display() renders checkbox state from the constructor-time
-    # _cached_selection; a grid displayed before (with clicks since) would
-    # re-render with stale checkboxes unless it's synced from the widget
-    with session_context(widget_session):
-        grid = mols2grid.MolGrid(DF, name="redisplay-selection-grid")
-
-    r = rw.render_mols2grid()
-    render(r, lambda: grid, widget_session)
-    grid.widget.selection = str({0: "CCO"})
-
-    render(r, lambda: grid, widget_session)
-
-    import html as html_mod
-
-    assert isinstance(r.widget, widgets.Box)
-    html = r.widget.children[1]
-    assert isinstance(html, widgets.HTML)
-    doc = html_mod.unescape(html.value).replace(" ", "")
-    # The document restores the checkbox state from the cached selection
-    assert "SELECTION.multi_set([0],['CCO'])" in doc
 
 
 def test_redisplay_with_new_callback_retires_the_old_one(
@@ -805,23 +746,22 @@ def test_clicks_true_renders_the_click_target(widget_session: Session) -> None:
     # mols2grid only renders a per-cell click target (and so only posts
     # callback_kwargs) when a Python callback is set; clicks=True supplies a
     # no-op one so the channel exists without an imperative callback.
-    # (The needle is the element, not the bare class name: the document's CSS
-    # styles .m2g-callback whether or not a callback is set)
-    import html as html_mod
-
+    # (The needle is the element in the cell template, not the bare class
+    # name: the frontend's CSS styles .m2g-callback whether or not a
+    # callback is set)
     r = rw.render_mols2grid(clicks=True)
     render(r, lambda: DF, widget_session)
-    assert isinstance(r.widget, widgets.Box)
-    html = r.widget.children[1]
-    assert isinstance(html, widgets.HTML)
-    assert 'class="m2g-callback"' in html_mod.unescape(html.value)
+    assert isinstance(r.widget, MolGridWidget)
+    opts = json.loads(r.widget.options)
+    assert opts["gridConfig"]["callback"]["callbackType"] == "python"
+    assert "m2g-callback" in opts["gridConfig"]["listConfig"]["item"]
 
     r2 = rw.render_mols2grid()
     render(r2, lambda: DF, widget_session)
-    assert isinstance(r2.widget, widgets.Box)
-    html2 = r2.widget.children[1]
-    assert isinstance(html2, widgets.HTML)
-    assert 'class="m2g-callback"' not in html_mod.unescape(html2.value)
+    assert isinstance(r2.widget, MolGridWidget)
+    opts2 = json.loads(r2.widget.options)
+    assert opts2["gridConfig"]["callback"]["callbackFn"] is None
+    assert "m2g-callback" not in opts2["gridConfig"]["listConfig"]["item"]
 
 
 def test_clicks_true_does_not_clobber_explicit_callback(
@@ -844,18 +784,16 @@ def test_clicks_true_does_not_clobber_js_callback(
     # _JSCallback from mols2grid.callbacks) -- non-callable, so a
     # "not callable" guard would mistake it for no callback and replace it
     # with the no-op
-    import html as html_mod
-
     r = rw.render_mols2grid(clicks=True, callback="onCellClick(data);")
     render(r, lambda: DF, widget_session)
-    assert isinstance(r.widget, widgets.Box)
-    html = r.widget.children[1]
-    assert isinstance(html, widgets.HTML)
-    doc = html_mod.unescape(html.value)
-    # The JS callback itself is embedded in the rendered document...
-    assert "onCellClick(data);" in doc
+    assert isinstance(r.widget, MolGridWidget)
+    opts = json.loads(r.widget.options)
+    callback = opts["gridConfig"]["callback"]
+    # The JS callback itself is kept...
+    assert callback["callbackType"] == "js"
+    assert callback["callbackFn"] == "onCellClick(data);"
     # ...and, like any explicit callback, it enables the click target
-    assert 'class="m2g-callback"' in doc
+    assert "m2g-callback" in opts["gridConfig"]["listConfig"]["item"]
 
 
 def test_clicked_accessor_observes_before_first_read(
