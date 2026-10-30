@@ -57,6 +57,9 @@ if TYPE_CHECKING:
     from k3d.plot import Plot as K3dPlot
     from keplergl import KeplerGl
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
+    from lonboard.view_state import (  # pyright: ignore[reportMissingImports]
+        BaseViewState,
+    )
     from maplibre.ipywidget import MapWidget
     from maplibre.map import Map as MaplibreMap
     from matplotlib.backend_bases import MouseEvent, PickEvent
@@ -138,6 +141,7 @@ from ._ipydatagrid import IPYDATAGRID_ACCESSORS
 from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
 from ._k3d import CAMERA as K3D_CAMERA
+from ._lonboard import LONBOARD_ACCESSORS
 from ._matplotlib import CLICKED, MATPLOTLIB_ACCESSORS, AxesLimits
 from ._mosaic_widget import MOSAIC_ACCESSORS
 from ._niivue import LOCATION
@@ -1759,6 +1763,23 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ---
+    **Reacting to the map**: read the map's accessors in a reactive function
+    (a ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``),
+    which re-runs whenever the user gestures, much like ``input.my_slider()``:
+
+    * ``map.view_state()``: the camera (longitude, latitude, zoom, pitch,
+      bearing).
+    * ``map.selected_index()``: the most recently picked row, across layers.
+    * ``map.selected_bounds()``: the bbox dragged with the Select BBox control.
+    * ``map.clicked()``: the most recent map click, as ``(lng, lat)`` -- note
+      the order; ipyleaflet reports ``[lat, lng]``.
+
+    They can't be read inside this output's own render function, which builds
+    a new map each time it runs. For anything beyond them, use
+    :func:`~shinywidgets.reactive_read` on ``map.widget``.
+
     Parameters
     ----------
     width
@@ -1774,7 +1795,68 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves it
+        unlimited. This renderer's accessors declare no rate policy, so they
+        are unaffected.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        limiting.
     """
+
+    accessor_specs = LONBOARD_ACCESSORS
+
+    def view_state(self) -> "BaseViewState":
+        """
+        The map's current view state: a `lonboard.view_state.MapViewState` (or
+        `GlobeViewState`) dataclass with ``longitude``, ``latitude``, ``zoom``,
+        ``pitch``, and ``bearing``, in lng/lat order.
+
+        Available as soon as the map has rendered (it's computed from the
+        layers), and updated by the browser after each pan or zoom -- lonboard
+        reports ~300 ms after the gesture settles, so no rate limit is
+        applied. Never ``None`` once rendered; the map is immutable per
+        render, so a re-render starts from the new map's own view state.
+        """
+        return cast("BaseViewState", self._read_accessor("view_state"))
+
+    def selected_index(self) -> Optional[int]:
+        """
+        The positional index of the most recently picked row, as
+        ``gdf.iloc[map.selected_index()]``, or ``None`` until the first pick.
+
+        With several pickable layers this is the most recent pick across all
+        of them; it doesn't say which layer, and picking the same index on two
+        different layers in a row doesn't re-fire -- with several pickable
+        layers, observe each layer yourself instead:
+        ``reactive_read(layer, "selected_index")``. A layer only reports when
+        ``pickable=True`` (the default). Picking the same row of the same
+        layer twice doesn't re-fire (the trait only changes when the value
+        does), and clicking empty space doesn't clear it.
+        """
+        return cast(Optional[int], self._read_accessor("selected_index"))
+
+    def selected_bounds(self) -> Optional[Tuple[float, float, float, float]]:
+        """
+        The bounding box the user dragged with the map's built-in Select BBox
+        control, as ``(minx, miny, maxx, maxy)`` -- i.e. (west, south, east,
+        north) in lng/lat -- or ``None`` until the first selection.
+        """
+        return cast(
+            Optional[Tuple[float, float, float, float]],
+            self._read_accessor("selected_bounds"),
+        )
+
+    def clicked(self) -> Optional[Tuple[float, float]]:
+        """
+        The ``(lng, lat)`` of the most recent map click -- note the order;
+        ipyleaflet reports ``[lat, lng]`` -- or ``None`` until the first
+        click. Clicking the same spot twice doesn't re-fire. Reading this is
+        what enables click reporting in the browser (registering the handler
+        flips the map's ``_has_click_handlers`` trait).
+        """
+        return cast(Optional[Tuple[float, float]], self._read_accessor("clicked"))
 
     def _as_widget(self, value: ValueT) -> LonboardMap:
         if isinstance(value, Widget):
