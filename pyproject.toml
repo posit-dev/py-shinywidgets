@@ -104,7 +104,11 @@ test = [
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
   "drawdata>=0.5",
-  "embedding-atlas>=0.26; python_version >= '3.11'",
+  # duckdb (a dependency of embedding-atlas, mosaic-widget, pygwalker, and
+  # quak) doesn't publish wheels for Python 3.15+ yet, and building it from
+  # source takes ~20 minutes in CI, so skip its dependents there. Drop these
+  # markers once duckdb publishes cp315 wheels.
+  "embedding-atlas>=0.26; python_version >= '3.11' and python_version < '3.15'",
   "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
@@ -134,7 +138,7 @@ test = [
   "nglview",
   "pandas",
   "networkx",
-  "mosaic-widget",
+  "mosaic-widget; python_version < '3.15'",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
@@ -144,12 +148,13 @@ test = [
   "polars",
   "pyarrow",
   "pydeck",
-  "pygwalker>=0.4.9.13",
+  "pygwalker>=0.4.9.13; python_version < '3.15'",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "pytest-xdist>=3.5",
   "pythreejs",
-  "quak",
+  "quak; python_version < '3.15'",
   "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "tox-uv>=1",
 ]
@@ -164,7 +169,11 @@ dev = [
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
   "drawdata>=0.5",
-  "embedding-atlas>=0.26; python_version >= '3.11'",
+  # duckdb (a dependency of embedding-atlas, mosaic-widget, pygwalker, and
+  # quak) doesn't publish wheels for Python 3.15+ yet, and building it from
+  # source takes ~20 minutes in CI, so skip its dependents there. Drop these
+  # markers once duckdb publishes cp315 wheels.
+  "embedding-atlas>=0.26; python_version >= '3.11' and python_version < '3.15'",
   "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
@@ -194,7 +203,7 @@ dev = [
   "nglview",
   "pandas",
   "networkx",
-  "mosaic-widget",
+  "mosaic-widget; python_version < '3.15'",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
@@ -204,12 +213,13 @@ dev = [
   "polars",
   "pyarrow",
   "pydeck",
-  "pygwalker>=0.4.9.13",
+  "pygwalker>=0.4.9.13; python_version < '3.15'",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "pytest-xdist>=3.5",
   "pythreejs",
-  "quak",
+  "quak; python_version < '3.15'",
   "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "ruff>=0.6.5",
   "tox-uv>=1",
@@ -227,7 +237,11 @@ test = [
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
   "drawdata>=0.5",
-  "embedding-atlas>=0.26; python_version >= '3.11'",
+  # duckdb (a dependency of embedding-atlas, mosaic-widget, pygwalker, and
+  # quak) doesn't publish wheels for Python 3.15+ yet, and building it from
+  # source takes ~20 minutes in CI, so skip its dependents there. Drop these
+  # markers once duckdb publishes cp315 wheels.
+  "embedding-atlas>=0.26; python_version >= '3.11' and python_version < '3.15'",
   "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
@@ -260,7 +274,7 @@ test = [
   "nglview",
   "pandas",
   "networkx",
-  "mosaic-widget",
+  "mosaic-widget; python_version < '3.15'",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
@@ -270,12 +284,13 @@ test = [
   "polars",
   "pyarrow",
   "pydeck",
-  "pygwalker>=0.4.9.13",
+  "pygwalker>=0.4.9.13; python_version < '3.15'",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "pytest-xdist>=3.5",
   "pythreejs",
-  "quak",
+  "quak; python_version < '3.15'",
   "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "tox-uv>=1",
 ]
