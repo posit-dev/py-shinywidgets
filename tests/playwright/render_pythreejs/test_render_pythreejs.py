@@ -287,6 +287,13 @@ def test_pythreejs_cached_renderer_keeps_user_camera_aspect(
     canvas = page.locator("#cached_scene canvas")
     expect(canvas).to_have_count(1, timeout=30000)
     page.wait_for_function(canvas_fills_output_js("#cached_scene"), timeout=30000)
+    # Wait for Python to see the container-driven aspect (the camera starts at
+    # 1.0): until then the browser may still hold it back, behind an unacked
+    # message, and send it after the click below, where it would overwrite 1.5
+    # (the same last-writer-wins race as a busy Jupyter kernel)
+    expect(page.locator("#cached_camera_aspect")).to_have_text(
+        re.compile(r"^(?!1\.0000$)\d+\.\d{4}$"), timeout=30000
+    )
 
     # The container-driven aspect is nowhere near 1.5 (the card is much wider
     # than tall), so this is unambiguously a user-set value
