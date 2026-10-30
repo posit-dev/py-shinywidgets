@@ -45,7 +45,7 @@ def test_sql_seeds_current_query_and_follows_the_trait(
 
 def test_sql_declares_the_stream_debounce_default() -> None:
     assert sq.SQL.rate_policy == "debounce"
-    assert sq.SQL.rate_delay == 250
+    assert sq.SQL.rate_delay == 0.25
 
 
 def test_empty_query_cancels_like_a_not_yet_rendered_output(

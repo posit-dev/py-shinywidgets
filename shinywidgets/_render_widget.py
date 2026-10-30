@@ -984,15 +984,15 @@ class render_ipyleaflet(_IpyleafletAccessors, render_widget_base[ValueT, Leaflet
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves it
-        unlimited. This renderer's accessors declare no rate policy, so they
-        are unaffected.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
 
-    accessor_specs = IPYLEAFLET_ACCESSORS
+    _accessor_specs = IPYLEAFLET_ACCESSORS
 
 
 class render_ipysigma(render_widget_base[ValueT, Sigma]):
@@ -1855,15 +1855,15 @@ class render_leafmap(_IpyleafletAccessors, render_widget_base[ValueT, LeafletMap
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves it
-        unlimited. This renderer's accessors declare no rate policy, so they
-        are unaffected.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
 
-    accessor_specs = IPYLEAFLET_ACCESSORS
+    _accessor_specs = IPYLEAFLET_ACCESSORS
 
 
 class render_lonboard(render_widget_base[ValueT, LonboardMap]):
@@ -1921,15 +1921,15 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves it
-        unlimited. This renderer's accessors declare no rate policy, so they
-        are unaffected.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
 
-    accessor_specs = LONBOARD_ACCESSORS
+    _accessor_specs = LONBOARD_ACCESSORS
 
     def view_state(self) -> "BaseViewState":
         """
@@ -2401,14 +2401,14 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     rate_policy
         How to rate-limit :meth:`params` (debounced by default) and
         :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
-        ``"throttle"``. ``None`` (the default) keeps the debounce and leaves
-        ``reactive_read()`` unlimited.
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
 
-    accessor_specs = MOSAIC_ACCESSORS
+    _accessor_specs = MOSAIC_ACCESSORS
 
     def params(self) -> Dict[str, Any]:
         """
@@ -2971,15 +2971,15 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves it
-        unlimited. This renderer's accessors declare no rate policy, so they
-        are unaffected.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
 
-    accessor_specs = PERSPECTIVE_ACCESSORS
+    _accessor_specs = PERSPECTIVE_ACCESSORS
 
     def filter(self) -> List[list]:
         """
@@ -4121,14 +4121,14 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
     rate_policy
         How to rate-limit :meth:`sql` (debounced by default) and
         :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
-        ``"throttle"``. ``None`` (the default) keeps the debounce and leaves
-        ``reactive_read()`` unlimited.
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
 
-    accessor_specs = QUAK_ACCESSORS
+    _accessor_specs = QUAK_ACCESSORS
 
     def sql(self) -> str:
         """

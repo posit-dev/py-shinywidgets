@@ -42,7 +42,7 @@ def test_params_seeds_empty_and_follows_the_trait(widget_session: Session) -> No
 
 def test_params_declares_the_stream_debounce_default() -> None:
     assert sm.PARAMS.rate_policy == "debounce"
-    assert sm.PARAMS.rate_delay == 250
+    assert sm.PARAMS.rate_delay == 0.25
 
 
 def test_data_queries_with_the_current_predicates(widget_session: Session) -> None:
