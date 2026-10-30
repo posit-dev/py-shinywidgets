@@ -34,6 +34,24 @@ def test_selection_not_ready_only_before_first_report() -> None:
     assert not sj.is_unreported(np.array([], dtype=np.uint32))
 
 
+def test_selection_dedupes_equal_empty_selections(widget_session: Session) -> None:
+    # jscatter emits an empty array on lasso-nothing/deselect; an equal empty
+    # echo must not republish (payloads_equal compares arrays up front)
+    from shinywidgets import render_jscatter
+
+    from tests.unit.test_accessors import spy_sets
+
+    w = scatter_widget(widget_session)
+    r = render_jscatter()
+    r._widget = w  # stands in for _render()
+    r._accessors.on_render(w)
+    sets = spy_sets(r._accessors, "selection")
+    assert list(r.selection()) == []
+    n = len(sets)
+    w.selection = np.array([], dtype=np.uint32)
+    assert len(sets) == n
+
+
 def test_selection_accessor_reads_positions(widget_session: Session) -> None:
     from shinywidgets import render_jscatter
 
