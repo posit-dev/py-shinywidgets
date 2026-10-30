@@ -157,7 +157,7 @@ from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
 from ._k3d import CAMERA as K3D_CAMERA
 from ._lonboard import LONBOARD_ACCESSORS
-from ._matplotlib import CLICKED, MATPLOTLIB_ACCESSORS, AxesLimits
+from ._matplotlib import CLICKED, LIMITS, MATPLOTLIB_ACCESSORS, AxesLimits
 from ._mosaic_widget import MOSAIC_ACCESSORS
 from ._niivue import LOCATION
 from ._perspective import PERSPECTIVE_ACCESSORS
@@ -2582,13 +2582,22 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
 
     Note
     ---
-    **Reacting to user interaction**: ``plot.clicked()`` reads the most
-    recent mouse press on the plot, much like ``input.my_slider()`` reads an
-    input. Call it in a reactive function (a ``@render.*`` function,
-    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs on each
-    click. It returns ``None`` until the user clicks (a normal state, not an
-    error, so check for it, or use ``req(plot.clicked())``), and resets to
-    ``None`` on re-render.
+    **Reacting to user interaction**: the output has methods that read what
+    the user does in the plot, much like ``input.my_slider()`` reads an
+    input. Call them in a reactive function (a ``@render.*`` function,
+    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
+    the interaction changes:
+
+    * ``clicked()``: the most recent mouse press on the plot. It returns
+      ``None`` until the user clicks (a normal state, not an error, so check
+      for it, or use ``req(plot.clicked())``), and resets to ``None`` on
+      re-render.
+    * ``limits(ax=0)``: an axes' x/y limits after a zoom or pan, seeded from
+      the rendered plot and updated at most once the user pauses for 250 ms
+      (see ``rate_policy`` and ``rate_delay``).
+
+    They can't be read inside this output's own render function, which builds
+    a new plot each time it runs.
 
     Parameters
     ----------
@@ -2606,16 +2615,16 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     rate_policy
-        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
-        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
-        this renderer declares a default.
+        How to rate-limit :meth:`limits` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
 
-    _accessor_specs = (CLICKED,)
+    _accessor_specs = (CLICKED, LIMITS)
 
     def clicked(self) -> Optional[MouseEvent]:
         """
@@ -2634,6 +2643,27 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
         rate-limited.
         """
         return cast(Optional["MouseEvent"], self._read_accessor("clicked"))
+
+    def limits(self, ax: int = 0) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+        """
+        The x and y limits of axes ``ax`` (an index into
+        ``.widget.figure.axes``; with ``facet_wrap()``/``facet_grid()``, the
+        panels' axes, in figure order), as ``((x0, x1), (y0, y1))``.
+
+        Seeded from the plot's current limits at render and updated after
+        every zoom or pan. Like ``clicked()``, the limits are in plotnine's
+        *transformed* coordinate space -- under ``scale_x_log10()`` they're
+        the log10 of the data. Debounced (250 ms) by default; see the
+        ``rate_policy`` and ``rate_delay`` parameters. Raises `IndexError`
+        when the figure has no axes ``ax``.
+        """
+        all_limits = cast(AxesLimits, self._read_accessor("limits"))
+        if not -len(all_limits) <= ax < len(all_limits):
+            raise IndexError(
+                f"`limits(ax={ax})` is out of range: the rendered figure has "
+                f"{len(all_limits)} axes (see `.widget.figure.axes`)."
+            )
+        return all_limits[ax]
 
 
 class render_bokeh(render_widget_base[ValueT, BokehModel]):
