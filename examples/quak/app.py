@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
-from shiny import App, render, req, ui
-from shinywidgets import output_widget, reactive_read, render_quak
+from shiny import App, render, ui
+from shinywidgets import output_widget, render_quak
 
 rng = np.random.default_rng(0)
 n = 5000
@@ -41,14 +41,14 @@ def server(input, output, session):
 
     @render.text
     def sql():
-        return reactive_read(table.widget, "sql")
+        return table.sql()
 
     @render.data_frame
     def matching():
-        # Re-run whenever quak's query changes, then evaluate it in DuckDB. The
-        # frontend briefly syncs an empty query back while it initializes.
-        req(reactive_read(table.widget, "sql"))
-        return render.DataGrid(table.widget.data().df().head(100))
+        # Re-runs (debounced) whenever the query changes, evaluating it in
+        # DuckDB. table.sql() cancels while the query is briefly empty during
+        # startup, so no req() guard is needed.
+        return render.DataGrid(table.data().df().head(100))
 
 
 app = App(app_ui, server)
