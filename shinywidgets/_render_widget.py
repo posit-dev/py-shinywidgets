@@ -21,7 +21,9 @@ from ipywidgets.widgets.widget import Widget
 from packaging.version import Version
 
 if TYPE_CHECKING:
-    import duckdb
+    # Absent from 3.15+ environments (duckdb has no cp315 wheels, so its
+    # dependents are excluded there; see pyproject.toml)
+    import duckdb  # pyright: ignore[reportMissingImports]
     import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
@@ -53,7 +55,7 @@ if TYPE_CHECKING:
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
     from maplibre.ipywidget import MapWidget
     from maplibre.map import Map as MaplibreMap
-    from mosaic_widget import MosaicWidget
+    from mosaic_widget import MosaicWidget  # pyright: ignore[reportMissingImports]
     from nglview import NGLWidget
     from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
@@ -62,11 +64,11 @@ if TYPE_CHECKING:
 
     # embedding-atlas requires Python 3.11+, so it's absent from 3.10 environments
     if sys.version_info >= (3, 11):
-        from embedding_atlas.widget import EmbeddingAtlasWidget
+        from embedding_atlas.widget import EmbeddingAtlasWidget  # pyright: ignore[reportMissingImports]
     else:
         from ipywidgets import Widget as EmbeddingAtlasWidget
     from pythreejs import Renderer as PythreejsRenderer
-    from quak import Widget as QuakWidget
+    from quak import Widget as QuakWidget  # pyright: ignore[reportMissingImports]
 
     # rerun requires Python 3.11+, so it's absent from 3.10 environments
     if sys.version_info >= (3, 11):
@@ -497,7 +499,7 @@ def duckdb_settings(
     DuckDB's ``(enable_external_access, lock_configuration)`` for `con`, which
     defaults to the default connection.
     """
-    import duckdb
+    import duckdb  # pyright: ignore[reportMissingImports]
 
     target = duckdb if con is None else con
     settings = target.execute(
@@ -2545,7 +2547,7 @@ class render_pygwalker(render_widget_base[ValueT, WalkerWidget]):
             return widget
 
         try:
-            from pygwalker.api.anywidget import walk
+            from pygwalker.api.anywidget import walk  # pyright: ignore[reportMissingImports]
         except ImportError:
             raise ImportError(
                 "Install the pygwalker package to use render_pygwalker with shinywidgets (pip install 'shinywidgets[pygwalker]')."
@@ -2640,7 +2642,7 @@ def polars_supported() -> bool:
     if hasattr(pl, "NUMERIC_DTYPES"):
         return True
     try:
-        from pygwalker.data_parsers import polars_parser
+        from pygwalker.data_parsers import polars_parser  # pyright: ignore[reportMissingImports]
     except ImportError:
         return True
     return hasattr(polars_parser, "_is_numeric_dtype")
@@ -2742,8 +2744,8 @@ def validate_visitor_sql(sql: str) -> None:
     ``read_csv``) is covered separately: the renderer requires the connection to be
     locked down first (see `require_duckdb_lockdown`).
     """
-    import sqlglot
-    from sqlglot import exp
+    import sqlglot  # pyright: ignore[reportMissingImports]
+    from sqlglot import exp  # pyright: ignore[reportMissingImports]
 
     try:
         statements = sqlglot.parse(sql, dialect="duckdb")
@@ -2824,7 +2826,7 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
             return super()._as_widget(value)
 
         try:
-            import quak
+            import quak  # pyright: ignore[reportMissingImports]
         except ImportError:
             raise ImportError(
                 "Install the quak package to use render_quak with shinywidgets (pip install 'shinywidgets[quak]')."
