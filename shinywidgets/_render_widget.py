@@ -2459,9 +2459,10 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         space, so ``visible_data().iloc[r1:r2 + 1]`` maps a selection to rows.
 
         The whole frame until the user sorts, filters, or edits. Backed by
-        ipydatagrid's private ``_visible_rows`` trait (the one public
-        alternative, ``get_visible_data()``, isn't reactive on its own);
-        raises if ipydatagrid removes it. Not rate-limited.
+        ipydatagrid's private ``_visible_rows`` trait plus the grid's
+        cell-change notification (the one public alternative,
+        ``get_visible_data()``, isn't reactive on its own); raises if
+        ipydatagrid removes the trait. Not rate-limited.
         """
         self._read_accessor("visible_data", raw=True)
         return cast("DataGrid", self._widget).get_visible_data()

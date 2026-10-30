@@ -5,7 +5,9 @@ The grid syncs its selection rectangles to the `selections` trait, and reports
 cell clicks/edits through the `on_cell_click`/`on_cell_change` callback
 dispatchers. The displayed row map lives in the (upstream-internal)
 `_visible_rows` trait, which `visible_data()` observes as its invalidation
-trigger (the frame itself comes from `get_visible_data()` at read time).
+trigger (the frame itself comes from `get_visible_data()` at read time),
+plus the cell-change notification, since an edit can change displayed values
+without changing the row map.
 """
 
 from __future__ import annotations
@@ -70,9 +72,22 @@ def attach_visible_rows(widget: DataGrid, emit: Emit) -> Callable[[], None]:
     def on_change(change: dict[str, object]) -> None:
         emit(change["new"])
 
+    def on_cell_change(edit: object) -> None:
+        # An edit can change the displayed values without changing the row
+        # map (e.g. editing an unsorted text column). The raw value is only
+        # an invalidation trigger, so emit a fresh token each time: an equal
+        # one would be suppressed by the helper's dedup.
+        emit(object())
+
     widget.observe(on_change, "_visible_rows")
+    widget.on_cell_change(on_cell_change)
     emit(widget._visible_rows)
-    return lambda: widget.unobserve(on_change, "_visible_rows")
+
+    def detach() -> None:
+        widget.unobserve(on_change, "_visible_rows")
+        widget.on_cell_change(on_cell_change, remove=True)
+
+    return detach
 
 
 # The observed value is only an invalidation trigger; the method reads the

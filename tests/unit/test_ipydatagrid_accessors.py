@@ -102,6 +102,25 @@ def test_visible_data_follows_the_visible_row_map(widget_session: Session) -> No
     detach()
 
 
+def test_visible_data_invalidates_on_a_cell_edit(widget_session: Session) -> None:
+    # An edit can change the displayed values without changing the row map
+    # (e.g. editing an unsorted text column), so _visible_rows alone can't be
+    # the trigger; the cell-change notification must emit a fresh token each
+    # time (an equal one would be suppressed by the helper's dedup)
+    g = grid(widget_session)
+    emitted: list[object] = []
+    detach = sd.VISIBLE_ROWS.attach(g, emitted.append)
+    assert len(emitted) == 1  # the seed
+    g._cell_change_handlers({"row": 1, "column": "b", "column_index": 1, "value": "yy"})
+    assert len(emitted) == 2
+    assert emitted[-1] is not emitted[0] and not emitted[-1] == emitted[0]
+    g._cell_change_handlers({"row": 1, "column": "b", "column_index": 1, "value": "zz"})
+    assert len(emitted) == 3
+    detach()
+    g._cell_change_handlers({"row": 1, "column": "b", "column_index": 1, "value": "ww"})
+    assert len(emitted) == 3
+
+
 def test_visible_data_accessor(widget_session: Session) -> None:
     from shinywidgets import render_ipydatagrid
 
