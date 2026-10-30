@@ -42,6 +42,8 @@ app_ui = ui.page_sidebar(
         ui.h5("Selection (browser -> Python)"),
         ui.output_text("n_selected"),
         ui.output_data_frame("selected"),
+        ui.h5("Click (browser -> Python)"),
+        ui.output_text("last_clicked"),
         width=340,
     ),
     ui.card(
@@ -55,7 +57,9 @@ app_ui = ui.page_sidebar(
 
 
 def server(input, output, session):
-    @render_mols2grid(subset=["ID"], tooltip=["ID", "MW", "LogS", "Class"])
+    @render_mols2grid(
+        subset=["ID"], tooltip=["ID", "MW", "LogS", "Class"], clicks=True
+    )
     def grid():
         return MOLS
 
@@ -80,6 +84,14 @@ def server(input, output, session):
     @render.text
     def n_selected():
         return f"{len(selected_rows())} molecule(s) selected"
+
+    # browser -> Python: a click on a molecule's image delivers the whole row
+    @render.text
+    def last_clicked():
+        row = grid.clicked()
+        if row is None:
+            return "Click a molecule to inspect it"
+        return f"Last clicked: {row['ID']} (SMILES: {row['SMILES']})"
 
     @render.data_frame
     def selected():

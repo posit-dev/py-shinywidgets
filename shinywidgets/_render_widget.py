@@ -3987,6 +3987,12 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       ``grid.grid.widget.selection`` trait is a repr string with unquoted keys,
       not JSON; if you read it directly with `reactive_read()`, parse it with
       `ast.literal_eval`, as mols2grid itself does.)
+    * **Clicks (browser -> Python):** with ``clicks=True``, clicking a
+      molecule's image (a distinct gesture from the selection checkbox)
+      makes its row's data available reactively as ``grid.clicked()`` --
+      every displayed column plus ``mols2grid-id`` -- for click-to-inspect
+      panels and drill-downs. A click is an event, not state: ``clicked()``
+      is `None` until the first click and resets on re-render.
     * **Filtering (Python -> browser):** ``grid.grid.filter(mask)`` (a boolean
       mask, Series, or list) hides non-matching molecules in the already
       rendered grid, without re-rendering. The mask is positional against the
