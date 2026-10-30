@@ -56,6 +56,7 @@ if TYPE_CHECKING:
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
     from maplibre.ipywidget import MapWidget
     from maplibre.map import Map as MaplibreMap
+    from matplotlib.backend_bases import MouseEvent, PickEvent
     from mosaic_widget import MosaicWidget  # pyright: ignore[reportMissingImports]
     from narwhals.typing import IntoDataFrameT
     from nglview import NGLWidget
@@ -106,6 +107,7 @@ else:
         RerunViewer
     ) = RerunNotebookViewer = NiiVue = object
     Reactable = ReactableWidget = object
+    MouseEvent = PickEvent = object
 
 from shiny.render.renderer import ValueFn
 
@@ -126,6 +128,7 @@ from ._embedding_atlas import EMBEDDING_ATLAS_ACCESSORS, rows_for_predicate
 from ._ipydatagrid import IPYDATAGRID_ACCESSORS
 from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
+from ._matplotlib import CLICKED, MATPLOTLIB_ACCESSORS, AxesLimits
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._reactable import REACTABLE_ACCESSORS
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
@@ -1715,17 +1718,44 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     automated tests can't exercise, so it is supported on a best-effort basis and
     warns at render time.
 
-    Browser interactions reach Python through matplotlib's own callbacks, e.g.,
-    ``fig.canvas.mpl_connect("button_press_event", f)`` or
-    ``ax.callbacks.connect("xlim_changed", f)`` (which fires on every zoom and pan). To
-    make other outputs respond, set a `reactive.value` from the callback.
-
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
     `Canvas` instance. To update the rendered figure without losing the user's zoom,
     modify the artists of ``.widget.figure`` and call ``.widget.draw_idle()``.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Reacting to user interaction**: the output has methods that read what
+    the user does in the plot, much like ``input.my_slider()`` reads an
+    input. Call them in a reactive function (a ``@render.*`` function,
+    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
+    the interaction changes:
+
+    * ``clicked()``: the most recent mouse press on an axes.
+    * ``picked()``: the most recent pick of an artist created with
+      ``picker=``.
+    * ``limits(ax=0)``: an axes' x/y limits after a zoom or pan.
+
+    How they behave:
+
+    * ``clicked()`` and ``picked()`` return ``None`` until the interaction
+      happens. That's a normal state, not an error, so check for it, or use
+      ``req(plot.clicked())`` to wait for it; they reset to ``None`` on
+      re-render. ``limits()`` waits for the first render, then always holds
+      the axes' current limits.
+    * Each press fires ``clicked()`` -- a double-click arrives as three
+      presses.
+    * ``limits()`` updates at most once the user pauses for 250 ms (see
+      ``rate_policy`` and ``rate_delay``).
+    * They can't be read inside this output's own render function, which
+      builds a new figure each time it runs. To change the figure in
+      response, modify ``.widget`` from a ``@reactive.effect`` instead.
+
+    For anything else, matplotlib's own callbacks (e.g.,
+    ``fig.canvas.mpl_connect("motion_notify_event", f)``) still work too,
+    and may set `reactive.value`s.
 
     Parameters
     ----------
@@ -1742,6 +1772,14 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`limits` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce and leaves
+        ``reactive_read()`` unlimited.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables
+        rate limiting.
 
     Examples
     --------
@@ -1777,6 +1815,56 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     app = App(app_ui, server)
     ```
     """
+
+    accessor_specs = MATPLOTLIB_ACCESSORS
+
+    def clicked(self) -> Optional[MouseEvent]:
+        """
+        The most recent mouse press on an axes, as a
+        `matplotlib.backend_bases.MouseEvent` (``.xdata``/``.ydata`` in the
+        data coordinates of the axes under the press, ``.inaxes`` that axes).
+
+        Returns ``None`` until the user clicks, and resets to ``None`` on
+        re-render, so use ``req(plot.clicked())`` to wait for a click.
+        Presses that start a toolbar pan/zoom drag, or land outside any axes,
+        don't count. Every press fires -- a double-click arrives as three
+        presses (MouseEvent defines no equality, so presses are never
+        deduplicated). Not rate-limited.
+        """
+        return cast(Optional["MouseEvent"], self._read_accessor("clicked"))
+
+    def picked(self) -> Optional[PickEvent]:
+        """
+        The most recent pick of an artist, as a
+        `matplotlib.backend_bases.PickEvent` (``.artist`` the picked artist,
+        ``.ind`` the picked point indices). Only artists created with
+        ``picker=`` (e.g., ``ax.plot(x, y, picker=5)``) are pickable.
+
+        Returns ``None`` until the user picks, and resets to ``None`` on
+        re-render. Every pick fires (PickEvent defines no equality). Not
+        rate-limited.
+        """
+        return cast(Optional["PickEvent"], self._read_accessor("picked"))
+
+    def limits(self, ax: int = 0) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+        """
+        The x and y limits of axes ``ax`` (an index into
+        ``.widget.figure.axes``), as ``((x0, x1), (y0, y1))``.
+
+        Seeded from the figure's current limits at render and updated after
+        every zoom or pan (including ones made in Python). Reading it before
+        the first render cancels silently (like ``req(False)``); it never
+        returns ``None`` after that. Debounced (250 ms) by default; see the
+        ``rate_policy`` and ``rate_delay`` parameters. Raises `IndexError`
+        when the figure has no axes ``ax``.
+        """
+        all_limits = cast(AxesLimits, self._read_accessor("limits"))
+        if not -len(all_limits) <= ax < len(all_limits):
+            raise IndexError(
+                f"`limits(ax={ax})` is out of range: the rendered figure has "
+                f"{len(all_limits)} axes (see `.widget.figure.axes`)."
+            )
+        return all_limits[ax]
 
 
 class render_nglview(render_widget_base[ValueT, NGLWidget]):
@@ -1996,6 +2084,16 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ---
+    **Reacting to user interaction**: ``plot.clicked()`` reads the most
+    recent mouse press on the plot, much like ``input.my_slider()`` reads an
+    input. Call it in a reactive function (a ``@render.*`` function,
+    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs on each
+    click. It returns ``None`` until the user clicks (a normal state, not an
+    error, so check for it, or use ``req(plot.clicked())``), and resets to
+    ``None`` on re-render.
+
     Parameters
     ----------
     width
@@ -2011,7 +2109,35 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
+        ``reactive_read()`` unlimited; no accessor on this renderer declares
+        a default.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables
+        rate limiting.
     """
+
+    accessor_specs = (CLICKED,)
+
+    def clicked(self) -> Optional[MouseEvent]:
+        """
+        The most recent mouse press on the plot, as a
+        `matplotlib.backend_bases.MouseEvent`.
+
+        Note that ``.xdata``/``.ydata`` are in plotnine's *transformed*
+        coordinate space -- under ``scale_x_log10()`` they're the log10 of
+        the data, and discrete (categorical) scales use integer positions --
+        and with ``facet_wrap()``/``facet_grid()``, ``.inaxes`` names the
+        panel's axes, but nothing in the event names its facet. Returns
+        ``None`` until the user clicks, and resets to ``None`` on re-render,
+        so use ``req(plot.clicked())`` to wait for a click. Presses that
+        start a toolbar pan/zoom drag, or land outside any axes, don't count.
+        Every press fires -- a double-click arrives as three presses. Not
+        rate-limited.
+        """
+        return cast(Optional["MouseEvent"], self._read_accessor("clicked"))
 
 
 class render_bokeh(render_widget_base[ValueT, BokehModel]):
