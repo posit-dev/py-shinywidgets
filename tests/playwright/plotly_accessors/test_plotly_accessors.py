@@ -1,11 +1,41 @@
 from __future__ import annotations
 
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Page, Route, expect
 from tests.playwright.conftest import (
     assert_no_unexpected_errors,
     collect_errors,
-    expose_manager,
 )
+
+
+def expose_manager(route: Route) -> None:
+    """expose_manager + instrument the plotly event bridge (DIAG)."""
+    response = route.fetch()
+    text = response.text()
+    original = "const manager = new OutputManager({ loader: shinyRequireLoader });"
+    assert original in text
+    text = text.replace(
+        original,
+        "const manager = window.widgetManager = new OutputManager({ loader: shinyRequireLoader });",
+    )
+    patches = [
+        (
+            "async function requestPlotlyEvents(model, events) {",
+            'async function requestPlotlyEvents(model, events) {(window.__bindLog = window.__bindLog || []).push(["request", events, Object.keys(model.views || {}).length]);',
+        ),
+        (
+            "function bindPlotlyEvents(plotEl, model) {",
+            'function bindPlotlyEvents(plotEl, model) {(window.__bindLog = window.__bindLog || []).push(["bind", requestedEvents.get(model) ? [...requestedEvents.get(model)] : null, !!plotEl.on]);',
+        ),
+        (
+            "onDisplayed: (ctx) => {",
+            'onDisplayed: (ctx) => {(window.__bindLog = window.__bindLog || []).push(["onDisplayed"]);',
+        ),
+    ]
+    for old, new in patches:
+        assert old in text, old
+        text = text.replace(old, new)
+    route.fulfill(response=response, body=text)
+
 
 # Page coordinates of a data point, via plotly.js's axis conversions.
 POINT_JS = """([id, x, y]) => {
@@ -107,6 +137,8 @@ def test_plotly_accessors_on_an_app_defined_figure_subclass(
         expect(page.locator("#sub_plot .js-plotly-plot")).to_have_count(
             1, timeout=30000
         )
+        # Clicking a still-hidden graph is a no-op, so wait for the reveal
+        expect(page.locator("#sub_plot .js-plotly-plot")).to_be_visible(timeout=30000)
         expect(page.locator("#sub_clicked")).to_have_text("None", timeout=10000)
 
         page.locator("#sub_plot").scroll_into_view_if_needed()
@@ -122,6 +154,7 @@ def test_plotly_accessors_on_an_app_defined_figure_subclass(
                   )
                 : [];
               return {
+                bindLog: window.__bindLog || [],
                 graphPresent: !!gd,
                 fullLayout: !!(gd && gd._fullLayout),
                 graphRect: gd && gd.getBoundingClientRect().toJSON(),
@@ -154,8 +187,10 @@ def test_plotly_accessors_on_an_app_defined_figure_subclass(
                   return orig(content, callbacks, buffers);
                 };
               }
-              gd.emit('plotly_click', {points: [{curveNumber: 0, pointNumber: 0, x: 1, y: 1}]});
-              const clickListener = gd._ev && gd._ev._events && gd._ev._events.plotly_click;
+              if (gd) {
+                gd.emit('plotly_click', {points: [{curveNumber: 0, pointNumber: 0, x: 1, y: 1}]});
+              }
+              const clickListener = gd && gd._ev && gd._ev._events && gd._ev._events.plotly_click;
               return {
                 clickListenerSource: String(clickListener).slice(0, 300),
                 modelComms: models.filter((m) => m).map((m) => ({
