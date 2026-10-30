@@ -75,6 +75,27 @@ def test_render_exposes_cytoscape_widget() -> None:
     assert res["widget_pkg"] == "ipycytoscape"
 
 
+def test_rate_policy_registers_on_child_nodes_and_edges() -> None:
+    # The traits worth rate-limiting (`selected`, `grabbed`) live on the
+    # graph's child Node/Edge widgets, not the CytoscapeWidget itself
+    from shinywidgets._accessors import rate_policy_for
+
+    r = rw.render_ipycytoscape(rate_policy="debounce", rate_delay=0.5)
+
+    @r
+    def _():  # noqa: ANN202
+        return make_graph()
+
+    asyncio.run(r._render())
+
+    widget = r.widget
+    assert widget is not None
+    for child in (widget, *widget.graph.nodes, *widget.graph.edges):
+        rate = rate_policy_for(child)
+        assert rate is not None
+        assert (rate.policy, rate.delay) == ("debounce", 0.5)
+
+
 def test_layout_defaults_fill_by_default() -> None:
     _, fill = rwb.set_layout_defaults(ipycytoscape.CytoscapeWidget())
     assert fill is True
