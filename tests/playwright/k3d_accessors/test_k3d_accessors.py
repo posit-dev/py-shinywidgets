@@ -14,10 +14,10 @@ def test_camera_waits_for_auto_fit_then_follows_orbit(page: Page, local_app) -> 
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
 
-    # Not-ready sentinel, end to end: camera() cancels (like req(False)) until
-    # the browser's auto-fit reports the camera, so the output starts empty
-    expect(page.locator("#camera")).to_have_text("", timeout=10000)
-
+    # The not-ready sentinel (camera() cancels until auto-fit reports) is
+    # covered by the unit test; here, don't assert the transient empty state
+    # (the browser may report the camera before the first poll) -- wait for
+    # the stable fitted value instead
     wait_for_red_pixels(page, "#plot canvas")
     # Auto-fit reports a 9-element camera (position, target, up)
     expect(page.locator("#camera")).to_have_text(
