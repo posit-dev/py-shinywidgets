@@ -85,7 +85,7 @@ test-unit: ## run unit tests only (explicit config/cutoff)
 
 test-playwright: ## run Playwright regression tests
 	uv run playwright install chromium
-	$(PYTEST_PLAYWRIGHT)
+	$(PYTEST_PLAYWRIGHT) $(PYTEST_PLAYWRIGHT_ARGS)
 
 test-all-local: ## run unit tests then Playwright tests (requires browsers installed)
 	$(MAKE) test-unit
