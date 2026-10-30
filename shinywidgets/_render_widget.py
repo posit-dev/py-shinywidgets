@@ -1583,8 +1583,10 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
     `ipyvolume.Figure` instance. Use `.widget` to programmatically update the
     rendered figure in place (trait changes on the widget are synced to the
     browser), or to reactively read widget state with
-    :func:`~shinywidgets.reactive_read` (e.g., ``reactive_read(plot.widget,
-    "camera")``). For selections, register a callback with
+    :func:`~shinywidgets.reactive_read` (e.g., ``reactive_read(
+    plot.widget.camera, "position")``; ``plot.camera()`` covers the
+    orbit-driven camera, since the camera *instance* never changes). For
+    selections, register a callback with
     ``plot.widget.on_selection(fn)`` (selections arrive as custom messages, not
     trait changes) and set a `reactive.value` inside it.
 
