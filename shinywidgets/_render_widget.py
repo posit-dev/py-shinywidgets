@@ -525,9 +525,11 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
 
         `df` defaults to the chart's own data frame (pandas or polars); pass it
         for charts whose data is a URL, or that concatenate charts with
-        different data. Returns an empty frame while nothing is selected. Dates
-        are compared in UTC, reading time-zone-naive columns in the browser's
-        time zone, as Vega-Lite does.
+        different data. For a layered chart, the default only resolves when
+        every layer uses the *identical* data frame object (the same object,
+        not an equal copy) -- otherwise pass `df` explicitly. Returns an empty
+        frame while nothing is selected. Dates are compared in UTC, reading
+        time-zone-naive columns in the browser's time zone, as Vega-Lite does.
         """
         selection = self.selected(name)
         widget = cast(JupyterChart, self._widget)
@@ -923,9 +925,10 @@ class _IpyleafletAccessors:
         The most recent map click as ipyleaflet reports it: a dict with
         ``coordinates: [lat, lng]`` (note the order; lonboard reports
         ``(lng, lat)``), or ``None`` until the first click. A double-click
-        fires two clicks (the ``dblclick`` itself is ignored), and marker
-        clicks don't bubble up to the map -- use a layer's own ``on_click``
-        for those.
+        publishes once: the second click has the same coordinates, so it
+        isn't a change (the ``dblclick`` itself is ignored). Marker clicks
+        don't bubble up to the map -- use a layer's own ``on_click`` for
+        those.
         """
         return cast(Optional[Dict[str, Any]], self._read_ipyleaflet("clicked"))
 
@@ -1165,9 +1168,11 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
     `JupyterScatter` instance. Use ``.selection()`` to reactively read the selected
     points (below), or `.widget` to programmatically update the rendered plot in
     place (trait changes on the widget are synced to the browser), or to reactively
-    read widget state (e.g., the selected points via ``"selection"``) with
-    :func:`~shinywidgets.reactive_read`. The selection is an array of row *positions*
-    (use ``df.iloc[...]``), not index labels.
+    read widget state with :func:`~shinywidgets.reactive_read`. The selection
+    is an array of row *positions* (use ``df.iloc[...]``), not index labels.
+    Other traits worth reading with :func:`~shinywidgets.reactive_read` are
+    ``"hovering"`` (the hovered point's row position), ``"zoom_level"``, and
+    ``"lasso_selection_polygon"`` (the lasso path in data coordinates).
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -2952,7 +2957,9 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
     They can't be read inside this output's own render function, which builds
     a new viewer each time it runs. For anything beyond them (e.g.,
     ``theme`` or ``title``), use :func:`~shinywidgets.reactive_read` on
-    ``grid.widget``.
+    ``grid.widget`` -- but unlike the accessors (which are seeded at render),
+    a cosmetic trait read this way can be ``None`` until the first browser
+    sync, so guard with ``req()``.
 
     Perspective keeps every table it hosts in memory for the life of the process, so a
     table created from a DataFrame is not freed when the output re-renders. To change
@@ -3092,7 +3099,9 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
-        ``reactive_read()`` only if ``rate_delay`` is given.
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default (notably, ``selections()`` reports
+        continuously during a drag and ignores these parameters).
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
@@ -3111,7 +3120,10 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         the selection). Requires ``selection_mode`` other than ``"none"``;
         a plain data frame return uses ``"none"``, so return
         ``DataGrid(df, selection_mode="row")`` to let users select. Not
-        rate-limited.
+        rate-limited: the stream updates continuously during a drag (not only
+        at its end), and the renderer's ``rate_policy``/``rate_delay``
+        parameters don't apply to it, so keep readers cheap (e.g., update a
+        downstream figure in place rather than rebuilding it).
         """
         return cast(List[Dict[str, int]], self._read_accessor("selections"))
 
@@ -3314,8 +3326,12 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
       a new plot, so they all start over at ``None``.
     * Repeating an interaction (clicking the same point twice) isn't a change,
       so readers don't re-run.
-    * As in the plot itself, a double-click clears ``clicked()``, and a deselect
-      (double-clicking after a selection) clears the selection accessors.
+    * A double-click on the plot background clears ``clicked()``, and a
+      deselect (double-clicking after a selection) clears the selection
+      accessors. A double-click on a marker re-fires the click after the
+      clear, so it leaves ``clicked()`` unchanged. With ``dragmode="select"``
+      or ``"lasso"``, a plain click also resets ``selected()`` and
+      ``brushed()`` (plotly.js reports it as a zero-area selection).
     * The streaming ones, ``selecting()`` and ``brushing()``, update at most
       once the user pauses for 250 ms (see ``rate_policy`` and ``rate_delay``).
     * They can't be read inside this output's own render function, which builds
@@ -3427,10 +3443,11 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         Columns are ``trace_index``, ``point_index`` (the point's position
         within its trace, not a row of your data), ``x``, ``y``, and ``z`` and
         ``customdata`` when the figure has them. Returns ``None`` until the user
-        clicks, and again after a double-click or deselect, so check for
-        ``None`` (e.g. ``req(pts is not None)``) to wait for a click. Clicking
-        the same point twice doesn't fire twice. Not rate-limited. Requires
-        pandas.
+        clicks, and again after a double-click on the plot background or a
+        deselect, so check for ``None`` (e.g. ``req(pts is not None)``) to
+        wait for a click. A double-click on a marker re-fires the click after
+        the clear, so it leaves the value unchanged. Clicking the same point
+        twice doesn't fire twice. Not rate-limited. Requires pandas.
         """
         return cast(Optional["pd.DataFrame"], self._read_accessor("clicked"))
 
@@ -3441,7 +3458,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
 
         Returns ``None`` until the user selects, and again after a deselect
         (double-click); an empty frame for a selection that caught no points.
-        Not rate-limited. Requires pandas. See :meth:`selected_rows` for rows of
+        With ``dragmode="select"`` or ``"lasso"``, a plain click also resets
+        it (plotly.js reports the click as a zero-area selection). Not
+        rate-limited. Requires pandas. See :meth:`selected_rows` for rows of
         your data.
         """
         return cast(Optional["pd.DataFrame"], self._read_accessor("selected"))
@@ -3461,8 +3480,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         ``{"lassoPoints": {"x": [...], "y": [...]}}`` for a lasso, in data
         coordinates (as plotly.js reports them).
 
-        Returns ``None`` until the user selects, and again after a deselect.
-        Not rate-limited.
+        Returns ``None`` until the user selects, and again after a deselect,
+        or after a plain click with ``dragmode="select"``/``"lasso"`` (a
+        zero-area selection). Not rate-limited.
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("brushed"))
 
@@ -5242,11 +5262,20 @@ class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
     value most recently returned by the render function, and `.widget`, the
     rendered `ReactableWidget` instance.
 
-    To update the table when the data changes, re-render it (i.e., have the
-    render function read the relevant inputs/reactives): reactable's JavaScript
-    reads the data once when the widget is created, so mutating
-    ``.widget.props["data"]`` in place has no effect. Non-data props do update
-    in place, for example:
+    To update the table when the data changes, either re-render it (i.e.,
+    have the render function read the relevant inputs/reactives) or send new
+    data through ``.widget.props`` -- a props update preserves the user's
+    sort, filter, page, and selection. Note the dict is a trait, so replace
+    it (mutating ``.widget.props["data"]`` in place never syncs), for
+    example:
+
+    ```python
+    @reactive.effect
+    def _():
+        tbl.widget.props = {**tbl.widget.props, "data": df().to_dict(orient="records")}
+    ```
+
+    Other props update the same way:
 
     ```python
     @reactive.effect

@@ -451,6 +451,19 @@ def test_reading_an_accessor_in_its_own_render_raises(monkeypatch) -> None:
         asyncio.run(r._render())
 
 
+def test_reading_widget_in_its_own_render_raises(monkeypatch) -> None:
+    r = rwb.render_widget_base()
+
+    @r
+    async def _():  # noqa: ANN202
+        r.widget  # would return the previous render's stale widget
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
+    with pytest.raises(RuntimeError, match="own render function"):
+        asyncio.run(r._render())
+
+
 def test_invalidated_reader_contexts_are_forgotten(monkeypatch) -> None:
     r = rwb.render_widget_base()
     ctx = FakeContext()

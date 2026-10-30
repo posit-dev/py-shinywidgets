@@ -219,6 +219,17 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
     @property
     def widget(self) -> WidgetT | None:
+        if rendering_renderer.get() is self:
+            # Like `_read_accessor`: a render builds a new widget, so `.widget`
+            # still points at the *previous* render's widget (or nothing on the
+            # first render) -- fail loudly instead of handing back a stale one.
+            raise RuntimeError(
+                f"`{self.output_id}.widget` can't be read inside "
+                f"`{self.output_id}`'s own render function, which builds a new "
+                "widget each time it runs (it would return the previous "
+                "render's widget). Read it in another output or a "
+                "`reactive.effect` instead."
+            )
         return self._get_reactive_obj(self._widget)
 
     @widget.setter

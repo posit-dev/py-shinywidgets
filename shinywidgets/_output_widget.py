@@ -48,6 +48,12 @@ def output_widget(
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
 
+    While an output fills its container (the default), the widget is sized to
+    the container, so setting ``widget.layout.height`` from Python has no
+    lasting effect -- the renderer's sizing overwrites it. Give the output an
+    explicit ``height`` (or ``fill=False``) to let the widget keep its own
+    height.
+
     Returns
     -------
     :
