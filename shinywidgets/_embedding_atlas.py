@@ -16,9 +16,11 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 from ._accessors import AccessorSpec, Emit
 
 if TYPE_CHECKING:
-    # embedding-atlas requires Python 3.11+, so it's absent from 3.10 environments
+    # embedding-atlas requires Python 3.11+, so it's absent from 3.10
+    # environments; it's also absent from 3.15+ environments (its duckdb
+    # dependency has no cp315 wheels; see pyproject.toml)
     if sys.version_info >= (3, 11):
-        from embedding_atlas.widget import EmbeddingAtlasWidget
+        from embedding_atlas.widget import EmbeddingAtlasWidget  # pyright: ignore[reportMissingImports]
     else:
         from ipywidgets import Widget as EmbeddingAtlasWidget
 
