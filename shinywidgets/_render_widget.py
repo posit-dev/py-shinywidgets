@@ -2433,6 +2433,13 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         spec and the registered data name exactly one. Re-reads whenever
         :meth:`params` changes and runs the query on each read, so prefer
         calling it once inside a ``@reactive.calc``.
+
+        Note that this queries the widget's live ``params`` trait: while a
+        brush is settling, the live value can be up to ``rate_delay`` (250 ms
+        by default) ahead of the debounced value :meth:`params` returns, and
+        the two reconverge when the debounce settles. (MosaicWidget builds
+        its filter SQL internally from the live trait, so the published
+        value can't be substituted.)
         """
         self.params()  # take the dependency
         return cast(MosaicWidget, self._widget).data(table)
@@ -4144,10 +4151,16 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
 
         Re-reads whenever :meth:`sql` changes and runs the query on each read,
         so prefer calling it once inside a ``@reactive.calc`` and sharing the
-        result over calling it in several outputs.
+        result over calling it in several outputs. Runs the published query
+        that :meth:`sql` returns, so the two always describe the same state
+        (even inside the debounce window).
         """
-        self.sql()  # take the dependency (and cancel until the query is ready)
-        return cast(QuakWidget, self._widget).data()
+        # Run the published (debounced) query, not the live `sql` trait:
+        # quak's own data() is `self._conn.query(self.sql)`, so this is the
+        # same query path with the published sql (`_conn` is
+        # upstream-internal).
+        sql = self.sql()  # take the dependency (and cancel until the query is ready)
+        return cast(QuakWidget, self._widget)._conn.query(sql)
 
     # DataFrames are a generic type that several renderers accept, so rather than
     # registering them in AS_WIDGET_MAP, coerce them here

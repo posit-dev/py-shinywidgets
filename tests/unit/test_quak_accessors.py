@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import List
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -68,3 +69,14 @@ def test_data_runs_the_current_query(widget_session: Session) -> None:
     assert isinstance(w, QuakWidget)
     w.sql = 'SELECT * FROM "df" WHERE "x" > 1'
     assert len(r.data().df()) == 2
+
+
+def test_data_runs_the_published_query_not_widget_data(
+    widget_session: Session,
+) -> None:
+    r = renderer(widget(widget_session), rate_delay=0)
+    # data() runs the published (debounced) query on the widget's DuckDB
+    # connection, not the widget's own live-state data(), so data() and
+    # sql() always describe the same state
+    with patch.object(QuakWidget, "data", side_effect=AssertionError):
+        assert len(r.data().df()) == 3
