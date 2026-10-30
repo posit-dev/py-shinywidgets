@@ -18,7 +18,7 @@ def observe_value(
 
 
 class render_slider(render_widget[IntSlider]):
-    accessor_specs = (
+    _accessor_specs = (
         AccessorSpec(
             name="value_state",
             kind="state",
