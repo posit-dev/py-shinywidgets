@@ -32,7 +32,9 @@ LIVE_VIEWS_JS = "() => window.widgetManager._liveViews.size"
 
 # True when the live-view count matches the previous poll's (i.e., async view
 # registration has settled) and, if `expected` is given (>= 0), equals it.
-# Keeps the last count on the window between polls.
+# Keeps the last count on the window between polls; each call resets it (see
+# wait_for_stable_view_count) so "stable" always means two consecutive polls
+# within the same call.
 _VIEWS_STABLE_JS = """(expected) => {
   const n = window.widgetManager._liveViews.size;
   const stable = window.__shinywidgetsLastViewCount === n;
@@ -59,7 +61,14 @@ def wait_for_stable_view_count(
     otherwise look settled (i.e., pass the stability check at the wrong
     value). Timing out here then means views genuinely leaked or went
     missing, not that the sample raced the churn.
+
+    The last-seen count is reset before polling: it lives on the window, so
+    without a reset the first poll would compare against the *previous call's*
+    final count -- and when that equals the current count (e.g. a rerender's
+    view churn hasn't started yet, so the registry still reads `expected`),
+    the wait would pass on its first poll, having observed no settling at all.
     """
+    page.evaluate("() => delete window.__shinywidgetsLastViewCount")
     page.wait_for_function(_VIEWS_STABLE_JS, arg=expected, polling=500, timeout=timeout)
     return page.evaluate(LIVE_VIEWS_JS)
 
@@ -94,8 +103,9 @@ _MODEL_VIEWS_JS = """async (modelName) => {
 
 # True when the per-model view count matches the previous poll's (i.e., async
 # view registration/disposal has settled). Keeps the last count per model name
-# on the window between polls (and across calls, which is fine: an unchanged
-# count is the settled value we're after).
+# on the window between polls; each call resets its entry (see
+# wait_for_stable_model_view_count) so "stable" always means two consecutive
+# polls within the same call.
 _MODEL_VIEWS_STABLE_JS = """async (args) => {
     const models = await Promise.all(
         Object.values(window.widgetManager._models).map((p) => p.catch(() => null))
@@ -124,8 +134,17 @@ def wait_for_stable_model_view_count(
 
     When `expected` is given, keep polling until the count both equals
     `expected` and holds across two polls (see `wait_for_stable_view_count()`
-    for why sampling-then-asserting is flaky).
+    for why sampling-then-asserting is flaky, and for why the last-seen count
+    is reset before polling).
     """
+    page.evaluate(
+        """(name) => {
+          const counts = window.__shinywidgetsLastModelViewCounts || {};
+          delete counts[name];
+          window.__shinywidgetsLastModelViewCounts = counts;
+        }""",
+        model_name,
+    )
     page.wait_for_function(
         _MODEL_VIEWS_STABLE_JS,
         arg={"modelName": model_name, "expected": expected},
@@ -146,7 +165,7 @@ def assert_rerender_cleanup(
         "console",
         lambda msg: errors.append(msg.text) if msg.type == "error" else None,
     )
-    page.on("pageerror", lambda err: errors.append(str(err)))
+    page.on("pageerror", lambda err: errors.append(_format_pageerror(err)))
 
     page.goto(local_app.url)
     page.wait_for_selector(ready_selector, timeout=30000)
@@ -194,6 +213,12 @@ CANVAS_HAS_PIXELS_JS = """(sel) => {
 }"""
 
 
+def _format_pageerror(err: PlaywrightError) -> str:
+    # Include the stack trace (when available) so a rare pageerror points at
+    # its source instead of just its (often generic) message
+    return f"{err}\n{err.stack}" if err.stack else str(err)
+
+
 def collect_errors(page: Page) -> tuple[list[str], list[str]]:
     """Collect browser console errors and failed (>= 400) request URLs."""
     errors: list[str] = []
@@ -202,7 +227,7 @@ def collect_errors(page: Page) -> tuple[list[str], list[str]]:
         "console",
         lambda msg: errors.append(msg.text) if msg.type == "error" else None,
     )
-    page.on("pageerror", lambda err: errors.append(str(err)))
+    page.on("pageerror", lambda err: errors.append(_format_pageerror(err)))
     page.on(
         "response",
         lambda res: failed_requests.append(res.url) if res.status >= 400 else None,

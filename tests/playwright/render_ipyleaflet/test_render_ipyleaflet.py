@@ -183,8 +183,14 @@ def test_render_ipyleaflet_rerender_lifecycle(page: Page, local_app) -> None:
     assert initial == 9
 
     for i in range(1, 4):
+        old = page.locator("#lmap .leaflet-container").element_handle()
         page.click("#rerender")
         expect(page.locator("#render_count")).to_have_text(str(i))
+        # The render_count/marker checks are satisfied by the old map while
+        # the new one renders asynchronously, so wait for the old map to
+        # actually leave the DOM. Otherwise the view-count wait below can
+        # start before any churn and pass on the pre-rerender count.
+        page.wait_for_function("(el) => !el.isConnected", arg=old, timeout=30000)
         expect(page.locator("#lmap .leaflet-marker-icon")).to_have_count(1)
 
     expect(page.locator("#lmap .leaflet-container")).to_have_count(1)

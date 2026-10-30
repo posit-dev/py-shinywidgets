@@ -1,14 +1,17 @@
 import asyncio
 import http.client
 import importlib
+import inspect
 import json
 import os
 import re
+import secrets
 import tempfile
 import threading
 import warnings
 from types import ModuleType
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Tuple
+from urllib.parse import parse_qs, quote
 
 import packaging.version
 from htmltools import HTMLDependency, tags
@@ -18,7 +21,7 @@ from htmltools._core import (
 from ipywidgets.widgets.domwidget import DOMWidget
 from ipywidgets.widgets.widget import Widget
 from jupyter_core.paths import jupyter_path
-from shiny import Session
+from shiny import App, Session
 from starlette.types import Receive, Scope, Send
 
 try:
@@ -388,6 +391,46 @@ def geolibre_app_mount(w: Widget, session: Session) -> None:
 
 # Hop-by-hop headers (plus Host/Accept-Encoding, which http.client manages
 # itself) that the loopback proxy must not forward in either direction.
+# Query parameters localtileserver 1.0.0 endpoints read raster sources from:
+# `filename` (tiles/metadata/... and the `/` viewer), `files`
+# (comma-separated, mosaic endpoints), `url` (server-side-fetched STAC URL,
+# i.e. an SSRF vector), and `filenameA`/`filenameB` (the `/split/` viewer in
+# web/fastapi_app.py). Guarded proxies refuse requests whose values aren't
+# authorized.
+_LOOPBACK_PROXY_SOURCE_PARAMS = ("filename", "url", "filenameA", "filenameB")
+
+# The xarray endpoints read datasets from a server-side in-memory registry
+# (with implicit selection of a sole dataset) rather than from a checked
+# selector. Nothing in localtileserver 1.0.0 populates that registry (it's a
+# manual extension point), and there is no per-dataset authorization to key
+# off, so guarded proxies refuse the whole prefix until one exists.
+_LOOPBACK_PROXY_BLOCKED_PREFIX = "/api/xarray/"
+
+# Raster-reading route prefixes in localtileserver 1.0.0 (web/routers/*.py)
+# mapped to the source selector each actually consumes. A request that lacks
+# the route's own selector falls back *upstream* to a default source — the
+# public SF Bay sample dataset, or `app.state.mosaic_assets` (another
+# session's registered mosaic) — even when it carries some *other* selector
+# the endpoint ignores, so on guarded proxies these routes require an
+# authorized value of their own selector. Selector-free access is only safe
+# on the remaining routes (palette/colormap lists, docs, viewer HTML), which
+# read no rasters.
+_LOOPBACK_PROXY_ROUTE_SELECTORS = (
+    ("/api/mosaic/", ("files",)),
+    ("/api/stac/", ("url",)),
+    ("/api/tiles/", ("filename",)),
+    ("/api/metadata", ("filename",)),
+    ("/api/bounds", ("filename",)),
+    ("/api/validate", ("filename",)),
+    ("/api/statistics", ("filename",)),
+    ("/api/thumbnail.", ("filename",)),
+    ("/api/part.", ("filename",)),
+    ("/api/feature.", ("filename",)),
+)
+
+# Query parameter carrying a `_LoopbackProxyApp` capability token
+_LOOPBACK_PROXY_TOKEN_PARAM = "sw_token"
+
 _LOOPBACK_PROXY_DROP_HEADERS = frozenset(
     {
         "connection",
@@ -429,8 +472,60 @@ class _LoopbackProxyApp:
 
     _CHUNK_SIZE = 65536
 
-    def __init__(self, port: int) -> None:
+    def __init__(self, port: int, allowed_filenames: Optional[set[str]] = None) -> None:
+        """
+        `allowed_filenames`: when a set is given, any request carrying a
+        raster-source query parameter (`filename`, `files` — comma-separated —
+        `url`, `filenameA`/`filenameB`: the selectors localtileserver 1.0.0's
+        endpoints read files from) whose value is not authorized is refused
+        with a 403, as is any request under `/api/xarray/` (see
+        `_LOOPBACK_PROXY_BLOCKED_PREFIX`). A value is
+        authorized if it is in the (app-wide) set, or if the request's
+        `sw_token` parameter is a capability token registered for it via
+        `register_filenames()` — the per-registration alternative to the
+        app-wide set, so one session's users can't read another session's
+        rasters by knowing or guessing their paths. Requests without any
+        selector parameter pass (every file-reading endpoint requires one).
+        `None` (the default) forwards everything, the right model for servers
+        that token their own file routes (geolibre) — the same exposure model
+        as jupyter-server-proxy.
+        """
         self._port = port
+        self._allowed_filenames = allowed_filenames
+        # capability token -> the filenames that token authorizes
+        self._capabilities: Dict[str, FrozenSet[str]] = {}
+
+    def register_filenames(
+        self, filenames: Iterable[str], token: Optional[str] = None
+    ) -> str:
+        """
+        Register filenames behind an unguessable capability token and return
+        the token; re-registering the same set returns the existing token. A
+        request carrying `sw_token=<token>` may read exactly these filenames.
+        Pass `token` to register an existing capability in this proxy too
+        (used when one client is shared across multiple Shiny Apps in the
+        process, so URLs minted for one App are accepted by another's proxy).
+        Tokens live for the app's lifetime (the proxy mount is app-wide, so
+        there is no per-session revocation), and only the app side can mint
+        them: the proxied guard and the widget hooks never register values
+        observed in requests or widget traits, which a browser controls.
+        """
+        key = frozenset(str(f) for f in filenames)
+        if token is not None:
+            self._capabilities[token] = key
+            return token
+        for existing_token, existing in self._capabilities.items():
+            if existing == key:
+                return existing_token
+        token = secrets.token_urlsafe(16)
+        self._capabilities[token] = key
+        return token
+
+    def authorized_filenames(self, token: Optional[str]) -> FrozenSet[str]:
+        """Filenames already registered behind `token` (empty if unknown)."""
+        if token is None:
+            return frozenset()
+        return self._capabilities.get(token, frozenset())
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "websocket":
@@ -447,6 +542,48 @@ class _LoopbackProxyApp:
         path = get_route_path(scope)
         if not path.startswith("/"):
             path = "/" + path
+
+        if self._allowed_filenames is not None:
+            if path.startswith(_LOOPBACK_PROXY_BLOCKED_PREFIX):
+                await self._simple_response(
+                    send, 403, b"Forbidden: route blocked on guarded proxies"
+                )
+                return
+            params = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+            token_set = self._capabilities.get(
+                params.get(_LOOPBACK_PROXY_TOKEN_PARAM, [""])[0], frozenset()
+            )
+            sources: List[str] = []
+            by_param: Dict[str, List[str]] = {}
+            for k, vs in params.items():
+                if k == "files":  # comma-separated (localtileserver mosaics)
+                    by_param[k] = [v for part in vs for v in part.split(",")]
+                elif k in _LOOPBACK_PROXY_SOURCE_PARAMS:
+                    by_param[k] = vs
+                else:
+                    continue
+                sources.extend(by_param[k])
+            if any(
+                s not in self._allowed_filenames and s not in token_set for s in sources
+            ):
+                await self._simple_response(
+                    send, 403, b"Forbidden: unregistered raster source"
+                )
+                return
+            for prefix, route_params in _LOOPBACK_PROXY_ROUTE_SELECTORS:
+                if path.startswith(prefix) and not any(
+                    by_param.get(p) for p in route_params
+                ):
+                    await self._simple_response(
+                        send,
+                        403,
+                        b"Forbidden: raster route requires a source selector",
+                    )
+                    return
+        # Re-encode: `path` is percent-decoded, so forwarding it verbatim
+        # would let an escaped `?` (%3F) smuggle a query string past the
+        # guard above into the upstream URL.
+        path = quote(path, safe="/")
         query = scope.get("query_string", b"")
         if query:
             path += "?" + query.decode("latin-1")
@@ -551,6 +688,222 @@ class _LoopbackProxyApp:
             }
         )
         await send({"type": "http.response.body", "body": body})
+
+
+def mount_loopback_proxy(
+    app: App, port: int, allowed_filenames: Optional[Iterable[str]] = None
+) -> Optional[_LoopbackProxyApp]:
+    """
+    Mount `_LoopbackProxyApp(port)` at `/proxy/{port}/` on the Shiny app, so a
+    server bound to 127.0.0.1:{port} in this process is reachable same-origin
+    (required for remote browsers, i.e. any deployed app). Returns the mounted
+    (or existing) proxy so callers can register capability tokens on it, or
+    `None` if the `/proxy/{port}` path is owned by some other app.
+
+    `allowed_filenames` is the app-wide plain allowlist: `None` (the default)
+    mounts an *unguarded* proxy; any iterable — including an empty one —
+    mounts a *guarded* one. Prefer capability tokens
+    (`_LoopbackProxyApp.register_filenames`) for per-registration
+    authorization; the plain list is app-wide.
+
+    Idempotent per port, matched on the route *path* (not just the mount
+    name): if a proxy is already mounted for this port — including one mounted
+    by hand with the pre-feature recipe — it is kept, and `allowed_filenames`
+    are unioned into its guard (an iterable also strengthens an unguarded
+    mount to guarded). starlette matches the first route, so shadowing a
+    hand-mounted unguarded proxy with a guarded one would silently leave the
+    unguarded one in effect; augmenting in place avoids that.
+    """
+    handler = app._dependency_handler
+    for route in handler.routes:
+        if getattr(route, "path", "").rstrip("/") == f"/proxy/{port}":
+            existing = getattr(route, "app", None)
+            if not isinstance(existing, _LoopbackProxyApp):
+                return None
+            if allowed_filenames is not None:
+                if existing._allowed_filenames is None:
+                    existing._allowed_filenames = set()
+                existing._allowed_filenames.update(allowed_filenames)
+            return existing
+    proxy = _LoopbackProxyApp(
+        port, set(allowed_filenames) if allowed_filenames is not None else None
+    )
+    handler.mount(f"/proxy/{port}/", proxy, name=f"loopback-proxy-{port}")
+    return proxy
+
+
+def _add_proxy_token(url: str, token: Optional[str]) -> str:
+    """
+    Attach a proxy capability token to a (rewritten) tile URL. Idempotent: an
+    existing token is replaced, not duplicated (shared layers are re-wired
+    once per session, which must not grow the URL each time).
+    """
+    if token is None:
+        return url
+    base, sep, query = url.partition("?")
+    parts = [
+        p
+        for p in query.split("&")
+        if p and not p.startswith(f"{_LOOPBACK_PROXY_TOKEN_PARAM}=")
+    ]
+    parts.append(f"{_LOOPBACK_PROXY_TOKEN_PARAM}={token}")
+    return base + sep + "&".join(parts)
+
+
+def _rewrite_loopback_url(url: str, port: int) -> str:
+    """
+    Rewrite a tile URL onto the `/proxy/{port}/` mount as a *relative* URL.
+    Relative (rather than root-relative) resolves against the page URL, so it
+    also works when the app is served under a path prefix (Posit Connect,
+    shinyapps.io).
+    """
+    for prefix in (
+        f"http://127.0.0.1:{port}/",
+        f"http://localhost:{port}/",
+        f"http://0.0.0.0:{port}/",
+        f"/proxy/{port}/",
+    ):
+        if url.startswith(prefix):
+            return f"proxy/{port}/" + url[len(prefix) :]
+    return url
+
+
+def localtileserver_layer_proxy(w: Widget, session: Session) -> None:
+    """
+    Auto-wire localtileserver-backed ipyleaflet layers for deployed apps
+    (no-op for any other widget).
+
+    `get_leaflet_tile_layer()` layers carry their TileClient as a
+    `tile_server` attribute (localtileserver >= 1.0.0 sets it unconditionally;
+    earlier versions only set it when the client was created from a path, so
+    those need upgrading). Their tile URLs default to
+    `http://127.0.0.1:{port}`, which a remote browser can't reach, and the
+    tile server's raster-source API (`filename`/`files`/`url` query params)
+    is unauthenticated. For such a layer, mount the guarded loopback proxy,
+    register the client's filenames behind a capability token (trusted
+    app-side state — app-wide registration would let one session's users read
+    another session's rasters by knowing their paths), and route tile URLs
+    through it:
+
+    * the layer's current `url` is rewritten (this runs before widget state
+      is serialized, so the browser only ever sees the proxy URL);
+    * the client's `get_tile_url()` is wrapped so restyle URLs
+      (`client=True`, keyword or positional) come out proxy-relative in a
+      single step — a traitlets observer alone would let the raw loopback
+      URL sync to the browser first, since ipywidgets sends each trait
+      change as it happens;
+    * an observer on `url` backstops direct assignments (URLs not produced
+      via `get_tile_url`). It rewrites, and re-attaches the token only when
+      the URL's raster source was already registered for this client — it
+      never registers new sources, since trait values can be pushed by the
+      browser over the comm and registering from them would let a client
+      poison its own allowlist. An unregistered source stays tokenless and
+      the proxy refuses it (403), loudly, rather than leaking.
+
+    localtileserver is never imported (duck-typed throughout). Set
+    SHINYWIDGETS_LOOPBACK_PROXY_DISABLE=1 to opt out.
+    """
+    if os.environ.get("SHINYWIDGETS_LOOPBACK_PROXY_DISABLE", ""):
+        return
+    client = getattr(w, "tile_server", None)
+    if client is None:
+        return
+    port = getattr(client, "server_port", None)
+    url = getattr(w, "url", None)
+    if port is None or not isinstance(url, str):
+        return
+    port = int(port)
+
+    filenames = getattr(client, "filename", None)
+    if isinstance(filenames, (list, tuple)):  # mosaic clients
+        sources = [str(f) for f in filenames]
+    elif filenames is not None:
+        sources = [str(filenames)]
+    else:
+        # e.g. in-memory xarray sources, whose routes read from a server-side
+        # registry (`key` param), not from a file selector — no token needed
+        sources = []
+
+    proxy = mount_loopback_proxy(session.app, port, allowed_filenames=())
+    token: Optional[str] = None
+    if proxy is not None and sources:
+        # One capability per client, stable across Apps: a client (or shared
+        # layer) reused in another Shiny App gets the same token registered
+        # in that App's proxy, so URLs minted for one App work in the other
+        token = getattr(client, "_shinywidgets_proxy_token", None)
+        if token is None:
+            token = proxy.register_filenames(sources)
+            client._shinywidgets_proxy_token = token
+        else:
+            proxy.register_filenames(sources, token=token)
+    authorized = frozenset(sources)
+
+    if not getattr(client, "_shinywidgets_url_wrapped", False):
+        orig_get_tile_url = client.get_tile_url
+        try:
+            sig = inspect.signature(orig_get_tile_url)
+        except (TypeError, ValueError):  # pragma: no cover
+            sig = None
+
+        def get_tile_url(*args: Any, **kwargs: Any) -> str:
+            result = orig_get_tile_url(*args, **kwargs)
+            # `client` may be passed positionally; resolve it against the
+            # real signature rather than only checking kwargs
+            is_client = False
+            if sig is not None:
+                try:
+                    is_client = bool(
+                        sig.bind(*args, **kwargs).arguments.get("client", False)
+                    )
+                except TypeError:
+                    is_client = bool(kwargs.get("client", False))
+            rewritten = _rewrite_loopback_url(result, port)
+            if is_client and rewritten != result:
+                # Only token actual proxy URLs: attaching it to an unrelated
+                # (external) URL would send the credential to that server
+                return _add_proxy_token(rewritten, token)
+            return result
+
+        client.get_tile_url = get_tile_url
+        client._shinywidgets_url_wrapped = True
+
+    rewritten = _rewrite_loopback_url(url, port)
+    new_url = _add_proxy_token(rewritten, token) if rewritten != url else rewritten
+    if new_url != url:
+        w.url = new_url  # type: ignore[attr-defined]
+
+    # A process-global widget is opened once per session; attach the backstop
+    # observer only once per widget.
+    if getattr(w, "_shinywidgets_proxy_observed", False):
+        return
+
+    def _rewrite(change: Any) -> None:
+        changed = change["new"]
+        if not isinstance(changed, str):
+            return
+        new = _rewrite_loopback_url(changed, port)
+        if new == changed:
+            return
+        changed_sources = _url_sources(changed)
+        if changed_sources and all(s in authorized for s in changed_sources):
+            new = _add_proxy_token(new, token)
+        # Reentrant (setting a trait fires observers), but the second pass
+        # sees an already-relative URL and stops.
+        w.url = new  # type: ignore[attr-defined]
+
+    w.observe(_rewrite, "url")
+    w._shinywidgets_proxy_observed = True  # type: ignore[attr-defined]
+
+
+def _url_sources(url: str) -> List[str]:
+    """The raster sources (`filename`/`files`/`url`) a localtileserver URL reads."""
+    from urllib.parse import urlparse
+
+    params = parse_qs(urlparse(url).query)
+    sources = params.get("filename", []) + params.get("url", [])
+    for part in params.get("files", []):
+        sources.extend(part.split(","))
+    return sources
 
 
 # anywidget's front-end rejects a model's `ready` promise if initialization
