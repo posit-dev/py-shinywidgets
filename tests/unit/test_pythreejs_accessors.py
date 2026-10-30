@@ -26,7 +26,9 @@ def test_camera_seeds_and_dedupes_equal_snapshots() -> None:
     detach = sp.CAMERA.attach(fig, emitted.append)
     assert len(emitted) == 1  # seeded with the current camera's snapshot
     fig.camera.position = [1, 2, 3]
-    assert emitted[-1] == ((1.0, 2.0, 3.0), (0.0, 0.0, 0.0, 1.0), 1.0)
+    # The raw is (replacement token, position, quaternion, zoom): the token
+    # only changes when the camera instance does
+    assert emitted[-1] == (1, (1.0, 2.0, 3.0), (0.0, 0.0, 0.0, 1.0), 1.0)
     # The raw values are equal-value tuples, so a repeated report of the same
     # state is deduped by the runtime's input priority (covered by the helper's
     # own tests); what matters here is that the raw is an immutable snapshot,
@@ -45,7 +47,8 @@ def test_camera_reattaches_on_camera_replacement() -> None:
     detach = sp.CAMERA.attach(fig, emitted.append)
     old = fig.camera
     fig.camera = pythreejs.PerspectiveCamera(position=[5, 5, 5])
-    assert emitted[-1][0] == (5.0, 5.0, 5.0)  # re-seeded from the new camera
+    # Re-seeded from the new camera, with the replacement token bumped
+    assert emitted[-1] == (2, (5.0, 5.0, 5.0), (0.0, 0.0, 0.0, 1.0), 1.0)
     n = len(emitted)
     old.position = [9, 9, 9]  # stale camera: no longer observed
     assert len(emitted) == n
@@ -98,3 +101,39 @@ def test_pythreejs_camera_follows_orbit_state() -> None:
     assert r.camera() is camera  # the live camera, seeded as not-yet-orbited
     camera.position = [1, 0, 4]  # what an orbit syncs back
     assert tuple(r.camera().position) == (1.0, 0.0, 4.0)
+
+
+def test_equal_pose_camera_replacement_still_invalidates() -> None:
+    # Replacing the camera with a DIFFERENT instance in the same pose must
+    # still invalidate reactive readers (the accessor returns the live
+    # camera), even though the pose snapshot is unchanged
+    import ipyvolume as ipv
+    import pythreejs
+    from shiny.reactive._core import Context
+
+    fig = ipv.Figure()
+    old = fig.camera  # materialize the (lazy) default camera
+    r = rw.render_ipyvolume()
+    r._widget = fig  # stands in for _render()
+    r._accessors.on_render(fig)
+
+    context = Context()
+    with context():
+        assert r.camera() is old
+    assert not context._invalidated
+
+    fig.camera = pythreejs.PerspectiveCamera(
+        position=list(old.position),
+        quaternion=list(old.quaternion),
+        zoom=old.zoom,
+    )
+    assert context._invalidated
+
+    # Equal pose reports from the SAME camera stay deduplicated
+    context2 = Context()
+    with context2():
+        assert r.camera() is fig.camera
+    # A list assignment fires a trait change (list != stored tuple) whose
+    # snapshot is identical to the last one
+    fig.camera.position = list(fig.camera.position)
+    assert not context2._invalidated
