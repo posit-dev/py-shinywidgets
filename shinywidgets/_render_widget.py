@@ -138,6 +138,7 @@ from ._dependencies import widget_pkg
 from ._embedding_atlas import EMBEDDING_ATLAS_ACCESSORS, rows_for_predicate
 from ._ipyaladin import IPYALADIN_ACCESSORS
 from ._ipydatagrid import IPYDATAGRID_ACCESSORS
+from ._ipyleaflet import IPYLEAFLET_ACCESSORS
 from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
 from ._k3d import CAMERA as K3D_CAMERA
@@ -848,7 +849,67 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
         return cast(Aladin, self._widget).fov
 
 
-class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
+class _IpyleafletAccessors:
+    """Accessor methods shared by render_ipyleaflet and render_leafmap (whose
+    ipyleaflet backend is an ipyleaflet.Map)."""
+
+    if TYPE_CHECKING:
+        # Defined by render_widget_base; declared so the mixin type-checks
+        def _read_accessor(self, name: str, *, raw: bool = False) -> object: ...
+
+    def bounds(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+        """
+        The map's viewport as ``((south, west), (north, east))`` in
+        ``[lat, lng]`` order.
+
+        Cancels (like a not-yet-rendered output) until the browser first
+        reports it -- no ``req()`` guard needed. One update per pan or zoom,
+        at gesture end, so not rate-limited. Reading it in a hidden (e.g.
+        inactive tab) map reports the browser's last known bounds, which
+        ipyleaflet may corrupt while hidden -- guard with your own visibility
+        check if that matters (see ``examples/superzip``).
+        """
+        return cast(
+            Tuple[Tuple[float, float], Tuple[float, float]],
+            self._read_accessor("bounds"),
+        )
+
+    def zoom(self) -> float:
+        """
+        The map's current zoom level (``float``). Also fires when Python sets
+        ``zoom``. Not rate-limited.
+        """
+        return cast(float, self._read_accessor("zoom"))
+
+    def center(self) -> List[float]:
+        """
+        The map's current center as ``[lat, lng]``. Not rate-limited.
+        """
+        return cast(List[float], self._read_accessor("center"))
+
+    def clicked(self) -> Optional[Dict[str, Any]]:
+        """
+        The most recent map click as ipyleaflet reports it: a dict with
+        ``coordinates: [lat, lng]`` (note the order; lonboard reports
+        ``(lng, lat)``), or ``None`` until the first click. A double-click
+        fires two clicks (the ``dblclick`` itself is ignored), and marker
+        clicks don't bubble up to the map -- use a layer's own ``on_click``
+        for those.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("clicked"))
+
+    def drawn_features(self) -> List[Dict[str, Any]]:
+        """
+        The shapes drawn on the map's ``ipyleaflet.DrawControl``, as a list
+        of GeoJSON Feature dicts (``[]`` until something is drawn; edits and
+        deletions update it). Raises ``TypeError`` if the map has no
+        ``DrawControl`` -- add one with ``m.add(DrawControl())`` (leafmap adds
+        one by default).
+        """
+        return cast(List[Dict[str, Any]], self._read_accessor("drawn_features"))
+
+
+class render_ipyleaflet(_IpyleafletAccessors, render_widget_base[ValueT, LeafletMap]):
     """
     Reactively render an [ipyleaflet](https://ipyleaflet.readthedocs.io) map as a Shiny
     output.
@@ -860,14 +921,30 @@ class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
     most recently returned by the render function, and `.widget`, the rendered
     `Map` instance. Use `.widget` to programmatically update the rendered map in
     place (e.g., change its `zoom` or `center`, or add layers; trait changes on the
-    widget are synced to the browser), or to reactively read map state (e.g., `zoom`,
-    `center`, `bounds`) with :func:`~shinywidgets.reactive_read`.
+    widget are synced to the browser), or to reactively read map state with
+    :func:`~shinywidgets.reactive_read`.
 
     In a filling layout, the map fills its container unless it has its own height
     (e.g., ``Layout(height="300px")``). Default heights set by a subclass (e.g.,
     leafmap's 600px) are treated as unset.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Reacting to the map**: read the map's accessors in a reactive function
+    (a ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``),
+    which re-runs whenever the user gestures, much like ``input.my_slider()``:
+
+    * ``map.bounds()``: the viewport, ``((south, west), (north, east))``.
+    * ``map.zoom()`` and ``map.center()``: the camera.
+    * ``map.clicked()``: the most recent map click.
+    * ``map.drawn_features()``: the shapes drawn on the map's DrawControl.
+
+    Coordinates are ``[lat, lng]``, as ipyleaflet reports them (lonboard is
+    ``(lng, lat)``). The accessors can't be read inside this output's own
+    render function, which builds a new map each time it runs. For anything
+    beyond them, use :func:`~shinywidgets.reactive_read` on ``map.widget``.
 
     Parameters
     ----------
@@ -884,7 +961,17 @@ class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves it
+        unlimited. This renderer's accessors declare no rate policy, so they
+        are unaffected.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        limiting.
     """
+
+    accessor_specs = IPYLEAFLET_ACCESSORS
 
 
 class render_ipysigma(render_widget_base[ValueT, Sigma]):
