@@ -59,6 +59,7 @@ from ._comm import (
 from ._dependencies import (
     custom_elements_dependency,
     geolibre_app_mount,
+    localtileserver_layer_proxy,
     require_dependencies,
     widget_pkg,
 )
@@ -267,6 +268,11 @@ def init_shiny_widget(w: Widget):
             # _remote_mode after super().__init__() returns, overwriting it.
             if any(widget_pkg(cls) == "geolibre" for cls in type(w).__mro__):
                 geolibre_app_mount(w, session)
+            # Mount a guarded loopback proxy for localtileserver-backed
+            # ipyleaflet layers and route their tile URLs through it (no-op
+            # for other widgets). Must run before get_state() so the browser
+            # only ever sees the rewritten (same-origin) URL.
+            localtileserver_layer_proxy(w, session)
             state, buffer_paths, buffers = _remove_buffers(w.get_state())
 
         # Covers widgets that are opened but never displayed (so no render-time
@@ -384,6 +390,10 @@ def open_shared_in(w: Widget, session: Session) -> None:
     mount_widget_deps(session, widget_deps)
     # Defaults first materialized while serializing must be shared as well
     with shared_construction():
+        # Shared widgets never open a ShinyComm, so _open_shiny_comm's hook
+        # never runs for them; wire localtileserver layers here too, before
+        # their state is serialized
+        localtileserver_layer_proxy(w, session)
         prepare_to_serialize(w)
         state, buffer_paths, buffers = _remove_buffers(w.get_state())
     comm.add(
