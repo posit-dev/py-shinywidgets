@@ -66,6 +66,7 @@ if TYPE_CHECKING:
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
     from pyobsplot.widget import ObsplotWidget
+    from pythreejs import Camera
 
     # reactable isn't in the dev/test groups (see pyproject.toml)
     from reactable import Reactable  # pyright: ignore[reportMissingImports]
@@ -112,7 +113,7 @@ else:
     ) = RerunNotebookViewer = NiiVue = object
     Reactable = ReactableWidget = object
     MouseEvent = PickEvent = SelectionChangeEvent = object
-    Angle = Latitude = Longitude = SkyCoord = Table = object
+    Angle = Latitude = Longitude = SkyCoord = Table = Camera = object
 
 from shiny.render.renderer import ValueFn
 
@@ -138,6 +139,7 @@ from ._jscatter import JSCATTER_ACCESSORS
 from ._k3d import CAMERA as K3D_CAMERA
 from ._matplotlib import CLICKED, MATPLOTLIB_ACCESSORS, AxesLimits
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
+from ._pythreejs import CAMERA as PYTHREEJS_CAMERA
 from ._reactable import REACTABLE_ACCESSORS
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 from ._rerun import SELECTION
@@ -1588,6 +1590,13 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ---
+    **Reacting to user interaction**: ``plot.camera()`` reads the live camera
+    after every orbit, much like ``input.my_slider()`` reads an input. Call
+    it in a reactive function (a ``@render.*`` function, ``@reactive.calc``,
+    or ``@reactive.effect``), which then re-runs whenever the camera changes.
+
     Parameters
     ----------
     width
@@ -1603,6 +1612,14 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
+        ``reactive_read()`` unlimited; no accessor on this renderer declares
+        a default.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables
+        rate limiting.
 
     Examples
     --------
@@ -1626,6 +1643,26 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
     app = App(app_ui, server)
     ```
     """
+
+    accessor_specs = (PYTHREEJS_CAMERA,)
+
+    def camera(self) -> Camera:
+        """
+        The figure's live `pythreejs.Camera` (a `PerspectiveCamera` by
+        default).
+
+        Readers are invalidated when its ``position``/``quaternion``/``zoom``
+        change (at the end of each orbit) or the camera is replaced. Reading
+        before the first render cancels silently (like ``req(False)``). The
+        returned object is the same mutable instance across reads -- copy
+        what you keep. Not rate-limited (the browser syncs once per orbit).
+        """
+        self._read_accessor("camera")
+        camera = cast(IpyvolumeFigure, self._widget).camera
+        # The trait allows None, but a rendered figure always has its
+        # (possibly default-constructed) camera
+        assert camera is not None
+        return cast("Camera", camera)
 
 
 class render_leafmap(render_widget_base[ValueT, LeafletMap]):
