@@ -30,7 +30,9 @@ def test_camera_waits_for_auto_fit_then_follows_orbit(page: Page, local_app) -> 
     assert box is not None
     page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     page.mouse.down()
-    page.mouse.move(box["x"] + box["width"] / 2 + 120, box["y"] + box["height"] / 2 + 40, steps=10)
+    page.mouse.move(
+        box["x"] + box["width"] / 2 + 120, box["y"] + box["height"] / 2 + 40, steps=10
+    )
     page.mouse.up()
     expect(page.locator("#camera")).not_to_have_text(before, timeout=10000)
 

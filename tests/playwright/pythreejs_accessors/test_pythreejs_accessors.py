@@ -22,10 +22,10 @@ def test_camera_follows_orbit(page: Page, local_app) -> None:
     assert box is not None
     page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     page.mouse.down()
-    page.mouse.move(box["x"] + box["width"] / 2 + 100, box["y"] + box["height"] / 2 + 50, steps=10)
-    page.mouse.up()
-    expect(page.locator("#camera")).not_to_have_text(
-        "0.000,0.000,3.000", timeout=10000
+    page.mouse.move(
+        box["x"] + box["width"] / 2 + 100, box["y"] + box["height"] / 2 + 50, steps=10
     )
+    page.mouse.up()
+    expect(page.locator("#camera")).not_to_have_text("0.000,0.000,3.000", timeout=10000)
 
     assert_no_unexpected_errors(errors, failed_requests)

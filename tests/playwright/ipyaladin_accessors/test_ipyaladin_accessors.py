@@ -28,14 +28,16 @@ def check_errors(errors: list[str], failed_requests: list[str]) -> None:
 
 def goto_viewer(page: Page, local_app) -> None:
     page.goto(local_app.url)
-    expect(
-        page.locator("#sky .aladin-widget canvas").first
-    ).to_be_visible(timeout=60000)
+    expect(page.locator("#sky .aladin-widget canvas").first).to_be_visible(
+        timeout=60000
+    )
     # Seeded from the viewer's initial state at render. The viewer snaps the
     # fov to its own zoom steps (2 deg becomes 1.9625...), so match a number,
     # not the constructor value
     expect(page.locator("#target")).to_have_text("83.63,22.01", timeout=60000)
-    expect(page.locator("#fov")).to_have_text(re.compile(r"^\d+\.\d{4}$"), timeout=60000)
+    expect(page.locator("#fov")).to_have_text(
+        re.compile(r"^\d+\.\d{4}$"), timeout=60000
+    )
 
 
 def canvas_box(page: Page) -> dict:
@@ -98,7 +100,9 @@ def test_selected_objects_follows_rectangle_selection(page: Page, local_app) -> 
     page.wait_for_timeout(500)
     page.mouse.move(box["x"] + box["width"] * 0.2, box["y"] + box["height"] * 0.2)
     page.mouse.down()
-    page.mouse.move(box["x"] + box["width"] * 0.8, box["y"] + box["height"] * 0.8, steps=10)
+    page.mouse.move(
+        box["x"] + box["width"] * 0.8, box["y"] + box["height"] * 0.8, steps=10
+    )
     page.mouse.up()
     expect(page.locator("#selected_objects")).not_to_have_text("0", timeout=30000)
 
