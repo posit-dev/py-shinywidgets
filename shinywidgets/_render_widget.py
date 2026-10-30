@@ -2393,6 +2393,25 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     queries match. Only share a connection for data that is the same for every
     user.
 
+    **Security**: like `render_embedding_atlas`, Mosaic runs its queries by
+    sending SQL from the browser to the widget's connection, so without
+    restrictions any visitor can send arbitrary SQL, including SQL that reads or
+    writes files on the server. The renderer locks down the connection before
+    display (``SET enable_external_access = false``; ``SET lock_configuration =
+    true``); pass ``allow_unrestricted_connection=True`` to opt out (e.g., a
+    local, single-user app). A connection whose configuration is already locked
+    is left untouched (its owner took control of its settings). Unlike
+    `render_embedding_atlas`'s connection
+    (private to one widget), this lockdown can reach a connection the app is
+    still using elsewhere: DuckDB's lockdown is permanent (it can't be undone)
+    and database-wide (it also locks every other cursor on the same database,
+    not just the one it was set on). So for a shared connection as described
+    above (``con=``, or a relation in ``data=`` landing on
+    ``duckdb.default_connection()``), the *first* render locks it for every
+    other use in the process. Do any server-side file reads (``read_parquet()``,
+    etc.) on that connection before the first render, or pass
+    ``allow_unrestricted_connection=True`` for it.
+
     Each re-render creates a new `MosaicWidget` and DuckDB connection, which
     anywidget currently keeps alive for the life of the server process, and loads
     another copy of the widget's JavaScript into the page. To restyle a dashboard,
@@ -2401,6 +2420,12 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
 
     Parameters
     ----------
+    allow_unrestricted_connection
+        When ``True``, the widget's DuckDB connection is left as the render
+        function returned it, without the lockdown described above. The default
+        (``False``) is strongly recommended for deployed apps: an unrestricted
+        connection lets any visitor run arbitrary SQL with the server process's
+        permissions.
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -2423,6 +2448,29 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
+
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[MosaicWidget]] = None,
+        *,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[float] = None,
+        allow_unrestricted_connection: bool = False,
+    ):
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+        )
+        self.allow_unrestricted_connection = allow_unrestricted_connection
 
     _accessor_specs = MOSAIC_ACCESSORS
 
@@ -2459,6 +2507,28 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         """
         self.params()  # take the dependency
         return cast(MosaicWidget, self._widget).data(table)
+
+    def _as_widget(self, value: MosaicWidget) -> MosaicWidget:
+        widget = super()._as_widget(value)
+        if not self.allow_unrestricted_connection:
+            restrict_mosaic_connection(widget)
+        return widget
+
+
+def restrict_mosaic_connection(widget: MosaicWidget) -> None:
+    """
+    Lock down a `MosaicWidget`'s DuckDB connection, so the SQL the browser
+    sends can't reach server files or change the connection's configuration.
+    """
+    con = getattr(widget, "con", None)
+    if con is None:
+        raise RuntimeError(
+            "Couldn't find the MosaicWidget's DuckDB connection (`con`), so its "
+            "SQL access can't be restricted. If mosaic-widget renamed this "
+            "attribute, please report it. To render anyway, pass "
+            "`allow_unrestricted_connection=True` to `@render_mosaic_widget`."
+        )
+    restrict_duckdb_connection(con)
 
 
 class render_obsplot(render_widget_base[ObsplotWidget, ObsplotWidget]):
@@ -4119,8 +4189,24 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
     a new table each time it runs. For anything beyond them, use
     :func:`~shinywidgets.reactive_read` on ``table.widget``.
 
+    **Security**: like `render_embedding_atlas`, quak runs its queries by
+    sending SQL from the browser to the widget's DuckDB connection, so without
+    restrictions any visitor can send arbitrary SQL, including SQL that reads or
+    writes files on the server. The renderer locks down the widget's connection
+    before display (``SET enable_external_access = false``; ``SET
+    lock_configuration = true``); pass ``allow_unrestricted_connection=True`` to
+    opt out (e.g., a local, single-user app). A connection whose configuration
+    is already locked is left untouched (its owner took control of its
+    settings).
+
     Parameters
     ----------
+    allow_unrestricted_connection
+        When ``True``, the widget's DuckDB connection is left as the render
+        function returned it, without the lockdown described above. The default
+        (``False``) is strongly recommended for deployed apps: an unrestricted
+        connection lets any visitor run arbitrary SQL with the server process's
+        permissions.
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -4143,6 +4229,29 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
+
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[ValueT]] = None,
+        *,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[float] = None,
+        allow_unrestricted_connection: bool = False,
+    ):
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+        )
+        self.allow_unrestricted_connection = allow_unrestricted_connection
 
     _accessor_specs = QUAK_ACCESSORS
 
@@ -4182,16 +4291,36 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
     # registering them in AS_WIDGET_MAP, coerce them here
     def _as_widget(self, value: ValueT) -> QuakWidget:
         if isinstance(value, Widget):
-            return super()._as_widget(value)
+            widget = cast(QuakWidget, super()._as_widget(value))
+        else:
+            try:
+                import quak  # pyright: ignore[reportMissingImports]
+            except ImportError:
+                raise ImportError(
+                    "Install the quak package to use render_quak with shinywidgets (pip install 'shinywidgets[quak]')."
+                )
 
-        try:
-            import quak  # pyright: ignore[reportMissingImports]
-        except ImportError:
-            raise ImportError(
-                "Install the quak package to use render_quak with shinywidgets (pip install 'shinywidgets[quak]')."
-            )
+            widget = quak.Widget(value)
 
-        return quak.Widget(value)
+        if not self.allow_unrestricted_connection:
+            restrict_quak_connection(widget)
+        return widget
+
+
+def restrict_quak_connection(widget: QuakWidget) -> None:
+    """
+    Lock down a `quak.Widget`'s DuckDB connection, so the SQL the browser sends
+    can't reach server files or change the connection's configuration.
+    """
+    con = getattr(widget, "_conn", None)
+    if con is None:
+        raise RuntimeError(
+            "Couldn't find the quak.Widget's DuckDB connection (`_conn`), so its "
+            "SQL access can't be restricted. If quak renamed this attribute, "
+            "please report it. To render anyway, pass "
+            "`allow_unrestricted_connection=True` to `@render_quak`."
+        )
+    restrict_duckdb_connection(con)
 
 
 class render_vizarr(render_widget_base[ValueT, VizarrViewer]):
