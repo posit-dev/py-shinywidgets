@@ -142,6 +142,7 @@ from ._matplotlib import CLICKED, MATPLOTLIB_ACCESSORS, AxesLimits
 from ._niivue import LOCATION
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._pythreejs import CAMERA as PYTHREEJS_CAMERA
+from ._quak import QUAK_ACCESSORS
 from ._reactable import REACTABLE_ACCESSORS
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 from ._rerun import SELECTION
@@ -3766,15 +3767,26 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `quak.Widget` instance. Use `.widget` to reactively read the table's state with
-    :func:`~shinywidgets.reactive_read`: `reactive_read(table.widget, "sql")` is the
-    SQL query for the table's current sort and filter state, and
-    `table.widget.data()` runs it, returning a DuckDB relation of the matching rows.
-    The query is an empty string while the table starts up (so guard with
-    ``req(reactive_read(table.widget, "sql"))``), and it's read-only: setting it from
-    Python doesn't change the table.
+    `quak.Widget` instance. Use `.widget` to programmatically update the rendered
+    table in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Reacting to the table's state**: read the table's accessors in a
+    reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which re-runs whenever the user sorts or brushes,
+    much like ``input.my_slider()``:
+
+    * ``table.sql()``: the SQL query for the table's current sort and filter
+      state.
+    * ``table.data()``: the matching rows, as a lazy DuckDB relation.
+
+    They can't be read inside this output's own render function, which builds
+    a new table each time it runs. For anything beyond them, use
+    :func:`~shinywidgets.reactive_read` on ``table.widget``.
 
     Parameters
     ----------
@@ -3791,7 +3803,43 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`sql` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce and leaves
+        ``reactive_read()`` unlimited.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        limiting.
     """
+
+    accessor_specs = QUAK_ACCESSORS
+
+    def sql(self) -> str:
+        """
+        The SQL query for the table's current sort and filter state (a `str`).
+
+        Brush quak's column histograms or sort a column and this query updates,
+        debounced (250 ms) by default -- see the ``rate_policy`` and
+        ``rate_delay`` parameters. While the table initializes the query is
+        briefly empty, in which case reading this cancels (like reading an
+        output that hasn't rendered yet), so no ``req()`` guard is needed. The
+        query is read-only: setting it from Python doesn't change the table.
+        """
+        return cast(str, self._read_accessor("sql"))
+
+    def data(self) -> "duckdb.DuckDBPyRelation":
+        """
+        The rows matching the current sort and filter, as a lazy DuckDB
+        relation (materialize it with ``.df()``, ``.pl()``, or
+        ``.aggregate(...)``).
+
+        Re-reads whenever :meth:`sql` changes and runs the query on each read,
+        so prefer calling it once inside a ``@reactive.calc`` and sharing the
+        result over calling it in several outputs.
+        """
+        self.sql()  # take the dependency (and cancel until the query is ready)
+        return cast(QuakWidget, self._widget).data()
 
     # DataFrames are a generic type that several renderers accept, so rather than
     # registering them in AS_WIDGET_MAP, coerce them here
