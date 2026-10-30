@@ -44,6 +44,12 @@ def test_view_config_holds_the_structural_keys(widget_session: Session) -> None:
     assert cfg["plugin"] == "Datagrid"
     detach()
 
+    # The documented way to reproduce the rows: Table.view() rejects the
+    # viewer-only `plugin` key, so it's excluded before forwarding
+    with pytest.raises(Exception, match="plugin"):
+        w.table.view(**cfg)
+    w.table.view(**{k: v for k, v in cfg.items() if k != "plugin"})
+
     # A cosmetic change emits nothing; a structural one emits once
     emitted2: List[object] = []
     sp.VIEW_CONFIG.attach(w, emitted2.append)

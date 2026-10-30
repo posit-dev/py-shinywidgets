@@ -2983,8 +2983,11 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
         ``filter``, and ``expressions`` -- the subset of
         ``PerspectiveWidget.save()`` that determines the rows shown, so
         cosmetic changes (opening the settings panel, switching the theme)
-        don't re-fire it. ``widget.table.view(**cfg)`` reproduces the rows.
-        Row clicks and selections never reach Python. Not rate-limited.
+        don't re-fire it. ``plugin`` is viewer-only (it says how the rows are
+        displayed, not which rows), so exclude it before reproducing the
+        rows: ``widget.table.view(**{k: v for k, v in cfg.items() if k !=
+        "plugin"})``. Row clicks and selections never reach Python. Not
+        rate-limited.
         """
         return cast(Dict[str, Any], self._read_accessor("view_config"))
 
