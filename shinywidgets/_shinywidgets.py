@@ -56,6 +56,7 @@ from ._comm import (
     SharedShinyComm,
     ShinyComm,
     ShinyCommManager,
+    is_sessionless,
     run_comm_open_callbacks,
 )
 from ._dependencies import (
@@ -63,6 +64,14 @@ from ._dependencies import (
     geolibre_app_mount,
     require_dependencies,
     widget_pkg,
+)
+from ._ipyreact import (
+    constructing_ipyreact_registry_widget,
+    guard_ipyreact_registry_state,
+    ipyreact_imported,
+    ipyreact_registry_widgets,
+    is_ipyreact_registry_widget,
+    is_ipyreact_widget,
 )
 from ._nglview import (
     guard_registry_state,
@@ -85,6 +94,32 @@ __all__ = (
 )
 
 
+# Process-global widgets whose synced traits no session's browser may write
+# (any session could send an `update`, and every later session would then load
+# that state): a (predicate, guard) pair per package registry.
+_STATE_GUARDS: tuple[tuple[Callable[[Widget], bool], Callable[[Widget], None]], ...] = (
+    (is_nglview_registry, guard_registry_state),
+    (is_ipyreact_registry_widget, guard_ipyreact_registry_state),
+)
+
+
+def guard_process_global_state(w: Widget) -> None:
+    """
+    If `w` is a package's process-global registry widget, restrict the traits
+    its browser may write (see _STATE_GUARDS).
+
+    Called at construction, not only in open_shared_in(): a package first
+    imported inside a session gets a plain ShinyComm from the deferred open,
+    which never passes through open_shared_in(), leaving the widget's state
+    writable by that session's browser. open_shared_in() calls it again for
+    registries that predate our construction hook (reached via adoption in
+    init_session()).
+    """
+    for is_registry, guard in _STATE_GUARDS:
+        if is_registry(w):
+            guard(w)
+
+
 # --------------------------------------------------------------------------------------------
 # When a widget is initialized, also initialize a communication channel (via the Shiny
 # session). Note that when the comm is initialized, it also sends the initial state of
@@ -97,13 +132,7 @@ def init_shiny_widget(w: Widget):
     plotly_version = unsupported_plotly_version(w)
     if plotly_version is not None:
         raise RuntimeError(PLOTLY_VERSION_MESSAGE.format(version=plotly_version))
-    if is_nglview_registry(w):
-        # Install at construction, not only in open_shared_in(): when nglview
-        # is first imported inside a session, the deferred open below gives
-        # the registry a plain ShinyComm that never passes through
-        # open_shared_in(), leaving its state writable by that session's
-        # browser
-        guard_registry_state(w)
+    guard_process_global_state(w)
     session = get_current_session()
     shared = constructing_shared.get()
     if session is None:
@@ -121,7 +150,13 @@ def init_shiny_widget(w: Widget):
             or importing_ipyvuetify()
         ):
             return
-        if shared:
+        # ipyreact's registry widgets are the exception: they stay process-global
+        # in every session (see _ipyreact.py).
+        if (
+            shared
+            or is_ipyreact_registry_widget(w)
+            or constructing_ipyreact_registry_widget()
+        ):
             # Widget.open() then gives it an inert DummyComm with this id
             if getattr(w, "_model_id", None) is None:
                 w._model_id = uuid4().hex
@@ -161,11 +196,9 @@ def init_shiny_widget(w: Widget):
         w._model_id = uuid4().hex
 
     id = cast(str, w._model_id)
-    # The import's module-level widgets are process-global even when the first
-    # import runs inside a session (e.g. a lazy import in a render function)
-    shared = (
-        shared or importing_ipyvue() or importing_ipyvuetify() or importing_nglview()
-    )
+    # A package's import-time/registry widgets are process-global even when
+    # constructed inside a session (e.g. a lazy import in a render function)
+    shared = shared or is_process_global_construction(w)
     if shared:
         SHARED_WIDGETS[id] = w
 
@@ -214,6 +247,10 @@ def init_shiny_widget(w: Widget):
         # invalidated): leave it closed rather than reopening it.
         if w is None or WIDGET_INSTANCE_MAP.get(id) is not w:
             COMM_OPEN_CALLBACKS.pop(id, None)
+            return
+
+        if is_ipyreact_registry_widget(w):
+            fan_out_ipyreact_registry(w)
             return
 
         # Already opened in another session by open_shared_in(); a plain
@@ -327,10 +364,9 @@ def open_shared_in(w: Widget, session: Session) -> None:
     with session_context(session):
         init_session(session)
 
-    if is_nglview_registry(w):
-        # Its archived messages are executed as JS by the hidden-view replay,
-        # so no session's browser may write its state (see _nglview.py)
-        guard_registry_state(w)
+    # The adoption path (init_session) reaches registries the
+    # construction-time guard missed (they predate our hook)
+    guard_process_global_state(w)
 
     comm = w.comm
     if not isinstance(comm, SharedShinyComm):
@@ -389,6 +425,28 @@ def open_shared_in(w: Widget, session: Session) -> None:
             )
 
 
+def fan_out_ipyreact_registry(w: Widget) -> None:
+    """
+    Open an ipyreact registry widget in every live session.
+
+    An ipyreact consumer waits on its registry widgets by name, not by
+    widget reference, so the render-time walk that opens a shared widget in
+    the other sessions never finds it: open it in every live session when
+    its deferred open flushes, not just the session that defined it. This
+    runs before the SharedShinyComm early return in the deferred open: a
+    session that initializes between the widget's construction and the flush
+    adopts it (init_session), and returning early would then open it only in
+    the defining session, leaving the other existing sessions without it
+    indefinitely.
+
+    Module-level, not inline in the deferred-open effect: Shiny's OTEL
+    source extraction re-tokenizes the effect function's source on every
+    widget construction, so that closure is kept short.
+    """
+    for s in list(SESSIONS):
+        open_shared_in(w, s)
+
+
 def guard_shared_send(comm: SharedShinyComm, data: DataType) -> None:
     """
     Keep an update fanned out to several sessions from dangling in any of their
@@ -422,6 +480,37 @@ def guard_shared_send(comm: SharedShinyComm, data: DataType) -> None:
                 dangling_reference_message(owner, w, model_id, via_update=True),
                 stacklevel=2,
             )
+
+
+# Packages with process-global "registry" widgets that consumers wait on by
+# name (not by widget reference, so no widget-tree walk can find them): an
+# (is-active, consumer predicate, registry discovery) triple per package.
+# is_active() is an O(1) check (e.g. the package is imported) gating the
+# per-render tree walk and per-session discovery below, so an app that never
+# uses the package pays nothing for its registry support. init_session()
+# opens every discovered registry in each new session; rendering a consumer
+# opens its package's registries (open_process_global_widgets()).
+_REGISTRY_SOURCES: tuple[
+    tuple[Callable[[], bool], Callable[[Widget], bool], Callable[[], List[Widget]]],
+    ...,
+] = ((ipyreact_imported, is_ipyreact_widget, ipyreact_registry_widgets),)
+
+
+def adopt_process_global(w: Widget, session: Session) -> None:
+    """
+    Register `w` and the widgets it already references as process-global, and
+    open `w` in `session`.
+
+    The references (e.g. a Layout materialized before our construction hook
+    was installed) must be process-global too: a process-global widget's
+    state names them.
+    """
+    for r in walk_widget_tree([w]):
+        if r.comm is not None and (
+            is_sessionless(r) or SHARED_WIDGETS.get(r.model_id) is r
+        ):
+            SHARED_WIDGETS.setdefault(r.model_id, r)
+    open_shared_in(w, session)
 
 
 def init_session(session: Session) -> None:
@@ -481,6 +570,17 @@ def init_session(session: Session) -> None:
             and widget_pkg(type(w)) in EAGERLY_SHARED_PACKAGES
         ):
             open_shared_in(w, session)
+    # Packages' registry widgets (e.g. ipyreact's Module/ImportMap) may
+    # predate our construction hook or a stub session (an import cached in
+    # sys.modules doesn't re-run for the real session); consumers wait on
+    # them by name, so each session needs them open.
+    for is_active, _consumer_pred, source in _REGISTRY_SOURCES:
+        if not is_active():
+            continue
+        for w in source():
+            if w.comm is None:  # closed by the user
+                continue
+            adopt_process_global(w, session)
 
 
 def mount_widget_deps(session: Session, widget_deps: Iterable[HTMLDependency]) -> None:
@@ -704,6 +804,29 @@ def importing_ipyvuetify() -> bool:
     themes = sys.modules.get("ipyvuetify.Themes")
     # theme is only bound once Themes.py has finished executing
     return themes is not None and not hasattr(themes, "theme")
+
+
+# Stack-check sentinels: is a package mid-construction of its process-global
+# widgets right now? (importing_* for a package's module-level widgets;
+# constructing_* for a registry widget's sub-widgets.)
+_CONSTRUCTION_SENTINELS: tuple[Callable[[], bool], ...] = (
+    importing_ipyvue,
+    importing_ipyvuetify,
+    importing_nglview,
+    constructing_ipyreact_registry_widget,
+)
+
+
+def is_process_global_construction(w: Widget) -> bool:
+    """
+    Is `w` a package's process-global widget, currently under construction?
+
+    Such widgets are process-global even when constructed inside a session
+    (e.g. by a lazy import in a render function).
+    """
+    return is_ipyreact_registry_widget(w) or any(
+        sentinel() for sentinel in _CONSTRUCTION_SENTINELS
+    )
 
 
 def own_ipycanvas_manager(w: Widget) -> None:
@@ -1173,17 +1296,6 @@ def is_import_time_singleton(w: Widget) -> bool:
     )
 
 
-def is_sessionless(w: Widget) -> bool:
-    """
-    Is `w` open, but with a comm that isn't one of ours (e.g. the DummyComm of a
-    widget constructed outside any session)?
-    """
-    comm = w.comm
-    return comm is not None and not isinstance(
-        comm, (ShinyComm, SharedShinyComm, OrphanedShinyComm)
-    )
-
-
 def is_swapped_out_default(w: Widget) -> bool:
     """
     Is `w` a module-level default that own_lonboard_controls() or
@@ -1343,6 +1455,31 @@ def open_process_global_widgets(widget: Widget, session: Session) -> None:
     for w in walk_widget_tree([widget], prune=is_process_global):
         if is_process_global(w) and not is_swapped_out_default(w):
             open_shared_in(w, session)
+    # A consumer waits on its package's registry widgets by name, so no
+    # widget-tree walk can find them; a registry defined outside any session
+    # (after this session was initialized) never fans out, so rendering a
+    # consumer is what must open it here. The consumer itself may hide inside
+    # a process-global container, so this traversal doesn't prune. Skip it
+    # entirely when no registry-owning package is in play: the walk costs
+    # O(tree size) per render, which an app that can't have a consumer (its
+    # package was never imported) shouldn't pay.
+    active = [
+        (is_consumer, source)
+        for is_active, is_consumer, source in _REGISTRY_SOURCES
+        if is_active()
+    ]
+    if active:
+        matched = set()
+        for w in walk_widget_tree([widget]):
+            for is_consumer, source in active:
+                # Discovery scans every live widget, so run it once per source,
+                # not once per consumer in the tree
+                if source not in matched and is_consumer(w):
+                    matched.add(source)
+        for source in matched:
+            for r in source():
+                if r.comm is not None:  # not closed by the user
+                    open_shared_in(r, session)
 
 
 # One comm manager per session (keyed by session id), so a client can only reach

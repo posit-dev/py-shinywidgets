@@ -3,9 +3,12 @@ import threading
 from base64 import b64encode
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional
 
 from shiny import Session
+
+if TYPE_CHECKING:
+    from ipywidgets import Widget
 
 from ._serialization import json_packer
 
@@ -416,6 +419,17 @@ class SharedShinyComm:
 logger = logging.getLogger("shinywidgets")
 
 traitlets_logger = logging.getLogger("traitlets")
+
+
+def is_sessionless(w: "Widget") -> bool:
+    """
+    Is `w` open, but with a comm that isn't one of ours (e.g. the DummyComm of a
+    widget constructed outside any session)?
+    """
+    comm = w.comm
+    return comm is not None and not isinstance(
+        comm, (ShinyComm, SharedShinyComm, OrphanedShinyComm)
+    )
 
 
 class ClientMsgScope:
