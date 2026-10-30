@@ -155,6 +155,18 @@ def test_ipycanvas_mouse_events_roundtrip_to_python(page: Page, local_app) -> No
     expect(canvas).to_have_count(1, timeout=30000)
     expect(page.locator("#mouse_pos")).to_have_text("")
 
+    # Wait for the fill layout to finish settling: while the canvas's CSS
+    # size still differs from its buffer size, the widget scales mouse
+    # coords (e.g. a click at y=40 reported as y=34)
+    page.wait_for_function(
+        """(sel) => {
+          const c = document.querySelector(sel);
+          return c && c.width === c.offsetWidth && c.height === c.offsetHeight;
+        }""",
+        arg=CANVAS,
+        timeout=30000,
+    )
+
     box = canvas.bounding_box()
     assert box is not None
     page.mouse.click(box["x"] + 30, box["y"] + 40)

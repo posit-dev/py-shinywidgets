@@ -21,8 +21,10 @@ def click_until_bound(
     page: Page, x: float, y: float, id: str, out: str, text: str
 ) -> None:
     # The click listener binds only once Python's bind request reaches the
-    # plot, which can take a while under load, so click until one lands
-    for _ in range(20):
+    # plot. Under CI load that round-trip has been observed to take ~30s
+    # (queued behind the startup flood of widget state messages), so click
+    # until one lands, with a budget well past that (~45s).
+    for _ in range(60):
         page.mouse.click(*point(page, x, y, id=id))
         try:
             expect(page.locator(f"#{out}")).to_have_text(text, timeout=500)
