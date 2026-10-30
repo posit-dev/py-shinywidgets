@@ -141,6 +141,7 @@ from ._k3d import CAMERA as K3D_CAMERA
 from ._matplotlib import CLICKED, MATPLOTLIB_ACCESSORS, AxesLimits
 from ._mosaic_widget import MOSAIC_ACCESSORS
 from ._niivue import LOCATION
+from ._perspective import PERSPECTIVE_ACCESSORS
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._pythreejs import CAMERA as PYTHREEJS_CAMERA
 from ._quak import QUAK_ACCESSORS
@@ -2703,13 +2704,27 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
     most recently returned by the render function, and `.widget`, the rendered
     `PerspectiveWidget` instance. Use `.widget` to programmatically update the rendered
     viewer in place (e.g., `.widget.update()` streams new rows, and trait changes are
-    synced to the browser), or to reactively read widget state (e.g., `plugin`,
-    `group_by`, `sort`, or `filter`) with :func:`~shinywidgets.reactive_read`.
+    synced to the browser), or to reactively read widget state with
+    :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Note
     ---
+    **Reacting to the viewer's state**: read the viewer's accessors in a
+    reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which re-runs whenever the user changes it, much
+    like ``input.my_slider()``:
+
+    * ``grid.filter()``: the viewer's current filters.
+    * ``grid.view_config()``: the viewer's structural configuration (plugin,
+      columns, group/split by, aggregates, sort, filter, expressions).
+
+    They can't be read inside this output's own render function, which builds
+    a new viewer each time it runs. For anything beyond them (e.g.,
+    ``theme`` or ``title``), use :func:`~shinywidgets.reactive_read` on
+    ``grid.widget``.
+
     Perspective keeps every table it hosts in memory for the life of the process, so a
     table created from a DataFrame is not freed when the output re-renders. To change
     the data, prefer updating the existing viewer in place: `.widget.update(df)`
@@ -2741,7 +2756,42 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves it
+        unlimited. This renderer's accessors declare no rate policy, so they
+        are unaffected.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        limiting.
     """
+
+    accessor_specs = PERSPECTIVE_ACCESSORS
+
+    def filter(self) -> List[list]:
+        """
+        The viewer's current filters, as ``[[column, op, value], ...]`` (e.g.
+        ``[["x", ">", 1]]``); ``[]`` while nothing is filtered.
+
+        Edits made in the viewer's settings panel sync back to Python. Not
+        rate-limited (filter edits are discrete gestures, and the renderer's
+        ``rate_policy``/``rate_delay`` parameters don't apply to it -- they
+        only govern accessors that declare a default, plus
+        :func:`~shinywidgets.reactive_read` on the widget).
+        """
+        return cast(List[list], self._read_accessor("filter"))
+
+    def view_config(self) -> Dict[str, Any]:
+        """
+        The viewer's current configuration as a dict with the keys ``plugin``,
+        ``columns``, ``group_by``, ``split_by``, ``aggregates``, ``sort``,
+        ``filter``, and ``expressions`` -- the subset of
+        ``PerspectiveWidget.save()`` that determines the rows shown, so
+        cosmetic changes (opening the settings panel, switching the theme)
+        don't re-fire it. ``widget.table.view(**cfg)`` reproduces the rows.
+        Row clicks and selections never reach Python. Not rate-limited.
+        """
+        return cast(Dict[str, Any], self._read_accessor("view_config"))
 
     def _as_widget(self, value: ValueT) -> PerspectiveWidget:
         # DataFrames are generic types that other renderers accept too, so
