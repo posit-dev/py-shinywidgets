@@ -84,3 +84,17 @@ def test_renderer_camera_returns_the_live_camera() -> None:
     cam = pythreejs.PerspectiveCamera(position=[5, 5, 5])
     fig.camera = cam
     assert r.camera() is cam
+
+
+def test_pythreejs_camera_follows_orbit_state() -> None:
+    import pythreejs
+
+    scene = pythreejs.Scene()
+    camera = pythreejs.PerspectiveCamera(position=[0, 0, 5])
+    renderer = pythreejs.Renderer(scene=scene, camera=camera)
+    r = rw.render_pythreejs()
+    r._widget = renderer  # stands in for _render()
+    r._accessors.on_render(renderer)
+    assert r.camera() is camera  # the live camera, seeded as not-yet-orbited
+    camera.position = [1, 0, 4]  # what an orbit syncs back
+    assert tuple(r.camera().position) == (1.0, 0.0, 4.0)

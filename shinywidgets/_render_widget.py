@@ -3215,10 +3215,20 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
     reactively read widget state with :func:`~shinywidgets.reactive_read`. With
     `pythreejs.OrbitControls` (or `TrackballControls`), the camera's ``position``,
     ``quaternion``, and ``zoom`` sync back to Python each time the user finishes
-    orbiting, so e.g. ``reactive_read(scene.widget.camera, "position")`` picks up
-    every interaction.
+    orbiting.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Reacting to user interaction**: ``scene.camera()`` reads the live
+    camera after every orbit, much like ``input.my_slider()`` reads an input.
+    Call it in a reactive function (a ``@render.*`` function,
+    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
+    the camera changes. Until the first orbit it reports the Python-side
+    camera as constructed (pythreejs doesn't sync it at mount). For a single
+    trait, ``reactive_read(scene.widget.camera, "position")`` is the
+    per-trait alternative.
 
     Parameters
     ----------
@@ -3235,6 +3245,14 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
+        ``reactive_read()`` unlimited; no accessor on this renderer declares
+        a default.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables
+        rate limiting.
 
     Notes
     -----
@@ -3248,6 +3266,24 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
     * Rotate objects via ``mesh.quaternion``; pythreejs's ``rotation`` (Euler)
       updates don't render (an upstream pythreejs bug).
     """
+
+    accessor_specs = (PYTHREEJS_CAMERA,)
+
+    def camera(self) -> Camera:
+        """
+        The scene's live `pythreejs.Camera` (a `PerspectiveCamera` by
+        default).
+
+        Readers are invalidated when its ``position``/``quaternion``/``zoom``
+        change (at the end of each orbit) or the camera is replaced. Reading
+        before the first render cancels silently (like ``req(False)``). Until
+        the first orbit, this is the Python-side camera as constructed
+        (pythreejs doesn't sync it at mount). The returned object is the same
+        mutable instance across reads -- copy what you keep. Not rate-limited
+        (the browser syncs once per orbit).
+        """
+        self._read_accessor("camera")
+        return cast(PythreejsRenderer, self._widget).camera
 
 
 class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
