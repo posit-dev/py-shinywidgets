@@ -330,14 +330,16 @@ def _plotly_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     if isinstance(layout, PlotlyLayout):
         if layout.height is not None:
             fill = False
-        # Default margins are also way too big
-        layout.template.layout.margin = dict(  # pyright: ignore
-            l=16, t=32, r=16, b=16
-        )
-        # Unfortunately, plotly doesn't want to respect the top margin template,
-        # so change that 60px default to 32px
-        if layout.margin["t"] == 60:  # pyright: ignore
-            layout.margin["t"] = 32  # pyright: ignore
+        # Default margins are also way too big, so give the figure compact
+        # ones. Set them explicitly (not on the template) so an in-place
+        # template swap (e.g. a dark-mode toggle) keeps them: plotly.py
+        # replaces `layout.template` wholesale, dropping template-level
+        # margins, but explicit margins survive. Sides the user set win.
+        margin = layout.margin
+        for side, px in (("l", 16), ("t", 32), ("r", 16), ("b", 16)):
+            # plotly <6 materialized a 60px default top margin
+            if margin[side] is None or (side == "t" and margin[side] == 60):  # pyright: ignore
+                margin[side] = px  # pyright: ignore
         # In plotly >=v6.0, the plot won't actually fill unless it's responsive
         if fill:
             widget._config = {"responsive": True, **widget._config}  # type: ignore

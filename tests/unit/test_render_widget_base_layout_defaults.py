@@ -91,6 +91,39 @@ def test_plotly_layout_height_disables_fill_and_normalizes_margins(monkeypatch) 
     assert update_layout_calls and update_layout_calls[0] is w.layout
 
 
+def test_plotly_compact_margins_survive_a_template_swap(monkeypatch) -> None:
+    pytest.importorskip("plotly")
+    import plotly.graph_objects as go
+
+    monkeypatch.setattr(rwb, "widget_pkg", lambda _widget: "plotly")
+
+    w = go.FigureWidget()
+    rwb.set_layout_defaults(w)
+    margin = w.layout.margin
+    assert (margin.l, margin.t, margin.r, margin.b) == (16, 32, 16, 16)
+
+    # An in-place template swap (e.g. a dark-mode toggle) replaces
+    # layout.template wholesale; the compact margins must not revert to
+    # plotly's 80px defaults
+    w.update_layout(template="plotly_dark")
+    margin = w.layout.margin
+    assert (margin.l, margin.t, margin.r, margin.b) == (16, 32, 16, 16)
+
+
+def test_plotly_user_margins_win_over_compact_defaults(monkeypatch) -> None:
+    pytest.importorskip("plotly")
+    import plotly.graph_objects as go
+
+    monkeypatch.setattr(rwb, "widget_pkg", lambda _widget: "plotly")
+
+    w = go.FigureWidget()
+    w.update_layout(margin=dict(l=100))
+    rwb.set_layout_defaults(w)
+    margin = w.layout.margin
+    assert margin.l == 100
+    assert (margin.t, margin.r, margin.b) == (32, 16, 16)
+
+
 def test_plotly_when_fill_true_sets_responsive_config(monkeypatch) -> None:
     pytest.importorskip("plotly")
     import plotly.graph_objects as go
