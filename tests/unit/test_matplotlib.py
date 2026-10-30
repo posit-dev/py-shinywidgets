@@ -211,13 +211,16 @@ def test_existing_canvas_is_reused_with_its_settings(widget_session: Session) ->
         figure = Figure()
         canvas = cast("Canvas", as_widget(figure))
         manager = canvas.manager
-        canvas.header_visible = False
+        # header_visible=True pins the reuse-preservation direction: the
+        # header_hidden default must apply only when the canvas is created,
+        # not re-applied when an existing canvas is re-coerced
+        canvas.header_visible = True
         canvas.toolbar_visible = False
         canvas.resizable = False
 
         assert as_widget(figure) is canvas
         assert canvas.manager is manager
-        assert canvas.header_visible is False
+        assert canvas.header_visible is True
         assert canvas.toolbar_visible is False
         assert canvas.resizable is False
 
