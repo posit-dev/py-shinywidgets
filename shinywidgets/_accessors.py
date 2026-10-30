@@ -396,24 +396,39 @@ def loop_schedule(delay: float, fn: Callable[[], None]) -> Callable[[], None]:
     return cancel
 
 
+def _numpy() -> Any:
+    # numpy is optional, so import it lazily (and only once); returns the
+    # module, or None when it isn't installed
+    global _NUMPY
+    if _NUMPY is _UNTRIED:
+        try:
+            import numpy as np
+        except ImportError:
+            _NUMPY = None
+        else:
+            _NUMPY = np
+    return _NUMPY
+
+
+_UNTRIED = object()
+_NUMPY: Any = _UNTRIED
+
+
 def payloads_equal(a: object, b: object) -> bool:
     if a is b:
         return True
+    # Arrays compare elementwise, and bool() of the result warns (numpy < 2,
+    # where equal empties would then republish) or raises, so compare them
+    # with np.array_equal before the generic equality below.
+    np = _numpy()
+    if np is not None and isinstance(a, np.ndarray) and isinstance(b, np.ndarray):
+        return bool(np.array_equal(a, b))
     try:
         return bool(a == b)
     except (ValueError, TypeError):
-        # Array-likes (numpy, pandas) compare elementwise, and their truth
+        # Other array-likes (pandas) compare elementwise, and their truth
         # value is ambiguous.
-        pass
-    # numpy is optional, so import it only once a payload needs it.
-    try:
-        import numpy as np
-    except ImportError:
         return False
-
-    if isinstance(a, np.ndarray) and isinstance(b, np.ndarray):
-        return bool(np.array_equal(a, b))
-    return False
 
 
 def has_current_context() -> bool:

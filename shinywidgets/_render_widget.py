@@ -21,9 +21,9 @@ from ipywidgets.widgets.widget import Widget
 from packaging.version import Version
 
 if TYPE_CHECKING:
-    # Absent from 3.15+ environments (duckdb has no cp315 wheels, so its
-    # dependents are excluded there; see pyproject.toml)
+    # duckdb ships with the embedding-atlas extra, so it may be absent
     import duckdb  # pyright: ignore[reportMissingImports]
+    import numpy as np
     import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
@@ -115,7 +115,12 @@ from ._as_widget import (
 )
 from ._bokeh import _bokeh_dependency
 from ._bokeh_accessors import BOKEH_ACCESSORS, selected_frame
+from ._bqplot import BPLOT_ACCESSORS
 from ._dependencies import widget_pkg
+from ._embedding_atlas import EMBEDDING_ATLAS_ACCESSORS, rows_for_predicate
+from ._ipydatagrid import IPYDATAGRID_ACCESSORS
+from ._itables import ITABLES_ACCESSORS
+from ._jscatter import JSCATTER_ACCESSORS
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
@@ -495,10 +500,12 @@ class render_embedding_atlas(
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
     `EmbeddingAtlasWidget` instance. The filter a user builds in the browser is
-    synced to the widget's (upstream-internal) `_predicate` trait, so
-    ``reactive_read(my_atlas.widget, "_predicate")`` followed by
-    ``my_atlas.widget.selection()`` gives the selected rows reactively. The explorer
-    doesn't respond to trait changes made from Python; to change it, re-render.
+    synced to the widget's (upstream-internal) `_predicate` trait: read
+    ``atlas.selection()`` for the filtered rows, or ``atlas.predicate()`` for
+    the filter as a SQL expression, reactively
+    (``reactive_read(my_atlas.widget, "_predicate")`` remains available for the
+    raw trait). The explorer doesn't respond to trait changes made from Python;
+    to change it, re-render.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -526,6 +533,15 @@ class render_embedding_atlas(
         (``False``) is strongly recommended for deployed apps: an unrestricted
         connection lets any visitor run arbitrary SQL with the server process's
         permissions.
+    rate_policy
+        How to rate-limit :meth:`predicate` and :meth:`selection` (debounced
+        by default) and :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps the
+        debounce, and debounces ``reactive_read()`` only if ``rate_delay`` is
+        given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -563,6 +579,38 @@ class render_embedding_atlas(
             rate_delay=rate_delay,
         )
         self.allow_unrestricted_connection = allow_unrestricted_connection
+
+    _accessor_specs = EMBEDDING_ATLAS_ACCESSORS
+
+    def predicate(self) -> Optional[str]:
+        """
+        The explorer's current cross-filter as a DuckDB SQL boolean
+        expression (e.g. ``(("group")::TEXT IS NOT DISTINCT FROM 'c')``), or
+        ``None`` when nothing is filtered. Built from every chart's clicks
+        and brushes and the embedding view's lasso.
+
+        For pushing the filter into your own SQL or aggregation; use
+        :meth:`selection` for the filtered rows themselves. Debounced
+        (250 ms) by default; see the ``rate_policy`` and ``rate_delay``
+        parameters.
+        """
+        return cast(Optional[str], self._read_accessor("predicate"))
+
+    def selection(self) -> Any:
+        """
+        The rows passing the explorer's current cross-filter (see
+        :meth:`predicate`), as the same frame type (pandas or polars) the
+        `EmbeddingAtlasWidget` was built from, including a ``__row_index__``
+        column of positions into the original frame.
+
+        All rows while nothing is filtered (library semantics). Computed
+        from the same published filter :meth:`predicate` reports, so the two
+        always describe the same selection, even mid-debounce. Runs a
+        DuckDB query per call, so read it in a ``@reactive.calc`` when
+        several outputs need it. Debounced (250 ms) by default.
+        """
+        predicate = cast(Optional[str], self._read_accessor("predicate", raw=True))
+        return rows_for_predicate(cast("EmbeddingAtlasWidget", self._widget), predicate)
 
     def _as_widget(self, value: EmbeddingAtlasWidget) -> EmbeddingAtlasWidget:
         widget = super()._as_widget(value)
@@ -795,7 +843,8 @@ class render_itables(render_widget_base[ValueT, ITable]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `ITable` instance. Use `.widget` to programmatically update the rendered table
+    `ITable` instance. Use ``.selected_rows()`` to reactively read the selected
+    rows, or `.widget` to programmatically update the rendered table
     in place (trait changes on the widget are synced to the browser), or to
     reactively read widget state (e.g., `selected_rows`) with
     :func:`~shinywidgets.reactive_read`.
@@ -829,7 +878,30 @@ class render_itables(render_widget_base[ValueT, ITable]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = ITABLES_ACCESSORS
+
+    def selected_rows(self) -> List[int]:
+        """
+        The currently selected rows as a list of positions into the table's
+        data frame (use ``df.iloc[table.selected_rows()]``), or ``[]`` while
+        nothing is selected.
+
+        Positions are in data order, not display order: they survive sorting
+        and searching, and the same position can refer to a different row
+        after ``.widget.update(df)``. Requires ``select=True`` on the
+        `itables.widget.ITable` (a plain data frame return has no selection).
+        Not rate-limited.
+        """
+        return cast(List[int], self._read_accessor("selected_rows"))
 
     def _as_widget(self, value: ValueT) -> ITable:
         if isinstance(value, Widget):
@@ -858,9 +930,10 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `JupyterScatter` instance. Use `.widget` to programmatically update the rendered
-    plot in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state (e.g., the selected points via ``"selection"``) with
+    `JupyterScatter` instance. Use ``.selection()`` to reactively read the selected
+    points (below), or `.widget` to programmatically update the rendered plot in
+    place (trait changes on the widget are synced to the browser), or to reactively
+    read widget state (e.g., the selected points via ``"selection"``) with
     :func:`~shinywidgets.reactive_read`. The selection is an array of row *positions*
     (use ``df.iloc[...]``), not index labels.
 
@@ -868,6 +941,14 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
 
     Note
     ---
+    **Reacting to selections**: read ``plot.selection()`` in a reactive function (a
+    ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``), which
+    re-runs whenever the user selects points (with the lasso, or by clicking one),
+    much like ``input.my_slider()`` reads an input. A re-render (e.g. when the
+    render function reads an input) gives the user a new plot, whose selection
+    starts out empty. It can't be read inside this output's own render function,
+    which builds a new plot each time it runs.
+
     **Large selections**: selecting more than about 3 million points sends the
     server a message larger than the default 16 MiB websocket limit, which
     disconnects the session. Raise the limit with ``shiny run --ws-max-size``.
@@ -887,7 +968,31 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = JSCATTER_ACCESSORS
+
+    def selection(self) -> "np.ndarray":
+        """
+        The currently selected points as a `numpy.ndarray` (uint32) of row
+        *positions* into the plot's data (use ``df.iloc[plot.selection()]``),
+        from a lasso or single click.
+
+        Empty while nothing is selected. Cancels (like `.widget`) until the
+        browser first reports, which a bare `JupyterScatter` only does after
+        the first selection. For index labels instead of positions (when the
+        render function returns a `jscatter.Scatter` with
+        ``data_use_index=True``), use ``plot.value.selection()``.
+        Not rate-limited.
+        """
+        return cast("np.ndarray", self._read_accessor("selection"))
 
 
 class render_k3d(render_widget_base[ValueT, K3dPlot]):
@@ -1046,6 +1151,20 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ---
+    **Reacting to selections**: read ``fig.selection()`` (the selected
+    elements of each mark) or ``fig.brush()`` (the current brush region) in a
+    reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which re-runs whenever the user selects or brushes
+    (with a brush/lasso `bqplot.interacts.Selector`, or by click-select), much
+    like ``input.my_slider()`` reads an input. A re-render (e.g. when the
+    render function reads an input) gives the user a new figure, whose marks
+    start out unselected. They can't be read inside this output's own render
+    function, which builds a new figure each time it runs. To react to one
+    mark's selection specifically,
+    ``reactive_read(fig.widget.marks[0], "selected")`` remains available.
+
     Parameters
     ----------
     width
@@ -1061,7 +1180,50 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`selection` and :meth:`brush` (debounced by
+        default) and :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps the
+        debounce, and debounces ``reactive_read()`` only if ``rate_delay`` is
+        given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = BPLOT_ACCESSORS
+
+    def selection(self) -> List[Optional["np.ndarray"]]:
+        """
+        The selected elements of each mark, as a list aligned with
+        ``fig.marks``: each entry is a `numpy.ndarray` of element indices, or
+        ``None`` until that mark has been selected.
+
+        Set by a brush/lasso `bqplot.interacts.Selector` (the figure's
+        ``interaction``) or by click-select (``interactions={"click": "select"}``).
+        Single-mark figures read ``fig.selection()[0]``. Debounced (250 ms) by
+        default, since brush selectors update during the drag; see the
+        ``rate_policy`` and ``rate_delay`` parameters.
+        """
+        return cast(List[Optional["np.ndarray"]], self._read_accessor("selection"))
+
+    def brush(self) -> Optional[Union["np.ndarray", Dict[str, Any]]]:
+        """
+        The region of the figure's current brush selector, in data
+        coordinates: a 2x2 `numpy.ndarray` ``[[x0, y0], [x1, y1]]`` for a
+        `BrushSelector`, a length-2 array for a `BrushIntervalSelector`, or a
+        dict of named intervals for a `MultiSelector` — the selector's own
+        `selected` trait.
+
+        ``None`` while nothing is brushed, and whenever the figure's
+        ``interaction`` isn't a brush selector (e.g., `PanZoom`;
+        `LassoSelector` has no region trait). Debounced (250 ms) by default;
+        see the ``rate_policy`` and ``rate_delay`` parameters.
+        """
+        return cast(
+            Optional[Union["np.ndarray", Dict[str, Any]]],
+            self._read_accessor("brush"),
+        )
 
 
 class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
@@ -2203,7 +2365,9 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `DataGrid` instance. Use `.widget` to programmatically update the rendered grid
+    `DataGrid` instance. Use ``.selections()``, ``.cell_clicked()``, and
+    ``.cell_edited()`` to reactively read what the user does in the grid, or
+    `.widget` to programmatically update the rendered grid
     in place (trait changes on the widget are synced to the browser), or to
     reactively read widget state (e.g., `selections`) with
     :func:`~shinywidgets.reactive_read`.
@@ -2214,7 +2378,8 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
       `selections` stays empty; return ``DataGrid(df, selection_mode="row")`` (or
       ``"cell"``/``"column"``) to let users select.
     * `selections` index the grid as displayed (after any sort or filter), so map
-      them through ``.widget.get_visible_data()``.
+      them through ``.widget.get_visible_data()``; ``.visible_data()`` returns
+      those displayed rows as a data frame, reactively.
     * ``DataGrid.select()``, ``DataGrid.clear_selection()`` and cell edits modify the
       widget's state in place, which doesn't trigger
       :func:`~shinywidgets.reactive_read`. Assign a new list to ``.widget.selections``
@@ -2239,7 +2404,82 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = IPYDATAGRID_ACCESSORS
+
+    def selections(self) -> List[Dict[str, int]]:
+        """
+        The grid's current selection rectangles, as ``[{"r1", "r2", "c1",
+        "c2"}, ...]`` (inclusive), in *visible* row/column coordinates —
+        i.e., after any sort or filter. Map them to data rows with
+        ``.widget.get_visible_data()`` (or use :meth:`visible_data`).
+
+        ``[]`` while nothing is selected, and after a sort (sorting clears
+        the selection). Requires ``selection_mode`` other than ``"none"``;
+        a plain data frame return uses ``"none"``, so return
+        ``DataGrid(df, selection_mode="row")`` to let users select. Not
+        rate-limited.
+        """
+        return cast(List[Dict[str, int]], self._read_accessor("selections"))
+
+    def cell_clicked(self) -> Optional[Dict[str, Any]]:
+        """
+        The most recently clicked cell, or ``None`` if no click has happened
+        since the last render: ``{"region", "column", "column_index", "row",
+        "primary_key_row", "cell_value"}``, where ``row`` is the *visible*
+        row and ``primary_key_row`` the *data* row (they differ after a sort).
+
+        Fires in any ``selection_mode``, including ``"none"``; fires for
+        column-header clicks (``region="column-header"``) and twice per
+        double-click. Not rate-limited.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("cell_clicked"))
+
+    def cell_edited(self) -> Optional[Dict[str, Any]]:
+        """
+        The most recent cell edit, or ``None`` if no edit has happened since
+        the last render: ``{"row", "column", "column_index", "value"}``,
+        where ``row`` is the *data* row. The widget's data is already updated
+        when this fires.
+
+        Requires ``editable=True``. Also fires for Python-side
+        ``set_cell_value*()`` calls. Not rate-limited.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("cell_edited"))
+
+    def visible_data(self) -> "pd.DataFrame":
+        """
+        The grid's rows as currently displayed (after its sort and filter),
+        as a pandas data frame — the ``selections()`` rectangles' coordinate
+        space, so ``visible_data().iloc[r1:r2 + 1]`` maps a selection to rows.
+
+        The whole frame until the user sorts, filters, or edits, and an
+        empty frame when the filter matches nothing. Backed by ipydatagrid's
+        private ``_visible_rows``, ``_transforms``, and ``_data`` traits plus
+        the grid's cell-change notification (the one public alternative,
+        ``get_visible_data()``, isn't reactive on its own, and returns the
+        whole frame for an empty filtered view); raises if ipydatagrid
+        removes the traits. May be briefly stale after a Python-side data
+        replacement (``grid.data = df``) while a filter/sort is active,
+        until the browser re-syncs the row map. Not rate-limited.
+        """
+        self._read_accessor("visible_data", raw=True)
+        widget = cast("DataGrid", self._widget)
+        if not widget._visible_rows and widget._transforms:
+            # An empty row map with transforms applied is a filter that
+            # matched nothing; get_visible_data() would return the whole
+            # frame (it only applies a truthy row map). The same row map
+            # with no transforms is the initial state (the whole frame).
+            return widget.data.iloc[0:0]
+        return widget.get_visible_data()
 
     # A DataFrame is a generic type (several renderers accept one), so it isn't
     # registered with as_widget()

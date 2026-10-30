@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import warnings
 from typing import Any, Callable, List, Optional, Tuple, cast
 
 import pytest
@@ -114,6 +115,33 @@ def test_payloads_equal_tolerates_array_payloads() -> None:
     assert acc.payloads_equal(np.array([1, 2]), np.array([1, 2]))
     assert not acc.payloads_equal(np.array([1, 2]), np.array([1, 3]))
     assert not acc.payloads_equal(np.array([1, 2]), [1, 2])
+
+
+def test_payloads_equal_compares_empty_arrays_without_warning() -> None:
+    # Two distinct empty arrays are equal (jscatter emits these on
+    # lasso-nothing/deselect); on numpy < 2, bool(a == b) on empties is False
+    # plus a DeprecationWarning, which would republish equal selections and
+    # spam logs, so they must be compared with np.array_equal
+    np = pytest.importorskip("numpy")
+    a, b = np.array([], dtype=np.uint32), np.array([], dtype=np.uint32)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert acc.payloads_equal(a, b)
+
+
+def test_payloads_equal_never_bool_evaluates_an_elementwise_comparison() -> None:
+    # Pin the order: arrays must not reach the generic bool(a == b) path.
+    # (np.array_equal strips the subclass via asarray, so its own comparison
+    # is unaffected.)
+    np = pytest.importorskip("numpy")
+
+    class ExplodingArray(np.ndarray):
+        def __eq__(self, other: object) -> bool:  # type: ignore[override]
+            raise RuntimeError("elementwise comparison attempted")
+
+    a = np.asarray([1, 2]).view(ExplodingArray)
+    b = np.asarray([1, 2]).view(ExplodingArray)
+    assert acc.payloads_equal(a, b)
 
 
 class Capture:
