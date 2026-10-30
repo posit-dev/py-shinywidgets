@@ -40,7 +40,7 @@ def test_location_routes_through_the_library_dispatcher(
 
 
 def test_location_is_debounced_by_default() -> None:
-    assert sn.LOCATION.rate_policy == "debounce" and sn.LOCATION.rate_delay == 250
+    assert sn.LOCATION.rate_policy == "debounce" and sn.LOCATION.rate_delay == 0.25
 
 
 def test_renderer_location_round_trips_and_resets(widget_session: Session) -> None:

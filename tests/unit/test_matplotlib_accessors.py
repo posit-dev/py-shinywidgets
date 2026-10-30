@@ -110,7 +110,7 @@ def test_renderer_methods_read_through_the_accessors(canvas) -> None:
 
 
 def test_plotnine_shares_the_clicked_spec() -> None:
-    assert rw.render_plotnine.accessor_specs == (sm.CLICKED,)
+    assert rw.render_plotnine._accessor_specs == (sm.CLICKED,)
     assert (
-        rw.render_plotnine.accessor_specs[0] is rw.render_matplotlib.accessor_specs[0]
+        rw.render_plotnine._accessor_specs[0] is rw.render_matplotlib._accessor_specs[0]
     )

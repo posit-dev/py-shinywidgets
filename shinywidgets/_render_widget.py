@@ -776,15 +776,15 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
-        ``reactive_read()`` unlimited; no accessor on this renderer declares
-        a default.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables
-        rate limiting.
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
 
-    accessor_specs = IPYALADIN_ACCESSORS
+    _accessor_specs = IPYALADIN_ACCESSORS
 
     def clicked_object(self) -> Optional[Dict[str, Any]]:
         """
@@ -1145,15 +1145,15 @@ class render_k3d(render_widget_base[ValueT, K3dPlot]):
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
-        ``reactive_read()`` unlimited; no accessor on this renderer declares
-        a default.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables
-        rate limiting.
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
 
-    accessor_specs = (K3D_CAMERA,)
+    _accessor_specs = (K3D_CAMERA,)
 
     def camera(self) -> List[float]:
         """
@@ -1252,15 +1252,15 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
-        ``reactive_read()`` unlimited; no accessor on this renderer declares
-        a default.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables
-        rate limiting.
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
 
-    accessor_specs = CYTOSCAPE_ACCESSORS
+    _accessor_specs = CYTOSCAPE_ACCESSORS
 
     def node_clicked(self) -> Optional[Dict[str, Any]]:
         """
@@ -1620,12 +1620,12 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
-        ``reactive_read()`` unlimited; no accessor on this renderer declares
-        a default.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables
-        rate limiting.
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
 
     Examples
     --------
@@ -1650,7 +1650,7 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
     ```
     """
 
-    accessor_specs = (PYTHREEJS_CAMERA,)
+    _accessor_specs = (PYTHREEJS_CAMERA,)
 
     def camera(self) -> Camera:
         """
@@ -1991,11 +1991,11 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     rate_policy
         How to rate-limit :meth:`limits` (debounced by default) and
         :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
-        ``"throttle"``. ``None`` (the default) keeps the debounce and leaves
-        ``reactive_read()`` unlimited.
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables
-        rate limiting.
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
 
     Examples
     --------
@@ -2032,7 +2032,7 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     ```
     """
 
-    accessor_specs = MATPLOTLIB_ACCESSORS
+    _accessor_specs = MATPLOTLIB_ACCESSORS
 
     def clicked(self) -> Optional[MouseEvent]:
         """
@@ -2327,15 +2327,15 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
-        ``reactive_read()`` unlimited; no accessor on this renderer declares
-        a default.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables
-        rate limiting.
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
 
-    accessor_specs = (CLICKED,)
+    _accessor_specs = (CLICKED,)
 
     def clicked(self) -> Optional[MouseEvent]:
         """
@@ -3252,12 +3252,12 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
-        ``reactive_read()`` unlimited; no accessor on this renderer declares
-        a default.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables
-        rate limiting.
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
 
     Notes
     -----
@@ -3272,7 +3272,7 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
       updates don't render (an upstream pythreejs bug).
     """
 
-    accessor_specs = (PYTHREEJS_CAMERA,)
+    _accessor_specs = (PYTHREEJS_CAMERA,)
 
     def camera(self) -> Camera:
         """
@@ -4012,12 +4012,12 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
-        ``reactive_read()`` unlimited; no accessor on this renderer declares
-        a default.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables
-        rate limiting.
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
 
     Examples
     --------
@@ -4037,7 +4037,7 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
     ```
     """
 
-    accessor_specs = (SELECTION,)
+    _accessor_specs = (SELECTION,)
 
     def selection(self) -> Optional[SelectionChangeEvent]:
         """
@@ -4388,11 +4388,11 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
     rate_policy
         How to rate-limit :meth:`location` (debounced by default) and
         :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
-        ``"throttle"``. ``None`` (the default) keeps the debounce and leaves
-        ``reactive_read()`` unlimited.
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables
-        rate limiting.
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
 
     Examples
     --------
@@ -4432,7 +4432,7 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
     ```
     """
 
-    accessor_specs = (LOCATION,)
+    _accessor_specs = (LOCATION,)
 
     def location(self) -> Optional[Dict[str, Any]]:
         """
