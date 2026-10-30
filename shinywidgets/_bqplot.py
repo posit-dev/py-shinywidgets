@@ -17,7 +17,7 @@ interaction-free figures.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, List, Tuple
+from typing import TYPE_CHECKING, Any, Callable, List, Tuple, cast
 
 from ._accessors import AccessorSpec, Emit
 
@@ -55,14 +55,19 @@ def attach_selection(widget: BqplotFigure, emit: Emit) -> Callable[[], None]:
     def current() -> List[object]:
         return [mark.selected for mark in widget.marks]
 
-    last: List[object] = []
+    # Sentinel for "nothing published yet": the seed publish must always
+    # happen, even for a figure with no marks, where the selection list is []
+    # (an [] baseline would compare equal and suppress the seed, leaving the
+    # accessor unseeded -- and a re-rendered figure's stale value in place)
+    unset = object()
+    last: object = unset
 
     def publish() -> None:
         # bqplot selectors re-send the same selection during a drag, and the
         # helper's equality check can't compare arrays, so dedup here
         nonlocal last
         sel = current()
-        if selections_equal(sel, last):
+        if last is not unset and selections_equal(sel, cast(List[object], last)):
             return
         last = list(sel)
         emit(list(sel))

@@ -112,6 +112,33 @@ def test_brush_accessor(widget_session: Session) -> None:
     assert np.array_equal(r.brush(), np.array([[0.5, 2.5], [3.5, 5.5]]))
 
 
+def test_selection_seeds_empty_for_a_figure_with_no_marks(
+    widget_session: Session,
+) -> None:
+    from bqplot import Figure
+
+    with session_context(widget_session):
+        fig = Figure()
+    emitted: list[object] = []
+    detach = sb.SELECTION.attach(fig, emitted.append)
+    # The seed must publish even though the empty selection list compares
+    # equal to the dedup baseline
+    assert emitted == [[]]
+    detach()
+
+
+def test_selection_publishes_empty_when_marks_are_removed(
+    widget_session: Session,
+) -> None:
+    fig, sc = figure(widget_session)
+    emitted: list[object] = []
+    detach = sb.SELECTION.attach(fig, emitted.append)
+    sc.selected = np.array([1], dtype=np.uint32)
+    fig.marks = []
+    assert emitted[-1] == []
+    detach()
+
+
 def test_selections_equal() -> None:
     assert sb.selections_equal([None], [None])
     assert sb.selections_equal([np.array([1])], [np.array([1])])
