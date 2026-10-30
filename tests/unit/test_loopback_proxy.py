@@ -343,6 +343,38 @@ def test_guard_requires_selector_on_raster_routes(upstream_server: int) -> None:
     assert status == 200
 
 
+def test_guard_requires_the_routes_own_selector(upstream_server: int) -> None:
+    # Endpoints ignore selectors they don't consume and fall back to a
+    # default source, so an authorized selector for the WRONG route must not
+    # satisfy the guard: /api/mosaic/ needs `files`, /api/stac/ needs `url`,
+    # the single-file routes need `filename`
+    proxy = _LoopbackProxyApp(upstream_server, allowed_filenames=set())
+    token = proxy.register_filenames(["ok.tif"])
+    q = b"filename=ok.tif&sw_token=" + token.encode()
+
+    # filename is authorized, but the mosaic route reads `files` -- without
+    # it, upstream would serve app.state.mosaic_assets (another session's
+    # registered mosaic)
+    status, _, _ = _asgi_request(proxy, "api/mosaic/tiles/1/2/3.png", query_string=q)
+    assert status == 403
+    # stac routes need `url`, single-file routes need `filename`
+    status, _, _ = _asgi_request(proxy, "api/stac/info", query_string=q)
+    assert status == 403
+    status, _, _ = _asgi_request(
+        proxy,
+        "api/tiles/1/2/3.png",
+        query_string=b"url=ok.tif&sw_token=" + token.encode(),
+    )
+    assert status == 403
+    # The route's own authorized selector passes
+    status, _, _ = _asgi_request(
+        proxy,
+        "api/mosaic/tiles/1/2/3.png",
+        query_string=b"files=ok.tif&sw_token=" + token.encode(),
+    )
+    assert status == 200
+
+
 def test_guard_escaped_question_mark_cannot_smuggle_query(
     upstream_server: int,
 ) -> None:

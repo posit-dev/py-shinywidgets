@@ -406,24 +406,26 @@ _LOOPBACK_PROXY_SOURCE_PARAMS = ("filename", "url", "filenameA", "filenameB")
 # off, so guarded proxies refuse the whole prefix until one exists.
 _LOOPBACK_PROXY_BLOCKED_PREFIX = "/api/xarray/"
 
-# Raster-reading route prefixes in localtileserver 1.0.0 (web/routers/*.py).
-# Selector-free requests to these fall back *upstream* to a default source —
-# the public SF Bay sample dataset, or `app.state.mosaic_assets` (another
-# session's registered mosaic) — so on guarded proxies they must carry at
-# least one authorized selector. Selector-free access is only safe on the
-# remaining routes (palette/colormap lists, docs, viewer HTML), which read
-# no rasters.
-_LOOPBACK_PROXY_READER_PREFIXES = (
-    "/api/tiles/",
-    "/api/metadata",
-    "/api/bounds",
-    "/api/validate",
-    "/api/statistics",
-    "/api/thumbnail.",
-    "/api/part.",
-    "/api/feature.",
-    "/api/mosaic/",
-    "/api/stac/",
+# Raster-reading route prefixes in localtileserver 1.0.0 (web/routers/*.py)
+# mapped to the source selector each actually consumes. A request that lacks
+# the route's own selector falls back *upstream* to a default source — the
+# public SF Bay sample dataset, or `app.state.mosaic_assets` (another
+# session's registered mosaic) — even when it carries some *other* selector
+# the endpoint ignores, so on guarded proxies these routes require an
+# authorized value of their own selector. Selector-free access is only safe
+# on the remaining routes (palette/colormap lists, docs, viewer HTML), which
+# read no rasters.
+_LOOPBACK_PROXY_ROUTE_SELECTORS = (
+    ("/api/mosaic/", ("files",)),
+    ("/api/stac/", ("url",)),
+    ("/api/tiles/", ("filename",)),
+    ("/api/metadata", ("filename",)),
+    ("/api/bounds", ("filename",)),
+    ("/api/validate", ("filename",)),
+    ("/api/statistics", ("filename",)),
+    ("/api/thumbnail.", ("filename",)),
+    ("/api/part.", ("filename",)),
+    ("/api/feature.", ("filename",)),
 )
 
 # Query parameter carrying a `_LoopbackProxyApp` capability token
@@ -552,11 +554,15 @@ class _LoopbackProxyApp:
                 params.get(_LOOPBACK_PROXY_TOKEN_PARAM, [""])[0], frozenset()
             )
             sources: List[str] = []
+            by_param: Dict[str, List[str]] = {}
             for k, vs in params.items():
                 if k == "files":  # comma-separated (localtileserver mosaics)
-                    sources.extend(v for part in vs for v in part.split(","))
+                    by_param[k] = [v for part in vs for v in part.split(",")]
                 elif k in _LOOPBACK_PROXY_SOURCE_PARAMS:
-                    sources.extend(vs)
+                    by_param[k] = vs
+                else:
+                    continue
+                sources.extend(by_param[k])
             if any(
                 s not in self._allowed_filenames and s not in token_set for s in sources
             ):
@@ -564,13 +570,16 @@ class _LoopbackProxyApp:
                     send, 403, b"Forbidden: unregistered raster source"
                 )
                 return
-            if not sources and any(
-                path.startswith(p) for p in _LOOPBACK_PROXY_READER_PREFIXES
-            ):
-                await self._simple_response(
-                    send, 403, b"Forbidden: raster route requires a source selector"
-                )
-                return
+            for prefix, route_params in _LOOPBACK_PROXY_ROUTE_SELECTORS:
+                if path.startswith(prefix) and not any(
+                    by_param.get(p) for p in route_params
+                ):
+                    await self._simple_response(
+                        send,
+                        403,
+                        b"Forbidden: raster route requires a source selector",
+                    )
+                    return
         # Re-encode: `path` is percent-decoded, so forwarding it verbatim
         # would let an escaped `?` (%3F) smuggle a query string past the
         # guard above into the upstream URL.
