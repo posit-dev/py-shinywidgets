@@ -168,3 +168,28 @@ def test_visible_data_returns_no_rows_for_a_zero_match_filter(
     expect(page.locator("#vis")).to_have_text("", timeout=30000)
 
     assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_visible_data_converges_after_data_replacement_while_filtered(
+    page: Page, local_app
+) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    box = viewport_box(page)
+
+    expect(page.locator("#vis")).to_have_text(
+        ",".join(str(i) for i in range(20)), timeout=30000
+    )
+    filter_a(page, box, ">=", "15")
+    expect(page.locator("#vis")).to_have_text("15,16,17,18,19", timeout=30000)
+
+    # Replacing the data while a filter is active: the row map is briefly the
+    # old frame's positions, until the browser re-applies the transform
+    # against the new data and re-syncs it (a >= 15 matches every row of the
+    # replacement frame)
+    page.click("#replace")
+    expect(page.locator("#vis")).to_have_text(
+        ",".join(str(i) for i in range(100, 120)), timeout=30000
+    )
+
+    assert_no_unexpected_errors(errors, failed_requests)

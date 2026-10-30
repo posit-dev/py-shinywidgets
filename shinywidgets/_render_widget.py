@@ -2468,7 +2468,9 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         cell-change notification (the one public alternative,
         ``get_visible_data()``, isn't reactive on its own, and returns the
         whole frame for an empty filtered view); raises if ipydatagrid
-        removes the traits. Not rate-limited.
+        removes the traits. May be briefly stale after a Python-side data
+        replacement (``grid.data = df``) while a filter/sort is active,
+        until the browser re-syncs the row map. Not rate-limited.
         """
         self._read_accessor("visible_data", raw=True)
         widget = cast("DataGrid", self._widget)
