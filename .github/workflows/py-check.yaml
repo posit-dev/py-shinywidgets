@@ -41,6 +41,11 @@ jobs:
         uses: astral-sh/setup-uv@v6.1.0
         with:
           version: ${{ env.UV_VERSION }}
+          # Cache the uv environment across runs (keyed on uv.lock). Mainly
+          # protects against repeated source builds of packages without
+          # wheels for the newest Pythons (e.g. duckdb)
+          enable-cache: true
+          cache-suffix: ${{ matrix.python-version }}
 
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
@@ -69,6 +74,35 @@ jobs:
           name: coverage-xml
           path: coverage.xml
 
-      - name: Run Playwright tests
-        if: matrix.python-version == '3.12'
-        run: make test-playwright
+  # Playwright runs in its own job (rather than inside `py-test (3.12)`) so it
+  # overlaps with the unit tests, and sharded 4 ways x 3 xdist workers each
+  # (the `py-shiny` pattern) to keep wall-clock around 5 minutes.
+  py-playwright:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-suffix: playwright
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --python 3.12 --all-groups
+
+      - name: Run Playwright tests (shard ${{ matrix.shard }}/4)
+        # Healthy shards finish in ~5 minutes; kill stragglers quickly
+        timeout-minutes: 10
+        run: make test-playwright PYTEST_PLAYWRIGHT_ARGS="--num-shards 4 --shard-id ${{ matrix.shard }} -n 3"
