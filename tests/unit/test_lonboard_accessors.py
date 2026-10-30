@@ -8,6 +8,9 @@ import shinywidgets._lonboard as sl
 from shiny import Session
 from shiny.session import session_context
 from shinywidgets import render_lonboard
+from shinywidgets._accessors import Accessors
+
+from tests.unit.test_accessors import FakeSchedule
 
 pytest.importorskip(
     "lonboard",
@@ -43,6 +46,36 @@ def test_view_state_seeds_current_state(widget_session: Session) -> None:
     detach()
     m.view_state = MapViewState(longitude=1.0, latitude=2.0, zoom=5.0)
     assert len(emitted) == 1  # detached
+
+
+def test_view_state_stream_debounces_by_default(widget_session: Session) -> None:
+    # The browser syncs `view_state` on every deck.gl `onViewStateChange`
+    # (each animation frame of a pan or zoom), so `view_state()` debounces
+    # by default and the renderer's rate_policy/rate_delay kwargs apply to it.
+    assert sl.VIEW_STATE.rate_policy == "debounce"
+
+    m = lon_map(widget_session)
+    seed = m.view_state
+    s = FakeSchedule()
+    a = Accessors([sl.VIEW_STATE], schedule=s)
+    a.on_render(m)
+    assert a.read("view_state") == seed  # the seed doesn't wait out the debounce
+    m.view_state = MapViewState(longitude=1.0, latitude=2.0, zoom=5.0)
+    m.view_state = MapViewState(longitude=3.0, latitude=4.0, zoom=6.0)
+    assert a.read("view_state") == seed  # mid-gesture values are held
+    s.fire()
+    assert a.read("view_state") == MapViewState(longitude=3.0, latitude=4.0, zoom=6.0)
+
+
+def test_view_state_rate_delay_zero_disables_the_debounce(
+    widget_session: Session,
+) -> None:
+    m = lon_map(widget_session)
+    a = Accessors([sl.VIEW_STATE], rate_delay=0, schedule=FakeSchedule())
+    a.on_render(m)
+    a.read("view_state")
+    m.view_state = MapViewState(longitude=1.0, latitude=2.0, zoom=5.0)
+    assert a.read("view_state") == MapViewState(longitude=1.0, latitude=2.0, zoom=5.0)
 
 
 def test_selected_index_reports_the_most_recent_pick_across_layers(

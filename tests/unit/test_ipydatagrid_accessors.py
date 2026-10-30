@@ -4,6 +4,9 @@ import pandas as pd
 import shinywidgets._ipydatagrid as sd
 from shiny import Session
 from shiny.session import session_context
+from shinywidgets._accessors import Accessors
+
+from tests.unit.test_accessors import FakeSchedule
 
 
 def grid(session: Session, **kwargs: object) -> object:
@@ -16,6 +19,35 @@ def grid(session: Session, **kwargs: object) -> object:
             editable=True,
             **kwargs,
         )
+
+
+def test_selections_stream_debounces_by_default(widget_session: Session) -> None:
+    # Dragging a selection rectangle streams `selections` continuously, so
+    # (like other selection streams) the accessor debounces by default and
+    # the renderer's rate_policy/rate_delay kwargs apply to it.
+    assert sd.SELECTIONS.rate_policy == "debounce"
+
+    g = grid(widget_session)
+    s = FakeSchedule()
+    a = Accessors([sd.SELECTIONS], schedule=s)
+    a.on_render(g)
+    assert a.read("selections") == []  # the seed doesn't wait out the debounce
+    g.selections = [{"r1": 0, "r2": 1, "c1": 0, "c2": 0}]
+    g.selections = [{"r1": 0, "r2": 2, "c1": 0, "c2": 0}]
+    assert a.read("selections") == []  # mid-drag values are held
+    s.fire()
+    assert a.read("selections") == [{"r1": 0, "r2": 2, "c1": 0, "c2": 0}]
+
+
+def test_selections_rate_delay_zero_disables_the_debounce(
+    widget_session: Session,
+) -> None:
+    g = grid(widget_session)
+    a = Accessors([sd.SELECTIONS], rate_delay=0, schedule=FakeSchedule())
+    a.on_render(g)
+    a.read("selections")
+    g.selections = [{"r1": 0, "r2": 1, "c1": 0, "c2": 0}]
+    assert a.read("selections") == [{"r1": 0, "r2": 1, "c1": 0, "c2": 0}]
 
 
 def test_selections_attach_seeds_and_emits(widget_session: Session) -> None:
