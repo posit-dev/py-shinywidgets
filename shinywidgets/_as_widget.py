@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 import warnings
 from collections.abc import Iterator
@@ -550,6 +551,29 @@ def as_widget_plotly(x: object) -> Optional[Widget]:
     return go.FigureWidget(x.data, x.layout)  # type: ignore
 
 
+@contextmanager
+def _isolated_trame_cli_args() -> Iterator[None]:
+    """Point trame's CLI parsing at an empty argument list.
+
+    trame's Server.start() builds its options by parsing process-wide
+    sys.argv (unless TRAME_ARGS or --trame-args is set, or pytest is
+    loaded), and only honors its host= keyword when the parsed host is
+    the default 'localhost' -- so `shiny run app.py --host 0.0.0.0` would
+    otherwise bind this internal export server to 0.0.0.0 as well,
+    outside Shiny's authentication. TRAME_ARGS takes precedence over
+    sys.argv, so set it to an empty list while trame parses.
+    """
+    previous = os.environ.get("TRAME_ARGS")
+    os.environ["TRAME_ARGS"] = ""
+    try:
+        yield
+    finally:
+        if previous is None:
+            del os.environ["TRAME_ARGS"]
+        else:
+            os.environ["TRAME_ARGS"] = previous
+
+
 class _PyvistaTrameServerStartup:
     """One attempt at starting pyvista's shared trame server."""
 
@@ -589,9 +613,12 @@ class _PyvistaTrameServerStartup:
 
             async def start() -> None:
                 try:
-                    await cast(
-                        Any,
-                        self._server.start(
+                    # trame parses its CLI options at call time (in the
+                    # synchronous part of start(), before the returned
+                    # coroutine is awaited), so the isolation only needs to
+                    # cover the call itself
+                    with _isolated_trame_cli_args():
+                        start_coro = self._server.start(
                             # Return a coroutine to schedule on this
                             # thread's loop (rather than blocking it), so
                             # the server runs until the process exits
@@ -609,8 +636,8 @@ class _PyvistaTrameServerStartup:
                             # Disable trame's auto-shutdown when no client
                             # is connected (nothing ever is)
                             timeout=0,
-                        ),
-                    )
+                        )
+                    await cast(Any, start_coro)
                 except BaseException as e:  # noqa: BLE001
                     self.error = e
                 finally:
@@ -676,8 +703,12 @@ def ensure_pyvista_trame_server() -> None:
             # still raise its original error; new waiters block on the fresh
             # attempt below.
             attempt = _PyvistaTrameServerStartup()
-            _PYVISTA_TRAME_SERVER_STARTUPS[name] = attempt
+            # Cache only after a successful start: if vtk widget registration
+            # or the thread spawn raises synchronously, leave no half-started
+            # attempt behind for later renders to time out on -- let the next
+            # render retry instead (the error propagates to this caller)
             attempt.start(server)
+            _PYVISTA_TRAME_SERVER_STARTUPS[name] = attempt
 
     # Wait outside the lock: concurrent first renders all block on the same
     # Event rather than serializing behind the thread spawn

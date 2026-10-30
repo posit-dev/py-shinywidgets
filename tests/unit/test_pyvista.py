@@ -1,3 +1,4 @@
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
@@ -11,6 +12,7 @@ pv.OFF_SCREEN = True
 
 from shiny.session import session_context  # noqa: E402
 from shinywidgets._as_widget import (  # noqa: E402
+    _isolated_trame_cli_args,
     as_widget,
     as_widget_pyvista,
     ensure_pyvista_trame_server,
@@ -57,6 +59,48 @@ def test_ensure_pyvista_trame_server_idempotent() -> None:
     ensure_pyvista_trame_server()
     # Fast path: the server is already running, so this returns immediately
     ensure_pyvista_trame_server()
+
+
+def test_trame_cli_args_isolated_from_process_argv(monkeypatch) -> None:
+    # `shiny run app.py --host 0.0.0.0` must not leak into trame's CLI
+    # parsing: trame only honors its host= keyword when the parsed host is
+    # the default 'localhost', so the process's --host would otherwise bind
+    # the internal export server to 0.0.0.0 as well (outside Shiny's auth).
+    # trame skips sys.argv parsing when pytest is loaded, so drop that guard
+    # to exercise the real parsing path.
+    from trame_server.core import Server
+
+    monkeypatch.setattr(sys, "argv", ["shiny", "run", "app.py", "--host", "0.0.0.0"])
+    monkeypatch.delitem(sys.modules, "pytest", raising=False)
+    server = Server()
+    # Without the isolation, trame's parser picks up the process's --host
+    assert server.cli.parse_known_args()[0].host == "0.0.0.0"
+    with _isolated_trame_cli_args():
+        assert server.cli.parse_known_args()[0].host == "localhost"
+
+
+def test_ensure_pyvista_trame_server_retries_failed_start(monkeypatch) -> None:
+    # A synchronous startup failure must not be cached: the next render
+    # retries with a fresh attempt (under a distinct server name, so this
+    # doesn't disturb the shared server other tests use)
+    import shinywidgets._as_widget as aw
+    from trame_pyvista.widgets import get_server
+
+    monkeypatch.setattr(
+        pv.global_theme.trame, "jupyter_server_name", "pyvista-jupyter-retry"
+    )
+
+    def failing_start(self, server) -> None:
+        raise OSError("transient startup failure")
+
+    original_start = aw._PyvistaTrameServerStartup.start
+    monkeypatch.setattr(aw._PyvistaTrameServerStartup, "start", failing_start)
+    with pytest.raises(OSError, match="transient"):
+        ensure_pyvista_trame_server()
+    # The failed attempt wasn't cached, so a retry starts cleanly
+    monkeypatch.setattr(aw._PyvistaTrameServerStartup, "start", original_start)
+    ensure_pyvista_trame_server()
+    assert get_server("pyvista-jupyter-retry").running
 
 
 def test_as_widget_pyvista_coerces_plotter(widget_session) -> None:
