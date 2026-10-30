@@ -9,7 +9,8 @@ import pytest
 import shinywidgets._shinywidgets as sw
 import traitlets
 from ipywidgets import IntSlider, Widget
-from shiny import Session
+from shiny import App, Inputs, Outputs, Session, ui
+from shiny._connection import MockConnection
 from shiny.session import session_context
 from shinywidgets import shared_lifetime
 from shinywidgets._dependencies import (
@@ -71,6 +72,10 @@ def proxy_routes(session: Session, port: int) -> List[Any]:
 def only_token(proxy: _LoopbackProxyApp) -> str:
     assert len(proxy._capabilities) == 1
     return next(iter(proxy._capabilities))
+
+
+def _noop_server(input: Inputs, output: Outputs, session: Session) -> None:
+    pass
 
 
 # --- ASGI driving ----------------------------------------------------------
@@ -255,7 +260,8 @@ def test_guard_blocks_unregistered_filenames(upstream_server: int) -> None:
 
 def test_guard_covers_every_source_selector(upstream_server: int) -> None:
     # localtileserver 1.0.0 also reads rasters from `files` (comma-separated,
-    # mosaic endpoints) and `url` (server-side-fetched STAC URL, i.e. SSRF);
+    # mosaic endpoints), `url` (server-side-fetched STAC URL, i.e. SSRF), and
+    # `filenameA`/`filenameB` (the /split/ viewer in web/fastapi_app.py);
     # a filename-only guard would leave those wide open
     proxy = _LoopbackProxyApp(upstream_server, allowed_filenames={"a.tif", "b.tif"})
 
@@ -277,6 +283,33 @@ def test_guard_covers_every_source_selector(upstream_server: int) -> None:
         query_string=b"url=https%3A%2F%2Fevil.example%2Fitem.json",
     )
     assert status == 403
+
+    # The /split/ viewer's filenameA/filenameB
+    status, _, _ = _asgi_request(proxy, "split/", query_string=b"filenameA=a.tif")
+    assert status == 200
+    status, _, _ = _asgi_request(
+        proxy, "split/", query_string=b"filenameA=a.tif&filenameB=%2Fetc%2Fpasswd"
+    )
+    assert status == 403
+    status, _, _ = _asgi_request(
+        proxy, "split/", query_string=b"filenameA=http%3A%2F%2Fevil.example%2Fx.tif"
+    )
+    assert status == 403
+
+
+def test_guard_blocks_xarray_routes(upstream_server: int) -> None:
+    # /api/xarray/* reads datasets from a server-side in-memory registry (and
+    # implicitly selects a sole registered dataset) with no checked selector,
+    # so there is nothing to authorize against; guarded proxies refuse the
+    # whole prefix until per-dataset authorization exists. Unguarded proxies
+    # (geolibre's model) forward them.
+    guarded = _LoopbackProxyApp(upstream_server, allowed_filenames=set())
+    for path in ("api/xarray/info", "api/xarray/tiles/0/0/0.png"):
+        status, _, _ = _asgi_request(guarded, path)
+        assert status == 403
+    unguarded = _LoopbackProxyApp(upstream_server)
+    status, _, _ = _asgi_request(unguarded, "api/xarray/info")
+    assert status == 200
 
 
 def test_guard_escaped_question_mark_cannot_smuggle_query(
@@ -343,6 +376,21 @@ def test_capability_tokens_authorize_exactly_their_files(
     assert req(b"filename=/home/bob/private.tif&sw_token=" + token_b.encode()) == 200
 
 
+def test_capability_can_be_registered_in_another_proxy(upstream_server: int) -> None:
+    # A client shared across multiple Shiny Apps gets one stable token,
+    # registered in each App's proxy (see test_stable_token_across_apps)
+    other = _LoopbackProxyApp(upstream_server, allowed_filenames=set())
+    proxy = _LoopbackProxyApp(upstream_server, allowed_filenames=set())
+    token = proxy.register_filenames(["/tmp/x.tif"])
+    assert other.register_filenames(["/tmp/x.tif"], token=token) == token
+    status, _, _ = _asgi_request(
+        other,
+        "api/tiles",
+        query_string=b"filename=/tmp/x.tif&sw_token=" + token.encode(),
+    )
+    assert status == 200
+
+
 # --- localtileserver_layer_proxy ---------------------------------------------
 
 
@@ -392,10 +440,55 @@ def test_layer_autowire(widget_session: Session, upstream_server: int) -> None:
     assert status == 403
 
     # Wiring again (e.g., a second session) doesn't double-wrap or re-mount
+    url_after_first_wire = layer.url
     wrapped = client.get_tile_url
     localtileserver_layer_proxy(layer, widget_session)
     assert client.get_tile_url is wrapped
     assert len(proxy_routes(widget_session, upstream_server)) == 1
+    # ...and doesn't append a second token (shared layers are re-wired once
+    # per session; the URL must not grow each time)
+    assert layer.url == url_after_first_wire
+    assert layer.url.count("sw_token=") == 1
+
+
+def test_token_never_attached_to_external_urls(
+    widget_session: Session, upstream_server: int
+) -> None:
+    # A layer whose URL is unrelated to the loopback server keeps it
+    # untouched: attaching the capability token would send the credential to
+    # an external server
+    layer, client = fake_layer(widget_session, upstream_server, "/tmp/ok.tif")
+    external = "https://tiles.example.com/{z}/{x}/{y}.png"
+    layer.url = external
+    localtileserver_layer_proxy(layer, widget_session)
+    assert layer.url == external
+    # The proxy is still mounted and the wrapper still only rewrites loopback
+    # URLs
+    assert len(proxy_routes(widget_session, upstream_server)) == 1
+    assert client.get_tile_url().startswith(f"http://127.0.0.1:{upstream_server}/")
+
+
+def test_stable_token_across_apps(
+    widget_session: Session, upstream_server: int
+) -> None:
+    # A client (or shared layer) reused in a second Shiny App gets the SAME
+    # capability token registered in that App's proxy, so URLs minted for the
+    # first App are accepted by the second's
+    layer, client = fake_layer(widget_session, upstream_server, "/tmp/ok.tif")
+    localtileserver_layer_proxy(layer, widget_session)
+    token = only_token(proxy_routes(widget_session, upstream_server)[0].app)
+
+    app2 = App(ui.page_fluid(), _noop_server)
+    session2 = app2._create_session(MockConnection())
+    try:
+        localtileserver_layer_proxy(layer, session2)
+        proxy2 = proxy_routes(session2, upstream_server)[0].app
+        assert proxy2.authorized_filenames(token) == frozenset({"/tmp/ok.tif"})
+        # and the layer URL still carries that one token (no duplicates)
+        assert layer.url.count("sw_token=") == 1
+        assert f"sw_token={token}" in layer.url
+    finally:
+        asyncio.run(session2.close())
 
 
 def test_observer_backstop_rewrites_and_reuses_only_existing_tokens(

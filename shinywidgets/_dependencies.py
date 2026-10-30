@@ -391,11 +391,20 @@ def geolibre_app_mount(w: Widget, session: Session) -> None:
 
 # Hop-by-hop headers (plus Host/Accept-Encoding, which http.client manages
 # itself) that the loopback proxy must not forward in either direction.
-# Query parameters localtileserver 1.0.0 endpoints read raster sources from
-# (`files` is comma-separated; `url` is a server-side-fetched STAC URL, i.e.
-# an SSRF vector). Guarded proxies refuse requests whose values aren't
+# Query parameters localtileserver 1.0.0 endpoints read raster sources from:
+# `filename` (tiles/metadata/... and the `/` viewer), `files`
+# (comma-separated, mosaic endpoints), `url` (server-side-fetched STAC URL,
+# i.e. an SSRF vector), and `filenameA`/`filenameB` (the `/split/` viewer in
+# web/fastapi_app.py). Guarded proxies refuse requests whose values aren't
 # authorized.
-_LOOPBACK_PROXY_SOURCE_PARAMS = ("filename", "url")
+_LOOPBACK_PROXY_SOURCE_PARAMS = ("filename", "url", "filenameA", "filenameB")
+
+# The xarray endpoints read datasets from a server-side in-memory registry
+# (with implicit selection of a sole dataset) rather than from a checked
+# selector. Nothing in localtileserver 1.0.0 populates that registry (it's a
+# manual extension point), and there is no per-dataset authorization to key
+# off, so guarded proxies refuse the whole prefix until one exists.
+_LOOPBACK_PROXY_BLOCKED_PREFIX = "/api/xarray/"
 
 # Query parameter carrying a `_LoopbackProxyApp` capability token
 _LOOPBACK_PROXY_TOKEN_PARAM = "sw_token"
@@ -445,8 +454,10 @@ class _LoopbackProxyApp:
         """
         `allowed_filenames`: when a set is given, any request carrying a
         raster-source query parameter (`filename`, `files` — comma-separated —
-        or `url`, the selectors localtileserver 1.0.0's endpoints read files
-        from) whose value is not authorized is refused with a 403. A value is
+        `url`, `filenameA`/`filenameB`: the selectors localtileserver 1.0.0's
+        endpoints read files from) whose value is not authorized is refused
+        with a 403, as is any request under `/api/xarray/` (see
+        `_LOOPBACK_PROXY_BLOCKED_PREFIX`). A value is
         authorized if it is in the (app-wide) set, or if the request's
         `sw_token` parameter is a capability token registered for it via
         `register_filenames()` — the per-registration alternative to the
@@ -462,20 +473,28 @@ class _LoopbackProxyApp:
         # capability token -> the filenames that token authorizes
         self._capabilities: Dict[str, FrozenSet[str]] = {}
 
-    def register_filenames(self, filenames: Iterable[str]) -> str:
+    def register_filenames(
+        self, filenames: Iterable[str], token: Optional[str] = None
+    ) -> str:
         """
         Register filenames behind an unguessable capability token and return
         the token; re-registering the same set returns the existing token. A
         request carrying `sw_token=<token>` may read exactly these filenames.
+        Pass `token` to register an existing capability in this proxy too
+        (used when one client is shared across multiple Shiny Apps in the
+        process, so URLs minted for one App are accepted by another's proxy).
         Tokens live for the app's lifetime (the proxy mount is app-wide, so
         there is no per-session revocation), and only the app side can mint
         them: the proxied guard and the widget hooks never register values
         observed in requests or widget traits, which a browser controls.
         """
         key = frozenset(str(f) for f in filenames)
-        for token, existing in self._capabilities.items():
+        if token is not None:
+            self._capabilities[token] = key
+            return token
+        for existing_token, existing in self._capabilities.items():
             if existing == key:
-                return token
+                return existing_token
         token = secrets.token_urlsafe(16)
         self._capabilities[token] = key
         return token
@@ -496,7 +515,18 @@ class _LoopbackProxyApp:
             await self._simple_response(send, 405, b"Method Not Allowed")
             return
 
+        # The Mount above strips the `/proxy/{port}` prefix into root_path
+        # (starlette's Mount doesn't put the remainder in path_params)
+        path = get_route_path(scope)
+        if not path.startswith("/"):
+            path = "/" + path
+
         if self._allowed_filenames is not None:
+            if path.startswith(_LOOPBACK_PROXY_BLOCKED_PREFIX):
+                await self._simple_response(
+                    send, 403, b"Forbidden: route blocked on guarded proxies"
+                )
+                return
             params = parse_qs(scope.get("query_string", b"").decode("latin-1"))
             token_set = self._capabilities.get(
                 params.get(_LOOPBACK_PROXY_TOKEN_PARAM, [""])[0], frozenset()
@@ -514,12 +544,6 @@ class _LoopbackProxyApp:
                     send, 403, b"Forbidden: unregistered raster source"
                 )
                 return
-
-        # The Mount above strips the `/proxy/{port}` prefix into root_path
-        # (starlette's Mount doesn't put the remainder in path_params)
-        path = get_route_path(scope)
-        if not path.startswith("/"):
-            path = "/" + path
         # Re-encode: `path` is percent-decoded, so forwarding it verbatim
         # would let an escaped `?` (%3F) smuggle a query string past the
         # guard above into the upstream URL.
@@ -673,11 +697,21 @@ def mount_loopback_proxy(
 
 
 def _add_proxy_token(url: str, token: Optional[str]) -> str:
-    """Attach a proxy capability token to a (rewritten) tile URL."""
+    """
+    Attach a proxy capability token to a (rewritten) tile URL. Idempotent: an
+    existing token is replaced, not duplicated (shared layers are re-wired
+    once per session, which must not grow the URL each time).
+    """
     if token is None:
         return url
-    sep = "&" if "?" in url else "?"
-    return f"{url}{sep}{_LOOPBACK_PROXY_TOKEN_PARAM}={token}"
+    base, sep, query = url.partition("?")
+    parts = [
+        p
+        for p in query.split("&")
+        if p and not p.startswith(f"{_LOOPBACK_PROXY_TOKEN_PARAM}=")
+    ]
+    parts.append(f"{_LOOPBACK_PROXY_TOKEN_PARAM}={token}")
+    return base + sep + "&".join(parts)
 
 
 def _rewrite_loopback_url(url: str, port: int) -> str:
@@ -755,7 +789,17 @@ def localtileserver_layer_proxy(w: Widget, session: Session) -> None:
         sources = []
 
     proxy = mount_loopback_proxy(session.app, port, allowed_filenames=())
-    token = proxy.register_filenames(sources) if proxy is not None and sources else None
+    token: Optional[str] = None
+    if proxy is not None and sources:
+        # One capability per client, stable across Apps: a client (or shared
+        # layer) reused in another Shiny App gets the same token registered
+        # in that App's proxy, so URLs minted for one App work in the other
+        token = getattr(client, "_shinywidgets_proxy_token", None)
+        if token is None:
+            token = proxy.register_filenames(sources)
+            client._shinywidgets_proxy_token = token
+        else:
+            proxy.register_filenames(sources, token=token)
     authorized = frozenset(sources)
 
     if not getattr(client, "_shinywidgets_url_wrapped", False):
@@ -777,14 +821,18 @@ def localtileserver_layer_proxy(w: Widget, session: Session) -> None:
                     )
                 except TypeError:
                     is_client = bool(kwargs.get("client", False))
-            if is_client:
-                return _add_proxy_token(_rewrite_loopback_url(result, port), token)
+            rewritten = _rewrite_loopback_url(result, port)
+            if is_client and rewritten != result:
+                # Only token actual proxy URLs: attaching it to an unrelated
+                # (external) URL would send the credential to that server
+                return _add_proxy_token(rewritten, token)
             return result
 
         client.get_tile_url = get_tile_url
         client._shinywidgets_url_wrapped = True
 
-    new_url = _add_proxy_token(_rewrite_loopback_url(url, port), token)
+    rewritten = _rewrite_loopback_url(url, port)
+    new_url = _add_proxy_token(rewritten, token) if rewritten != url else rewritten
     if new_url != url:
         w.url = new_url  # type: ignore[attr-defined]
 
