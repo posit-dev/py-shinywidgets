@@ -103,8 +103,11 @@ def test_rerender_does_not_stack_click_handlers(page: Page, local_app) -> None:
     page.wait_for_function(CANVAS_HAS_PIXELS_JS, arg="#plot", timeout=30000)
 
     click_center(page)
-    # One click increments the server-side evaluation count by exactly one
-    # (a cached figure rendered twice must not stack handlers)
+    # One click increments the server-side evaluation count by exactly one.
+    # Note this guards re-attach after re-render and one-click-one-evaluation;
+    # it can't reproduce handler stacking (the app builds a fresh Figure every
+    # render) -- the detach contract for a cached Figure is pinned by the
+    # unit test (test_clicked_detach_disconnects_the_cid)
     expect(page.locator("#click_count")).to_have_text("3", timeout=10000)
     expect(page.locator("#clicked")).to_have_text(COORDS, timeout=10000)
 

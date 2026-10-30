@@ -20,7 +20,11 @@ if TYPE_CHECKING:
 def attach_object_clicked(widget: Aladin, emit: Emit) -> Callable[[], None]:
     def on_msg(_: object, content: object, _buffers: object) -> None:
         if isinstance(content, dict) and content.get("event_type") == "object_clicked":
-            emit(content["content"])
+            # Guard like the check above: ipywidgets swallows handler
+            # exceptions silently, so a malformed message must not raise
+            clicked = content.get("content")
+            if clicked is not None:
+                emit(clicked)
 
     widget.on_msg(on_msg)
     return lambda: widget.on_msg(on_msg, remove=True)

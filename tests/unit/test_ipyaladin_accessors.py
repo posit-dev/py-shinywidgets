@@ -62,3 +62,17 @@ def test_state_accessors_seed_and_follow_traits(widget_session: Session) -> None
     aladin._selected_objects = [[{"data": {"a": 1}}]]
     tables = r.selected_objects()
     assert len(tables) == 1 and tables[0]["a"][0] == 1
+
+
+def test_clicked_object_skips_malformed_messages(widget_session: Session) -> None:
+    # ipywidgets swallows handler exceptions silently, so a malformed message
+    # (no "content" key) must be skipped, not raise
+    from ipyaladin import Aladin
+
+    with session_context(widget_session):
+        aladin = Aladin()
+    emitted = []
+    detach = sa.CLICKED_OBJECT.attach(aladin, emitted.append)
+    aladin._msg_callbacks(aladin, {"event_type": "object_clicked"}, [])
+    assert emitted == []
+    detach()
