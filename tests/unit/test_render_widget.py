@@ -416,6 +416,11 @@ def test_render_quak_is_render_widget_base() -> None:
     assert isinstance(renderer, rwb.render_widget_base)
 
 
+def test_render_reactable_is_render_widget_base() -> None:
+    renderer = rw.render_reactable()
+    assert isinstance(renderer, rwb.render_widget_base)
+
+
 def test_render_quak_coerces_dataframe(widget_session) -> None:
     quak = pytest.importorskip("quak")
     pd = pytest.importorskip("pandas")

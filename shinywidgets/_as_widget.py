@@ -7,7 +7,7 @@ import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any, Optional, Protocol, cast
+from typing import TYPE_CHECKING, Any, Dict, Optional, Protocol, cast
 
 from htmltools import HTMLDependency
 from ipywidgets.widgets.domwidget import DOMWidget
@@ -18,6 +18,7 @@ from shiny.session import get_current_session
 
 from ._comm import ShinyComm
 from ._dependencies import widget_pkg
+from ._utils import sanitize_json_floats
 
 if TYPE_CHECKING:
     from bokeh.models import LayoutDOM
@@ -61,6 +62,7 @@ def as_widget(x: object) -> Widget:
     * pyobsplot `Obsplot`/`Plot` creators raise a `TypeError` (they create
       charts when called; the result is already an ipywidget)
     * plotly `Figure` -> `plotly.graph_objects.FigureWidget`
+    * reactable `Reactable` -> `reactable.widgets.ReactableWidget`
     * plotnine `ggplot` (or plot composition) -> `ipympl.backend_nbagg.Canvas`
     * pydeck `Deck` -> `pydeck.widget.DeckGLWidget` (pydeck <= 0.8 only; pydeck
       v0.9 removed its widget, so this raises a `TypeError` that points to
@@ -926,6 +928,27 @@ PYDECK_NO_WIDGET_MESSAGE = (
 )
 
 
+def as_widget_reactable(x: object) -> Widget:
+    # reactable is guaranteed to be installed here since this function is only
+    # called when x comes from the reactable package (it's not in the dev/test
+    # groups -- see pyproject.toml)
+    from reactable import Reactable  # pyright: ignore[reportMissingImports]
+
+    if not isinstance(x, Reactable):
+        raise TypeError(
+            f"Don't know how to coerce {_short_repr(x)} into a reactable Reactable object."
+        )
+
+    # Reactable is a props dataclass, not a widget: to_widget() materializes the
+    # ipyreact widget (a single synced `props` trait). Missing values in the data
+    # arrive as NaN floats, which fail widget-state serialization
+    # (allow_nan=False), so they're sanitized to nulls here.
+    # (pyright sees Reactable as `object` since reactable isn't installed here)
+    widget = x.to_widget()  # pyright: ignore[reportAttributeAccessIssue]
+    widget.props = cast(Dict[str, Any], sanitize_json_floats(widget.props))
+    return widget
+
+
 def as_widget_pyobsplot(x: object) -> Widget:
     """
     pyobsplot's `ObsplotWidget` is already an ipywidget, so only non-widget
@@ -958,6 +981,7 @@ AS_WIDGET_MAP = {
     "pydeck": as_widget_pydeck,
     "pyobsplot": as_widget_pyobsplot,
     "pyvista": as_widget_pyvista,
+    "reactable": as_widget_reactable,
     "rerun": as_widget_rerun,
     "seaborn": as_widget_mpl,
 }

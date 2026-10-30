@@ -541,6 +541,19 @@ def _frontend_size(widget: Widget) -> Optional[Tuple[int, int]]:
     return getattr(widget, _FRONTEND_SIZE_ATTR, None)
 
 
+def reactable_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # A Reactable fills its container by default (its root is a flex column with
+    # `flex: auto 1` on the table body), which is what fill layouts want. A
+    # user-set `height` prop loses to the fill CSS (`flex: 1 1 auto` stretches the
+    # element past its inline height), so treat it like an explicit widget height:
+    # opt out of filling. reactable's ipyreact widget keeps everything in a single
+    # `props` trait (there's no ipywidgets Layout height to inspect).
+    props = getattr(widget, "props", None)
+    if isinstance(props, dict) and props.get("height") is not None:
+        return False
+    return fill
+
+
 def itables_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # DataTables only gets a scrollable body (which is what lets the table fill
     # its container instead of growing past it) when scrollY is set, so default it
@@ -933,6 +946,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "pythreejs": pythreejs_layout_defaults,
     # pyvista's html jupyter backend widget lives in the trame_pyvista package
     "trame_pyvista": pyvista_layout_defaults,
+    "reactable": reactable_layout_defaults,
     "vizarr": vizarr_layout_defaults,
     "rerun_notebook": rerun_layout_defaults,
 }

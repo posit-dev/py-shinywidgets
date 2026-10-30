@@ -54,6 +54,7 @@ everything it needs:
 | `@render_pythreejs` | `pip install 'shinywidgets[pythreejs]'` |
 | `@render_pyvista` | `pip install 'shinywidgets[pyvista]'` (Python < 3.15) |
 | `@render_quak` | `pip install 'shinywidgets[quak]'` |
+| `@render_reactable` | `pip install 'shinywidgets[reactable]'` |
 | `@render_vizarr` | `pip install 'shinywidgets[vizarr]'` |
 | `@render_rerun` | `pip install 'shinywidgets[rerun]'` (Python >= 3.11) |
 

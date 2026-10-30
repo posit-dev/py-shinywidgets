@@ -66,6 +66,10 @@ if TYPE_CHECKING:
 
     from ._altair import Selection
 
+    # reactable isn't in the dev/test groups (see pyproject.toml)
+    from reactable import Reactable  # pyright: ignore[reportMissingImports]
+    from reactable.widgets import ReactableWidget  # pyright: ignore[reportMissingImports]
+
     # embedding-atlas requires Python 3.11+, so it's absent from 3.10 environments
     if sys.version_info >= (3, 11):
         from embedding_atlas.widget import EmbeddingAtlasWidget  # pyright: ignore[reportMissingImports]
@@ -101,6 +105,7 @@ else:
     ) = PyvistaPlotter = PyvistaHtmlWidget = ObsplotWidget = VizarrViewer = (
         RerunViewer
     ) = RerunNotebookViewer = NiiVue = object
+    Reactable = ReactableWidget = object
 
 from shiny.render.renderer import ValueFn
 
@@ -149,6 +154,10 @@ DrawdataWidgetT = TypeVar(
 # notebook Viewer (coerced to its inner widget) or the rerun_notebook widget
 # itself. String bound since rerun is an optional dependency.
 RerunValueT = TypeVar("RerunValueT", bound="Union[RerunViewer, RerunNotebookViewer]")
+# The values a @render_reactable render function may return: a Reactable (a
+# props dataclass, coerced to its widget) or the ReactableWidget itself. String
+# bound since reactable is an optional dependency.
+ReactableValueT = TypeVar("ReactableValueT", bound="Union[Reactable, ReactableWidget]")
 
 if TYPE_CHECKING:
     # The values a @render_pyvista render function may return (bound below):
@@ -194,6 +203,7 @@ __all__ = (
     "render_pythreejs",
     "render_pyvista",
     "render_quak",
+    "render_reactable",
     "render_vizarr",
     "render_rerun",
 )
@@ -3466,6 +3476,94 @@ class render_pyvista(render_widget_base[PyvistaValueT, PyvistaHtmlWidget]):
     app = App(app_ui, server)
     ```
     """
+
+
+class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
+    """
+    Reactively render a [reactable](https://machow.github.io/reactable-py/) table
+    (the Python port of R's [reactable](https://glin.github.io/reactable/)) as a
+    Shiny output.
+
+    reactable builds interactive data tables -- sorting, per-column and global
+    filtering, searching, pagination, row selection, row grouping/aggregation,
+    expandable detail rows, custom cell renderers (Python or JavaScript), and
+    themes -- all computed client-side, so interacting with the table never
+    round-trips to the server.
+
+    The decorated function may return either a `reactable.Reactable` (the usual
+    choice; it is coerced to its widget) or a `reactable.widgets.ReactableWidget`.
+    Both require ``pip install 'shinywidgets[reactable]'``.
+
+    The decorated function also gains two read-only attributes: `.value`, the
+    value most recently returned by the render function, and `.widget`, the
+    rendered `ReactableWidget` instance.
+
+    To update the table when the data changes, re-render it (i.e., have the
+    render function read the relevant inputs/reactives): reactable's JavaScript
+    reads the data once when the widget is created, so mutating
+    ``.widget.props["data"]`` in place has no effect. Non-data props do update
+    in place, for example:
+
+    ```python
+    @reactive.effect
+    def _():
+        tbl.widget.props = {**tbl.widget.props, "defaultPageSize": input.page_size()}
+    ```
+
+    Table state (selected rows, current page, sort) is not reported back to
+    Python: reactable-py sends no widget events, so there is currently nothing
+    to read with :func:`~shinywidgets.reactive_read`.
+
+    In a filling layout, the table fills its container. Setting reactable's own
+    ``height=`` prop opts out of filling (akin to an explicit ipywidgets
+    ``Layout(height=...)``). Missing values (NaN) in the data render as empty
+    cells.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    from reactable import ColFormat, Column, Reactable
+    from reactable.data import cars_93
+    from shiny.express import ui
+    from shinywidgets import render_reactable
+
+
+    @render_reactable
+    def tbl():
+        return Reactable(
+            cars_93[:, ["manufacturer", "model", "price"]],
+            columns={"price": Column(format=ColFormat(prefix="$"))},
+            filterable=True,
+            searchable=True,
+        )
+    ```
+    """
+
+    def _as_widget(self, value: ReactableValueT) -> ReactableWidget:
+        # Both accepted value types route through as_widget() (a ReactableWidget
+        # is returned as-is; a Reactable goes to as_widget_reactable()). The
+        # reactable stylesheet rides along with every widget open (see
+        # widget_open_extras()), not auto_output_ui(), so it's also present in
+        # core-UI apps that write output_widget() themselves.
+        return cast("ReactableWidget", super()._as_widget(value))
 
 
 class render_niivue(render_widget_base[ValueT, NiiVue]):

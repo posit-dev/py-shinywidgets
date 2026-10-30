@@ -63,6 +63,7 @@ from ._dependencies import (
     custom_elements_dependency,
     geolibre_app_mount,
     localtileserver_layer_proxy,
+    reactable_dependency,
     require_dependencies,
     widget_pkg,
 )
@@ -635,6 +636,8 @@ def widget_open_extras(
         # itables' bundle replaces the global `$` when its module is evaluated (see
         # protectPageJQuery() in js/src/utils.ts), which happens after this open
         open_keys["protect_jquery"] = True
+    if "reactable" in pkgs:
+        deps.append(reactable_dependency())
     return deps, open_keys
 
 
