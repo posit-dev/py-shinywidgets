@@ -63,6 +63,55 @@ def test_selection_reattaches_when_marks_change(widget_session: Session) -> None
     detach()
 
 
+def test_brush_seeds_and_emits_the_region(widget_session: Session) -> None:
+    fig, _ = figure(widget_session)
+    emitted: list[object] = []
+    detach = sb.BRUSH.attach(fig, emitted.append)
+    assert emitted == [None]  # a fresh BrushSelector's selected is None
+    fig.interaction.selected = np.array([[1.0, 3.0], [1.2, 4.0]])
+    assert np.array_equal(emitted[-1], np.array([[1.0, 3.0], [1.2, 4.0]]))
+    detach()
+
+
+def test_brush_reattaches_and_resets_on_interaction_swap(
+    widget_session: Session,
+) -> None:
+    from bqplot.interacts import BrushIntervalSelector, PanZoom
+
+    fig, _ = figure(widget_session)
+    emitted: list[object] = []
+    detach = sb.BRUSH.attach(fig, emitted.append)
+    fig.interaction.selected = np.array([[1.0, 3.0], [1.2, 4.0]])
+
+    # Swapping the interaction (what the toolbar does) re-attaches; a
+    # selector with no region trait (PanZoom) resets brush() to None
+    with session_context(widget_session):
+        fig.interaction = PanZoom()
+    assert emitted[-1] is None
+
+    # ... and a new selector seeds its own state
+    with session_context(widget_session):
+        sel = BrushIntervalSelector()
+    sel.selected = np.array([1.0, 2.5])
+    fig.interaction = sel
+    assert np.array_equal(emitted[-1], np.array([1.0, 2.5]))
+    sel.selected = np.array([2.0, 3.5])
+    assert np.array_equal(emitted[-1], np.array([2.0, 3.5]))
+    detach()
+
+
+def test_brush_accessor(widget_session: Session) -> None:
+    from shinywidgets import render_bqplot
+
+    fig, _ = figure(widget_session)
+    r = render_bqplot(rate_delay=0)
+    r._widget = fig  # stands in for _render()
+    r._accessors.on_render(fig)
+    assert r.brush() is None
+    fig.interaction.selected = np.array([[0.5, 2.5], [3.5, 5.5]])
+    assert np.array_equal(r.brush(), np.array([[0.5, 2.5], [3.5, 5.5]]))
+
+
 def test_selections_equal() -> None:
     assert sb.selections_equal([None], [None])
     assert sb.selections_equal([np.array([1])], [np.array([1])])

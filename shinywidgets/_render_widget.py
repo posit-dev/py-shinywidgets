@@ -1109,16 +1109,17 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
 
     Note
     ---
-    **Reacting to selections**: read ``fig.selection()`` in a reactive function
-    (a ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``),
-    which re-runs whenever the user selects marks (with a brush/lasso
-    `bqplot.interacts.Selector`, or by click-select), much like
-    ``input.my_slider()`` reads an input. A re-render (e.g. when the render
-    function reads an input) gives the user a new figure, whose marks start
-    out unselected. It can't be read inside this output's own render function,
-    which builds a new figure each time it runs. To react to one mark's
-    selection specifically, ``reactive_read(fig.widget.marks[0], "selected")``
-    remains available.
+    **Reacting to selections**: read ``fig.selection()`` (the selected
+    elements of each mark) or ``fig.brush()`` (the current brush region) in a
+    reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which re-runs whenever the user selects or brushes
+    (with a brush/lasso `bqplot.interacts.Selector`, or by click-select), much
+    like ``input.my_slider()`` reads an input. A re-render (e.g. when the
+    render function reads an input) gives the user a new figure, whose marks
+    start out unselected. They can't be read inside this output's own render
+    function, which builds a new figure each time it runs. To react to one
+    mark's selection specifically,
+    ``reactive_read(fig.widget.marks[0], "selected")`` remains available.
 
     Parameters
     ----------
@@ -1136,10 +1137,10 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     rate_policy
-        How to rate-limit :meth:`selection` (debounced by default) and
-        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
-        ``"throttle"``. ``None`` (the default) keeps the debounce and leaves
-        ``reactive_read()`` unlimited.
+        How to rate-limit :meth:`selection` and :meth:`brush` (debounced by
+        default) and :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps the
+        debounce and leaves ``reactive_read()`` unlimited.
     rate_delay
         The rate-limit window in milliseconds (default 250). ``0`` disables rate
         limiting.
@@ -1160,6 +1161,24 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
         ``rate_policy`` and ``rate_delay`` parameters.
         """
         return cast(List[Optional["np.ndarray"]], self._read_accessor("selection"))
+
+    def brush(self) -> Optional[Union["np.ndarray", Dict[str, Any]]]:
+        """
+        The region of the figure's current brush selector, in data
+        coordinates: a 2x2 `numpy.ndarray` ``[[x0, y0], [x1, y1]]`` for a
+        `BrushSelector`, a length-2 array for a `BrushIntervalSelector`, or a
+        dict of named intervals for a `MultiSelector` — the selector's own
+        `selected` trait.
+
+        ``None`` while nothing is brushed, and whenever the figure's
+        ``interaction`` isn't a brush selector (e.g., `PanZoom`;
+        `LassoSelector` has no region trait). Debounced (250 ms) by default;
+        see the ``rate_policy`` and ``rate_delay`` parameters.
+        """
+        return cast(
+            Optional[Union["np.ndarray", Dict[str, Any]]],
+            self._read_accessor("brush"),
+        )
 
 
 class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):

@@ -6,6 +6,13 @@ brushed region on the figure's `interaction` (a brush selector's `selected`).
 Both sub-objects can be replaced after render (the toolbar swaps the
 interaction; the user can assign ``fig.marks``), so each attach observes its
 container trait and re-observes the current sub-objects when it changes.
+
+There is deliberately no `clicked()` accessor: bqplot's `element_click`
+messages never reach marks while the figure has an `interaction` (the
+interaction's overlay intercepts real clicks -- browser-verified), so an
+accessor that is silently dead in the common interactive case is worse than
+none. `mark.on_element_click()` remains the escape hatch for
+interaction-free figures.
 """
 
 from __future__ import annotations
@@ -90,6 +97,53 @@ def attach_selection(widget: BqplotFigure, emit: Emit) -> Callable[[], None]:
     return detach
 
 
+def attach_brush(widget: BqplotFigure, emit: Emit) -> Callable[[], None]:
+    # The currently observed selector and its handler (at most one pair),
+    # so detach can remove the observer
+    observed: List[Tuple[Any, Any]] = []
+
+    # bqplot's stubs type Figure.interaction as `object`; the runtime value is
+    # an interacts widget (or None)
+    def interaction() -> Any:
+        return widget.interaction
+
+    def current() -> object:
+        sel = interaction()
+        # Check the trait by name (not isinstance), so future selector types
+        # work; PanZoom and LassoSelector have no region to report
+        if sel is None or "selected" not in sel.trait_names():
+            return None
+        return sel.selected
+
+    def publish(change: Any = None) -> None:
+        emit(current())
+
+    def observe_interaction() -> None:
+        for selector, handler in observed:
+            selector.unobserve(handler, "selected")
+        observed.clear()
+        sel = interaction()
+        if sel is not None and "selected" in sel.trait_names():
+            sel.observe(publish, "selected")
+            observed.append((sel, publish))
+
+    def on_interaction(change: Any) -> None:
+        observe_interaction()
+        publish()
+
+    widget.observe(on_interaction, "interaction")
+    observe_interaction()
+    publish()  # state accessors seed
+
+    def detach() -> None:
+        widget.unobserve(on_interaction, "interaction")
+        for selector, handler in observed:
+            selector.unobserve(handler, "selected")
+        observed.clear()
+
+    return detach
+
+
 SELECTION = AccessorSpec(
     name="selection",
     kind="state",
@@ -98,4 +152,12 @@ SELECTION = AccessorSpec(
     rate_policy="debounce",
 )
 
-BPLOT_ACCESSORS = (SELECTION,)
+BRUSH = AccessorSpec(
+    name="brush",
+    kind="state",
+    attach=attach_brush,
+    # A brush drag streams ~10 updates
+    rate_policy="debounce",
+)
+
+BPLOT_ACCESSORS = (SELECTION, BRUSH)
