@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from playwright.sync_api import Page, expect
-from tests.playwright.conftest import assert_no_unexpected_errors, collect_errors
+from tests.playwright.conftest import (
+    assert_no_unexpected_errors,
+    collect_errors,
+    expose_manager,
+)
 
 # Page coordinates of a data point, via plotly.js's axis conversions.
 POINT_JS = """([id, x, y]) => {
@@ -97,6 +101,7 @@ def test_plotly_accessors_on_an_app_defined_figure_subclass(
     console: list[str] = []
     page.on("console", lambda msg: console.append(f"{msg.type}: {msg.text[:300]}"))
     page.on("pageerror", lambda err: console.append(f"pageerror: {str(err)[:300]}"))
+    page.route("**/shinywidgets/output.js", expose_manager)
     page.goto(local_app.url)
     try:
         expect(page.locator("#sub_plot .js-plotly-plot")).to_have_count(1, timeout=30000)
@@ -106,22 +111,47 @@ def test_plotly_accessors_on_an_app_defined_figure_subclass(
         click_until_bound(page, 3, 9, id="sub_plot", out="sub_clicked", text="3")
     except Exception:
         diag = page.evaluate(
-            """() => {
+            """async () => {
               const out = document.querySelector('#sub_plot');
               const gd = document.querySelector('#sub_plot .js-plotly-plot');
-              const cs = out ? getComputedStyle(out) : null;
+              const models = window.widgetManager
+                ? await Promise.all(
+                    Object.values(window.widgetManager._models).map((p) => p.catch(() => null))
+                  )
+                : [];
               return {
-                outputVisibility: cs && cs.visibility,
-                outputDisplay: cs && cs.display,
-                outputRect: out && out.getBoundingClientRect().toJSON(),
                 graphPresent: !!gd,
-                graphVisibility: gd && getComputedStyle(gd).visibility,
                 fullLayout: !!(gd && gd._fullLayout),
                 graphRect: gd && gd.getBoundingClientRect().toJSON(),
-                plotlyGlobal: !!window.Plotly,
+                plotlyListeners: gd && gd._ev ? Object.keys(gd._ev._events || {}) : null,
+                models: models.filter((m) => m).map((m) => ({
+                  name: m.get('_model_name'),
+                  module: m.get('_model_module'),
+                  views: Object.keys(m.views || {}).length,
+                  hasAnimateTrait: '_py2js_animate' in (m.attributes || {}),
+                })),
               };
             }"""
         )
+        # A synthetic plotly_click: if this round-trips, the bridge is bound
+        # and the real mouse click is what fails; if not, the bridge is
+        # missing/broken.
+        page.evaluate(
+            """() => {
+              const gd = document.querySelector('#sub_plot .js-plotly-plot');
+              gd.emit('plotly_click', {points: [{curveNumber: 0, pointNumber: 0, x: 1, y: 1}]});
+            }"""
+        )
+        synthetic = "unknown"
+        try:
+            expect(page.locator("#sub_clicked")).to_have_text("1", timeout=3000)
+            synthetic = "round-tripped (bridge bound; real clicks are the problem)"
+        except AssertionError:
+            synthetic = (
+                f"no round-trip (bridge missing/broken); "
+                f"#sub_clicked={page.locator('#sub_clicked').inner_text()!r}"
+            )
         raise AssertionError(
-            f"diag: {diag}\nconsole (last 60):\n" + "\n".join(console[-60:])
+            f"diag: {diag}\nsynthetic click: {synthetic}\n"
+            "console (last 60):\n" + "\n".join(console[-60:])
         )
