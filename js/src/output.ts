@@ -599,11 +599,16 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
 Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
   const msg = jsonParse(msg_txt);
   const id = msg.content.comm_id;
-  if (!manager.has_model(id)) {
+  if (!manager.has_model(id) && closedModels.has(id)) {
     console.error(`Couldn't handle message for model ${id} because it doesn't exist.`);
     return;
   }
   try {
+    // get_model() waits for late registrations: the comm_open handler must
+    // load the widget's JS dependencies before it can register the model, so
+    // a message sent right after the open (e.g. a plotly event-bridge bind
+    // request) can arrive while the model is still pending. Waiting here
+    // instead of dropping the message is what lets those binds land.
     const m = await manager.get_model(id);
     // Requests for shinywidgets' event/state bridges are for us, not the model
     const data = msg.content.data;
