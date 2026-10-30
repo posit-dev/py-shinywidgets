@@ -221,10 +221,20 @@ def test_render_plotly_brushed_and_relayout() -> None:
     assert r.relayout() == {"xaxis.autorange": True}
 
 
-def test_selected_rows_by_position_accepts_float_customdata_polars() -> None:
+def test_selected_rows_requires_a_key_for_non_pandas_frames() -> None:
+    # Their rows have no labels, and positions break once the frame is filtered
     df = pl.DataFrame({"a": [10, 20, 30]})
-    pts = [{"trace_index": 0, "point_index": 0, "x": 0, "y": 0, "customdata": [2.0]}]
-    assert sp.select_rows(pts, df, key=None)["a"].to_list() == [30]
+    pts = [{"trace_index": 0, "point_index": 0, "x": 0, "y": 0, "customdata": [2]}]
+    with pytest.raises(ValueError, match="key="):
+        sp.select_rows(pts, df, key=None)
+    with pytest.raises(ValueError, match="key="):
+        sp.select_rows(None, df, key=None)
+
+
+def test_render_plotly_selected_rows_key_is_keyword_only() -> None:
+    r, _ = rendered()
+    with pytest.raises(TypeError, match="positional"):
+        r.selected_rows(pd.DataFrame({"a": [1]}), "a")
 
 
 def test_selected_rows_matches_pandas_index_labels() -> None:
@@ -234,10 +244,3 @@ def test_selected_rows_matches_pandas_index_labels() -> None:
     labelled = pd.DataFrame({"a": [1, 2]}, index=["p", "q"])
     pts = [{"trace_index": 0, "point_index": 0, "x": 0, "y": 0, "customdata": ["q"]}]
     assert sp.select_rows(pts, labelled, key=None)["a"].tolist() == [2]
-
-
-def test_selected_rows_positions_must_be_integers_polars() -> None:
-    df = pl.DataFrame({"a": [1, 2]})
-    pts = [{"trace_index": 0, "point_index": 0, "x": 0, "y": 0, "customdata": ["q"]}]
-    with pytest.raises(ValueError, match="key="):
-        sp.select_rows(pts, df, key=None)

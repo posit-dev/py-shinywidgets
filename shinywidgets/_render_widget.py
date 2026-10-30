@@ -447,7 +447,7 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         return pick_selection(selections, name)
 
     def selected_rows(
-        self, name: Optional[str] = None, df: Optional[IntoDataFrameT] = None
+        self, name: Optional[str] = None, *, df: Optional[IntoDataFrameT] = None
     ) -> IntoDataFrameT:
         """
         The rows of `df` in a selection (see :meth:`selected`), evaluated the
@@ -2551,7 +2551,7 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         return cast(Optional[Dict[str, Any]], self._read_accessor("relayout"))
 
     def selected_rows(
-        self, df: IntoDataFrameT, key: Optional[str] = None
+        self, df: IntoDataFrameT, *, key: Optional[str] = None
     ) -> IntoDataFrameT:
         """
         The rows of `df` that the user selected (see :meth:`selected`).
@@ -2562,10 +2562,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
 
         * pandas: ``px.scatter(df, ..., custom_data=[df.index])``. Matched to
           `df`'s index labels, so this also works on a filtered or sorted `df`.
-        * polars: ``df.with_row_index()`` plus ``custom_data=["index"]``.
-          Matched to row positions.
-        * Any key column: ``custom_data=["id"]`` with ``key="id"``. Matched to
-          that column's values.
+        * Any frame (e.g., polars), by a key column: ``custom_data=["id"]``
+          with ``key="id"``. Matched to that column's values. Without an id
+          column, add one with ``df.with_row_index("id")``.
 
         Returns an empty frame while nothing is selected, so it can be passed
         straight to ``@render.data_frame``.

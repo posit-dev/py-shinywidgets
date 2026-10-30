@@ -59,33 +59,21 @@ def select_rows(
     # plotly 5.
     import narwhals as nw
 
-    values = [customdata_value(p) for p in points or []]
-    if key is None and nw.dependencies.is_pandas_dataframe(df):
+    if key is None:
+        if not nw.dependencies.is_pandas_dataframe(df):
+            raise ValueError(
+                "`selected_rows(df)` needs `key=` for frames without row labels: "
+                "name a column of `df` whose values the figure carries as "
+                'customdata, e.g. `custom_data=["id"]` and `key="id"`.'
+            )
         # `custom_data=[df.index]` carries index labels, which differ from
         # positions in a filtered, sorted, or re-indexed frame
+        values = [customdata_value(p) for p in points or []]
         return cast("IntoDataFrameT", df[df.index.isin(values)])
 
+    values = [customdata_value(p) for p in points or []]
     frame = nw.from_native(df, eager_only=True)
-    if key is not None:
-        return frame.filter(nw.col(key).is_in(values)).to_native()
-
-    # Positions may arrive as floats (plotly.js decodes numeric customdata
-    # into typed arrays)
-    if not all(isinstance(v, (int, float)) and float(v).is_integer() for v in values):
-        raise ValueError(
-            "`selected_rows(df)` matches each point's customdata to a row "
-            "position of `df`, but the selected points carry non-integer "
-            "customdata. To match it to the values of a column instead, pass "
-            "that column's name as `key=`."
-        )
-    row = "__shinywidgets_row__"
-    positions = [int(cast(float, v)) for v in values]
-    return (
-        frame.with_row_index(row)
-        .filter(nw.col(row).is_in(positions))
-        .drop(row)
-        .to_native()
-    )
+    return frame.filter(nw.col(key).is_in(values)).to_native()
 
 
 def customdata_value(point: Point) -> object:

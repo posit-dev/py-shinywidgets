@@ -171,6 +171,8 @@ def test_render_altair_selected_and_selected_rows(widget_session: Session) -> No
     assert r.selected_rows()["y"].tolist() == [8, 9, 10, 11]
     other = pd.DataFrame({"date": DATES["date"], "z": range(30)})
     assert r.selected_rows(df=other)["z"].tolist() == [8, 9, 10, 11]
+    with pytest.raises(TypeError, match="positional"):
+        r.selected_rows("brush", other)
 
 
 def sa_box(raw: object) -> Any:
