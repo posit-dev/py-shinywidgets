@@ -118,6 +118,7 @@ from ._bokeh import _bokeh_dependency
 from ._bokeh_accessors import BOKEH_ACCESSORS, selected_frame
 from ._bqplot import BPLOT_ACCESSORS
 from ._dependencies import widget_pkg
+from ._embedding_atlas import EMBEDDING_ATLAS_ACCESSORS
 from ._ipydatagrid import IPYDATAGRID_ACCESSORS
 from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
@@ -500,10 +501,12 @@ class render_embedding_atlas(
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
     `EmbeddingAtlasWidget` instance. The filter a user builds in the browser is
-    synced to the widget's (upstream-internal) `_predicate` trait, so
-    ``reactive_read(my_atlas.widget, "_predicate")`` followed by
-    ``my_atlas.widget.selection()`` gives the selected rows reactively. The explorer
-    doesn't respond to trait changes made from Python; to change it, re-render.
+    synced to the widget's (upstream-internal) `_predicate` trait: read
+    ``atlas.selection()`` for the filtered rows, or ``atlas.predicate()`` for
+    the filter as a SQL expression, reactively
+    (``reactive_read(my_atlas.widget, "_predicate")`` remains available for the
+    raw trait). The explorer doesn't respond to trait changes made from Python;
+    to change it, re-render.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -531,6 +534,14 @@ class render_embedding_atlas(
         (``False``) is strongly recommended for deployed apps: an unrestricted
         connection lets any visitor run arbitrary SQL with the server process's
         permissions.
+    rate_policy
+        How to rate-limit :meth:`predicate` and :meth:`selection` (debounced
+        by default) and :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps the
+        debounce and leaves ``reactive_read()`` unlimited.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        limiting.
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -568,6 +579,36 @@ class render_embedding_atlas(
             rate_delay=rate_delay,
         )
         self.allow_unrestricted_connection = allow_unrestricted_connection
+
+    accessor_specs = EMBEDDING_ATLAS_ACCESSORS
+
+    def predicate(self) -> Optional[str]:
+        """
+        The explorer's current cross-filter as a DuckDB SQL boolean
+        expression (e.g. ``(("group")::TEXT IS NOT DISTINCT FROM 'c')``), or
+        ``None`` when nothing is filtered. Built from every chart's clicks
+        and brushes and the embedding view's lasso.
+
+        For pushing the filter into your own SQL or aggregation; use
+        :meth:`selection` for the filtered rows themselves. Debounced
+        (250 ms) by default; see the ``rate_policy`` and ``rate_delay``
+        parameters.
+        """
+        return cast(Optional[str], self._read_accessor("predicate"))
+
+    def selection(self) -> Any:
+        """
+        The rows passing the explorer's current cross-filter (see
+        :meth:`predicate`), as the same frame type (pandas or polars) the
+        `EmbeddingAtlasWidget` was built from, including a ``__row_index__``
+        column of positions into the original frame.
+
+        All rows while nothing is filtered (library semantics). Runs a
+        DuckDB query per call, so read it in a ``@reactive.calc`` when
+        several outputs need it. Debounced (250 ms) by default.
+        """
+        self._read_accessor("predicate")
+        return cast("EmbeddingAtlasWidget", self._widget).selection()
 
     def _as_widget(self, value: EmbeddingAtlasWidget) -> EmbeddingAtlasWidget:
         widget = super()._as_widget(value)
