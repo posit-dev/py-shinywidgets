@@ -60,6 +60,18 @@ def attach_clicked(widget: Any, emit: Emit) -> Callable[[], None]:
     return lambda: m.on_interaction(on_interaction, remove=True)
 
 
+# Emitted by attach_drawn_features when the map has no DrawControl. Attach
+# runs during render (Accessors.on_render), so it must never raise -- the
+# drawn_features() method raises for this raw value at read time instead.
+NO_DRAW_CONTROL = object()
+
+NO_DRAW_CONTROL_MESSAGE = (
+    "`drawn_features()` needs an ipyleaflet.DrawControl on the "
+    "map (leafmap adds one by default). Add one, e.g. "
+    "`m.add(DrawControl())`."
+)
+
+
 def attach_drawn_features(widget: Any, emit: Emit) -> Callable[[], None]:
     m = check_ipyleaflet(widget, "drawn_features")
     detach_control: List[Optional[Callable[[], None]]] = [None]
@@ -67,11 +79,8 @@ def attach_drawn_features(widget: Any, emit: Emit) -> Callable[[], None]:
     def attach_control() -> None:
         control = draw_control_of(m)
         if control is None:
-            raise TypeError(
-                "`drawn_features()` needs an ipyleaflet.DrawControl on the "
-                "map (leafmap adds one by default). Add one, e.g. "
-                "`m.add(DrawControl())`."
-            )
+            emit(NO_DRAW_CONTROL)
+            return
 
         def on_change(change: Any) -> None:
             emit(change["new"])

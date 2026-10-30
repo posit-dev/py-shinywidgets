@@ -90,11 +90,12 @@ def test_drawn_features_follows_the_draw_control(widget_session: Session) -> Non
     assert control is not None
     control.data = [feature]
     assert r.drawn_features() == [feature]
-    # Replacing the control set re-attaches; dropping the DrawControl errors
-    # loudly (traitlets propagates observer exceptions to the assignment, so
-    # the TypeError surfaces there rather than at the next read)
+    # Replacing the control set re-attaches; dropping the DrawControl
+    # doesn't raise at attach (it runs during render), but the next read
+    # raises
+    m.controls = ()
     with pytest.raises(TypeError, match="DrawControl"):
-        m.controls = ()
+        r.drawn_features()
     with session_context(widget_session):
         m.add(L.DrawControl())
     assert r.drawn_features() == []
@@ -104,6 +105,39 @@ def test_drawn_features_requires_a_draw_control(widget_session: Session) -> None
     r = renderer(leaflet_map(widget_session))
     with pytest.raises(TypeError, match="DrawControl"):
         r.drawn_features()
+
+
+def test_render_and_rerender_without_draw_control_never_raises(
+    widget_session: Session,
+) -> None:
+    # on_render() re-attaches accessors that were read once; a missing
+    # DrawControl must not break the map output, only the read
+    r = renderer(leaflet_map(widget_session))
+    with pytest.raises(TypeError, match="DrawControl"):
+        r.drawn_features()
+    m2 = leaflet_map(widget_session)  # still no DrawControl
+    r._widget = m2
+    r._accessors.on_render(m2)
+    with pytest.raises(TypeError, match="DrawControl"):
+        r.drawn_features()
+
+
+def test_rerender_dropping_draw_control_renders_but_read_raises(
+    widget_session: Session,
+) -> None:
+    m = leaflet_map(widget_session)
+    with session_context(widget_session):
+        m.add(L.DrawControl())
+    r = renderer(m)
+    assert r.drawn_features() == []  # read once, so re-renders re-attach
+    # A re-render returning a map without a DrawControl renders fine...
+    m2 = leaflet_map(widget_session)
+    r._widget = m2
+    r._accessors.on_render(m2)
+    # ...and only drawn_features() raises, when read
+    with pytest.raises(TypeError, match="DrawControl"):
+        r.drawn_features()
+    assert r.zoom() == 4  # the other accessors are unaffected
 
 
 def test_accessors_reject_non_ipyleaflet_widgets(widget_session: Session) -> None:

@@ -138,7 +138,11 @@ from ._dependencies import widget_pkg
 from ._embedding_atlas import EMBEDDING_ATLAS_ACCESSORS, rows_for_predicate
 from ._ipyaladin import IPYALADIN_ACCESSORS
 from ._ipydatagrid import IPYDATAGRID_ACCESSORS
-from ._ipyleaflet import IPYLEAFLET_ACCESSORS
+from ._ipyleaflet import (
+    IPYLEAFLET_ACCESSORS,
+    NO_DRAW_CONTROL,
+    NO_DRAW_CONTROL_MESSAGE,
+)
 from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
 from ._k3d import CAMERA as K3D_CAMERA
@@ -906,7 +910,13 @@ class _IpyleafletAccessors:
         ``DrawControl`` -- add one with ``m.add(DrawControl())`` (leafmap adds
         one by default).
         """
-        return cast(List[Dict[str, Any]], self._read_accessor("drawn_features"))
+        # The attach emits the NO_DRAW_CONTROL sentinel rather than raising
+        # (it runs during render, where a raise would break the output), so
+        # the missing control is reported here, at read time.
+        raw = self._read_accessor("drawn_features", raw=True)
+        if raw is NO_DRAW_CONTROL:
+            raise TypeError(NO_DRAW_CONTROL_MESSAGE)
+        return cast(List[Dict[str, Any]], raw)
 
 
 class render_ipyleaflet(_IpyleafletAccessors, render_widget_base[ValueT, LeafletMap]):
