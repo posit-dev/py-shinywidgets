@@ -3,6 +3,7 @@ import asyncio
 import pytest
 import shinywidgets._accessors as acc
 import shinywidgets._render_widget_base as rwb
+import shinywidgets._shinywidgets as sw
 from shiny import reactive as shiny_reactive
 from shiny.reactive._core import Context
 from shiny.reactive._extended_task import DenialContext
@@ -312,6 +313,51 @@ def test_render_attaches_accessors_to_the_coerced_widget(monkeypatch) -> None:
     assert r.clicked() is None
     att.emit({"x": 1})
     assert r.clicked() == {"x": 1}
+
+
+class ModuleScope:
+    """A module's session: destroying it doesn't end the root session."""
+
+    def __init__(self) -> None:
+        self.on_destroy_fns: list = []
+
+    def is_stub_session(self) -> bool:
+        return False
+
+    def root_scope(self) -> "ModuleScope":
+        return self
+
+    def on_ended(self, fn) -> None:  # type: ignore[no-untyped-def]
+        pass
+
+    def on_destroy(self, fn) -> None:  # type: ignore[no-untyped-def]
+        self.on_destroy_fns.append(fn)
+
+    def destroy(self) -> None:
+        for fn in self.on_destroy_fns:
+            fn()
+
+
+def test_destroying_the_module_scope_detaches_accessors(monkeypatch) -> None:
+    # A destroyed scope's reactive values raise when set, so a listener (or a
+    # pending debounce) publishing after destroy() would error
+    att = RecordingAttach()
+    r = renderer_with_clicked(att)
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    scope = ModuleScope()
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
+    monkeypatch.setattr(rwb, "get_current_session", lambda: scope)
+    monkeypatch.setattr(sw, "foreign_or_closed_widget", lambda widget, root: None)
+    monkeypatch.setattr(sw, "open_process_global_widgets", lambda widget, root: None)
+    asyncio.run(r._render())
+    scope.destroy()
+    att.emit({"x": 1})
+    with shiny_reactive.isolate():
+        assert r._accessors.values["clicked"].get().raw is None
 
 
 def test_accessor_read_registers_current_context(monkeypatch) -> None:

@@ -113,7 +113,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._accessors = Accessors(
             type(self).accessor_specs, rate_policy=rate_policy, rate_delay=rate_delay
         )
-        self._closes_accessors_on_session_end = False
+        self._closes_accessors_on_destroy = False
 
     async def render(self) -> Jsonifiable | None:
         with WidgetRenderContext():
@@ -179,10 +179,12 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         if (
             session is not None
             and not session.is_stub_session()
-            and not self._closes_accessors_on_session_end
+            and not self._closes_accessors_on_destroy
         ):
-            session.on_ended(self._accessors.close)
-            self._closes_accessors_on_session_end = True
+            # Fires at session end, and when a module's scope is destroyed
+            # (whose values then raise if a listener or timer sets them)
+            session.on_destroy(self._accessors.close)
+            self._closes_accessors_on_destroy = True
 
         # Don't actually display anything unless this is a DOMWidget
         if not isinstance(widget, DOMWidget):
