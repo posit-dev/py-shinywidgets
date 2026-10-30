@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from mosaic_widget import MosaicWidget
 from shiny import App, reactive, render, ui
-from shinywidgets import output_widget, reactive_read, render_mosaic_widget
+from shinywidgets import output_widget, render_mosaic_widget
 
 rng = np.random.default_rng(1)
 n = 2000
@@ -83,11 +83,10 @@ def server(input, output, session):
 
     @reactive.calc
     def selected():
-        # The widget's `params` trait changes whenever a brush changes
-        reactive_read(dashboard.widget, "params")
-        # A lazy DuckDB relation: aggregate it in DuckDB rather than pulling every
-        # selected row into pandas
-        return dashboard.widget.data()
+        # The dashboard's selections, debounced while brushing; data() runs a
+        # lazy DuckDB relation filtered by them
+        dashboard.params()
+        return dashboard.data()
 
     @render.text
     def n_selected():

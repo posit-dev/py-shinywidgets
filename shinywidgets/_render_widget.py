@@ -57,6 +57,9 @@ if TYPE_CHECKING:
     from k3d.plot import Plot as K3dPlot
     from keplergl import KeplerGl
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
+    from lonboard.view_state import (  # pyright: ignore[reportMissingImports]
+        BaseViewState,
+    )
     from maplibre.ipywidget import MapWidget
     from maplibre.map import Map as MaplibreMap
     from matplotlib.backend_bases import MouseEvent, PickEvent
@@ -135,13 +138,23 @@ from ._dependencies import widget_pkg
 from ._embedding_atlas import EMBEDDING_ATLAS_ACCESSORS, rows_for_predicate
 from ._ipyaladin import IPYALADIN_ACCESSORS
 from ._ipydatagrid import IPYDATAGRID_ACCESSORS
+from ._ipyleaflet import (
+    IPYLEAFLET_ACCESSORS,
+    NO_DRAW_CONTROL,
+    NO_DRAW_CONTROL_MESSAGE,
+    NotIpyleaflet,
+)
 from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
 from ._k3d import CAMERA as K3D_CAMERA
+from ._lonboard import LONBOARD_ACCESSORS
 from ._matplotlib import CLICKED, MATPLOTLIB_ACCESSORS, AxesLimits
+from ._mosaic_widget import MOSAIC_ACCESSORS
 from ._niivue import LOCATION
+from ._perspective import PERSPECTIVE_ACCESSORS
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._pythreejs import CAMERA as PYTHREEJS_CAMERA
+from ._quak import QUAK_ACCESSORS
 from ._reactable import REACTABLE_ACCESSORS
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 from ._rerun import SELECTION
@@ -841,7 +854,83 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
         return cast(Aladin, self._widget).fov
 
 
-class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
+class _IpyleafletAccessors:
+    """Accessor methods shared by render_ipyleaflet and render_leafmap (whose
+    ipyleaflet backend is an ipyleaflet.Map)."""
+
+    if TYPE_CHECKING:
+        # Defined by render_widget_base; declared so the mixin type-checks
+        def _read_accessor(self, name: str, *, raw: bool = False) -> object: ...
+
+    def _read_ipyleaflet(self, name: str) -> object:
+        # A non-ipyleaflet backend (render_leafmap) is reported by the attach
+        # as a sentinel rather than a raise (attach runs during render, where
+        # a raise would break the output), so it's reported here, at read
+        # time.
+        raw = self._read_accessor(name, raw=True)
+        if isinstance(raw, NotIpyleaflet):
+            raise TypeError(raw.message)
+        return raw
+
+    def bounds(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+        """
+        The map's viewport as ``((south, west), (north, east))`` in
+        ``[lat, lng]`` order.
+
+        Cancels (like a not-yet-rendered output) until the browser first
+        reports it -- no ``req()`` guard needed. One update per pan or zoom,
+        at gesture end, so not rate-limited. Reading it in a hidden (e.g.
+        inactive tab) map reports the browser's last known bounds, which
+        ipyleaflet may corrupt while hidden -- guard with your own visibility
+        check if that matters (see ``examples/superzip``).
+        """
+        return cast(
+            Tuple[Tuple[float, float], Tuple[float, float]],
+            self._read_ipyleaflet("bounds"),
+        )
+
+    def zoom(self) -> float:
+        """
+        The map's current zoom level (``float``). Also fires when Python sets
+        ``zoom``. Not rate-limited.
+        """
+        return cast(float, self._read_ipyleaflet("zoom"))
+
+    def center(self) -> List[float]:
+        """
+        The map's current center as ``[lat, lng]``. Not rate-limited.
+        """
+        return cast(List[float], self._read_ipyleaflet("center"))
+
+    def clicked(self) -> Optional[Dict[str, Any]]:
+        """
+        The most recent map click as ipyleaflet reports it: a dict with
+        ``coordinates: [lat, lng]`` (note the order; lonboard reports
+        ``(lng, lat)``), or ``None`` until the first click. A double-click
+        fires two clicks (the ``dblclick`` itself is ignored), and marker
+        clicks don't bubble up to the map -- use a layer's own ``on_click``
+        for those.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_ipyleaflet("clicked"))
+
+    def drawn_features(self) -> List[Dict[str, Any]]:
+        """
+        The shapes drawn on the map's ``ipyleaflet.DrawControl``, as a list
+        of GeoJSON Feature dicts (``[]`` until something is drawn; edits and
+        deletions update it). Raises ``TypeError`` if the map has no
+        ``DrawControl`` -- add one with ``m.add(DrawControl())`` (leafmap adds
+        one by default).
+        """
+        # The attach emits sentinels rather than raising (it runs during
+        # render, where a raise would break the output): a non-ipyleaflet
+        # backend or a missing DrawControl is reported here, at read time.
+        raw = self._read_ipyleaflet("drawn_features")
+        if raw is NO_DRAW_CONTROL:
+            raise TypeError(NO_DRAW_CONTROL_MESSAGE)
+        return cast(List[Dict[str, Any]], raw)
+
+
+class render_ipyleaflet(_IpyleafletAccessors, render_widget_base[ValueT, LeafletMap]):
     """
     Reactively render an [ipyleaflet](https://ipyleaflet.readthedocs.io) map as a Shiny
     output.
@@ -853,14 +942,30 @@ class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
     most recently returned by the render function, and `.widget`, the rendered
     `Map` instance. Use `.widget` to programmatically update the rendered map in
     place (e.g., change its `zoom` or `center`, or add layers; trait changes on the
-    widget are synced to the browser), or to reactively read map state (e.g., `zoom`,
-    `center`, `bounds`) with :func:`~shinywidgets.reactive_read`.
+    widget are synced to the browser), or to reactively read map state with
+    :func:`~shinywidgets.reactive_read`.
 
     In a filling layout, the map fills its container unless it has its own height
     (e.g., ``Layout(height="300px")``). Default heights set by a subclass (e.g.,
     leafmap's 600px) are treated as unset.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Reacting to the map**: read the map's accessors in a reactive function
+    (a ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``),
+    which re-runs whenever the user gestures, much like ``input.my_slider()``:
+
+    * ``map.bounds()``: the viewport, ``((south, west), (north, east))``.
+    * ``map.zoom()`` and ``map.center()``: the camera.
+    * ``map.clicked()``: the most recent map click.
+    * ``map.drawn_features()``: the shapes drawn on the map's DrawControl.
+
+    Coordinates are ``[lat, lng]``, as ipyleaflet reports them (lonboard is
+    ``(lng, lat)``). The accessors can't be read inside this output's own
+    render function, which builds a new map each time it runs. For anything
+    beyond them, use :func:`~shinywidgets.reactive_read` on ``map.widget``.
 
     Parameters
     ----------
@@ -877,7 +982,17 @@ class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = IPYLEAFLET_ACCESSORS
 
 
 class render_ipysigma(render_widget_base[ValueT, Sigma]):
@@ -1672,7 +1787,7 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
         return cast("Camera", camera)
 
 
-class render_leafmap(render_widget_base[ValueT, LeafletMap]):
+class render_leafmap(_IpyleafletAccessors, render_widget_base[ValueT, LeafletMap]):
     """
     Reactively render a [leafmap](https://leafmap.org) map as a Shiny output.
 
@@ -1704,10 +1819,16 @@ class render_leafmap(render_widget_base[ValueT, LeafletMap]):
     widget. Use `.widget` to programmatically update the rendered map in place
     (e.g., change its `zoom` or `center`, or add layers; trait changes on the
     widget are synced to the browser), or to reactively read map state with
-    :func:`~shinywidgets.reactive_read`, e.g. ``zoom``/``center``/``bounds`` for
-    the ipyleaflet backend, or ``view_state``/``clicked`` for the maplibre one.
+    :func:`~shinywidgets.reactive_read`.
     The Plotly backend is already a `FigureWidget`, so it is rendered directly;
     `.value` retains the original map and its leafmap methods.
+
+    On the ipyleaflet backend (the default), the map has the same accessors as
+    :class:`render_ipyleaflet` -- ``bounds()``, ``zoom()``, ``center()``,
+    ``clicked()``, and ``drawn_features()``. On the maplibre, plotly, and
+    kepler backends they raise a `TypeError`; read those backends' state with
+    :func:`~shinywidgets.reactive_read` instead (e.g., ``view_state`` for the
+    maplibre one).
 
     Note
     ----
@@ -1732,7 +1853,17 @@ class render_leafmap(render_widget_base[ValueT, LeafletMap]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = IPYLEAFLET_ACCESSORS
 
 
 class render_lonboard(render_widget_base[ValueT, LonboardMap]):
@@ -1756,6 +1887,23 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ---
+    **Reacting to the map**: read the map's accessors in a reactive function
+    (a ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``),
+    which re-runs whenever the user gestures, much like ``input.my_slider()``:
+
+    * ``map.view_state()``: the camera (longitude, latitude, zoom, pitch,
+      bearing).
+    * ``map.selected_index()``: the most recently picked row, across layers.
+    * ``map.selected_bounds()``: the bbox dragged with the Select BBox control.
+    * ``map.clicked()``: the most recent map click, as ``(lng, lat)`` -- note
+      the order; ipyleaflet reports ``[lat, lng]``.
+
+    They can't be read inside this output's own render function, which builds
+    a new map each time it runs. For anything beyond them, use
+    :func:`~shinywidgets.reactive_read` on ``map.widget``.
+
     Parameters
     ----------
     width
@@ -1771,7 +1919,68 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = LONBOARD_ACCESSORS
+
+    def view_state(self) -> "BaseViewState":
+        """
+        The map's current view state: a `lonboard.view_state.MapViewState` (or
+        `GlobeViewState`) dataclass with ``longitude``, ``latitude``, ``zoom``,
+        ``pitch``, and ``bearing``, in lng/lat order.
+
+        Available as soon as the map has rendered (it's computed from the
+        layers), and updated by the browser after each pan or zoom -- lonboard
+        reports ~300 ms after the gesture settles, so no rate limit is
+        applied. Never ``None`` once rendered; the map is immutable per
+        render, so a re-render starts from the new map's own view state.
+        """
+        return cast("BaseViewState", self._read_accessor("view_state"))
+
+    def selected_index(self) -> Optional[int]:
+        """
+        The positional index of the most recently picked row, as
+        ``gdf.iloc[map.selected_index()]``, or ``None`` until the first pick.
+
+        With several pickable layers this is the most recent pick across all
+        of them; it doesn't say which layer, and picking the same index on two
+        different layers in a row doesn't re-fire -- with several pickable
+        layers, observe each layer yourself instead:
+        ``reactive_read(layer, "selected_index")``. A layer only reports when
+        ``pickable=True`` (the default). Picking the same row of the same
+        layer twice doesn't re-fire (the trait only changes when the value
+        does), and clicking empty space doesn't clear it.
+        """
+        return cast(Optional[int], self._read_accessor("selected_index"))
+
+    def selected_bounds(self) -> Optional[Tuple[float, float, float, float]]:
+        """
+        The bounding box the user dragged with the map's built-in Select BBox
+        control, as ``(minx, miny, maxx, maxy)`` -- i.e. (west, south, east,
+        north) in lng/lat -- or ``None`` until the first selection.
+        """
+        return cast(
+            Optional[Tuple[float, float, float, float]],
+            self._read_accessor("selected_bounds"),
+        )
+
+    def clicked(self) -> Optional[Tuple[float, float]]:
+        """
+        The ``(lng, lat)`` of the most recent map click -- note the order;
+        ipyleaflet reports ``[lat, lng]`` -- or ``None`` until the first
+        click. Clicking the same spot twice doesn't re-fire. Reading this is
+        what enables click reporting in the browser (registering the handler
+        flips the map's ``_has_click_handlers`` trait).
+        """
+        return cast(Optional[Tuple[float, float]], self._read_accessor("clicked"))
 
     def _as_widget(self, value: ValueT) -> LonboardMap:
         if isinstance(value, Widget):
@@ -2138,14 +2347,25 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     The decorated function also gains two read-only attributes: `.value` and
     `.widget`, which are both the rendered `MosaicWidget` instance. Use `.widget`
     to programmatically update the rendered dashboard in place (trait changes on the
-    widget are synced to the browser), or to reactively read widget state (e.g., the
-    `params` trait, which holds the current selections) with
+    widget are synced to the browser), or to reactively read widget state with
     :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Note
     ----
+    **Reacting to selections**: read the dashboard's accessors in a reactive
+    function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which re-runs whenever the user brushes, much like
+    ``input.my_slider()``:
+
+    * ``dashboard.params()``: the current selection params.
+    * ``dashboard.data()``: the rows matching them, as a lazy DuckDB relation.
+
+    They can't be read inside this output's own render function, which builds
+    a new dashboard each time it runs. For anything beyond them, use
+    :func:`~shinywidgets.reactive_read` on ``dashboard.widget``.
+
     Mosaic runs its queries server-side, in the DuckDB connection the widget holds,
     so which connection that is decides what each Shiny session can see. DataFrames
     passed as ``data=`` are registered in a fresh in-memory connection per widget,
@@ -2178,7 +2398,51 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`params` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = MOSAIC_ACCESSORS
+
+    def params(self) -> Dict[str, Any]:
+        """
+        The dashboard's current selection params: ``{name: {"value": ...,
+        "predicate": ...}}`` for each active selection, ``{}`` while nothing
+        is selected.
+
+        ``predicate`` is the selection's clauses ANDed together (ready to
+        embed in SQL); ``value`` is the latest value only. Updates are
+        debounced (250 ms) by default while the user drags a brush -- see the
+        ``rate_policy`` and ``rate_delay`` parameters.
+        """
+        return cast(Dict[str, Any], self._read_accessor("params"))
+
+    def data(self, table: Optional[str] = None) -> "duckdb.DuckDBPyRelation":
+        """
+        The rows of a source table matching the current selections, as a lazy
+        DuckDB relation (materialize it with ``.df()``, ``.pl()``, or
+        ``.aggregate(...)``).
+
+        `table` names the source table to query and may be omitted when the
+        spec and the registered data name exactly one. Re-reads whenever
+        :meth:`params` changes and runs the query on each read, so prefer
+        calling it once inside a ``@reactive.calc``.
+
+        Note that this queries the widget's live ``params`` trait: while a
+        brush is settling, the live value can be up to ``rate_delay`` (250 ms
+        by default) ahead of the debounced value :meth:`params` returns, and
+        the two reconverge when the debounce settles. (MosaicWidget builds
+        its filter SQL internally from the live trait, so the published
+        value can't be substituted.)
+        """
+        self.params()  # take the dependency
+        return cast(MosaicWidget, self._widget).data(table)
 
 
 class render_obsplot(render_widget_base[ObsplotWidget, ObsplotWidget]):
@@ -2653,13 +2917,27 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
     most recently returned by the render function, and `.widget`, the rendered
     `PerspectiveWidget` instance. Use `.widget` to programmatically update the rendered
     viewer in place (e.g., `.widget.update()` streams new rows, and trait changes are
-    synced to the browser), or to reactively read widget state (e.g., `plugin`,
-    `group_by`, `sort`, or `filter`) with :func:`~shinywidgets.reactive_read`.
+    synced to the browser), or to reactively read widget state with
+    :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Note
     ---
+    **Reacting to the viewer's state**: read the viewer's accessors in a
+    reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which re-runs whenever the user changes it, much
+    like ``input.my_slider()``:
+
+    * ``grid.filter()``: the viewer's current filters.
+    * ``grid.view_config()``: the viewer's structural configuration (plugin,
+      columns, group/split by, aggregates, sort, filter, expressions).
+
+    They can't be read inside this output's own render function, which builds
+    a new viewer each time it runs. For anything beyond them (e.g.,
+    ``theme`` or ``title``), use :func:`~shinywidgets.reactive_read` on
+    ``grid.widget``.
+
     Perspective keeps every table it hosts in memory for the life of the process, so a
     table created from a DataFrame is not freed when the output re-renders. To change
     the data, prefer updating the existing viewer in place: `.widget.update(df)`
@@ -2691,7 +2969,45 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = PERSPECTIVE_ACCESSORS
+
+    def filter(self) -> List[list]:
+        """
+        The viewer's current filters, as ``[[column, op, value], ...]`` (e.g.
+        ``[["x", ">", 1]]``); ``[]`` while nothing is filtered.
+
+        Edits made in the viewer's settings panel sync back to Python. Not
+        rate-limited (filter edits are discrete gestures, and the renderer's
+        ``rate_policy``/``rate_delay`` parameters don't apply to it -- they
+        only govern accessors that declare a default, plus
+        :func:`~shinywidgets.reactive_read` on the widget).
+        """
+        return cast(List[list], self._read_accessor("filter"))
+
+    def view_config(self) -> Dict[str, Any]:
+        """
+        The viewer's current configuration as a dict with the keys ``plugin``,
+        ``columns``, ``group_by``, ``split_by``, ``aggregates``, ``sort``,
+        ``filter``, and ``expressions`` -- the subset of
+        ``PerspectiveWidget.save()`` that determines the rows shown, so
+        cosmetic changes (opening the settings panel, switching the theme)
+        don't re-fire it. ``plugin`` is viewer-only (it says how the rows are
+        displayed, not which rows), so exclude it before reproducing the
+        rows: ``widget.table.view(**{k: v for k, v in cfg.items() if k !=
+        "plugin"})``. Row clicks and selections never reach Python. Not
+        rate-limited.
+        """
+        return cast(Dict[str, Any], self._read_accessor("view_config"))
 
     def _as_widget(self, value: ValueT) -> PerspectiveWidget:
         # DataFrames are generic types that other renderers accept too, so
@@ -3766,15 +4082,26 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `quak.Widget` instance. Use `.widget` to reactively read the table's state with
-    :func:`~shinywidgets.reactive_read`: `reactive_read(table.widget, "sql")` is the
-    SQL query for the table's current sort and filter state, and
-    `table.widget.data()` runs it, returning a DuckDB relation of the matching rows.
-    The query is an empty string while the table starts up (so guard with
-    ``req(reactive_read(table.widget, "sql"))``), and it's read-only: setting it from
-    Python doesn't change the table.
+    `quak.Widget` instance. Use `.widget` to programmatically update the rendered
+    table in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Reacting to the table's state**: read the table's accessors in a
+    reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which re-runs whenever the user sorts or brushes,
+    much like ``input.my_slider()``:
+
+    * ``table.sql()``: the SQL query for the table's current sort and filter
+      state.
+    * ``table.data()``: the matching rows, as a lazy DuckDB relation.
+
+    They can't be read inside this output's own render function, which builds
+    a new table each time it runs. For anything beyond them, use
+    :func:`~shinywidgets.reactive_read` on ``table.widget``.
 
     Parameters
     ----------
@@ -3791,7 +4118,49 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`sql` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = QUAK_ACCESSORS
+
+    def sql(self) -> str:
+        """
+        The SQL query for the table's current sort and filter state (a `str`).
+
+        Brush quak's column histograms or sort a column and this query updates,
+        debounced (250 ms) by default -- see the ``rate_policy`` and
+        ``rate_delay`` parameters. While the table initializes the query is
+        briefly empty, in which case reading this cancels (like reading an
+        output that hasn't rendered yet), so no ``req()`` guard is needed. The
+        query is read-only: setting it from Python doesn't change the table.
+        """
+        return cast(str, self._read_accessor("sql"))
+
+    def data(self) -> "duckdb.DuckDBPyRelation":
+        """
+        The rows matching the current sort and filter, as a lazy DuckDB
+        relation (materialize it with ``.df()``, ``.pl()``, or
+        ``.aggregate(...)``).
+
+        Re-reads whenever :meth:`sql` changes and runs the query on each read,
+        so prefer calling it once inside a ``@reactive.calc`` and sharing the
+        result over calling it in several outputs. Runs the published query
+        that :meth:`sql` returns, so the two always describe the same state
+        (even inside the debounce window).
+        """
+        # Run the published (debounced) query, not the live `sql` trait:
+        # quak's own data() is `self._conn.query(self.sql)`, so this is the
+        # same query path with the published sql (`_conn` is
+        # upstream-internal).
+        sql = self.sql()  # take the dependency (and cancel until the query is ready)
+        return cast(QuakWidget, self._widget)._conn.query(sql)
 
     # DataFrames are a generic type that several renderers accept, so rather than
     # registering them in AS_WIDGET_MAP, coerce them here
