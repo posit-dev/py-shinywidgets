@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
+    from astropy.coordinates import Angle, Latitude, Longitude, SkyCoord
+    from astropy.table import Table
     from bokeh.events import RangesUpdate, Tap
     from bqplot import Figure as BqplotFigure
     from drawdata import BarWidget as DrawdataBarWidget
@@ -110,6 +112,7 @@ else:
     ) = RerunNotebookViewer = NiiVue = object
     Reactable = ReactableWidget = object
     MouseEvent = PickEvent = SelectionChangeEvent = object
+    Angle = Latitude = Longitude = SkyCoord = Table = object
 
 from shiny.render.renderer import ValueFn
 
@@ -128,6 +131,7 @@ from ._bqplot import BPLOT_ACCESSORS
 from ._cytoscape import CYTOSCAPE_ACCESSORS
 from ._dependencies import widget_pkg
 from ._embedding_atlas import EMBEDDING_ATLAS_ACCESSORS, rows_for_predicate
+from ._ipyaladin import IPYALADIN_ACCESSORS
 from ._ipydatagrid import IPYDATAGRID_ACCESSORS
 from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
@@ -710,12 +714,23 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
 
     Note
     ---
-    **Reactive state**: the viewer's center and field of view are synced from the
-    browser to the ``_target`` (a ``"ra dec"`` string, in degrees) and ``_fov``
-    (degrees) traits, so panning or zooming the sky can drive a reactive
-    calculation (e.g., ``reactive_read(sky.widget, "_target")``). The public
-    ``.target``/``.fov`` properties (an astropy `SkyCoord`/`Angle`) parse these
-    traits, but are not themselves traits, so they can't be read reactively.
+    **Reacting to user interaction**: the output has methods that read what
+    the user does in the viewer, much like ``input.my_slider()`` reads an
+    input. Call them in a reactive function (a ``@render.*`` function,
+    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
+    the interaction changes:
+
+    * ``clicked_object()``: the catalog source most recently clicked.
+    * ``selected_objects()``: the catalog sources inside the current box
+      selection (needs selection mode armed, e.g.
+      ``.widget.selection("rectangle")``).
+    * ``target()``: the sky position at the center of the view.
+    * ``fov()``: the view's field of view.
+
+    ``clicked_object()`` returns ``None`` until a source is clicked, and
+    resets to ``None`` on re-render. The others are seeded from the viewer's
+    state at render (they never return ``None``) and follow every pan, zoom,
+    or selection -- and Python-side ``.widget.target = ...`` assignments too.
 
     **Updating in place**: ipyaladin queues method calls (e.g.,
     ``.widget.add_table()``) until the viewer has loaded in the browser, but
@@ -723,11 +738,10 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
     effects that set them on ``reactive_read(sky.widget, "_is_loaded")``. Don't
     gate on the ``_ready`` trait instead: ipyaladin 0.8.1 never sets it.
 
-    **Interacting with catalogs**: clicking a catalog source syncs it to the
-    ``clicked_object`` trait, and box-selecting
-    (``.widget.selection("rectangle")``) syncs the sources inside to
-    ``_selected_objects`` — both work with
-    :func:`~shinywidgets.reactive_read`. Prefer these traits over
+    **Interacting with catalogs**: ``clicked_object()`` and
+    ``selected_objects()`` (above) cover the common cases; the trait-level
+    equivalents (``clicked_object`` and ``_selected_objects``) also work with
+    :func:`~shinywidgets.reactive_read`. Prefer any of these over
     ``.widget.set_listener()``: in ipyaladin 0.8.x listener callbacks are
     shared across all `Aladin` instances, so they are not session-safe in a
     multi-user Shiny app. When setting ``.widget.target`` in place, use a
@@ -755,7 +769,71 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
+        ``reactive_read()`` unlimited; no accessor on this renderer declares
+        a default.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables
+        rate limiting.
     """
+
+    accessor_specs = IPYALADIN_ACCESSORS
+
+    def clicked_object(self) -> Optional[Dict[str, Any]]:
+        """
+        The catalog source the user most recently clicked, as a dict with
+        ``ra``, ``dec``, and ``data`` (the source's catalog row).
+
+        Returns ``None`` until the user clicks a source, and resets to
+        ``None`` on re-render, so use ``req(sky.clicked_object())`` to wait
+        for a click. (Unlike the ``clicked_object`` trait, this is
+        message-backed, so it works per instance.) Clicking the same source
+        twice doesn't fire twice. Not rate-limited.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("clicked_object"))
+
+    def selected_objects(self) -> List[Table]:
+        """
+        The catalog sources inside the current selection, as a list of
+        astropy `Table`s (one per catalog).
+
+        ``[]`` from mount until the user selects, which needs selection mode
+        armed first (e.g., ``.widget.selection("rectangle")``). Seeded at
+        render, so it never returns ``None``; reading before the first render
+        cancels silently (like ``req(False)``). Not rate-limited.
+        """
+        self._read_accessor("selected_objects")
+        return cast(Aladin, self._widget).selected_objects
+
+    def target(self) -> Union[SkyCoord, Tuple[Longitude, Latitude]]:
+        """
+        The sky position at the center of the view, as an astropy `SkyCoord`
+        (a ``(Longitude, Latitude)`` tuple for planetary surveys).
+
+        Seeded at render and follows every pan (and Python-side
+        ``.widget.target = ...`` assignments); reading before the first
+        render cancels silently (like ``req(False)``). Not rate-limited.
+        """
+        self._read_accessor("target")
+        # ipyaladin annotates the property as `SkyCoord | tuple[float, float]`,
+        # but the tuple actually holds a (Longitude, Latitude) pair
+        return cast(
+            Union["SkyCoord", Tuple["Longitude", "Latitude"]],
+            cast(Aladin, self._widget).target,
+        )
+
+    def fov(self) -> Angle:
+        """
+        The view's field of view, as an astropy `Angle`.
+
+        Seeded at render and follows every zoom (and Python-side
+        ``.widget.fov = ...`` assignments); reading before the first render
+        cancels silently (like ``req(False)``). Not rate-limited.
+        """
+        self._read_accessor("fov")
+        return cast(Aladin, self._widget).fov
 
 
 class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
