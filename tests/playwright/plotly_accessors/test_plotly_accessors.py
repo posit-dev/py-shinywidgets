@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from playwright.sync_api import Page, expect
-from tests.playwright.conftest import assert_no_unexpected_errors, collect_errors
+from tests.playwright.conftest import (
+    assert_no_unexpected_errors,
+    collect_errors,
+    expose_manager,
+)
 
 # Page coordinates of a data point, via plotly.js's axis conversions.
 POINT_JS = """([id, x, y]) => {
@@ -94,9 +98,81 @@ def test_plotly_accessors_follow_real_gestures(page: Page, local_app) -> None:
 def test_plotly_accessors_on_an_app_defined_figure_subclass(
     page: Page, local_app
 ) -> None:
+    # DIAGNOSTIC (test PR): capture console + click internals on failure
+    console: list[str] = []
+    page.on("console", lambda msg: console.append(f"{msg.type}: {msg.text[:200]}"))
+    page.on("pageerror", lambda err: console.append(f"pageerror: {str(err)[:200]}"))
+    page.route("**/output.js", expose_manager)
     page.goto(local_app.url)
-    expect(page.locator("#sub_plot .js-plotly-plot")).to_have_count(1, timeout=30000)
-    expect(page.locator("#sub_clicked")).to_have_text("None", timeout=10000)
+    try:
+        expect(page.locator("#sub_plot .js-plotly-plot")).to_have_count(
+            1, timeout=30000
+        )
+        expect(page.locator("#sub_clicked")).to_have_text("None", timeout=10000)
 
-    page.locator("#sub_plot").scroll_into_view_if_needed()
-    click_until_bound(page, 3, 9, id="sub_plot", out="sub_clicked", text="3")
+        page.locator("#sub_plot").scroll_into_view_if_needed()
+        click_until_bound(page, 3, 9, id="sub_plot", out="sub_clicked", text="3")
+    except Exception:
+        # Record every model.send and plotly_click listener invocation, then
+        # fire one more real click and one synthetic click to see what happens
+        diag = page.evaluate(
+            """async () => {
+              const out = document.querySelector('#sub_plot');
+              const gd = document.querySelector('#sub_plot .js-plotly-plot');
+              const models = window.widgetManager
+                ? await Promise.all(
+                    Object.values(window.widgetManager._models).map((p) => p.catch(() => null))
+                  )
+                : null;
+              window.__log = [];
+              for (const m of (models || []).filter((m) => m)) {
+                if (!m.__sendPatched) {
+                  m.__sendPatched = true;
+                  const orig = m.send.bind(m);
+                  m.send = (content, callbacks, buffers) => {
+                    window.__log.push('send:' + JSON.stringify(content).slice(0, 150));
+                    return orig(content, callbacks, buffers);
+                  };
+                }
+              }
+              if (gd && !gd.__clickPatched) {
+                gd.__clickPatched = true;
+                gd.on('plotly_click', (d) => window.__log.push('plotly_click:' + JSON.stringify(d && d.points && d.points[0]).slice(0, 150)));
+              }
+              const listeners = gd && gd._ev ? Object.keys(gd._ev._events || {}) : null;
+              return {
+                graphPresent: !!gd,
+                fullLayout: !!(gd && gd._fullLayout),
+                graphRect: gd && gd.getBoundingClientRect().toJSON(),
+                plotlyListeners: listeners,
+                nModels: models ? models.filter((m) => m).length : 'no manager',
+                models: models && models.filter((m) => m).map((m) => ({
+                  name: m.get('_model_name'),
+                  module: m.get('_model_module'),
+                  views: Object.keys(m.views || {}).length,
+                  hasAnimateTrait: '_py2js_animate' in (m.attributes || {}),
+                })),
+              };
+            }"""
+        )
+        # real click, recorded
+        page.mouse.click(*point(page, 3, 9, id="sub_plot"))
+        page.wait_for_timeout(2000)
+        after_real = page.evaluate("() => window.__log")
+        real_text = page.locator("#sub_clicked").inner_text()
+        # synthetic click
+        page.evaluate(
+            """() => {
+              const gd = document.querySelector('#sub_plot .js-plotly-plot');
+              gd.emit('plotly_click', {points: [{curveNumber: 0, pointNumber: 0, x: 1, y: 1}]});
+            }"""
+        )
+        page.wait_for_timeout(2000)
+        after_synth = page.evaluate("() => window.__log")
+        synth_text = page.locator("#sub_clicked").inner_text()
+        raise AssertionError(
+            f"diag: {diag}\n"
+            f"after real click: text={real_text!r} log={after_real}\n"
+            f"after synthetic: text={synth_text!r} log={after_synth}\n"
+            "console (last 40):\n" + "\n".join(console[-40:])
+        )
