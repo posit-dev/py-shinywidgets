@@ -139,6 +139,7 @@ from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
 from ._k3d import CAMERA as K3D_CAMERA
 from ._matplotlib import CLICKED, MATPLOTLIB_ACCESSORS, AxesLimits
+from ._mosaic_widget import MOSAIC_ACCESSORS
 from ._niivue import LOCATION
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._pythreejs import CAMERA as PYTHREEJS_CAMERA
@@ -2139,14 +2140,25 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     The decorated function also gains two read-only attributes: `.value` and
     `.widget`, which are both the rendered `MosaicWidget` instance. Use `.widget`
     to programmatically update the rendered dashboard in place (trait changes on the
-    widget are synced to the browser), or to reactively read widget state (e.g., the
-    `params` trait, which holds the current selections) with
+    widget are synced to the browser), or to reactively read widget state with
     :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Note
     ----
+    **Reacting to selections**: read the dashboard's accessors in a reactive
+    function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which re-runs whenever the user brushes, much like
+    ``input.my_slider()``:
+
+    * ``dashboard.params()``: the current selection params.
+    * ``dashboard.data()``: the rows matching them, as a lazy DuckDB relation.
+
+    They can't be read inside this output's own render function, which builds
+    a new dashboard each time it runs. For anything beyond them, use
+    :func:`~shinywidgets.reactive_read` on ``dashboard.widget``.
+
     Mosaic runs its queries server-side, in the DuckDB connection the widget holds,
     so which connection that is decides what each Shiny session can see. DataFrames
     passed as ``data=`` are registered in a fresh in-memory connection per widget,
@@ -2179,7 +2191,44 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`params` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce and leaves
+        ``reactive_read()`` unlimited.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        limiting.
     """
+
+    accessor_specs = MOSAIC_ACCESSORS
+
+    def params(self) -> Dict[str, Any]:
+        """
+        The dashboard's current selection params: ``{name: {"value": ...,
+        "predicate": ...}}`` for each active selection, ``{}`` while nothing
+        is selected.
+
+        ``predicate`` is the selection's clauses ANDed together (ready to
+        embed in SQL); ``value`` is the latest value only. Updates are
+        debounced (250 ms) by default while the user drags a brush -- see the
+        ``rate_policy`` and ``rate_delay`` parameters.
+        """
+        return cast(Dict[str, Any], self._read_accessor("params"))
+
+    def data(self, table: Optional[str] = None) -> "duckdb.DuckDBPyRelation":
+        """
+        The rows of a source table matching the current selections, as a lazy
+        DuckDB relation (materialize it with ``.df()``, ``.pl()``, or
+        ``.aggregate(...)``).
+
+        `table` names the source table to query and may be omitted when the
+        spec and the registered data name exactly one. Re-reads whenever
+        :meth:`params` changes and runs the query on each read, so prefer
+        calling it once inside a ``@reactive.calc``.
+        """
+        self.params()  # take the dependency
+        return cast(MosaicWidget, self._widget).data(table)
 
 
 class render_obsplot(render_widget_base[ObsplotWidget, ObsplotWidget]):
