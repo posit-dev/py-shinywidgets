@@ -8,8 +8,7 @@ a frame by a selection's Vega "store", porting Vega's `selectionTest`.
 
 from __future__ import annotations
 
-import re
-from datetime import datetime, timedelta, timezone, tzinfo
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, Dict, Literal, Optional, Union
 from zoneinfo import ZoneInfo
 
@@ -138,11 +137,16 @@ def field_test(
     dtype = frame.schema[name]
     kind = field["type"]
     if dtype == nw.Date or dtype == nw.Datetime:
+        zone = getattr(dtype, "time_zone", None)
         if dtype == nw.Date:
             col = col.cast(nw.Datetime("us"))
-        # Convert the selection's UTC bounds to the column's time, rather than
-        # the column to UTC: localizing naive times can fail at DST changes.
-        value = to_column_time(value, getattr(dtype, "time_zone", None), local_tz)
+        if zone is not None:
+            # Compare instants: across a DST change, wall times can run
+            # backwards
+            col = col.dt.convert_time_zone("UTC")
+        # A naive column's times can't be converted to UTC (localizing fails
+        # at DST changes), so its bounds are converted to its time instead
+        value = to_column_time(value, zone is not None, local_tz)
     elif kind.startswith("R") and any(isinstance(v, str) for v in value):
         raise ValueError(
             f"The selection on {name!r} is a range of dates, but that column holds "
@@ -177,15 +181,15 @@ CLOSED: Dict[str, Literal["both", "left", "right", "none"]] = {
 }
 
 
-def to_column_time(value: Any, zone: Optional[str], local_tz: Optional[str]) -> Any:
+def to_column_time(value: Any, aware: bool, local_tz: Optional[str]) -> Any:
     """
     A Vega date (an ISO string or epoch milliseconds, always UTC) as a
-    datetime comparable to a column in time zone `zone`, or, for a tz-naive
-    column, as naive time in the browser's zone (`local_tz`), which is how
-    Vega reads naive dates.
+    datetime comparable to a column converted to UTC (`aware`), or, for a
+    tz-naive column, as naive time in the browser's zone (`local_tz`), which is
+    how Vega reads naive dates.
     """
     if isinstance(value, list):
-        return [to_column_time(v, zone, local_tz) for v in value]
+        return [to_column_time(v, aware, local_tz) for v in value]
     if isinstance(value, str):
         # Python < 3.11 can't parse a trailing Z
         moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -195,16 +199,6 @@ def to_column_time(value: Any, zone: Optional[str], local_tz: Optional[str]) -> 
         moment = datetime.fromtimestamp(value / 1000, tz=timezone.utc)
     else:
         return value
-    if zone is not None:
-        return moment.astimezone(column_zone(zone))
+    if aware:
+        return moment.astimezone(timezone.utc)
     return moment.astimezone(ZoneInfo(local_tz or "UTC")).replace(tzinfo=None)
-
-
-def column_zone(zone: str) -> tzinfo:
-    # pandas names a fixed-offset zone (e.g. from parsing "...+02:00") like
-    # "UTC+02:00", which isn't a ZoneInfo key
-    offset = re.fullmatch(r"UTC([+-])(\d{2}):(\d{2})", zone)
-    if offset is None:
-        return ZoneInfo(zone)
-    sign = 1 if offset[1] == "+" else -1
-    return timezone(sign * timedelta(hours=int(offset[2]), minutes=int(offset[3])))

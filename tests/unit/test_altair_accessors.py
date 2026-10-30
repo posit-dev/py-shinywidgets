@@ -205,6 +205,18 @@ def test_tz_aware_columns_compare_in_their_own_zone() -> None:
     assert sa.filter_selection(interval(brush), df, None)["y"].tolist() == [1, 2]
 
 
+@pytest.mark.parametrize("lib", ["pandas", "polars"])
+def test_tz_aware_brush_within_a_repeated_hour(lib: str) -> None:
+    # 2024-11-03 01:00-02:00 happens twice in America/Chicago: 06:45Z is 01:45
+    # CDT and 07:15Z is 01:15 CST, so the bounds' wall times run backwards
+    t = pd.date_range("2024-11-03 06:00", periods=13, freq="10min", tz="UTC")
+    df = pd.DataFrame({"t": t.tz_convert("America/Chicago"), "y": range(13)})
+    frame = df if lib == "pandas" else pl.from_pandas(df)
+    brush = [entry(("t", "R", ["2024-11-03T06:45:00Z", "2024-11-03T07:15:00Z"]))]
+    out = sa.filter_selection(interval(brush), frame, None)
+    assert list(out["y"]) == [5, 6, 7]  # 06:50Z, 07:00Z, 07:10Z
+
+
 def test_fixed_offset_columns_compare_in_their_offset() -> None:
     # pandas names a parsed "+02:00" column's zone "UTC+02:00", which isn't a
     # ZoneInfo key
