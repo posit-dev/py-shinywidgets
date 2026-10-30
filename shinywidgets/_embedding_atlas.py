@@ -11,7 +11,7 @@ widget for the filtered rows at read time.
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ._accessors import AccessorSpec, Emit
 
@@ -46,6 +46,45 @@ def attach_predicate(widget: EmbeddingAtlasWidget, emit: Emit) -> Callable[[], N
     widget.observe(on_change, "_predicate")
     emit(widget._predicate)
     return lambda: widget.unobserve(on_change, "_predicate")
+
+
+def rows_for_predicate(widget: EmbeddingAtlasWidget, predicate: Optional[str]) -> Any:
+    """
+    The rows of `widget` passing `predicate` (a mirror of
+    `EmbeddingAtlasWidget.selection()`, but for a given predicate rather than
+    the live `_predicate`), as the widget's native frame type.
+
+    `selection()` derives from this instead of the widget's own method so it
+    always describes the same filter as `predicate()` -- the published,
+    debounced one -- even mid-debounce, when the widget's live `_predicate`
+    is already ahead.
+    """
+    # `_connection`/`_table_name`/`_native_namespace` are upstream-internal
+    # (like `_predicate`, which attach_predicate also checks); fail loudly if
+    # embedding-atlas removes them rather than silently query the wrong table
+    missing = [
+        name
+        for name in ("_connection", "_table_name", "_native_namespace")
+        if getattr(widget, name, None) is None
+    ]
+    if missing:
+        raise TypeError(
+            "`selection()` relies on the EmbeddingAtlasWidget's (upstream-internal) "
+            f"{', '.join(missing)}, which this version of embedding-atlas doesn't "
+            "have. If embedding-atlas renamed or removed these attributes, please "
+            "report it."
+        )
+    if predicate is not None:
+        result = widget._connection.sql(
+            f"SELECT * FROM {widget._table_name} WHERE {predicate}"
+        )
+    else:
+        result = widget._connection.sql(f"SELECT * FROM {widget._table_name}")
+
+    import narwhals as nw
+
+    reader = result.fetch_arrow_reader()
+    return nw.to_native(nw.from_arrow(reader, backend=widget._native_namespace))
 
 
 PREDICATE = AccessorSpec(

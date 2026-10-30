@@ -118,7 +118,7 @@ from ._bokeh import _bokeh_dependency
 from ._bokeh_accessors import BOKEH_ACCESSORS, selected_frame
 from ._bqplot import BPLOT_ACCESSORS
 from ._dependencies import widget_pkg
-from ._embedding_atlas import EMBEDDING_ATLAS_ACCESSORS
+from ._embedding_atlas import EMBEDDING_ATLAS_ACCESSORS, rows_for_predicate
 from ._ipydatagrid import IPYDATAGRID_ACCESSORS
 from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
@@ -603,12 +603,14 @@ class render_embedding_atlas(
         `EmbeddingAtlasWidget` was built from, including a ``__row_index__``
         column of positions into the original frame.
 
-        All rows while nothing is filtered (library semantics). Runs a
+        All rows while nothing is filtered (library semantics). Computed
+        from the same published filter :meth:`predicate` reports, so the two
+        always describe the same selection, even mid-debounce. Runs a
         DuckDB query per call, so read it in a ``@reactive.calc`` when
         several outputs need it. Debounced (250 ms) by default.
         """
-        self._read_accessor("predicate")
-        return cast("EmbeddingAtlasWidget", self._widget).selection()
+        predicate = cast(Optional[str], self._read_accessor("predicate", raw=True))
+        return rows_for_predicate(cast("EmbeddingAtlasWidget", self._widget), predicate)
 
     def _as_widget(self, value: EmbeddingAtlasWidget) -> EmbeddingAtlasWidget:
         widget = super()._as_widget(value)

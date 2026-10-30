@@ -58,3 +58,38 @@ def test_predicate_and_selection_accessors(widget_session: Session) -> None:
     # A re-render starts the new widget at no-filter
     r._accessors.on_render(atlas_widget(widget_session))
     assert r.predicate() is None
+
+
+def test_selection_matches_predicate_through_the_debounce_window(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import shinywidgets._accessors as acc
+    from shinywidgets import render_embedding_atlas
+
+    from tests.unit.test_accessors import FakeSchedule
+
+    s = FakeSchedule()
+    monkeypatch.setattr(acc, "loop_schedule", s)
+    w = atlas_widget(widget_session)
+    r = render_embedding_atlas()  # the default 250 ms debounce
+    r._widget = w  # stands in for _render()
+    r._accessors.on_render(w)
+    assert r.predicate() is None
+    assert len(r.selection()) == 4
+
+    w._predicate = "((\"group\" = 'g2'))"
+    # Inside the debounce window, predicate() hasn't republished -- and
+    # selection() must describe that same (still unfiltered) state, not the
+    # widget's live filter
+    assert r.predicate() is None
+    assert len(r.selection()) == 4
+
+    # Once the debounce settles, both describe the new filter
+    s.fire()
+    assert r.predicate() == "((\"group\" = 'g2'))"
+    assert r.selection()["text"].tolist() == ["c", "d"]
+
+
+def test_rows_for_predicate_fails_loudly_without_widget_internals() -> None:
+    with pytest.raises(TypeError, match="_connection"):
+        se.rows_for_predicate(object(), None)
