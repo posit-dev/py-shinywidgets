@@ -101,7 +101,7 @@ def test_plotly_accessors_on_an_app_defined_figure_subclass(
     console: list[str] = []
     page.on("console", lambda msg: console.append(f"{msg.type}: {msg.text[:300]}"))
     page.on("pageerror", lambda err: console.append(f"pageerror: {str(err)[:300]}"))
-    page.route("**/shinywidgets/output.js", expose_manager)
+    page.route("**/output.js", expose_manager)
     page.goto(local_app.url)
     try:
         expect(page.locator("#sub_plot .js-plotly-plot")).to_have_count(
@@ -135,13 +135,35 @@ def test_plotly_accessors_on_an_app_defined_figure_subclass(
               };
             }"""
         )
-        # A synthetic plotly_click: if this round-trips, the bridge is bound
-        # and the real mouse click is what fails; if not, the bridge is
-        # missing/broken.
-        page.evaluate(
-            """() => {
+        # A synthetic plotly_click with model.send monkeypatched to record:
+        # tells us whether the bridge listener exists and fires, and whether
+        # the event gets sent to Python at all.
+        sends = page.evaluate(
+            """async () => {
               const gd = document.querySelector('#sub_plot .js-plotly-plot');
+              const models = window.widgetManager
+                ? await Promise.all(
+                    Object.values(window.widgetManager._models).map((p) => p.catch(() => null))
+                  )
+                : [];
+              window.__sends = [];
+              for (const m of models.filter((m) => m)) {
+                const orig = m.send.bind(m);
+                m.send = (content, callbacks, buffers) => {
+                  window.__sends.push(JSON.stringify(content).slice(0, 200));
+                  return orig(content, callbacks, buffers);
+                };
+              }
               gd.emit('plotly_click', {points: [{curveNumber: 0, pointNumber: 0, x: 1, y: 1}]});
+              const clickListener = gd._ev && gd._ev._events && gd._ev._events.plotly_click;
+              return {
+                clickListenerSource: String(clickListener).slice(0, 300),
+                modelComms: models.filter((m) => m).map((m) => ({
+                  name: m.get('_model_name'),
+                  views: Object.keys(m.views || {}).length,
+                  hasComm: !!m.comm,
+                })),
+              };
             }"""
         )
         synthetic = "unknown"
@@ -149,9 +171,10 @@ def test_plotly_accessors_on_an_app_defined_figure_subclass(
             expect(page.locator("#sub_clicked")).to_have_text("1", timeout=3000)
             synthetic = "round-tripped (bridge bound; real clicks are the problem)"
         except AssertionError:
+            recorded = page.evaluate("() => window.__sends")
             synthetic = (
-                f"no round-trip (bridge missing/broken); "
-                f"#sub_clicked={page.locator('#sub_clicked').inner_text()!r}"
+                f"no round-trip; #sub_clicked={page.locator('#sub_clicked').inner_text()!r}; "
+                f"model.send calls={recorded}; probe={sends}"
             )
         raise AssertionError(
             f"diag: {diag}\nsynthetic click: {synthetic}\n"
