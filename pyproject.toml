@@ -23,10 +23,7 @@ dependencies = [
   "ipywidgets>=8.1",
   "jupyter_core",
   "python-dateutil>=2.8.2",
-  # TODO: pin to the next PyPI release (>=1.9.0) once it's out -- we need
-  # https://github.com/posit-dev/py-shiny/issues/1889 (custom messages sent
-  # outside the message cycle are flushed right away), which isn't released yet
-  "shiny @ git+https://github.com/posit-dev/py-shiny.git@main",
+  "shiny>=1.9.0",
 ]
 
 [project.urls]
@@ -44,6 +41,7 @@ bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 # embedding-atlas requires Python 3.11+, so it's not installable on 3.10
 embedding_atlas = ["embedding-atlas>=0.26; python_version >= '3.11'"]
 bqplot = ["bqplot"]
+drawdata = ["drawdata>=0.5"]
 # geolibre requires Python 3.11+; >=3.5.2 for blocking command methods
 # (fly_to(), get_center(), ...) from a worker thread outside Jupyter
 geolibre = ["geolibre>=3.5.2; python_version >= '3.11'"]
@@ -56,6 +54,7 @@ ipycytoscape = ["ipycytoscape"]
 # older versions raise "shinywidgets requires that all ipywidgets be
 # constructed within an active Shiny session" on `import ipydatagrid`. (#99)
 ipydatagrid = ["ipydatagrid>=1.2.0"]
+ipyfilechooser = ["ipyfilechooser"]
 ipyleaflet = ["ipyleaflet>=0.20.0"]
 ipysigma = ["ipysigma"]
 # ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
@@ -75,6 +74,8 @@ lonboard = ["lonboard; python_version < '3.15'"]
 maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
 mosaic_widget = ["mosaic-widget"]
+nglview = ["nglview"]
+niivue = ["ipyniivue>=2.4.0"]
 obsplot = ["pyobsplot>=0.5.0"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
 # pyarrow is required for pandas DataFrame conversion (perspective-python
@@ -91,6 +92,7 @@ pythreejs = ["pythreejs"]
 quak = ["quak"]
 # vizarr pins zarr<3, so it is not in the shared test/dev groups
 vizarr = ["vizarr>=0.1.1"]
+rerun = ["rerun-sdk[notebook]>=0.40; python_version >= '3.11'"]
 test = [
   "altair",
   "bokeh",
@@ -101,7 +103,12 @@ test = [
   # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
-  "embedding-atlas>=0.26; python_version >= '3.11'",
+  "drawdata>=0.5",
+  # duckdb (a dependency of embedding-atlas, mosaic-widget, pygwalker, and
+  # quak) doesn't publish wheels for Python 3.15+ yet, and building it from
+  # source takes ~20 minutes in CI, so skip its dependents there. Drop these
+  # markers once duckdb publishes cp315 wheels.
+  "embedding-atlas>=0.26; python_version >= '3.11' and python_version < '3.15'",
   "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
@@ -109,6 +116,7 @@ test = [
   "ipycanvas",
   "ipycytoscape",
   "ipydatagrid>=1.2.0",
+  "ipyfilechooser",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
@@ -116,6 +124,7 @@ test = [
   "ipyvolume",
   "ipython_genutils",
   "ipympl",
+  "ipyniivue>=2.4.0",
   "itables[widget]",
   "matplotlib",
   "jupyter_bokeh>=4.1",
@@ -126,9 +135,10 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "nglview",
   "pandas",
   "networkx",
-  "mosaic-widget",
+  "mosaic-widget; python_version < '3.15'",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
@@ -138,12 +148,16 @@ test = [
   "polars",
   "pyarrow",
   "pydeck",
-  "pygwalker>=0.4.9.13",
+  "pygwalker>=0.4.9.13; python_version < '3.15'",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "pytest-shard>=0.1.2",
+  "pytest-timeout>=2.2",
+  "pytest-xdist>=3.5",
   "pythreejs",
-  "quak",
+  "quak; python_version < '3.15'",
+  "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "tox-uv>=1",
 ]
 dev = [
@@ -156,7 +170,12 @@ dev = [
   # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
-  "embedding-atlas>=0.26; python_version >= '3.11'",
+  "drawdata>=0.5",
+  # duckdb (a dependency of embedding-atlas, mosaic-widget, pygwalker, and
+  # quak) doesn't publish wheels for Python 3.15+ yet, and building it from
+  # source takes ~20 minutes in CI, so skip its dependents there. Drop these
+  # markers once duckdb publishes cp315 wheels.
+  "embedding-atlas>=0.26; python_version >= '3.11' and python_version < '3.15'",
   "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
@@ -164,6 +183,7 @@ dev = [
   "ipycanvas",
   "ipycytoscape",
   "ipydatagrid>=1.2.0",
+  "ipyfilechooser",
   "ipyleaflet>=0.20.0",
   "ipysigma",
   "holoviews",
@@ -171,6 +191,7 @@ dev = [
   "ipyvolume",
   "ipython_genutils",
   "ipympl",
+  "ipyniivue>=2.4.0",
   "itables[widget]",
   "matplotlib",
   "jupyter_bokeh>=4.1",
@@ -181,9 +202,10 @@ dev = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "nglview",
   "pandas",
   "networkx",
-  "mosaic-widget",
+  "mosaic-widget; python_version < '3.15'",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
@@ -193,12 +215,16 @@ dev = [
   "polars",
   "pyarrow",
   "pydeck",
-  "pygwalker>=0.4.9.13",
+  "pygwalker>=0.4.9.13; python_version < '3.15'",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "pytest-shard>=0.1.2",
+  "pytest-timeout>=2.2",
+  "pytest-xdist>=3.5",
   "pythreejs",
-  "quak",
+  "quak; python_version < '3.15'",
+  "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "ruff>=0.6.5",
   "tox-uv>=1",
 ]
@@ -214,7 +240,12 @@ test = [
   # geoviews supports cartopy>=0.26 (which has 3.14 wheels).
   "cartopy<0.26; python_version < '3.14'",
   "datashader",
-  "embedding-atlas>=0.26; python_version >= '3.11'",
+  "drawdata>=0.5",
+  # duckdb (a dependency of embedding-atlas, mosaic-widget, pygwalker, and
+  # quak) doesn't publish wheels for Python 3.15+ yet, and building it from
+  # source takes ~20 minutes in CI, so skip its dependents there. Drop these
+  # markers once duckdb publishes cp315 wheels.
+  "embedding-atlas>=0.26; python_version >= '3.11' and python_version < '3.15'",
   "geolibre; python_version >= '3.11'",
   "geoviews; python_version < '3.14'",
   "hvplot",
@@ -222,8 +253,10 @@ test = [
   "ipycanvas",
   "ipycytoscape",
   "ipydatagrid>=1.2.0",
+  "ipyfilechooser",
   "ipyleaflet>=0.20.0",
   "ipysigma",
+  "ipyreact>=0.6",
   "ipyvue>=3",
   "ipyvuetify>=3",
   "holoviews",
@@ -231,6 +264,7 @@ test = [
   "ipyvolume",
   "ipython_genutils",
   "ipympl",
+  "ipyniivue>=2.4.0",
   "itables[widget]",
   "matplotlib",
   "jupyter_bokeh>=4.1",
@@ -241,9 +275,10 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "nglview",
   "pandas",
   "networkx",
-  "mosaic-widget",
+  "mosaic-widget; python_version < '3.15'",
   "panel",
   "perspective-python>=3.0",
   "playwright>=1.40.0",
@@ -253,12 +288,16 @@ test = [
   "polars",
   "pyarrow",
   "pydeck",
-  "pygwalker>=0.4.9.13",
+  "pygwalker>=0.4.9.13; python_version < '3.15'",
   "pyright>=1.1.284",
   "pytest>=6.2.4",
   "pytest-playwright>=0.3.0",
+  "pytest-shard>=0.1.2",
+  "pytest-timeout>=2.2",
+  "pytest-xdist>=3.5",
   "pythreejs",
-  "quak",
+  "quak; python_version < '3.15'",
+  "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "tox-uv>=1",
 ]
 dev = [
@@ -285,10 +324,6 @@ override-dependencies = [
 [build-system]
 requires = ["hatchling>=1.26.0", "hatch-vcs>=0.4.0"]
 build-backend = "hatchling.build"
-
-# Needed for the (temporary) git dependency on shiny in project.dependencies
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.hatch.build]
 skip-excluded-dirs = true

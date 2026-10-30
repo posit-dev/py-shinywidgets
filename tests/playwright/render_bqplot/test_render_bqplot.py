@@ -150,13 +150,22 @@ def test_bqplot_rerender_lifecycle(page: Page, local_app) -> None:
     initial = wait_for_stable_view_count(page)
 
     for i in range(1, 4):
+        old = page.locator("#fig .bqplot").element_handle()
         page.click("#rerender")
         expect(page.locator("#render_count")).to_have_text(str(i))
+        # The render_count/dot checks are satisfied by the old figure while
+        # the new one renders asynchronously, so wait for the old figure to
+        # actually leave the DOM. Otherwise the view-count wait below can
+        # start before any churn and pass on the pre-rerender count.
+        page.wait_for_function("(el) => !el.isConnected", arg=old, timeout=30000)
         expect(page.locator("#fig .dot")).to_have_count(4)
 
-    # Re-rendering replaces the figure; the old views must be disposed
+    # Re-rendering replaces the figure; the old views must be disposed. Wait
+    # for the count to return to `initial` (and hold) rather than sampling
+    # "stable" then asserting: under load, view churn can stall longer than a
+    # poll interval and a transient count would look settled.
     expect(page.locator("#fig .bqplot")).to_have_count(1)
-    assert wait_for_stable_view_count(page) == initial
+    assert wait_for_stable_view_count(page, expected=initial) == initial
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
@@ -200,6 +209,17 @@ local_app_toolbar_reconnect = create_app_fixture(
 
 PANZOOM_BUTTON = "#fig button[title='PanZoom']"
 RESET_BUTTON = "#fig button[title='Reset']"
+
+# bqplot's figure render is async and sizes the plot-area rects near its end,
+# so a positive width means the render has essentially completed. Waiting on
+# this (rather than just a visible svg) keeps a reconnect/disconnect from
+# tearing the figure down mid-render, which makes bqplot size those rects
+# against the detached (zero-size) element and log (harmless) negative
+# width/height errors.
+PLOT_AREA_SIZED_JS = """() => {
+  const bg = document.querySelector('#fig .bqplot .plotarea_background');
+  return bg !== null && parseFloat(bg.getAttribute('width')) > 0;
+}"""
 
 # Counts comm_close messages the browser sends. comm.ts resolves `Shiny` at call
 # time, so wrapping setInputValue after load sees every ShinyComm message.
@@ -291,6 +311,7 @@ def test_toolbar_reset_closes_comm_after_reconnect(
     page.route("**/output.js", expose_manager)
     page.goto(local_app_toolbar_reconnect.url)
     expect(page.locator("#fig .bqplot svg").first).to_be_visible(timeout=30000)
+    page.wait_for_function(PLOT_AREA_SIZED_JS, timeout=30000)
 
     page.evaluate(
         """async () => {

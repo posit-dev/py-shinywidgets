@@ -21,19 +21,25 @@ from ipywidgets.widgets.widget import Widget
 from packaging.version import Version
 
 if TYPE_CHECKING:
-    import duckdb
+    # Absent from 3.15+ environments (duckdb has no cp315 wheels, so its
+    # dependents are excluded there; see pyproject.toml)
+    import duckdb  # pyright: ignore[reportMissingImports]
     import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
     from bqplot import Figure as BqplotFigure
+    from drawdata import BarWidget as DrawdataBarWidget
+    from drawdata import ScatterWidget as DrawdataScatterWidget
     from geolibre import Map as GeolibreMap
     from ipyaladin import Aladin
     from ipycanvas import Canvas as IpycanvasCanvas
     from ipycanvas import MultiCanvas, MultiRoughCanvas, RoughCanvas
     from ipycytoscape import CytoscapeWidget
     from ipydatagrid import DataGrid
+    from ipyfilechooser import FileChooser
     from ipyleaflet import Map as LeafletMap
     from ipympl.backend_nbagg import Canvas as MplCanvas
+    from ipyniivue import NiiVue
     from ipysigma import Sigma
     from ipyvolume.widgets import Figure as IpyvolumeFigure
 
@@ -49,7 +55,8 @@ if TYPE_CHECKING:
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
     from maplibre.ipywidget import MapWidget
     from maplibre.map import Map as MaplibreMap
-    from mosaic_widget import MosaicWidget
+    from mosaic_widget import MosaicWidget  # pyright: ignore[reportMissingImports]
+    from nglview import NGLWidget
     from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
@@ -57,11 +64,19 @@ if TYPE_CHECKING:
 
     # embedding-atlas requires Python 3.11+, so it's absent from 3.10 environments
     if sys.version_info >= (3, 11):
-        from embedding_atlas.widget import EmbeddingAtlasWidget
+        from embedding_atlas.widget import EmbeddingAtlasWidget  # pyright: ignore[reportMissingImports]
     else:
         from ipywidgets import Widget as EmbeddingAtlasWidget
     from pythreejs import Renderer as PythreejsRenderer
-    from quak import Widget as QuakWidget
+    from quak import Widget as QuakWidget  # pyright: ignore[reportMissingImports]
+
+    # rerun requires Python 3.11+, so it's absent from 3.10 environments
+    if sys.version_info >= (3, 11):
+        from rerun.notebook import Viewer as RerunViewer
+        from rerun_notebook import Viewer as RerunNotebookViewer
+    else:
+        from ipywidgets import Widget as RerunNotebookViewer
+        from ipywidgets import Widget as RerunViewer
 
     # vizarr isn't in the dev/test groups (it pins zarr<3)
     from vizarr import Viewer as VizarrViewer  # pyright: ignore[reportMissingImports]
@@ -70,12 +85,16 @@ else:
         BokehModel
     ) = MapWidget = FigureWidget = DeckGLWidget = MosaicWidget = BqplotFigure = (
         CytoscapeWidget
-    ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = WalkerWidget = object
+    ) = base = EmbeddingAtlasWidget = K3dPlot = LeafletMap = WalkerWidget = (
+        FileChooser
+    ) = NGLWidget = object
     Aladin = IpycanvasCanvas = MultiCanvas = MultiRoughCanvas = RoughCanvas = (
         LonboardMap
     ) = QuakWidget = PerspectiveWidget = GeolibreMap = IpyvolumeFigure = (
         PythreejsRenderer
-    ) = ObsplotWidget = VizarrViewer = object
+    ) = ObsplotWidget = VizarrViewer = RerunViewer = RerunNotebookViewer = NiiVue = (
+        object
+    )
 
 from shiny.render.renderer import ValueFn
 
@@ -109,6 +128,17 @@ IpycanvasCanvasT = TypeVar(
     "IpycanvasCanvasT",
     bound="Union[IpycanvasCanvas, MultiCanvas, RoughCanvas, MultiRoughCanvas]",
 )
+# String bound for the same reason as PlotlyValueT (drawdata is optional).
+# Both drawdata widgets are returned as-is (no coercion), so this bounds both
+# the render function's value and the rendered widget.
+DrawdataWidgetT = TypeVar(
+    "DrawdataWidgetT",
+    bound="Union[DrawdataScatterWidget, DrawdataBarWidget]",
+)
+# The values a @render_rerun render function may return: rerun's high-level
+# notebook Viewer (coerced to its inner widget) or the rerun_notebook widget
+# itself. String bound since rerun is an optional dependency.
+RerunValueT = TypeVar("RerunValueT", bound="Union[RerunViewer, RerunNotebookViewer]")
 
 __all__ = (
     "render_widget",
@@ -116,12 +146,14 @@ __all__ = (
     "render_bokeh",
     "render_embedding_atlas",
     "render_bqplot",
+    "render_drawdata",
     "render_geolibre",
     "render_holoviews",
     "render_ipyaladin",
     "render_ipycanvas",
     "render_ipycytoscape",
     "render_ipydatagrid",
+    "render_ipyfilechooser",
     "render_ipyleaflet",
     "render_ipysigma",
     "render_ipyvolume",
@@ -134,6 +166,8 @@ __all__ = (
     "render_maplibre",
     "render_matplotlib",
     "render_mosaic_widget",
+    "render_nglview",
+    "render_niivue",
     "render_obsplot",
     "render_panel",
     "render_perspective",
@@ -144,6 +178,7 @@ __all__ = (
     "render_pythreejs",
     "render_quak",
     "render_vizarr",
+    "render_rerun",
 )
 
 
@@ -196,6 +231,94 @@ class render_widget(render_widget_base[WidgetT, WidgetT]):
         @render_widget
         def slider():
             return widgets.IntSlider(value=5, min=0, max=10)
+
+
+    app = App(app_ui, server)
+    ```
+    """
+
+
+class render_drawdata(render_widget_base[DrawdataWidgetT, DrawdataWidgetT]):
+    """
+    Reactively render a [drawdata](https://github.com/koaning/drawdata) drawing
+    widget as a Shiny output.
+
+    The decorated function should return a `drawdata.ScatterWidget` or
+    `drawdata.BarWidget` (requires ``pip install 'shinywidgets[drawdata]'``).
+    The widget fills the output's width while preserving its aspect ratio
+    (upstream, both widgets cap their display at their ``width``/``height``
+    traits; shinywidgets lifts that cap so they scale like other outputs).
+    The constructor's ``width``/``height`` define the drawing's *data
+    coordinate space* -- drawn points are stored in those coordinates, with
+    ``y`` pointing up -- and the aspect ratio, not the display size, so
+    choose them for the coordinate range and shape you want, not for pixels.
+
+    The decorated function also gains two read-only attributes: `.value` and
+    `.widget`, both the rendered widget. Use `.widget` to programmatically
+    update the widget in place, or to reactively read widget state (e.g., the
+    drawn points via ``"data"``) with :func:`~shinywidgets.reactive_read`.
+
+    Note
+    ---
+    **Drawn data syncs one batch behind** (upstream drawdata issue
+    [#40](https://github.com/koaning/drawdata/issues/40), any frontend):
+    `ScatterWidget`'s frontend mutates the model's ``data`` array in place, so
+    the change from the *first* drawing batch goes undetected and nothing
+    syncs until a second batch is drawn (from then on, every batch syncs in
+    full). The undo (pops one batch) and reset buttons sync immediately.
+    `BarWidget` is not affected.
+
+    Also note a few `BarWidget` limitations (upstream drawdata issue
+    [#42](https://github.com/koaning/drawdata/issues/42)): its frontend
+    overwrites any ``data`` passed to the constructor when it initializes
+    (all bins start at ``y_min``), so a `BarWidget` output always starts
+    empty -- seeding initial data is impossible, even via a re-render --
+    and it ignores later Python-side trait updates until the next re-render
+    (it registers no ``change:`` handlers, unlike `ScatterWidget`).
+    Re-rendering (returning a new `BarWidget` in response to a reactive
+    change) is the way to change ``n_bins``, ``y_max``, etc. Finally, avoid
+    putting two `BarWidget`s on the same page: clicking one widget's
+    collection buttons silently switches the other's active collection
+    (upstream drawdata issue
+    [#43](https://github.com/koaning/drawdata/issues/43)).
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default),
+        the height follows from the filled width and the widget's aspect ratio.
+    fill
+        Whether the output should grow or shrink to fit its parent container.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    from drawdata import ScatterWidget
+    from shiny import App, render, ui
+    from shinywidgets import output_widget, reactive_read, render_drawdata
+
+    app_ui = ui.page_fluid(
+        output_widget("canvas"),
+        ui.output_text_verbatim("n_points"),
+    )
+
+
+    def server(input, output, session):
+        @render_drawdata
+        def canvas():
+            return ScatterWidget()
+
+        @render.text
+        def n_points():
+            return len(reactive_read(canvas.widget, "data"))
 
 
     app = App(app_ui, server)
@@ -376,7 +499,7 @@ def duckdb_settings(
     DuckDB's ``(enable_external_access, lock_configuration)`` for `con`, which
     defaults to the default connection.
     """
-    import duckdb
+    import duckdb  # pyright: ignore[reportMissingImports]
 
     target = duckdb if con is None else con
     settings = target.execute(
@@ -1388,6 +1511,46 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     """
 
 
+class render_nglview(render_widget_base[ValueT, NGLWidget]):
+    """
+    Reactively render an [nglview](https://nglviewer.org/nglview/latest/) molecular
+    structure viewer as a Shiny output.
+
+    The decorated function should return an `nglview.NGLWidget` (e.g., from
+    `nglview.show_file()`, `nglview.show_text()`, or `nglview.show_url()`; requires
+    ``pip install 'shinywidgets[nglview]'``).
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `NGLWidget` instance. Use `.widget` to programmatically update the rendered viewer
+    in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read` (e.g., the
+    picked atom via ``"picked"``).
+
+    Changes made with `.widget` methods (e.g., `add_representation()`,
+    `center()`, `clear_representations()`) reach the browser even though
+    nglview sends them from a background thread (requires shiny >= 1.9).
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    """
+
+
 class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     """
     Reactively render a [Mosaic](https://idl.uw.edu/mosaic/) dashboard of linked,
@@ -1928,6 +2091,76 @@ def dataframe_to_datagrid(df: pd.DataFrame) -> DataGrid:
     return DataGrid(df)
 
 
+class render_ipyfilechooser(render_widget_base[ValueT, FileChooser]):
+    """
+    Reactively render an [ipyfilechooser](https://github.com/crahan/ipyfilechooser)
+    file chooser as a Shiny output.
+
+    The decorated function should return an `ipyfilechooser.FileChooser` widget
+    (requires ``pip install 'shinywidgets[ipyfilechooser]'``). The chooser is a
+    form control with a natural size, so the output doesn't fill its container;
+    size it with the chooser's own ``layout`` (e.g., ``layout=Layout(width='700px')``)
+    or with ``output_widget(width=..., height=...)``.
+
+    The decorated function also gains two read-only attributes: `.value`, the value
+    most recently returned by the render function, and `.widget`, the rendered
+    `FileChooser` instance. Note that the chooser's ``selected``,
+    ``selected_path`` and ``selected_filename`` are plain Python properties (not
+    widget traits), so they can't be read with
+    :func:`~shinywidgets.reactive_read`. To react to a selection, pass
+    ``.widget.register_callback()`` a function that sets a `reactive.value` (the
+    callback fires when the user confirms or changes a selection).
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    from ipyfilechooser import FileChooser
+    from shiny import App, reactive, render, ui
+    from shinywidgets import output_widget, render_ipyfilechooser
+
+    app_ui = ui.page_fluid(
+        output_widget("chooser"),
+        ui.output_text("selected"),
+    )
+
+
+    def server(input, output, session):
+        selection = reactive.value(None)
+
+        @render_ipyfilechooser
+        def chooser():
+            fc = FileChooser()
+            fc.register_callback(lambda fc: selection.set(fc.selected))
+            return fc
+
+        @render.text
+        def selected():
+            return f"Selected: {selection()}"
+
+
+    app = App(app_ui, server)
+    ```
+    """
+
+
 class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     """
     Reactively render a [plotly](https://plotly.com/python/) figure as a Shiny output.
@@ -2319,7 +2552,7 @@ class render_pygwalker(render_widget_base[ValueT, WalkerWidget]):
             return widget
 
         try:
-            from pygwalker.api.anywidget import walk
+            from pygwalker.api.anywidget import walk  # pyright: ignore[reportMissingImports]
         except ImportError:
             raise ImportError(
                 "Install the pygwalker package to use render_pygwalker with shinywidgets (pip install 'shinywidgets[pygwalker]')."
@@ -2414,7 +2647,7 @@ def polars_supported() -> bool:
     if hasattr(pl, "NUMERIC_DTYPES"):
         return True
     try:
-        from pygwalker.data_parsers import polars_parser
+        from pygwalker.data_parsers import polars_parser  # pyright: ignore[reportMissingImports]
     except ImportError:
         return True
     return hasattr(polars_parser, "_is_numeric_dtype")
@@ -2516,8 +2749,8 @@ def validate_visitor_sql(sql: str) -> None:
     ``read_csv``) is covered separately: the renderer requires the connection to be
     locked down first (see `require_duckdb_lockdown`).
     """
-    import sqlglot
-    from sqlglot import exp
+    import sqlglot  # pyright: ignore[reportMissingImports]
+    from sqlglot import exp  # pyright: ignore[reportMissingImports]
 
     try:
         statements = sqlglot.parse(sql, dialect="duckdb")
@@ -2598,7 +2831,7 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
             return super()._as_widget(value)
 
         try:
-            import quak
+            import quak  # pyright: ignore[reportMissingImports]
         except ImportError:
             raise ImportError(
                 "Install the quak package to use render_quak with shinywidgets (pip install 'shinywidgets[quak]')."
@@ -2701,3 +2934,219 @@ def dataframe_to_keplergl(df: pd.DataFrame) -> KeplerGl:
     # Unlike keplergl's default JSON serialization, Arrow keeps missing values
     # (NaN isn't valid JSON) and is more compact
     return KeplerGl(data={"data": df}, use_arrow=True)
+
+
+class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
+    """
+    Reactively render a [rerun](https://rerun.io) viewer as a Shiny output.
+
+    rerun is a multimodal viewer for time-indexed data: you log 3D scenes,
+    images, tensors, timeseries, or text logs from Python, and the viewer lets
+    you scrub a timeline to see how it all evolved. Data logged to the viewer's
+    recording streams live to the browser, both during the initial render and
+    from later reactive updates.
+
+    The decorated function may return either a `rerun.notebook.Viewer` (the
+    recommended, high-level API; it is coerced to its inner widget) or a
+    `rerun_notebook.Viewer` widget directly. Both require ``pip install
+    'shinywidgets[rerun]'``.
+
+    .. important::
+        Create the `rerun.RecordingStream` inside the render function and pass
+        it to the viewer (``Viewer(recording=...)``), so each session gets its
+        own recording. rerun's usual ``rr.init()`` + ``rr.log()`` pattern
+        writes to a single process-global recording. That's fine in Jupyter,
+        where one kernel serves one person, but a Shiny process serves every
+        browser session at once -- with a global recording, one user's data
+        would appear in every other user's viewer.
+
+    Note that ``rr.notebook_show()`` does not work in Shiny: it renders through
+    Jupyter's display machinery (which Shiny never invokes), and it *drains*
+    the recording, producing a one-shot snapshot with no live updates. Always
+    construct a `rerun.notebook.Viewer` and return it from the render function
+    instead -- the viewer then stays connected, and data logged later streams
+    in live.
+
+    The decorated function also gains two read-only attributes: `.value`, the
+    value most recently returned by the render function, and `.widget`, the
+    rendered `rerun_notebook.Viewer` widget. Since `.widget` is the low-level
+    widget (not the `rerun.notebook.Viewer` wrapper), keep a reference to the
+    wrapper if you want to call its methods (`update_panels()`,
+    `set_time_ctrl()`, `send_table()`, ...) from later reactive updates.
+    Python-side trait updates (e.g., ``widget._width = 800``) also stream to
+    the browser.
+
+    To react to viewer interactions (play/pause, timeline scrubbing, selection
+    changes), register a callback with `rerun.notebook.Viewer.on_event()` and
+    set a `shiny.reactive.Value` inside it. These interactions reach Python as
+    one-off messages, not as synced widget state, so
+    :func:`~shinywidgets.reactive_read` can't see them -- it only reads synced
+    traits. rerun keeps high-frequency interactions off the synced-trait
+    channel by design (syncing every timeline tick would be expensive), and the
+    explicit callback lets you choose which events are worth reacting to:
+
+    ```python
+    from shiny import reactive
+
+    selection = reactive.Value(None)
+
+
+    @render_rerun
+    def viewer():
+        rec = rr.RecordingStream(application_id="my_app")
+        v = rr.notebook.Viewer(recording=rec)
+        v.on_event(lambda evt: selection.set(evt))
+        return v
+    ```
+
+    In a filling layout, the viewer fills its container when its width/height
+    are left at their defaults (or set to ``"auto"``); an explicit integer
+    ``width=``/``height=`` is respected instead. An explicit
+    ``output_widget(height=...)`` also fits the default-sized viewer to the
+    output's height. The viewer's JavaScript/Wasm
+    bundle (~55MB) loads from rerun's CDN by default; set the
+    ``RERUN_NOTEBOOK_ASSET`` environment variable to ``serve-local`` or
+    ``inline`` to serve it from the Shiny process instead (see the
+    [rerun-notebook docs](https://pypi.org/project/rerun-notebook/)).
+    Note that ``serve-local`` starts a loopback (``localhost``) server inside
+    the Shiny process, so the browser can only reach it when it runs on the
+    same host as the app (e.g., local development). For remote deployments,
+    use ``inline`` instead, unless the asset server is proxied to the client.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    import numpy as np
+    import rerun as rr
+    from rerun.notebook import Viewer
+    from shiny.express import ui
+    from shinywidgets import render_rerun
+
+
+    @render_rerun
+    def viewer():
+        rec = rr.RecordingStream(application_id="my_app")
+        rec.log("points", rr.Points3D(np.random.rand(100, 3)))
+        return Viewer(width="auto", height="auto", recording=rec)
+    ```
+    """
+
+
+class render_niivue(render_widget_base[ValueT, NiiVue]):
+    """
+    Reactively render a [NiiVue](https://niivue.com) neuroimaging viewer
+    (volumes, overlays, and meshes) as a Shiny output, via
+    [ipyniivue](https://github.com/niivue/ipyniivue).
+
+    The decorated function should return an `ipyniivue.NiiVue` widget with
+    volumes and/or meshes loaded (requires ``pip install
+    'shinywidgets[niivue]'``). In a filling layout, the viewer grows or
+    shrinks to fit its container (tracking resizes, including
+    ``full_screen``); an explicit ``output_widget(height=...)`` is respected
+    too. Don't pass ``height=`` to `NiiVue()` itself -- it sets the canvas's
+    pixel height, which disagrees with the output's height and causes
+    clipping or dead space.
+
+    The decorated function also gains two read-only attributes: `.value`, the
+    value most recently returned by the render function, and `.widget`, the
+    rendered `NiiVue` instance. Use `.widget` to update the viewer in place
+    without a re-render: ``.widget.set_colormap(volume_id, name)``,
+    ``.widget.set_opacity(index, value)``, ``.widget.set_gamma(value)``,
+    ``.widget.set_slice_type(SliceType.RENDER)``, and
+    ``.widget.move_crosshair_in_vox(dx, dy, dz)`` all apply live (trait
+    changes on the widget are synced to the browser).
+
+    Note
+    ---
+    **Reading the crosshair**: the crosshair position does *not* sync back
+    as a trait (``reactive_read(nv.widget.scene, "crosshair_pos")`` never
+    updates). Instead, register a callback with
+    ``@nv.on_location_change`` inside the render function and have it set a
+    session-scoped `reactive.Value` -- the payload includes fractional and
+    millimeter coordinates and the voxel intensities under the crosshair.
+    (Beware: exceptions raised inside these callbacks are swallowed by
+    ipywidgets, so a failing callback just looks like "no updates".)
+    Similarly, ``nv.frac2mm()``/``nv.mm2frac()`` don't work on Shiny (the
+    coordinate matrices exist only in the browser); use the millimeter
+    coordinates from the `on_location_change` payload instead.
+
+    **Data size**: each render sends the viewer's JavaScript bundle (~5 MB)
+    plus every volume (base64-encoded) to the browser, and the browser
+    uploads the decoded voxels back to Python, so re-renders are expensive
+    for large volumes. Prefer `Volume(url=...)` for remote data (the
+    browser fetches it directly), and prefer in-place ``.widget.set_*``
+    updates over re-rendering.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    from ipyniivue import NiiVue, Volume
+    from shiny import App, reactive, render, ui
+    from shinywidgets import output_widget, render_niivue
+
+    app_ui = ui.page_fluid(
+        output_widget("brain"),
+        ui.output_text_verbatim("crosshair"),
+    )
+
+
+    def server(input, output, session):
+        location = reactive.Value("Click the brain to inspect a voxel")
+
+        @render_niivue
+        def brain():
+            nv = NiiVue()
+            nv.load_volumes(
+                [Volume(url="https://niivue.com/demos/images/mni152.nii.gz")]
+            )
+
+            @nv.on_location_change
+            def _(loc):
+                location.set(loc["string"])
+
+            return nv
+
+        @render.text
+        def crosshair():
+            return location()
+
+
+    app = App(app_ui, server)
+    ```
+    """

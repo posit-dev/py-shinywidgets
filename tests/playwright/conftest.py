@@ -31,24 +31,45 @@ def expose_manager(route: Route) -> None:
 LIVE_VIEWS_JS = "() => window.widgetManager._liveViews.size"
 
 # True when the live-view count matches the previous poll's (i.e., async view
-# registration has settled). Keeps the last count on the window between polls.
-_VIEWS_STABLE_JS = """() => {
+# registration has settled) and, if `expected` is given (>= 0), equals it.
+# Keeps the last count on the window between polls; each call resets it (see
+# wait_for_stable_view_count) so "stable" always means two consecutive polls
+# within the same call.
+_VIEWS_STABLE_JS = """(expected) => {
   const n = window.widgetManager._liveViews.size;
   const stable = window.__shinywidgetsLastViewCount === n;
   window.__shinywidgetsLastViewCount = n;
-  return stable;
+  return stable && (expected < 0 || n === expected);
 }"""
 
 
-def wait_for_stable_view_count(page: Page, timeout: int = 30000) -> int:
+def wait_for_stable_view_count(
+    page: Page, timeout: int = 30000, expected: int = -1
+) -> int:
     """Return the live-view count once it stops changing between polls.
 
-    Widget views register asynchronously after first paint, so sampling
+    Widget views register and dispose asynchronously, so sampling
     `_liveViews.size` as soon as an output appears can catch a partially
-    populated registry -- and a later equality check against that sample then
-    fails spuriously. Requires the `expose_manager` route.
+    populated (or not yet cleaned up) registry -- and a later equality check
+    against that sample then fails spuriously. Requires the `expose_manager`
+    route.
+
+    When `expected` is given, keep polling until the count both equals
+    `expected` and holds across two polls. Prefer this over sampling and
+    asserting equality afterwards: under load, view creation/disposal can
+    stall for longer than one poll interval, and a transient count would
+    otherwise look settled (i.e., pass the stability check at the wrong
+    value). Timing out here then means views genuinely leaked or went
+    missing, not that the sample raced the churn.
+
+    The last-seen count is reset before polling: it lives on the window, so
+    without a reset the first poll would compare against the *previous call's*
+    final count -- and when that equals the current count (e.g. a rerender's
+    view churn hasn't started yet, so the registry still reads `expected`),
+    the wait would pass on its first poll, having observed no settling at all.
     """
-    page.wait_for_function(_VIEWS_STABLE_JS, polling=500, timeout=timeout)
+    page.evaluate("() => delete window.__shinywidgetsLastViewCount")
+    page.wait_for_function(_VIEWS_STABLE_JS, arg=expected, polling=500, timeout=timeout)
     return page.evaluate(LIVE_VIEWS_JS)
 
 
@@ -82,25 +103,26 @@ _MODEL_VIEWS_JS = """async (modelName) => {
 
 # True when the per-model view count matches the previous poll's (i.e., async
 # view registration/disposal has settled). Keeps the last count per model name
-# on the window between polls (and across calls, which is fine: an unchanged
-# count is the settled value we're after).
-_MODEL_VIEWS_STABLE_JS = """async (modelName) => {
+# on the window between polls; each call resets its entry (see
+# wait_for_stable_model_view_count) so "stable" always means two consecutive
+# polls within the same call.
+_MODEL_VIEWS_STABLE_JS = """async (args) => {
     const models = await Promise.all(
         Object.values(window.widgetManager._models).map((p) => p.catch(() => null))
     );
     const n = models
-        .filter((m) => m && m.get('_model_name') === modelName)
+        .filter((m) => m && m.get('_model_name') === args.modelName)
         .reduce((sum, m) => sum + Object.keys(m.views || {}).length, 0);
     const last = window.__shinywidgetsLastModelViewCounts || {};
-    const stable = last[modelName] === n;
-    last[modelName] = n;
+    const stable = last[args.modelName] === n;
+    last[args.modelName] = n;
     window.__shinywidgetsLastModelViewCounts = last;
-    return stable;
+    return stable && (args.expected < 0 || n === args.expected);
 }"""
 
 
 def wait_for_stable_model_view_count(
-    page: Page, model_name: str, timeout: int = 30000
+    page: Page, model_name: str, timeout: int = 30000, expected: int = -1
 ) -> int:
     """Return the summed live-view count for `model_name` once it stops changing.
 
@@ -109,9 +131,25 @@ def wait_for_stable_model_view_count(
     as an output appears in the DOM can catch a partially populated (or not yet
     cleaned up) registry -- and a later equality check against that sample then
     fails spuriously. Requires the `expose_manager` route.
+
+    When `expected` is given, keep polling until the count both equals
+    `expected` and holds across two polls (see `wait_for_stable_view_count()`
+    for why sampling-then-asserting is flaky, and for why the last-seen count
+    is reset before polling).
     """
+    page.evaluate(
+        """(name) => {
+          const counts = window.__shinywidgetsLastModelViewCounts || {};
+          delete counts[name];
+          window.__shinywidgetsLastModelViewCounts = counts;
+        }""",
+        model_name,
+    )
     page.wait_for_function(
-        _MODEL_VIEWS_STABLE_JS, arg=model_name, polling=500, timeout=timeout
+        _MODEL_VIEWS_STABLE_JS,
+        arg={"modelName": model_name, "expected": expected},
+        polling=500,
+        timeout=timeout,
     )
     return page.evaluate(_MODEL_VIEWS_JS, model_name)
 
@@ -127,7 +165,7 @@ def assert_rerender_cleanup(
         "console",
         lambda msg: errors.append(msg.text) if msg.type == "error" else None,
     )
-    page.on("pageerror", lambda err: errors.append(str(err)))
+    page.on("pageerror", lambda err: errors.append(_format_pageerror(err)))
 
     page.goto(local_app.url)
     page.wait_for_selector(ready_selector, timeout=30000)
@@ -175,6 +213,12 @@ CANVAS_HAS_PIXELS_JS = """(sel) => {
 }"""
 
 
+def _format_pageerror(err: PlaywrightError) -> str:
+    # Include the stack trace (when available) so a rare pageerror points at
+    # its source instead of just its (often generic) message
+    return f"{err}\n{err.stack}" if err.stack else str(err)
+
+
 def collect_errors(page: Page) -> tuple[list[str], list[str]]:
     """Collect browser console errors and failed (>= 400) request URLs."""
     errors: list[str] = []
@@ -183,7 +227,7 @@ def collect_errors(page: Page) -> tuple[list[str], list[str]]:
         "console",
         lambda msg: errors.append(msg.text) if msg.type == "error" else None,
     )
-    page.on("pageerror", lambda err: errors.append(str(err)))
+    page.on("pageerror", lambda err: errors.append(_format_pageerror(err)))
     page.on(
         "response",
         lambda res: failed_requests.append(res.url) if res.status >= 400 else None,
