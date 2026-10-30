@@ -1596,12 +1596,13 @@ def reactive_depend(
             )
 
     rate = rate_policy_for(widget)
+    session = get_current_session()
 
     def invalidate(change: object):
         if rate is None:
             ctx.invalidate()
         else:
-            rate.invalidate(id(ctx), ctx.invalidate)
+            rate.invalidate(id(ctx), ctx.invalidate, session)
 
     widget.observe(invalidate, names, type)  # type: ignore
 

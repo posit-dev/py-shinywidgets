@@ -5,7 +5,7 @@ import weakref
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Literal, Optional, Sequence, Tuple
 
-from shiny import reactive, req
+from shiny import Session, reactive, req
 from shiny.reactive._core import (
     get_current_context,  # pyright: ignore[reportPrivateImportUsage]
 )
@@ -114,17 +114,32 @@ class WidgetRate:
     """
     One widget's rate limit for `reactive_read()`, shared by every reader so
     that a throttle window outlives the reactive re-runs it causes.
+
+    A shared widget's readers span sessions, so its timers belong to none of
+    them (a session's queued work is dropped when it ends, which would leave a
+    window open for good); each delayed invalidation goes through its reader's
+    own session instead.
     """
 
     def __init__(self, policy: RatePolicy, delay_ms: int) -> None:
         self.policy: RatePolicy = policy
         self.delay_ms = delay_ms
-        self._pending: Dict[int, Callable[[], None]] = {}
-        self._limiter = RateLimiter(self._fire, policy=policy, delay_ms=delay_ms)
+        self._pending: Dict[int, Tuple[Callable[[], None], Optional[Session]]] = {}
+        self._calling = False
+        self._limiter = RateLimiter(
+            self._fire, policy=policy, delay_ms=delay_ms, schedule=timer_schedule
+        )
 
-    def invalidate(self, key: int, fn: Callable[[], None]) -> None:
-        self._pending[key] = fn
-        self._limiter.call()
+    def invalidate(
+        self, key: int, fn: Callable[[], None], session: Optional[Session]
+    ) -> None:
+        """Run `fn` (invalidating a reader in `session`) as the rate allows."""
+        self._pending[key] = (fn, session)
+        self._calling = True
+        try:
+            self._limiter.call()
+        finally:
+            self._calling = False
 
     def discard(self, key: int) -> None:
         self._pending.pop(key, None)
@@ -132,8 +147,11 @@ class WidgetRate:
     def _fire(self) -> None:
         pending = list(self._pending.values())
         self._pending.clear()
-        for fn in pending:
-            fn()
+        for fn, session in pending:
+            if self._calling or session is None or session.is_stub_session():
+                fn()  # the leading edge, inside the cycle that changed the trait
+            else:
+                session.root_scope().run_once_when_idle(fn)
 
 
 RATE_POLICIES: Dict[int, WidgetRate] = {}
@@ -345,6 +363,11 @@ class RateLimiter:
             self._pending = False
             self._fn()
             self._open_window()
+
+
+def timer_schedule(delay: float, fn: Callable[[], None]) -> Callable[[], None]:
+    handle = asyncio.get_running_loop().call_later(delay, fn)
+    return handle.cancel
 
 
 def loop_schedule(delay: float, fn: Callable[[], None]) -> Callable[[], None]:

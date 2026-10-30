@@ -1,3 +1,4 @@
+import asyncio
 import gc
 
 import pytest
@@ -143,7 +144,7 @@ def test_reactive_depend_debounces_when_renderer_registered_policy(
     monkeypatch,
 ) -> None:
     timers = FakeTimers()
-    monkeypatch.setattr(acc, "loop_schedule", timers)
+    monkeypatch.setattr(acc, "timer_schedule", timers)
     ctx = FakeContext()
     monkeypatch.setattr(sw, "get_current_context", lambda: ctx)
     w = FakeWidget({"x": 1})
@@ -166,7 +167,7 @@ def test_reactive_depend_debounces_when_renderer_registered_policy(
 
 def test_reactive_depend_throttle_window_spans_reruns(monkeypatch) -> None:
     timers = FakeTimers()
-    monkeypatch.setattr(acc, "loop_schedule", timers)
+    monkeypatch.setattr(acc, "timer_schedule", timers)
     w = FakeWidget({"x": 1})
     acc.register_rate_policy(w, "throttle", 1000)  # type: ignore[arg-type]
 
@@ -186,6 +187,68 @@ def test_reactive_depend_throttle_window_spans_reruns(monkeypatch) -> None:
     assert second.invalidated == 0
     timers.fire()  # the window closes
     assert second.invalidated == 1
+
+
+class IdleSession:
+    """A session whose idle queue runs only when drained (never, if it ended)."""
+
+    def __init__(self) -> None:
+        self.queued: list = []
+
+    def is_stub_session(self) -> bool:
+        return False
+
+    def root_scope(self) -> "IdleSession":
+        return self
+
+    def run_once_when_idle(self, fn) -> None:  # type: ignore[no-untyped-def]
+        self.queued.append(fn)
+
+    def drain(self) -> None:
+        queued, self.queued = self.queued, []
+        for fn in queued:
+            fn()
+
+
+def test_throttle_survives_the_session_that_opened_its_window_ending(
+    monkeypatch,
+) -> None:
+    # A shared widget: a change from one session opens the window, then that
+    # session disconnects (its idle queue never runs again)
+    reader_session, ended_session = IdleSession(), IdleSession()
+    current = {"session": reader_session}
+    monkeypatch.setattr(sw, "get_current_session", lambda: current["session"])
+    monkeypatch.setattr(acc, "get_current_session", lambda: current["session"])
+    w = FakeWidget({"x": 1})
+    acc.register_rate_policy(w, "throttle", 10)  # type: ignore[arg-type]
+
+    def depend() -> FakeContext:
+        ctx = FakeContext()
+        monkeypatch.setattr(sw, "get_current_context", lambda: ctx)
+        current["session"] = reader_session
+        sw.reactive_depend(w, "x")  # type: ignore[arg-type]
+        return ctx
+
+    def change() -> None:
+        current["session"] = ended_session
+        w.observe_calls[-1][0]({})
+
+    async def main() -> None:
+        first = depend()
+        change()
+        assert first.invalidated == 1  # leading edge
+        first.run_invalidate_callbacks()
+        second = depend()
+        change()  # inside the window
+        await asyncio.sleep(0.05)
+        reader_session.drain()
+        assert second.invalidated == 1  # the window closed anyway
+        second.run_invalidate_callbacks()
+        third = depend()
+        change()
+        assert third.invalidated == 1  # and a new one opens
+
+    asyncio.run(main())
 
 
 class UnhashableWidget(FakeWidget):
