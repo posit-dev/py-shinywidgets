@@ -5,6 +5,7 @@ import shinywidgets._accessors as acc
 import shinywidgets._render_widget_base as rwb
 from shiny import reactive as shiny_reactive
 from shiny.reactive._core import Context
+from shiny.reactive._extended_task import DenialContext
 
 
 class FakeLiveWidget:
@@ -416,4 +417,22 @@ def test_rerender_invalidates_real_contexts_that_unregister_themselves(
     asyncio.run(r._render())
 
     assert all(ctx._invalidated for ctx in contexts)
+    assert r._contexts == set()
+
+
+def test_widget_is_readable_inside_an_extended_task(monkeypatch) -> None:
+    # An extended task's body runs under a context that refuses dependencies;
+    # e.g. geolibre's blocking methods must be called (on `.widget`) from one
+    r = rwb.render_widget_base()
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    widget = FakeLiveWidget()
+    monkeypatch.setattr(rwb, "as_widget", lambda value: widget)
+    asyncio.run(r._render())
+
+    monkeypatch.setattr(rwb, "get_current_context", lambda: DenialContext())
+    assert r.widget is widget
     assert r._contexts == set()

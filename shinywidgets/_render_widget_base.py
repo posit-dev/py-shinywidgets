@@ -257,9 +257,16 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         if not has_current_context():
             return
         ctx = get_current_context()
-        if ctx not in self._contexts:
-            self._contexts.add(ctx)
+        if ctx in self._contexts:
+            return
+        self._contexts.add(ctx)
+        try:
             ctx.on_invalidate(lambda: self._contexts.discard(ctx))
+        except RuntimeError:
+            # An extended task's body runs under a context that refuses
+            # dependencies; still let it reach `.widget` (e.g. to call
+            # geolibre's blocking methods)
+            self._contexts.discard(ctx)
 
 
 def has_current_context() -> bool:
