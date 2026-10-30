@@ -39,10 +39,10 @@ AXIS_RANGE_KEY = re.compile(r"^[xy]axis\d*\.(range|autorange)")
 def points_frame(points: List[Point]) -> "pd.DataFrame":
     try:
         import pandas as pd
-    except ImportError as e:  # pandas is optional, see the plotly extra
+    except ImportError as e:  # plotly itself doesn't need pandas
         raise ImportError(
             "Reading plotly points as a DataFrame requires pandas "
-            "(`pip install pandas`)."
+            "(`pip install 'shinywidgets[plotly]'`)."
         ) from e
 
     columns = ["trace_index", "point_index", "x", "y"]

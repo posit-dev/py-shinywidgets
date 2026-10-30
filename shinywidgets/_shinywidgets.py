@@ -1064,8 +1064,8 @@ def shared_lifetime() -> Iterator[None]:
     Works with or without an active session, so a widget can be built at module
     level and returned from any session's render. Layout defaults a renderer
     applies to it (e.g., filling its container) affect it for all sessions. Output
-    accessors (e.g., a plotly output's ``clicked()``) on a shared widget report
-    whichever session interacted with it last.
+    accessors (e.g., a plotly output's ``clicked()``) aren't scoped to a session
+    on a shared widget, so don't rely on what they report there.
 
     Construct each shared widget once: at the top level of a module the app
     imports, or lazily, cached in a module-level variable. Don't construct one in

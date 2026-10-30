@@ -1883,8 +1883,9 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
       use ``req(plot.tapped())`` to wait for it.
     * A re-render (e.g. when the render function reads an input) gives the user
       a new plot, so they all start over.
-    * Repeating an interaction (selecting the same points again) isn't a
-      change, so readers don't re-run.
+    * Selecting the same points again isn't a change, so readers of
+      ``selected()`` don't re-run. Every tap, zoom, or pan re-runs readers of
+      ``tapped()`` and ``zoomed()``.
     * ``selected()`` updates at most once the user pauses for 250 ms (see
       ``rate_policy`` and ``rate_delay``).
     * They can't be read inside this output's own render function, which builds
@@ -1926,8 +1927,8 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         The row indices (into the plot's `ColumnDataSource`) of the most recent
         selection, from a tap, box, or lasso select tool.
 
-        Returns ``None`` until the user selects, even if the source's selection
-        was set in Python, and ``[]`` after a selection that caught nothing.
+        Returns ``None`` until the user selects, and ``[]`` after a selection
+        that caught nothing.
         Requires a plot (or layout) with exactly one `ColumnDataSource`.
         Debounced (250 ms) by default; see the ``rate_policy`` and
         ``rate_delay`` parameters.
