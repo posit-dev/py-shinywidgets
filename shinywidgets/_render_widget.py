@@ -361,12 +361,33 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
 
     Note
     ---
-    **Selections and params**: name your selections and params (e.g.,
-    ``alt.selection_interval(name="brush")``), then read them reactively with
-    ``chart.selected("brush")``, or the rows they select with
-    ``chart.selected_rows("brush")`` (see the methods below). Selections can't be
-    set from Python, but params can: setting ``chart.widget.params.<name> =
-    value`` updates the chart in place without re-sending its data. Prefer params
+    **Reacting to selections**: give each selection a name (e.g.,
+    ``alt.selection_interval(name="brush")``; altair's generated names change
+    between renders). Then read it in a reactive function (a ``@render.*``
+    function, ``@reactive.calc``, or ``@reactive.effect``), which re-runs
+    whenever the user changes it, much like ``input.my_slider()``:
+
+    * ``chart.selected("brush")``: the selection's current state.
+    * ``chart.selected_rows("brush")``: the rows of the chart's data it selects,
+      evaluated the way Vega-Lite does (including binned and date fields).
+
+    How they behave:
+
+    * Unlike other renderers' accessors, ``selected()`` isn't ``None`` once the
+      chart has rendered: altair reports its selections from the start, so it's
+      an empty selection (and ``selected_rows()`` an empty frame) until the user
+      selects.
+    * A re-render (e.g. when the render function reads an input) gives the user
+      a new chart, whose selections start out empty.
+    * While the user drags, they update at most once the user pauses for 250 ms
+      (see ``rate_policy`` and ``rate_delay``).
+    * They can't be read inside this output's own render function, which builds
+      a new chart each time it runs. To change the chart in response, set a
+      param (below) from a ``@reactive.effect``.
+
+    **Params**: selections can't be set from Python, but params can: setting
+    ``chart.widget.params.<name> = value`` updates the chart in place without
+    re-sending its data. Prefer params
     (or a re-render) over replacing ``chart.widget.chart``, which re-sends the data,
     drops the container sizing described below, and replaces
     ``chart.widget.selections`` and ``chart.widget.params``.
@@ -1827,19 +1848,50 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
 
     The decorated function also gains two read-only attributes: `.value`, the bokeh
     object most recently returned by the render function, and `.widget`, the rendered
-    `BokehModel` instance. Bokeh model properties are not widget traits, so instead
-    of :func:`~shinywidgets.reactive_read`, read user interaction with the
-    output's accessors (e.g., ``plot.selected()``, ``plot.selected_rows()``,
-    ``plot.tapped()``; see the methods below), or use bokeh's own callbacks
-    (e.g., ``source.selected.on_change("indices", ...)``), which may set
-    `reactive.value`s. To update the plot without re-rendering, modify the bokeh
-    models in place (e.g., ``source.data = ...``). Plots that share a
+    `BokehModel` instance. To update the plot without re-rendering, modify the
+    bokeh models in place (e.g., ``source.data = ...``). Plots that share a
     `ColumnDataSource` (e.g., for linked selection) must be returned together, in
     one layout, from a single render function. Create bokeh models per session
     (e.g., inside the render function), not at the top level of a Shiny Core app,
     where every visitor would share them.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Reacting to user interaction**: bokeh model properties aren't widget
+    traits, so :func:`~shinywidgets.reactive_read` can't see them. Instead, the
+    output has methods that read what the user does in the plot, much like
+    ``input.my_slider()`` reads an input. Call them in a reactive function (a
+    ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``), which
+    then re-runs whenever the interaction changes:
+
+    * ``selected()``: the indices of the selected rows of the plot's
+      `ColumnDataSource` (from the tap, box, or lasso select tools), and
+      ``selected_rows()``: those rows, as a data frame. These need a plot with
+      exactly one `ColumnDataSource`.
+    * ``tapped()``: the most recent tap, with its ``.x`` and ``.y`` in data
+      units.
+    * ``zoomed()``: the plot's ranges after a zoom or pan.
+
+    How they behave:
+
+    * Each returns ``None`` until the interaction happens (``selected_rows()``
+      an empty frame). That's a normal state, not an error, so check for it, or
+      use ``req(plot.tapped())`` to wait for it.
+    * A re-render (e.g. when the render function reads an input) gives the user
+      a new plot, so they all start over.
+    * Repeating an interaction (selecting the same points again) isn't a
+      change, so readers don't re-run.
+    * ``selected()`` updates at most once the user pauses for 250 ms (see
+      ``rate_policy`` and ``rate_delay``).
+    * They can't be read inside this output's own render function, which builds
+      a new plot each time it runs. To change the plot in response, modify the
+      bokeh models from a ``@reactive.effect`` instead.
+
+    For anything else, bokeh's own callbacks (e.g.,
+    ``source.selected.on_change("indices", ...)``) work too, and may set
+    `reactive.value`s.
 
     Parameters
     ----------
@@ -2299,10 +2351,37 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
 
     Note
     ---
-    **Events**: to respond to user interaction, read the output's accessors in
-    a reactive context, e.g. ``plot.clicked()``, ``plot.selected()``, or
-    ``plot.selected_rows(df)`` (see the methods below). Each returns ``None``
-    until the interaction happens.
+    **Reacting to user interaction**: the output has methods that read what the
+    user does in the plot, much like ``input.my_slider()`` reads an input. Call
+    them in a reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which then re-runs whenever the interaction changes:
+
+    * ``clicked()``: the clicked points.
+    * ``selected()``: the points of a box or lasso selection, once the drag ends
+      (``selecting()``: the same, while the user drags).
+    * ``brushed()``: the selected region itself (``brushing()``: while dragging).
+    * ``relayout()``: the axis ranges after a zoom, pan, or autoscale.
+    * ``selected_rows(df)``: the rows of your data the user selected. This needs
+      each point to carry its row as ``customdata``, e.g.
+      ``px.scatter(df, ..., custom_data=[df.index])``; see the method for
+      details.
+
+    How they behave:
+
+    * Each returns ``None`` until the interaction happens. That's a normal
+      state, not an error, so check for it, or use ``req(plot.clicked())`` to
+      wait for it.
+    * A re-render (e.g. when the render function reads an input) gives the user
+      a new plot, so they all start over at ``None``.
+    * Repeating an interaction (clicking the same point twice) isn't a change,
+      so readers don't re-run.
+    * As in the plot itself, a double-click clears ``clicked()``, and a deselect
+      (double-clicking after a selection) clears the selection accessors.
+    * The streaming ones, ``selecting()`` and ``brushing()``, update at most
+      once the user pauses for 250 ms (see ``rate_policy`` and ``rate_delay``).
+    * They can't be read inside this output's own render function, which builds
+      a new plot each time it runs. To change the plot in response to a click,
+      modify ``.widget`` from a ``@reactive.effect`` instead (see the example).
 
     **Updating in place**: re-rendering rebuilds the figure, resetting zoom and
     selection. To change a displayed figure instead, read inputs under
@@ -2367,6 +2446,34 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
 
 
     app = App(app_ui, server)
+    ```
+
+    Reacting to clicks and selections:
+
+    ```python
+    import plotly.express as px
+    from shiny import reactive, req
+    from shiny.express import render
+    from shinywidgets import render_plotly
+
+    df = px.data.iris()
+
+
+    @render_plotly
+    def plot():
+        fig = px.scatter(df, x="sepal_width", y="sepal_length", custom_data=[df.index])
+        return fig.update_layout(dragmode="select")
+
+
+    @render.data_frame
+    def picked():
+        return plot.selected_rows(df)  # empty until the user selects
+
+
+    @reactive.effect
+    def _():
+        pts = req(plot.clicked())
+        plot.widget.layout.title.text = f"Clicked x={pts['x'].iloc[0]}"
     ```
     """
 
