@@ -538,9 +538,10 @@ class render_embedding_atlas(
         How to rate-limit :meth:`predicate` and :meth:`selection` (debounced
         by default) and :func:`~shinywidgets.reactive_read` on the widget:
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps the
-        debounce and leaves ``reactive_read()`` unlimited.
+        debounce, and debounces ``reactive_read()`` only if ``rate_delay`` is
+        given.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
@@ -580,7 +581,7 @@ class render_embedding_atlas(
         )
         self.allow_unrestricted_connection = allow_unrestricted_connection
 
-    accessor_specs = EMBEDDING_ATLAS_ACCESSORS
+    _accessor_specs = EMBEDDING_ATLAS_ACCESSORS
 
     def predicate(self) -> Optional[str]:
         """
@@ -880,14 +881,14 @@ class render_itables(render_widget_base[ValueT, ITable]):
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
-        ``reactive_read()`` unlimited.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
 
-    accessor_specs = ITABLES_ACCESSORS
+    _accessor_specs = ITABLES_ACCESSORS
 
     def selected_rows(self) -> List[int]:
         """
@@ -970,14 +971,14 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
-        ``reactive_read()`` unlimited.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
 
-    accessor_specs = JSCATTER_ACCESSORS
+    _accessor_specs = JSCATTER_ACCESSORS
 
     def selection(self) -> "np.ndarray":
         """
@@ -1184,13 +1185,14 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
         How to rate-limit :meth:`selection` and :meth:`brush` (debounced by
         default) and :func:`~shinywidgets.reactive_read` on the widget:
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps the
-        debounce and leaves ``reactive_read()`` unlimited.
+        debounce, and debounces ``reactive_read()`` only if ``rate_delay`` is
+        given.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
 
-    accessor_specs = BPLOT_ACCESSORS
+    _accessor_specs = BPLOT_ACCESSORS
 
     def selection(self) -> List[Optional["np.ndarray"]]:
         """
@@ -2405,14 +2407,14 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
-        ``reactive_read()`` unlimited.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
 
-    accessor_specs = IPYDATAGRID_ACCESSORS
+    _accessor_specs = IPYDATAGRID_ACCESSORS
 
     def selections(self) -> List[Dict[str, int]]:
         """
