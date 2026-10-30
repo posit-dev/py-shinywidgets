@@ -2399,7 +2399,9 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     writes files on the server. The renderer locks down the connection before
     display (``SET enable_external_access = false``; ``SET lock_configuration =
     true``); pass ``allow_unrestricted_connection=True`` to opt out (e.g., a
-    local, single-user app). Unlike `render_embedding_atlas`'s connection
+    local, single-user app). A connection whose configuration is already locked
+    is left untouched (its owner took control of its settings). Unlike
+    `render_embedding_atlas`'s connection
     (private to one widget), this lockdown can reach a connection the app is
     still using elsewhere: DuckDB's lockdown is permanent (it can't be undone)
     and database-wide (it also locks every other cursor on the same database,
@@ -4193,7 +4195,9 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
     writes files on the server. The renderer locks down the widget's connection
     before display (``SET enable_external_access = false``; ``SET
     lock_configuration = true``); pass ``allow_unrestricted_connection=True`` to
-    opt out (e.g., a local, single-user app).
+    opt out (e.g., a local, single-user app). A connection whose configuration
+    is already locked is left untouched (its owner took control of its
+    settings).
 
     Parameters
     ----------
