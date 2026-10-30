@@ -1936,10 +1936,10 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     rate_policy
-        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
-        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
-        this renderer declares a default.
+        How to rate-limit :meth:`view_state` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
@@ -1954,10 +1954,12 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         ``pitch``, and ``bearing``, in lng/lat order.
 
         Available as soon as the map has rendered (it's computed from the
-        layers), and updated by the browser after each pan or zoom -- lonboard
-        reports ~300 ms after the gesture settles, so no rate limit is
-        applied. Never ``None`` once rendered; the map is immutable per
-        render, so a re-render starts from the new map's own view state.
+        layers), and updated by the browser during each pan or zoom -- the
+        browser reports continuously through the gesture, so this accessor
+        is debounced by default (0.25 s; see the renderer's
+        ``rate_policy``/``rate_delay``). Never ``None`` once rendered; the
+        map is immutable per render, so a re-render starts from the new
+        map's own view state.
         """
         return cast("BaseViewState", self._read_accessor("view_state"))
 
@@ -3090,9 +3092,10 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     rate_policy
-        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
-        ``reactive_read()`` only if ``rate_delay`` is given.
+        How to rate-limit :meth:`selections` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
@@ -3110,8 +3113,11 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         ``[]`` while nothing is selected, and after a sort (sorting clears
         the selection). Requires ``selection_mode`` other than ``"none"``;
         a plain data frame return uses ``"none"``, so return
-        ``DataGrid(df, selection_mode="row")`` to let users select. Not
-        rate-limited.
+        ``DataGrid(df, selection_mode="row")`` to let users select.
+
+        Dragging a selection rectangle reports continuously (on every
+        pointer move), so this accessor is debounced by default (0.25 s;
+        see the renderer's ``rate_policy``/``rate_delay``).
         """
         return cast(List[Dict[str, int]], self._read_accessor("selections"))
 
