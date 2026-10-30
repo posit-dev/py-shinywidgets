@@ -1,3 +1,6 @@
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 from ipywidgets import HTML, Widget
 
@@ -7,7 +10,11 @@ pytest.importorskip("trame_pyvista")
 pv.OFF_SCREEN = True
 
 from shiny.session import session_context  # noqa: E402
-from shinywidgets._as_widget import as_widget, as_widget_pyvista  # noqa: E402
+from shinywidgets._as_widget import (  # noqa: E402
+    as_widget,
+    as_widget_pyvista,
+    ensure_pyvista_trame_server,
+)
 from shinywidgets._render_widget_base import (  # noqa: E402
     pyvista_layout_defaults,
     set_layout_defaults,
@@ -23,6 +30,33 @@ def make_plotter() -> "pv.Plotter":
     pl = pv.Plotter(notebook=True, window_size=[400, 300])
     pl.add_mesh(pv.Sphere())
     return pl
+
+
+def test_ensure_pyvista_trame_server_starts_for_concurrent_callers() -> None:
+    # First render(s) may race to start the shared trame server: every caller
+    # should unblock once it's ready, without erroring or deadlocking (this
+    # test runs first, while the server is still cold)
+    barrier = threading.Barrier(8)
+
+    def call_ensure() -> None:
+        barrier.wait(timeout=10)
+        ensure_pyvista_trame_server()
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(call_ensure) for _ in range(8)]
+        for f in futures:
+            f.result(timeout=60)
+
+    from trame_pyvista.widgets import get_server
+
+    server = get_server(pv.global_theme.trame.jupyter_server_name)
+    assert server.running
+
+
+def test_ensure_pyvista_trame_server_idempotent() -> None:
+    ensure_pyvista_trame_server()
+    # Fast path: the server is already running, so this returns immediately
+    ensure_pyvista_trame_server()
 
 
 def test_as_widget_pyvista_coerces_plotter(widget_session) -> None:

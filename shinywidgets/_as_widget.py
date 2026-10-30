@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import threading
-import time
 import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -552,6 +551,11 @@ def as_widget_plotly(x: object) -> Optional[Widget]:
 
 
 _PYVISTA_TRAME_SERVER_LOCK = threading.Lock()
+_PYVISTA_TRAME_SERVER_THREAD: threading.Thread | None = None
+# Set once the server is ready to export scenes (or startup has failed), so
+# first renders block on an Event instead of polling server.running
+_PYVISTA_TRAME_SERVER_DONE = threading.Event()
+_PYVISTA_TRAME_SERVER_ERROR: BaseException | None = None
 
 
 def ensure_pyvista_trame_server() -> None:
@@ -565,6 +569,12 @@ def ensure_pyvista_trame_server() -> None:
     here instead, in a daemon thread with its own event loop: asyncio stays
     untouched, and the server (localhost-only, on an ephemeral port) is shared
     by every html export in the process and dies with the process.
+
+    Startup is intentionally lazy (on first render) rather than warmed up at
+    app/session start: no thread is spawned for apps that never render a
+    pyvista Plotter, and -- since daemon threads don't survive fork() -- the
+    server is started by the process that actually serves the render (e.g. a
+    uvicorn worker), not a parent that may have forked since.
     """
     import pyvista as pv  # pyright: ignore[reportMissingImports]
     from trame.widgets import vtk as vtk_widgets  # pyright: ignore[reportMissingImports]
@@ -576,52 +586,87 @@ def ensure_pyvista_trame_server() -> None:
     if server.running:
         return
 
+    global _PYVISTA_TRAME_SERVER_THREAD
     with _PYVISTA_TRAME_SERVER_LOCK:
-        if server.running:
-            return
+        # Only the first caller spawns the server thread; concurrent first
+        # renders wait on _PYVISTA_TRAME_SERVER_DONE below
+        if not server.running and _PYVISTA_TRAME_SERVER_THREAD is None:
+            # Enable the vtk widget module (which registers the scene-export
+            # protocol the html export uses) before the server starts. This is
+            # the piece of trame_pyvista.jupyter.launch_server() the export
+            # actually needs; the rest (vuetify UI, vtklocal wasm) is for the
+            # interactive backends shinywidgets doesn't use.
+            vtk_widgets.initialize(server)
 
-        # Enable the vtk widget module (which registers the scene-export
-        # protocol the html export uses) before the server starts. This is
-        # the piece of trame_pyvista.jupyter.launch_server() the export
-        # actually needs; the rest (vuetify UI, vtklocal wasm) is for the
-        # interactive backends shinywidgets doesn't use.
-        vtk_widgets.initialize(server)
+            def run_server() -> None:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
 
-        def run_server() -> None:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            start = server.start(
-                # Return a coroutine to schedule on this thread's loop (rather
-                # than blocking it), so the server runs until the process exits
-                exec_mode="coroutine",
-                # Non-main thread: don't install signal handlers
-                thread=True,
-                # Localhost-only, on an ephemeral port; the exported widget is
-                # self-contained, so nothing ever connects to this server
-                host="127.0.0.1",
-                port=0,
-                open_browser=False,
-                show_connection_info=False,
-                disable_logging=True,
-                # Disable trame's auto-shutdown when no client is connected
-                # (nothing ever is)
-                timeout=0,
-            )
-            loop.create_task(cast(Any, start))
-            loop.run_forever()
-
-        threading.Thread(
-            target=run_server, name="shinywidgets-pyvista-trame", daemon=True
-        ).start()
-
-        deadline = time.monotonic() + 30
-        while not server.running:
-            if time.monotonic() > deadline:
-                raise RuntimeError(
-                    "Timed out waiting for pyvista's shared trame server to start "
-                    "(needed to export the scene for the html jupyter backend)."
+                # trame sets server.running immediately before triggering
+                # on_server_ready (on this thread's loop), so this wakes the
+                # waiting render(s) with the server ready to export
+                server.controller.on_server_ready.add(
+                    lambda **_: _PYVISTA_TRAME_SERVER_DONE.set()
                 )
-            time.sleep(0.01)
+
+                async def start() -> None:
+                    global _PYVISTA_TRAME_SERVER_ERROR
+                    try:
+                        await cast(
+                            Any,
+                            server.start(
+                                # Return a coroutine to schedule on this
+                                # thread's loop (rather than blocking it), so
+                                # the server runs until the process exits
+                                exec_mode="coroutine",
+                                # Non-main thread: don't install signal handlers
+                                thread=True,
+                                # Localhost-only, on an ephemeral port; the
+                                # exported widget is self-contained, so nothing
+                                # ever connects to this server
+                                host="127.0.0.1",
+                                port=0,
+                                open_browser=False,
+                                show_connection_info=False,
+                                disable_logging=True,
+                                # Disable trame's auto-shutdown when no client
+                                # is connected (nothing ever is)
+                                timeout=0,
+                            ),
+                        )
+                    except BaseException as e:  # noqa: BLE001
+                        _PYVISTA_TRAME_SERVER_ERROR = e
+                    finally:
+                        # Wake waiters even on startup failure (or if the
+                        # server exits before becoming ready) so they raise
+                        # below instead of timing out
+                        _PYVISTA_TRAME_SERVER_DONE.set()
+
+                loop.create_task(start())
+                loop.run_forever()
+
+            _PYVISTA_TRAME_SERVER_THREAD = threading.Thread(
+                target=run_server, name="shinywidgets-pyvista-trame", daemon=True
+            )
+            _PYVISTA_TRAME_SERVER_THREAD.start()
+
+    # Wait outside the lock: concurrent first renders all block on the same
+    # Event rather than serializing behind the thread spawn
+    if not _PYVISTA_TRAME_SERVER_DONE.wait(timeout=30):
+        raise RuntimeError(
+            "Timed out waiting for pyvista's shared trame server to start "
+            "(needed to export the scene for the html jupyter backend)."
+        )
+    if _PYVISTA_TRAME_SERVER_ERROR is not None:
+        raise RuntimeError(
+            "pyvista's shared trame server failed to start "
+            "(needed to export the scene for the html jupyter backend)."
+        ) from _PYVISTA_TRAME_SERVER_ERROR
+    if not server.running:
+        raise RuntimeError(
+            "pyvista's shared trame server stopped before it was ready "
+            "(needed to export the scene for the html jupyter backend)."
+        )
 
 
 def as_widget_pyvista(x: object) -> Widget:
