@@ -53,3 +53,20 @@ def test_data_queries_with_the_current_predicates(widget_session: Session) -> No
     assert len(r.data().df()) == 2
     w.params = {}
     assert len(r.data().df()) == 3
+
+
+def test_data_filter_by_selects_one_selection(widget_session: Session) -> None:
+    w = widget(widget_session)
+    r = renderer(w, rate_delay=0)
+    w.params = {
+        "brush": {"value": None, "predicate": '"x" > 1'},  # rows 2, 3
+        "brush2": {"value": None, "predicate": '"y" IN (\'a\', \'b\')'},  # rows 1, 2
+    }
+    # Default: every active selection filters
+    assert len(r.data().df()) == 1
+    # filter_by= picks one (with or without the leading "$")
+    assert len(r.data(filter_by="brush").df()) == 2
+    assert len(r.data(filter_by="$brush2").df()) == 2
+    assert len(r.data(filter_by=["brush", "brush2"]).df()) == 1
+    with pytest.raises(ValueError, match="Unknown selection"):
+        r.data(filter_by="nope")
