@@ -92,6 +92,17 @@ pythreejs = ["pythreejs"]
 quak = ["quak"]
 # vizarr pins zarr<3, so it is not in the shared test/dev groups
 vizarr = ["vizarr>=0.1.1"]
+# vitessce requires zarr>=3, so it can't be installed alongside the vizarr
+# extra (zarr<3) -- see tool.uv.conflicts -- and it isn't in the shared
+# optional-dependencies test/dev extras (its tests importorskip without it).
+# The pieces of vitessce[all] the widget + its three data modes need, without
+# [all]'s heavy/fragile deps (scanpy; oxc-py, which doesn't build on Python 3.15).
+# starlette/uvicorn power its local-data server, anndata
+# reads local AnnData files (3.12-3.14 only: 0.13 is the pandas-3-compatible
+# line, and h5py has no cp315 wheels yet), and jupyter-server-proxy is needed
+# for proxy mode
+# (deployed local data)
+vitessce = ["vitessce>=3.5.0", "starlette>=0.14.0", "uvicorn>=0.17.0", "anndata>=0.13; python_version >= '3.12' and python_version < '3.15'", "jupyter-server-proxy>=1.5.2"]
 rerun = ["rerun-sdk[notebook]>=0.40; python_version >= '3.11'"]
 test = [
   "altair",
@@ -231,6 +242,12 @@ dev = [
 
 [dependency-groups]
 test = [
+  # vitessce needs zarr>=3, conflicting with the vizarr extra (zarr<3), so
+  # it's in the uv dependency-group but not the shared pip extras (anndata is
+  # left out even here: h5py has no cp315 Linux wheels, and the unit tests
+  # don't exercise local AnnData files)
+  "vitessce>=3.5.0",
+  "jupyter-server-proxy",
   "altair",
   "bokeh",
   "bqplot",
@@ -306,6 +323,14 @@ dev = [
 ]
 
 [tool.uv]
+# vitessce requires zarr>=3 while vizarr pins zarr<3, so they can't be
+# installed together -- that goes for the vitessce extra and for the test/dev
+# dependency-groups (which carry vitessce's deps so its tests can run)
+conflicts = [
+  [{ extra = "vizarr" }, { extra = "vitessce" }],
+  [{ extra = "vizarr" }, { group = "test" }],
+  [{ extra = "vizarr" }, { group = "dev" }],
+]
 # mosaic-widget 0.33.0 declares narwhals>=2.8 but imports is_into_lazyframe,
 # which was added in narwhals 2.22. Drop this once upstream fixes its metadata.
 constraint-dependencies = ["narwhals>=2.22"]

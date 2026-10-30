@@ -79,6 +79,8 @@ if TYPE_CHECKING:
         from ipywidgets import Widget as RerunViewer
 
     # vizarr isn't in the dev/test groups (it pins zarr<3)
+    from vitessce import VitessceConfig
+    from vitessce.widget import VitessceWidget
     from vizarr import Viewer as VizarrViewer  # pyright: ignore[reportMissingImports]
 else:
     JupyterChart = DataGrid = ITable = JupyterScatter = KeplerGl = MplCanvas = Sigma = (
@@ -93,8 +95,8 @@ else:
     ) = QuakWidget = PerspectiveWidget = GeolibreMap = IpyvolumeFigure = (
         PythreejsRenderer
     ) = ObsplotWidget = VizarrViewer = RerunViewer = RerunNotebookViewer = NiiVue = (
-        object
-    )
+        VitessceConfig
+    ) = VitessceWidget = object
 
 from shiny.render.renderer import ValueFn
 
@@ -139,6 +141,12 @@ DrawdataWidgetT = TypeVar(
 # notebook Viewer (coerced to its inner widget) or the rerun_notebook widget
 # itself. String bound since rerun is an optional dependency.
 RerunValueT = TypeVar("RerunValueT", bound="Union[RerunViewer, RerunNotebookViewer]")
+# The values a @render_vitessce render function may return: a VitessceConfig
+# (coerced via .widget()) or the VitessceWidget itself. String bound since
+# vitessce is an optional dependency.
+VitessceValueT = TypeVar(
+    "VitessceValueT", bound="Union[VitessceConfig, VitessceWidget]"
+)
 
 __all__ = (
     "render_widget",
@@ -179,6 +187,7 @@ __all__ = (
     "render_quak",
     "render_vizarr",
     "render_rerun",
+    "render_vitessce",
 )
 
 
@@ -3145,3 +3154,131 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
     app = App(app_ui, server)
     ```
     """
+
+
+class render_vitessce(render_widget_base[VitessceValueT, VitessceWidget]):
+    """
+    Reactively render a [Vitessce](https://vitessce.io) viewer -- coordinated
+    multi-view exploration of single-cell and spatial-omics data -- as a
+    Shiny output, via [vitessce-python](https://github.com/vitessce/vitessce-python).
+
+    The decorated function may return either a `vitessce.VitessceConfig`
+    (the idiomatic builder; ``.widget()`` is called for you) or a
+    `vitessce.widget.VitessceWidget` (requires ``pip install
+    'shinywidgets[vitessce]'``). Return the widget yourself
+    (``config.widget(theme=..., height=..., proxy=..., custom_js_url=...)``)
+    to control those options.
+
+    The decorated function also gains two read-only attributes: `.value`, the
+    value most recently returned by the render function, and `.widget`, the
+    rendered `VitessceWidget` instance.
+
+    Note
+    ---
+    **Browser-to-Python state**: every interaction (pan, zoom, lasso,
+    gene/cell-set selection) syncs the entire view config back to the
+    ``_config`` trait. Despite the underscore, upstream documents and
+    designs this trait as the interaction-sync channel (the public
+    ``.config`` attribute is the originating `VitessceConfig` and is *not*
+    synced, so it goes stale on the first interaction; the only public
+    accessor, ``.widget.get_cell_selection()``, reads ``_config``
+    internally and covers just the one coordination type). So
+    ``reactive_read(vit.widget, "_config")`` makes the viewer a Shiny
+    input -- read it in a `reactive.calc` and extract the
+    ``coordinationSpace`` values you need (the dict carries everything).
+    The whole config syncs on every interaction frame, pan/zoom included,
+    so calcs on it invalidate at that rate -- keep them cheap and gate
+    expensive work behind explicit input.
+
+    **Python-to-browser updates**: assigning ``.widget._config`` takes
+    effect via a remount of the viewer, which is keyed on the config's
+    top-level ``uid``. ``VitessceConfig.to_dict()`` doesn't emit one, but
+    the viewer adds a ``uid`` on mount and echoes it back to ``_config``,
+    so in practice any config you read from the widget has one and the
+    bump is required: deep-copy the config, edit the
+    ``coordinationSpace``, set a fresh ``uid``, and reassign. The remount
+    resets the view state (zoom, selections) and re-fetches data (warm
+    from cache), so it's unsuitable for high-frequency updates. Don't
+    reach for ``config.widget(remount_on_uid_change=False)`` to avoid the
+    reset: with it, the viewer never adopts a new config, so Python-side
+    writes become no-ops. Also don't write ``_config`` from an immediate
+    effect at render time: the viewer echoes an upgraded config back on
+    mount, which can clobber an early write -- write on user input
+    instead.
+
+    **Sizing**: the widget's ``height`` is pixels, read once at mount, and
+    width is responsive. Pick ``config.widget(height=...)`` to match
+    ``output_widget(height=...)`` (defaults are 600px and filling,
+    respectively); setting ``.widget.height`` after mount does nothing.
+
+    **Data**: remote URLs (e.g., zarr stores on S3/GCS) are fetched by the
+    browser directly. Local files (AnnData, zarr, OME-TIFF) are served by an
+    embedded server in the Python process, which works when the browser runs
+    on the same host; don't pass ``port=`` in multi-session apps (it's
+    auto-allocated from 8000 up, and two servers can't share a port).
+    In-memory zarr stores need no server at all (chunks travel over the
+    widget comm).
+
+    **Network access**: the viewer's JavaScript (~12 MB) loads from CDNs
+    (unpkg/esm.sh) at render time, so it requires an internet connection;
+    pass ``custom_js_url=`` to ``config.widget()`` for a self-hosted bundle.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    from shiny import App, ui
+    from shinywidgets import output_widget, render_vitessce
+    from vitessce import VitessceConfig
+
+    app_ui = ui.page_fluid(output_widget("vit"))
+
+
+    def server(input, output, session):
+        @render_vitessce
+        def vit():
+            vc = VitessceConfig(schema_version="1.0.15", name="My data")
+            dataset = vc.add_dataset(name="d").add_file(
+                url="https://data-1.vitessce.io/0.0.33/main/human_lymph_node_10x_visium/human_lymph_node_10x_visium.h5ad.zarr",
+                file_type="anndata.zarr",
+            )
+            vc.add_view("spatial", dataset=dataset)
+            return vc
+
+
+    app = App(app_ui, server)
+    ```
+    """
+
+    def _as_widget(self, value: VitessceValueT) -> VitessceWidget:
+        if isinstance(value, Widget):
+            return super()._as_widget(value)
+        try:
+            from vitessce import VitessceConfig
+        except ImportError:
+            raise ImportError(
+                "Install the vitessce package to use render_vitessce with shinywidgets (pip install 'shinywidgets[vitessce]')."
+            )
+        if isinstance(value, VitessceConfig):
+            return cast(VitessceWidget, value.widget())
+        raise TypeError(
+            f"Don't know how to coerce {type(value).__name__} into a vitessce VitessceWidget "
+            "(return a VitessceConfig or the result of config.widget())."
+        )

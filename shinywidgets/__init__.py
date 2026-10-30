@@ -55,6 +55,7 @@ from ._render_widget import (
     render_pythreejs,
     render_quak,
     render_rerun,
+    render_vitessce,
     render_vizarr,
     render_widget,
 )
@@ -106,6 +107,7 @@ __all__ = (
     "render_quak",
     "render_vizarr",
     "render_rerun",
+    "render_vitessce",
     # Reactive read second
     "reactive_read",
     # UI methods third
