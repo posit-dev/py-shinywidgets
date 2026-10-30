@@ -138,6 +138,7 @@ from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
 from ._k3d import CAMERA as K3D_CAMERA
 from ._matplotlib import CLICKED, MATPLOTLIB_ACCESSORS, AxesLimits
+from ._niivue import LOCATION
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._pythreejs import CAMERA as PYTHREEJS_CAMERA
 from ._reactable import REACTABLE_ACCESSORS
@@ -4336,17 +4337,25 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
 
     Note
     ---
+    **Reacting to user interaction**: ``nv.location()`` reads the crosshair
+    position, much like ``input.my_slider()`` reads an input. Call it in a
+    reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which then re-runs whenever the crosshair moves.
+    It returns ``None`` until the first crosshair move (the position is not
+    sent on load), and resets to ``None`` on re-render. Debounced (250 ms)
+    by default; see ``rate_policy`` and ``rate_delay``. For every event
+    un-debounced, register a callback with ``@nv.on_location_change`` inside
+    the render function and have it set a session-scoped `reactive.Value`.
+
     **Reading the crosshair**: the crosshair position does *not* sync back
     as a trait (``reactive_read(nv.widget.scene, "crosshair_pos")`` never
-    updates). Instead, register a callback with
-    ``@nv.on_location_change`` inside the render function and have it set a
-    session-scoped `reactive.Value` -- the payload includes fractional and
-    millimeter coordinates and the voxel intensities under the crosshair.
-    (Beware: exceptions raised inside these callbacks are swallowed by
-    ipywidgets, so a failing callback just looks like "no updates".)
-    Similarly, ``nv.frac2mm()``/``nv.mm2frac()`` don't work on Shiny (the
-    coordinate matrices exist only in the browser); use the millimeter
-    coordinates from the `on_location_change` payload instead.
+    updates); ``location()`` (above) and the `on_location_change` callback
+    are the ways to read it. (Beware: exceptions raised inside
+    `on_location_change` callbacks are swallowed by ipywidgets, so a failing
+    callback just looks like "no updates".) Similarly,
+    ``nv.frac2mm()``/``nv.mm2frac()`` don't work on Shiny (the coordinate
+    matrices exist only in the browser); use the millimeter coordinates from
+    the ``location()`` payload instead.
 
     **Data size**: each render sends the viewer's JavaScript bundle (~5 MB)
     plus every volume (base64-encoded) to the browser, and the browser
@@ -4372,6 +4381,14 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`location` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce and leaves
+        ``reactive_read()`` unlimited.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables
+        rate limiting.
 
     Examples
     --------
@@ -4410,3 +4427,21 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
     app = App(app_ui, server)
     ```
     """
+
+    accessor_specs = (LOCATION,)
+
+    def location(self) -> Optional[Dict[str, Any]]:
+        """
+        The most recent crosshair position, as a dict with keys
+        ``ax_cor_sag`` (the view index), ``frac`` (fractional volume
+        coordinates), ``mm`` (millimeter coordinates), ``vox`` (voxel
+        coordinates), ``values`` (voxel intensities under the crosshair, one
+        per volume), ``string`` (a formatted summary), and ``xy`` (canvas
+        coordinates).
+
+        Returns ``None`` until the first crosshair move (the position is not
+        sent on load), and resets to ``None`` on re-render, so use
+        ``req(nv.location())`` to wait for a report. Debounced (250 ms) by
+        default; see the ``rate_policy`` and ``rate_delay`` parameters.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("location"))
