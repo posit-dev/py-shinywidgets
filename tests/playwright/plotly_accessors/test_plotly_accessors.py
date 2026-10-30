@@ -4,16 +4,16 @@ from playwright.sync_api import Page, expect
 from tests.playwright.conftest import assert_no_unexpected_errors, collect_errors
 
 # Page coordinates of a data point, via plotly.js's axis conversions.
-POINT_JS = """([x, y]) => {
-  const gd = document.querySelector("#plot .js-plotly-plot");
+POINT_JS = """([id, x, y]) => {
+  const gd = document.querySelector(`#${id} .js-plotly-plot`);
   const L = gd._fullLayout;
   const box = gd.querySelector(".nsewdrag").getBoundingClientRect();
   return [box.left + L.xaxis.d2p(x), box.top + L.yaxis.d2p(y)];
 }"""
 
 
-def point(page: Page, x: float, y: float) -> tuple[float, float]:
-    px, py = page.evaluate(POINT_JS, [x, y])
+def point(page: Page, x: float, y: float, id: str = "plot") -> tuple[float, float]:
+    px, py = page.evaluate(POINT_JS, [id, x, y])
     return px, py
 
 
@@ -74,3 +74,16 @@ def test_plotly_accessors_follow_real_gestures(page: Page, local_app) -> None:
     expect(page.locator("#brushing")).to_have_text("range", timeout=5000)
 
     assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_plotly_accessors_on_an_app_defined_figure_subclass(
+    page: Page, local_app
+) -> None:
+    page.goto(local_app.url)
+    expect(page.locator("#sub_plot .js-plotly-plot")).to_have_count(1, timeout=30000)
+    expect(page.locator("#sub_clicked")).to_have_text("None", timeout=10000)
+    page.wait_for_timeout(500)  # let the bind request reach the browser
+
+    page.locator("#sub_plot").scroll_into_view_if_needed()
+    page.mouse.click(*point(page, 3, 9, id="sub_plot"))
+    expect(page.locator("#sub_clicked")).to_have_text("3", timeout=5000)

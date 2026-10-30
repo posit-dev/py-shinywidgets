@@ -80,6 +80,9 @@ const jscatterBehavior: WidgetBehavior = {
 // render starts hidden, see renderValue()); keep it that way until a direct
 // Plotly resize completes, so the first visible paint is already settled.
 const plotlyBehavior: WidgetBehavior = {
+  // FigureWidget is an anywidget (a generic view name), so match on its
+  // plotly-specific traits
+  matches: (model) => '_py2js_animate' in model.attributes,
   onDisplayed: (ctx) => {
     if (ctx.isStale()) return;
 

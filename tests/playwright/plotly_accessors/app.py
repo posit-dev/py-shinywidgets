@@ -1,5 +1,6 @@
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 from shiny import reactive, req
 from shiny.express import input, render, ui
 from shinywidgets import render_plotly
@@ -60,3 +61,22 @@ def brushing():
     req(input.late())
     b = plot.brushing()
     return "None" if b is None else ",".join(sorted(b))
+
+
+# A FigureWidget subclass defined in app code reports the app's module, not
+# plotly, as its package
+class AppFigure(go.FigureWidget):
+    pass
+
+
+@render_plotly
+def sub_plot():
+    fig = AppFigure(px.scatter(df, x="x", y="y"))
+    fig.update_traces(marker_size=14)
+    return fig
+
+
+@render.text
+def sub_clicked():
+    pts = sub_plot.clicked()
+    return "None" if pts is None else ";".join(str(x) for x in pts["x"])
