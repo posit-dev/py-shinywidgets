@@ -165,7 +165,7 @@ def assert_rerender_cleanup(
         "console",
         lambda msg: errors.append(msg.text) if msg.type == "error" else None,
     )
-    page.on("pageerror", lambda err: errors.append(str(err)))
+    page.on("pageerror", lambda err: errors.append(_format_pageerror(err)))
 
     page.goto(local_app.url)
     page.wait_for_selector(ready_selector, timeout=30000)
@@ -213,6 +213,12 @@ CANVAS_HAS_PIXELS_JS = """(sel) => {
 }"""
 
 
+def _format_pageerror(err: PlaywrightError) -> str:
+    # Include the stack trace (when available) so a rare pageerror points at
+    # its source instead of just its (often generic) message
+    return f"{err}\n{err.stack}" if err.stack else str(err)
+
+
 def collect_errors(page: Page) -> tuple[list[str], list[str]]:
     """Collect browser console errors and failed (>= 400) request URLs."""
     errors: list[str] = []
@@ -221,7 +227,7 @@ def collect_errors(page: Page) -> tuple[list[str], list[str]]:
         "console",
         lambda msg: errors.append(msg.text) if msg.type == "error" else None,
     )
-    page.on("pageerror", lambda err: errors.append(str(err)))
+    page.on("pageerror", lambda err: errors.append(_format_pageerror(err)))
     page.on(
         "response",
         lambda res: failed_requests.append(res.url) if res.status >= 400 else None,
