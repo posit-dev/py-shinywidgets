@@ -104,3 +104,26 @@ def test_renderer_selection_round_trips_and_resets(widget_session: Session) -> N
     # ...and the eager re-attach still reports selections
     widget._raw_event_callbacks[-1](SELECTION_JSON)
     assert isinstance(r.selection(), SelectionChangeEvent)
+
+
+def test_selection_ignores_events_named_like_the_type_tag(
+    widget_session: Session,
+) -> None:
+    # The cheap prefilter is a substring match, so an application_id of
+    # "selection_change" passes it; only the parsed event's type may decide
+    widget = inner_viewer(widget_session)
+    emitted: List[object] = []
+    sr.SELECTION.attach(widget, emitted.append)
+    cb = widget._raw_event_callbacks[-1]
+    cb(
+        json.dumps(
+            {
+                "type": "time_update",
+                "application_id": "selection_change",
+                "recording_id": "r",
+                "segment_id": None,
+                "time": 1.0,
+            }
+        )
+    )
+    assert emitted == []

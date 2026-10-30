@@ -31,9 +31,16 @@ def attach_selection(widget: RerunNotebookViewer, emit: Emit) -> Callable[[], No
         if '"selection_change"' not in json_str:
             return
         # Private API, pinned by tests (see the module docstring)
-        from rerun.notebook import _viewer_event_from_json_str  # pyright: ignore[reportPrivateImportUsage]
+        from rerun.notebook import (
+            SelectionChangeEvent,
+            _viewer_event_from_json_str,  # pyright: ignore[reportPrivateImportUsage]
+        )
 
-        emit(_viewer_event_from_json_str(json_str))
+        event = _viewer_event_from_json_str(json_str)
+        # The substring prefilter can false-positive (e.g., an application_id
+        # of "selection_change"); only the parsed event's type decides
+        if isinstance(event, SelectionChangeEvent):
+            emit(event)
 
     # Private API, pinned by tests (see the module docstring)
     widget._on_raw_event(on_raw)
