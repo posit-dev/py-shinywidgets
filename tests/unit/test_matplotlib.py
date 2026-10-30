@@ -196,6 +196,16 @@ assert canvas.manager is not None
     subprocess.run([sys.executable, "-c", script], check=True, env=env)
 
 
+def test_created_canvas_hides_the_header_by_default(
+    widget_session: Session,
+) -> None:
+    with session_context(widget_session):
+        canvas = cast("Canvas", as_widget(Figure()))
+        assert canvas.header_visible is False
+        # ... but the footer (cursor readout) stays visible, unlike plotnine
+        assert canvas.footer_visible is True
+
+
 def test_existing_canvas_is_reused_with_its_settings(widget_session: Session) -> None:
     with session_context(widget_session):
         figure = Figure()
