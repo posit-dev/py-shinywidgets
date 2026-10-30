@@ -1382,16 +1382,24 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     rate_policy
-        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget
+        and on its graph's child ``Node``/``Edge`` widgets (whose
+        ``selected`` and ``grabbed`` traits are the ones worth reading):
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
         ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
-        this renderer declares a default.
+        this renderer declares a default. Nodes or edges added to the graph
+        after the render aren't covered (re-render to cover them).
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
 
     _accessor_specs = CYTOSCAPE_ACCESSORS
+
+    def _rate_policy_widgets(self, widget: CytoscapeWidget) -> Tuple[Widget, ...]:
+        # The interaction traits worth rate-limiting (`selected`, `grabbed`)
+        # live on the child Node/Edge widgets, not the CytoscapeWidget itself
+        return (widget, *widget.graph.nodes, *widget.graph.edges)
 
     def node_clicked(self) -> Optional[Dict[str, Any]]:
         """
