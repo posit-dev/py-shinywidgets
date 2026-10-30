@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     # Absent from 3.15+ environments (duckdb has no cp315 wheels, so its
     # dependents are excluded there; see pyproject.toml)
     import duckdb  # pyright: ignore[reportMissingImports]
+    import numpy as np
     import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
@@ -116,6 +117,7 @@ from ._as_widget import (
 from ._bokeh import _bokeh_dependency
 from ._bokeh_accessors import BOKEH_ACCESSORS, selected_frame
 from ._dependencies import widget_pkg
+from ._jscatter import JSCATTER_ACCESSORS
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
 
@@ -858,9 +860,10 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `JupyterScatter` instance. Use `.widget` to programmatically update the rendered
-    plot in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state (e.g., the selected points via ``"selection"``) with
+    `JupyterScatter` instance. Use ``.selection()`` to reactively read the selected
+    points (below), or `.widget` to programmatically update the rendered plot in
+    place (trait changes on the widget are synced to the browser), or to reactively
+    read widget state (e.g., the selected points via ``"selection"``) with
     :func:`~shinywidgets.reactive_read`. The selection is an array of row *positions*
     (use ``df.iloc[...]``), not index labels.
 
@@ -868,6 +871,14 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
 
     Note
     ---
+    **Reacting to selections**: read ``plot.selection()`` in a reactive function (a
+    ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``), which
+    re-runs whenever the user selects points (with the lasso, or by clicking one),
+    much like ``input.my_slider()`` reads an input. A re-render (e.g. when the
+    render function reads an input) gives the user a new plot, whose selection
+    starts out empty. It can't be read inside this output's own render function,
+    which builds a new plot each time it runs.
+
     **Large selections**: selecting more than about 3 million points sends the
     server a message larger than the default 16 MiB websocket limit, which
     disconnects the session. Raise the limit with ``shiny run --ws-max-size``.
@@ -887,7 +898,31 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
+        ``reactive_read()`` unlimited.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        limiting.
     """
+
+    accessor_specs = JSCATTER_ACCESSORS
+
+    def selection(self) -> "np.ndarray":
+        """
+        The currently selected points as a `numpy.ndarray` (uint32) of row
+        *positions* into the plot's data (use ``df.iloc[plot.selection()]``),
+        from a lasso or single click.
+
+        Empty while nothing is selected. Cancels (like `.widget`) until the
+        browser first reports, which a bare `JupyterScatter` only does after
+        the first selection. For index labels instead of positions (when the
+        render function returns a `jscatter.Scatter` with
+        ``data_use_index=True``), use ``plot.value.selection()``.
+        Not rate-limited.
+        """
+        return cast("np.ndarray", self._read_accessor("selection"))
 
 
 class render_k3d(render_widget_base[ValueT, K3dPlot]):
