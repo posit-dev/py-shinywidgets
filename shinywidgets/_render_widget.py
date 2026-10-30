@@ -118,6 +118,7 @@ from ._bokeh import _bokeh_dependency
 from ._bokeh_accessors import BOKEH_ACCESSORS, selected_frame
 from ._bqplot import BPLOT_ACCESSORS
 from ._dependencies import widget_pkg
+from ._ipydatagrid import IPYDATAGRID_ACCESSORS
 from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
@@ -2320,7 +2321,9 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `DataGrid` instance. Use `.widget` to programmatically update the rendered grid
+    `DataGrid` instance. Use ``.selections()``, ``.cell_clicked()``, and
+    ``.cell_edited()`` to reactively read what the user does in the grid, or
+    `.widget` to programmatically update the rendered grid
     in place (trait changes on the widget are synced to the browser), or to
     reactively read widget state (e.g., `selections`) with
     :func:`~shinywidgets.reactive_read`.
@@ -2356,7 +2359,56 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
+        ``reactive_read()`` unlimited.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        limiting.
     """
+
+    accessor_specs = IPYDATAGRID_ACCESSORS
+
+    def selections(self) -> List[Dict[str, int]]:
+        """
+        The grid's current selection rectangles, as ``[{"r1", "r2", "c1",
+        "c2"}, ...]`` (inclusive), in *visible* row/column coordinates —
+        i.e., after any sort or filter. Map them to data rows with
+        ``.widget.get_visible_data()`` (or use :meth:`visible_data`).
+
+        ``[]`` while nothing is selected, and after a sort (sorting clears
+        the selection). Requires ``selection_mode`` other than ``"none"``;
+        a plain data frame return uses ``"none"``, so return
+        ``DataGrid(df, selection_mode="row")`` to let users select. Not
+        rate-limited.
+        """
+        return cast(List[Dict[str, int]], self._read_accessor("selections"))
+
+    def cell_clicked(self) -> Optional[Dict[str, Any]]:
+        """
+        The most recently clicked cell, or ``None`` if no click has happened
+        since the last render: ``{"region", "column", "column_index", "row",
+        "primary_key_row", "cell_value"}``, where ``row`` is the *visible*
+        row and ``primary_key_row`` the *data* row (they differ after a sort).
+
+        Fires in any ``selection_mode``, including ``"none"``; fires for
+        column-header clicks (``region="column-header"``) and twice per
+        double-click. Not rate-limited.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("cell_clicked"))
+
+    def cell_edited(self) -> Optional[Dict[str, Any]]:
+        """
+        The most recent cell edit, or ``None`` if no edit has happened since
+        the last render: ``{"row", "column", "column_index", "value"}``,
+        where ``row`` is the *data* row. The widget's data is already updated
+        when this fires.
+
+        Requires ``editable=True``. Also fires for Python-side
+        ``set_cell_value*()`` calls. Not rate-limited.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("cell_edited"))
 
     # A DataFrame is a generic type (several renderers accept one), so it isn't
     # registered with as_widget()
