@@ -17,7 +17,9 @@ def test_location_reports_crosshair_and_debounces(page: Page, local_app) -> None
     canvas = page.locator("#brain canvas").first
     expect(canvas).to_be_visible(timeout=60000)
     expect(page.locator("#location")).to_have_text("None", timeout=30000)
-    page.wait_for_timeout(3000)  # let the remote volume finish loading
+    # Await the volume load on a real signal (the widget's image_loaded
+    # event), not a fixed timeout
+    expect(page.locator("#loaded")).to_have_text("yes", timeout=120000)
 
     # Click the canvas: the crosshair moves there and the location reports
     box = canvas.bounding_box()
@@ -25,22 +27,33 @@ def test_location_reports_crosshair_and_debounces(page: Page, local_app) -> None
     page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     expect(page.locator("#location")).to_have_text(MM_COORDS, timeout=30000)
 
-    # Drag the crosshair: reports stream in, but the debounced accessor
-    # settles without a flush storm (mirrors accessor_helper's debounce
-    # assertion)
-    expect(page.locator("#location")).to_have_text(MM_COORDS)
+    # A burst of 20 crosshair events in a tight loop must coalesce into a
+    # single debounced publish (the accessor debounces by 250 ms by default).
+    # Asserting on a synthetic burst keeps this deterministic: a real drag's
+    # event pacing depends on CI's event-loop timing, where the same
+    # assertion proved flaky.
+    expect(page.locator("#eval_count")).to_have_text(
+        re.compile(r"^\d+$"), timeout=10000
+    )
     before = int(page.locator("#eval_count").inner_text())
+    page.click("#burst")
+    # The settled value is the burst's final event
+    expect(page.locator("#location")).to_have_text("19.0,0.0,0.0", timeout=10000)
+    page.wait_for_timeout(500)  # let any further flush settle
+    after = int(page.locator("#eval_count").inner_text())
+    assert after - before == 1, (
+        f"20 crosshair events caused {after - before} evaluations; "
+        "the 250 ms debounce should coalesce them into 1"
+    )
+
+    # A real crosshair drag still settles on a correct location
     page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     page.mouse.down()
     page.mouse.move(
         box["x"] + box["width"] / 2 + 80, box["y"] + box["height"] / 2 + 40, steps=15
     )
-    page.wait_for_timeout(1000)
     page.mouse.up()
-    expect(page.locator("#eval_count")).not_to_have_text(str(before), timeout=10000)
-    page.wait_for_timeout(750)  # let the debounce window close
-    n = int(page.locator("#eval_count").inner_text()) - before
-    assert 1 <= n <= 4, f"expected a small bounded number of evaluations, got {n}"
+    expect(page.locator("#location")).to_have_text(MM_COORDS, timeout=10000)
 
     assert_no_unexpected_errors(
         errors, failed_requests, allowed_404s=ALLOWED_REQUEST_FAILURES
