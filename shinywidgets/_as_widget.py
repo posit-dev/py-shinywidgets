@@ -7,7 +7,7 @@ import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any, Dict, Optional, Protocol, cast
+from typing import TYPE_CHECKING, Any, Dict, Optional, Protocol, Tuple, cast
 
 from htmltools import HTMLDependency
 from ipywidgets.widgets.domwidget import DOMWidget
@@ -809,9 +809,25 @@ def as_widget_pyvista(x: object) -> Widget:
 
 def as_widget_plotnine(x: object) -> Widget:
     # Both ggplot and plot compositions (e.g., `p1 | p2`, plotnine >= 0.15)
-    # draw() to a matplotlib Figure
-    if not callable(getattr(x, "draw", None)):
-        raise TypeError(f"Don't know how to coerce {x} into a plotnine ggplot object.")
+    # draw() to a matplotlib Figure. Check the type explicitly rather than
+    # duck-typing draw(): other plotnine objects have a draw() too (e.g. a
+    # guide_legend()), but aren't plots and fail cryptically inside draw().
+    from plotnine import ggplot
+
+    plot_types: Tuple[type, ...] = (ggplot,)
+    try:
+        from plotnine.composition import Compose  # plotnine >= 0.15
+    except ImportError:
+        pass
+    else:
+        plot_types = (ggplot, Compose)
+
+    if not isinstance(x, plot_types):
+        raise TypeError(
+            f"Don't know how to coerce {x} into a plotnine plot: a "
+            f"{type(x).__name__} is not a plot. Return a plotnine.ggplot "
+            "or a plot composition (e.g., p1 | p2)."
+        )
 
     # draw() attaches the figure to the plot (and a later draw() reuses it), so
     # draw a copy, like plotnine's own save() and show() do

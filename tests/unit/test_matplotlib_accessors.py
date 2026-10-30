@@ -109,8 +109,10 @@ def test_renderer_methods_read_through_the_accessors(canvas) -> None:
         r.limits(ax=1)
 
 
-def test_plotnine_shares_the_clicked_spec() -> None:
-    assert rw.render_plotnine._accessor_specs == (sm.CLICKED,)
-    assert (
-        rw.render_plotnine._accessor_specs[0] is rw.render_matplotlib._accessor_specs[0]
-    )
+def test_plotnine_shares_the_matplotlib_specs() -> None:
+    # Same ipympl canvas, so plotnine shares matplotlib's specs (minus
+    # picked(): plotnine geoms reject the picker= kwarg, so there's no way
+    # to make a plotnine artist pickable through its API)
+    assert rw.render_plotnine._accessor_specs == (sm.CLICKED, sm.LIMITS)
+    assert rw.render_plotnine._accessor_specs[0] is rw.render_matplotlib._accessor_specs[0]
+    assert rw.render_plotnine._accessor_specs[1] is rw.render_matplotlib._accessor_specs[2]
