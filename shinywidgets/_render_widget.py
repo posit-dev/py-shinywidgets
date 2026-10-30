@@ -1656,8 +1656,9 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
 
         Readers are invalidated when its ``position``/``quaternion``/``zoom``
         change (at the end of each orbit) or the camera is replaced. Reading
-        before the first render cancels silently (like ``req(False)``). The
-        returned object is the same mutable instance across reads -- copy
+        before the first render cancels silently (like ``req(False)``), as
+        does reading while the figure has no camera (``fig.camera = None``).
+        The returned object is the same mutable instance across reads -- copy
         what you keep. Not rate-limited (the browser syncs once per orbit).
         """
         self._read_accessor("camera")

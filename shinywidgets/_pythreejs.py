@@ -72,6 +72,10 @@ def attach_camera(container: Widget, emit: Emit) -> Callable[[], None]:
         detach_inner()
         if change["new"] is not None:
             attach_inner(change["new"])
+        else:
+            # Camera removed (ipyvolume allows it): publish the not-ready
+            # sentinel, so readers cancel instead of keeping the old camera
+            emit(None)
 
     container.observe(on_container_change, names="camera")
     # `container` is an ipyvolume Figure or a pythreejs Renderer (both Widgets
@@ -79,6 +83,8 @@ def attach_camera(container: Widget, emit: Emit) -> Callable[[], None]:
     camera = cast(Optional["Camera"], getattr(container, "camera"))
     if camera is not None:
         attach_inner(camera)
+    else:
+        emit(None)
 
     def detach() -> None:
         container.unobserve(on_container_change, names="camera")
@@ -87,4 +93,11 @@ def attach_camera(container: Widget, emit: Emit) -> Callable[[], None]:
     return detach
 
 
-CAMERA = AccessorSpec(name="camera", kind="state", attach=attach_camera)
+CAMERA = AccessorSpec(
+    name="camera",
+    kind="state",
+    attach=attach_camera,
+    # A None raw means "no camera" (removed, or never set): reads cancel
+    # silently until a camera exists
+    not_ready=lambda raw: raw is None,
+)

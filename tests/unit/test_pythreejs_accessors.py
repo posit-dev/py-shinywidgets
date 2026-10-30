@@ -63,10 +63,31 @@ def test_camera_tolerates_a_none_camera() -> None:
     fig.camera = None
     emitted: List[object] = []
     detach = sp.CAMERA.attach(fig, emitted.append)
-    assert emitted == []  # nothing to observe until a camera is set
+    # None is published as the not-ready sentinel: readers cancel silently
+    # until a camera exists
+    assert emitted == [None]
     fig.camera = pythreejs.PerspectiveCamera(position=[1, 1, 1])
-    assert len(emitted) == 1
+    assert len(emitted) == 2
     detach()
+
+
+def test_camera_removal_cancels_readers() -> None:
+    import ipyvolume as ipv
+    from shiny.reactive._core import Context
+
+    fig = ipv.Figure()
+    fig.camera  # materialize the (lazy) default camera
+    r = rw.render_ipyvolume()
+    r._widget = fig  # stands in for _render()
+    r._accessors.on_render(fig)
+    context = Context()
+    with context():
+        r.camera()
+    fig.camera = None  # clearing the camera must publish (invalidate readers)
+    assert context._invalidated
+    # ...and subsequent reads cancel silently until a camera exists
+    with pytest.raises(SilentException):
+        r.camera()
 
 
 def test_renderer_camera_returns_the_live_camera() -> None:
