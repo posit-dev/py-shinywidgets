@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from playwright.sync_api import Page, expect
-from tests.playwright.conftest import assert_no_unexpected_errors, collect_errors
+from tests.playwright.conftest import (
+    assert_no_unexpected_errors,
+    collect_errors,
+    expose_manager,
+    wait_for_stable_model_view_count,
+)
 
 # Exporting the scene (server-side) and booting the embedded vtk.js client
 # (browser-side) are both slow on first render
@@ -93,18 +98,34 @@ def test_pyvista_fills_container_and_respects_explicit_height(
 
 def test_pyvista_rerender_lifecycle(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
+    page.route("**/output.js", expose_manager)
     page.goto(local_app.url)
 
-    expect(page.locator("#plot iframe.pyvista")).to_have_count(1, timeout=READY_TIMEOUT)
+    iframe = page.locator("#plot iframe.pyvista")
+    canvas = page.frame_locator("#plot iframe.pyvista").locator("canvas").first
+    expect(iframe).to_have_count(1, timeout=READY_TIMEOUT)
+    expect(canvas).to_be_visible(timeout=READY_TIMEOUT)
     expect(page.locator("#render_count")).to_have_text("0")
 
     for i in range(1, 4):
+        previous = iframe.element_handle()
         page.click("#rerender")
+        # render_count is a separate output that can update before the
+        # replacement view arrives; wait for the old view's iframe to detach
+        # and the new one to render its scene, so the cleanup assertions
+        # below can't be satisfied by a stale view
         expect(page.locator("#render_count")).to_have_text(str(i))
+        page.wait_for_function(
+            "(el) => !el.isConnected", arg=previous, timeout=READY_TIMEOUT
+        )
+        expect(canvas).to_be_visible(timeout=READY_TIMEOUT)
 
-    # Re-rendering replaces the widget; the old view must be disposed
+    # Re-rendering replaces the widget; the old view must be disposed, both
+    # in the DOM and in the manager's live-view registry (one HTMLModel view
+    # per output: #plot + #plot_fixed)
     expect(page.locator("#plot > .lm-Widget")).to_have_count(1)
-    expect(page.locator("#plot iframe.pyvista")).to_have_count(1)
+    expect(iframe).to_have_count(1)
+    assert wait_for_stable_model_view_count(page, "HTMLModel", expected=2) == 2
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)

@@ -550,12 +550,92 @@ def as_widget_plotly(x: object) -> Optional[Widget]:
     return go.FigureWidget(x.data, x.layout)  # type: ignore
 
 
+class _PyvistaTrameServerStartup:
+    """One attempt at starting pyvista's shared trame server."""
+
+    def __init__(self) -> None:
+        self.thread = threading.Thread(
+            target=self._run, name="shinywidgets-pyvista-trame", daemon=True
+        )
+        self._server: Any = None
+        # Set once the server is ready to export scenes (or this attempt has
+        # failed), so first renders block on an Event instead of polling
+        # server.running
+        self.done = threading.Event()
+        self.error: BaseException | None = None
+
+    def start(self, server: Any) -> None:
+        # Enable the vtk widget module (which registers the scene-export
+        # protocol the html export uses) before the server starts. This is
+        # the piece of trame_pyvista.jupyter.launch_server() the export
+        # actually needs; the rest (vuetify UI, vtklocal wasm) is for the
+        # interactive backends shinywidgets doesn't use.
+        from trame.widgets import vtk as vtk_widgets  # pyright: ignore[reportMissingImports]
+
+        vtk_widgets.initialize(server)
+
+        # trame sets server.running immediately before triggering
+        # on_server_ready (on the server thread's loop), so this wakes the
+        # waiting render(s) with the server ready to export
+        server.controller.on_server_ready.add(lambda **_: self.done.set())
+
+        self._server = server
+        self.thread.start()
+
+    def _run(self) -> None:
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            async def start() -> None:
+                try:
+                    await cast(
+                        Any,
+                        self._server.start(
+                            # Return a coroutine to schedule on this
+                            # thread's loop (rather than blocking it), so
+                            # the server runs until the process exits
+                            exec_mode="coroutine",
+                            # Non-main thread: don't install signal handlers
+                            thread=True,
+                            # Localhost-only, on an ephemeral port; the
+                            # exported widget is self-contained, so nothing
+                            # ever connects to this server
+                            host="127.0.0.1",
+                            port=0,
+                            open_browser=False,
+                            show_connection_info=False,
+                            disable_logging=True,
+                            # Disable trame's auto-shutdown when no client
+                            # is connected (nothing ever is)
+                            timeout=0,
+                        ),
+                    )
+                except BaseException as e:  # noqa: BLE001
+                    self.error = e
+                finally:
+                    # Wake waiters even on startup failure (or if the
+                    # server exits before becoming ready) so they raise
+                    # below instead of timing out
+                    self.done.set()
+                    if self.error is not None:
+                        # Let this thread exit so a later render can retry
+                        # with a fresh attempt (instead of leaking an idle
+                        # loop per failure)
+                        loop.stop()
+
+            loop.create_task(start())
+            loop.run_forever()
+        except BaseException as e:  # noqa: BLE001
+            self.error = e
+            self.done.set()
+
+
 _PYVISTA_TRAME_SERVER_LOCK = threading.Lock()
-_PYVISTA_TRAME_SERVER_THREAD: threading.Thread | None = None
-# Set once the server is ready to export scenes (or startup has failed), so
-# first renders block on an Event instead of polling server.running
-_PYVISTA_TRAME_SERVER_DONE = threading.Event()
-_PYVISTA_TRAME_SERVER_ERROR: BaseException | None = None
+# Startup attempts keyed by server name, so a reconfigured
+# pv.global_theme.trame.jupyter_server_name starts its own server, and a
+# failed attempt doesn't block a fresh retry
+_PYVISTA_TRAME_SERVER_STARTUPS: dict[str, _PyvistaTrameServerStartup] = {}
 
 
 def ensure_pyvista_trame_server() -> None:
@@ -577,91 +657,40 @@ def ensure_pyvista_trame_server() -> None:
     uvicorn worker), not a parent that may have forked since.
     """
     import pyvista as pv  # pyright: ignore[reportMissingImports]
-    from trame.widgets import vtk as vtk_widgets  # pyright: ignore[reportMissingImports]
     from trame_pyvista.widgets import get_server  # pyright: ignore[reportMissingImports]
 
-    server = get_server(pv.global_theme.trame.jupyter_server_name)
+    name = pv.global_theme.trame.jupyter_server_name
+    server = get_server(name)
     if server is None:
         raise RuntimeError("Failed to resolve pyvista's shared trame server.")
     if server.running:
         return
 
-    global _PYVISTA_TRAME_SERVER_THREAD
     with _PYVISTA_TRAME_SERVER_LOCK:
-        # Only the first caller spawns the server thread; concurrent first
-        # renders wait on _PYVISTA_TRAME_SERVER_DONE below
-        if not server.running and _PYVISTA_TRAME_SERVER_THREAD is None:
-            # Enable the vtk widget module (which registers the scene-export
-            # protocol the html export uses) before the server starts. This is
-            # the piece of trame_pyvista.jupyter.launch_server() the export
-            # actually needs; the rest (vuetify UI, vtklocal wasm) is for the
-            # interactive backends shinywidgets doesn't use.
-            vtk_widgets.initialize(server)
-
-            def run_server() -> None:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-
-                # trame sets server.running immediately before triggering
-                # on_server_ready (on this thread's loop), so this wakes the
-                # waiting render(s) with the server ready to export
-                server.controller.on_server_ready.add(
-                    lambda **_: _PYVISTA_TRAME_SERVER_DONE.set()
-                )
-
-                async def start() -> None:
-                    global _PYVISTA_TRAME_SERVER_ERROR
-                    try:
-                        await cast(
-                            Any,
-                            server.start(
-                                # Return a coroutine to schedule on this
-                                # thread's loop (rather than blocking it), so
-                                # the server runs until the process exits
-                                exec_mode="coroutine",
-                                # Non-main thread: don't install signal handlers
-                                thread=True,
-                                # Localhost-only, on an ephemeral port; the
-                                # exported widget is self-contained, so nothing
-                                # ever connects to this server
-                                host="127.0.0.1",
-                                port=0,
-                                open_browser=False,
-                                show_connection_info=False,
-                                disable_logging=True,
-                                # Disable trame's auto-shutdown when no client
-                                # is connected (nothing ever is)
-                                timeout=0,
-                            ),
-                        )
-                    except BaseException as e:  # noqa: BLE001
-                        _PYVISTA_TRAME_SERVER_ERROR = e
-                    finally:
-                        # Wake waiters even on startup failure (or if the
-                        # server exits before becoming ready) so they raise
-                        # below instead of timing out
-                        _PYVISTA_TRAME_SERVER_DONE.set()
-
-                loop.create_task(start())
-                loop.run_forever()
-
-            _PYVISTA_TRAME_SERVER_THREAD = threading.Thread(
-                target=run_server, name="shinywidgets-pyvista-trame", daemon=True
-            )
-            _PYVISTA_TRAME_SERVER_THREAD.start()
+        if server.running:
+            return
+        attempt = _PYVISTA_TRAME_SERVER_STARTUPS.get(name)
+        if attempt is None or (attempt.done.is_set() and attempt.error is not None):
+            # First attempt for this server, or a retry of a failed one (the
+            # failure may have been transient). Waiters on the failed attempt
+            # still raise its original error; new waiters block on the fresh
+            # attempt below.
+            attempt = _PyvistaTrameServerStartup()
+            _PYVISTA_TRAME_SERVER_STARTUPS[name] = attempt
+            attempt.start(server)
 
     # Wait outside the lock: concurrent first renders all block on the same
     # Event rather than serializing behind the thread spawn
-    if not _PYVISTA_TRAME_SERVER_DONE.wait(timeout=30):
+    if not attempt.done.wait(timeout=30):
         raise RuntimeError(
             "Timed out waiting for pyvista's shared trame server to start "
             "(needed to export the scene for the html jupyter backend)."
         )
-    if _PYVISTA_TRAME_SERVER_ERROR is not None:
+    if attempt.error is not None:
         raise RuntimeError(
             "pyvista's shared trame server failed to start "
             "(needed to export the scene for the html jupyter backend)."
-        ) from _PYVISTA_TRAME_SERVER_ERROR
+        ) from attempt.error
     if not server.running:
         raise RuntimeError(
             "pyvista's shared trame server stopped before it was ready "
