@@ -3099,9 +3099,7 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
-        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
-        this renderer declares a default (notably, ``selections()`` reports
-        continuously during a drag and ignores these parameters).
+        ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
@@ -3120,10 +3118,7 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         the selection). Requires ``selection_mode`` other than ``"none"``;
         a plain data frame return uses ``"none"``, so return
         ``DataGrid(df, selection_mode="row")`` to let users select. Not
-        rate-limited: the stream updates continuously during a drag (not only
-        at its end), and the renderer's ``rate_policy``/``rate_delay``
-        parameters don't apply to it, so keep readers cheap (e.g., update a
-        downstream figure in place rather than rebuilding it).
+        rate-limited.
         """
         return cast(List[Dict[str, int]], self._read_accessor("selections"))
 
