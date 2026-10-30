@@ -6,8 +6,9 @@ cell clicks/edits through the `on_cell_click`/`on_cell_change` callback
 dispatchers. The displayed row map lives in the (upstream-internal)
 `_visible_rows` trait, which `visible_data()` observes as its invalidation
 trigger (the frame itself comes from `get_visible_data()` at read time),
-plus the cell-change notification, since an edit can change displayed values
-without changing the row map.
+plus the `_transforms` trait (a zero-match filter leaves the row map at
+``[]``, which never fires) and the cell-change notification (an edit can
+change displayed values without changing the row map).
 """
 
 from __future__ import annotations
@@ -59,33 +60,43 @@ CELL_EDITED = AccessorSpec(
 
 
 def attach_visible_rows(widget: DataGrid, emit: Emit) -> Callable[[], None]:
-    # `_visible_rows` is upstream-internal (like `_predicate` in
-    # embedding-atlas); fail loudly if ipydatagrid removes it rather than
-    # silently stop invalidating `visible_data()` readers
-    if getattr(widget, "_visible_rows", None) is None:
+    # `_visible_rows` and `_transforms` are upstream-internal (like
+    # `_predicate` in embedding-atlas); fail loudly if ipydatagrid removes
+    # them rather than silently stop invalidating `visible_data()` readers
+    missing = [
+        name
+        for name in ("_visible_rows", "_transforms")
+        if getattr(widget, name, None) is None
+    ]
+    if missing:
         raise TypeError(
             "`visible_data()` relies on ipydatagrid's (upstream-internal) "
-            "`_visible_rows` trait, which this version of ipydatagrid doesn't "
-            "have. If ipydatagrid renamed or removed this trait, please report it."
+            f"{', '.join(missing)}, which this version of ipydatagrid doesn't "
+            "have. If ipydatagrid renamed or removed these traits, please "
+            "report it."
         )
 
     def on_change(change: dict[str, object]) -> None:
         emit(change["new"])
 
-    def on_cell_change(edit: object) -> None:
-        # An edit can change the displayed values without changing the row
-        # map (e.g. editing an unsorted text column). The raw value is only
-        # an invalidation trigger, so emit a fresh token each time: an equal
-        # one would be suppressed by the helper's dedup.
+    def trigger(edit: object) -> None:
+        # These raw values are only invalidation triggers, so emit a fresh
+        # token each time: an equal one would be suppressed by the helper's
+        # dedup.
         emit(object())
 
     widget.observe(on_change, "_visible_rows")
-    widget.on_cell_change(on_cell_change)
+    # A filter changes the transforms even when it leaves the row map at []
+    # (a zero-match filter straight from the initial state never fires
+    # _visible_rows)
+    widget.observe(trigger, "_transforms")
+    widget.on_cell_change(trigger)
     emit(widget._visible_rows)
 
     def detach() -> None:
         widget.unobserve(on_change, "_visible_rows")
-        widget.on_cell_change(on_cell_change, remove=True)
+        widget.unobserve(trigger, "_transforms")
+        widget.on_cell_change(trigger, remove=True)
 
     return detach
 

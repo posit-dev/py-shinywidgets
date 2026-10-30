@@ -117,6 +117,20 @@ def test_cell_edited_reports_the_edit(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def filter_a(page: Page, box: dict, operator: str, value: str) -> None:
+    # The header menu's filter-by-condition dialog
+    click_cell(page, box, COL_A_MENU_X, HEADER_Y)
+    menu = page.locator(".ipydatagrid-context-menu")
+    expect(menu).to_be_visible(timeout=5000)
+    menu.get_by_text("Filter by condition").click()
+    dialog = page.locator(".ipydatagrid-filterMenu")
+    expect(dialog).to_be_visible(timeout=5000)
+    dialog.locator("select").select_option(operator)
+    dialog.locator("input").first.fill(value)
+    dialog.locator("button").click()
+    expect(dialog).to_be_hidden(timeout=5000)
+
+
 def test_visible_data_follows_sort_and_filter(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
@@ -130,17 +144,27 @@ def test_visible_data_follows_sort_and_filter(page: Page, local_app) -> None:
         ",".join(str(i) for i in range(19, -1, -1)), timeout=30000
     )
 
-    # Filter `a >= 15` through the header menu's filter dialog
-    click_cell(page, box, COL_A_MENU_X, HEADER_Y)
-    menu = page.locator(".ipydatagrid-context-menu")
-    expect(menu).to_be_visible(timeout=5000)
-    menu.get_by_text("Filter by condition").click()
-    dialog = page.locator(".ipydatagrid-filterMenu")
-    expect(dialog).to_be_visible(timeout=5000)
-    dialog.locator("select").select_option(">=")
-    dialog.locator("input").first.fill("15")
-    dialog.locator("button").click()
-
+    filter_a(page, box, ">=", "15")
     expect(page.locator("#vis")).to_have_text("19,18,17,16,15", timeout=30000)
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_visible_data_returns_no_rows_for_a_zero_match_filter(
+    page: Page, local_app
+) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    box = viewport_box(page)
+
+    all_rows = ",".join(str(i) for i in range(20))
+    expect(page.locator("#vis")).to_have_text(all_rows, timeout=30000)
+
+    # A filter matching nothing, straight from the initial state: the row map
+    # stays [] (no _visible_rows change fires), and the widget's own
+    # get_visible_data() would return every row -- the accessor must report
+    # an empty frame instead
+    filter_a(page, box, ">", "100")
+    expect(page.locator("#vis")).to_have_text("", timeout=30000)
 
     assert_no_unexpected_errors(errors, failed_requests)

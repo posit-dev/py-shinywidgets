@@ -121,6 +121,44 @@ def test_visible_data_invalidates_on_a_cell_edit(widget_session: Session) -> Non
     assert len(emitted) == 3
 
 
+def test_visible_data_invalidates_on_a_transform(widget_session: Session) -> None:
+    # A zero-match filter straight from the initial state leaves
+    # _visible_rows at [] ([] -> [] doesn't fire), so the transforms trait
+    # must also be a trigger
+    g = grid(widget_session)
+    emitted: list[object] = []
+    detach = sd.VISIBLE_ROWS.attach(g, emitted.append)
+    assert len(emitted) == 1  # the seed
+    g._transforms = [{"type": "filter", "column": "a", "operator": ">", "value": 100}]
+    assert len(emitted) == 2
+    detach()
+    g._transforms = []
+    assert len(emitted) == 2
+
+
+def test_visible_data_distinguishes_empty_filter_from_initial(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_ipydatagrid
+
+    g = grid(widget_session)
+    r = render_ipydatagrid()
+    r._widget = g  # stands in for _render()
+    r._accessors.on_render(g)
+    # Initial state (_visible_rows is [], no transforms): the whole frame
+    assert r.visible_data()["a"].tolist() == [1, 2, 3]
+    # A filter matching zero rows: an empty frame with the right columns,
+    # not the entire frame (get_visible_data() only applies a truthy
+    # _visible_rows, so it can't tell these two states apart)
+    g._transforms = [{"type": "filter", "column": "a", "operator": ">", "value": 100}]
+    out = r.visible_data()
+    assert len(out) == 0
+    assert list(out.columns) == ["a", "b"]
+    # Clearing the filter shows the whole frame again
+    g._transforms = []
+    assert r.visible_data()["a"].tolist() == [1, 2, 3]
+
+
 def test_visible_data_accessor(widget_session: Session) -> None:
     from shinywidgets import render_ipydatagrid
 

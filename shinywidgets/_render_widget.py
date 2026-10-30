@@ -2460,14 +2460,23 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         as a pandas data frame — the ``selections()`` rectangles' coordinate
         space, so ``visible_data().iloc[r1:r2 + 1]`` maps a selection to rows.
 
-        The whole frame until the user sorts, filters, or edits. Backed by
-        ipydatagrid's private ``_visible_rows`` trait plus the grid's
+        The whole frame until the user sorts, filters, or edits, and an
+        empty frame when the filter matches nothing. Backed by ipydatagrid's
+        private ``_visible_rows`` and ``_transforms`` traits plus the grid's
         cell-change notification (the one public alternative,
-        ``get_visible_data()``, isn't reactive on its own); raises if
-        ipydatagrid removes the trait. Not rate-limited.
+        ``get_visible_data()``, isn't reactive on its own, and returns the
+        whole frame for an empty filtered view); raises if ipydatagrid
+        removes the traits. Not rate-limited.
         """
         self._read_accessor("visible_data", raw=True)
-        return cast("DataGrid", self._widget).get_visible_data()
+        widget = cast("DataGrid", self._widget)
+        if not widget._visible_rows and widget._transforms:
+            # An empty row map with transforms applied is a filter that
+            # matched nothing; get_visible_data() would return the whole
+            # frame (it only applies a truthy row map). The same row map
+            # with no transforms is the initial state (the whole frame).
+            return widget.data.iloc[0:0]
+        return widget.get_visible_data()
 
     # A DataFrame is a generic type (several renderers accept one), so it isn't
     # registered with as_widget()
