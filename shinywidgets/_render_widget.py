@@ -4050,7 +4050,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     clicks
         Whether clicking a molecule's image posts its row data for
         `.clicked()` to read. Adds a click target to each cell. Ignored when
-        an explicit ``callback`` is passed (which enables the same target).
+        an explicit ``callback`` is passed (a Python one enables the same
+        target; note that with a JavaScript callback the browser runs it
+        instead of posting the row data, so `.clicked()` receives nothing).
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -4239,7 +4241,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         """
         The row data of the molecule image most recently clicked since the
         last render, or `None` if no click has happened yet (requires
-        ``clicks=True``).
+        ``clicks=True`` or a Python ``callback``).
 
         Unlike `.selection()` (the checkbox set), a click is an event: it
         carries the clicked row's data (every displayed column, plus
@@ -4406,10 +4408,14 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         self._grid = grid
 
         render_kwargs = dict(self.render_kwargs)
-        if self.clicks and not callable(render_kwargs.get("callback")):
+        if self.clicks and not render_kwargs.get("callback"):
             # mols2grid only renders the per-cell click target (and so only
             # posts callback_kwargs) when a Python callback is set; supply a
-            # no-op so .clicked() has a channel without an imperative callback
+            # no-op so .clicked() has a channel without an imperative
+            # callback. Any explicit callback is preserved: a Python one
+            # already enables the same channel, and a JavaScript one (a raw
+            # JS string, or a _JSCallback from mols2grid.callbacks) is
+            # non-callable, so a `callable()` guard would clobber it
             render_kwargs["callback"] = _noop_click_callback
         if not render_kwargs.pop("use_iframe", True):
             warnings.warn(

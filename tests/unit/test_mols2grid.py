@@ -835,3 +835,51 @@ def test_clicks_true_does_not_clobber_explicit_callback(
     assert isinstance(r.grid, MolGrid)
     r.grid.widget.callback_kwargs = str({"mols2grid-id": 0})
     assert calls == [{"mols2grid-id": 0}]
+
+
+def test_clicks_true_does_not_clobber_js_callback(
+    widget_session: Session,
+) -> None:
+    # mols2grid also accepts a JavaScript callback (a raw JS string, or a
+    # _JSCallback from mols2grid.callbacks) -- non-callable, so a
+    # "not callable" guard would mistake it for no callback and replace it
+    # with the no-op
+    import html as html_mod
+
+    r = rw.render_mols2grid(clicks=True, callback="onCellClick(data);")
+    render(r, lambda: DF, widget_session)
+    assert isinstance(r.widget, widgets.Box)
+    html = r.widget.children[1]
+    assert isinstance(html, widgets.HTML)
+    doc = html_mod.unescape(html.value)
+    # The JS callback itself is embedded in the rendered document...
+    assert "onCellClick(data);" in doc
+    # ...and, like any explicit callback, it enables the click target
+    assert 'class="m2g-callback"' in doc
+
+
+def test_clicked_accessor_observes_before_first_read(
+    widget_session: Session,
+) -> None:
+    # The clicked accessor attaches eagerly at render (not on first read):
+    # with no seeding, a click that lands before the first .clicked() read
+    # would otherwise never be emitted, and the read would return None
+    r = rw.render_mols2grid(clicks=True)
+    render(r, lambda: DF, widget_session)
+    assert isinstance(r.grid, MolGrid)
+    row = {"mols2grid-id": 0, "ID": "ethanol"}
+    r.grid.widget.callback_kwargs = str(row)
+    assert r.clicked() == row
+
+
+def test_none_render_does_not_raise(widget_session: Session) -> None:
+    # A render function returning None renders nothing; the eager clicked
+    # attach must not choke on the absent widget -- neither on a first render
+    # to None, nor on a re-render to None after a successful render
+    r = rw.render_mols2grid(clicks=True)
+    assert render(r, lambda: None, widget_session) is None
+
+    render(r, lambda: DF, widget_session)
+    assert isinstance(r.grid, MolGrid)
+    assert render(r, lambda: None, widget_session) is None
+    assert r.grid is None
