@@ -85,7 +85,7 @@ def chart_frame(widget: JupyterChart) -> Any:
 def is_frame(x: object) -> bool:
     try:
         import narwhals as nw
-    except ImportError:  # altair depends on narwhals; this is defensive
+    except ImportError:  # the altair extra installs narwhals; this is defensive
         return False
     return nw.dependencies.is_into_dataframe(x)
 

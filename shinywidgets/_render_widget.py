@@ -1937,6 +1937,10 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         The selected rows (see :meth:`selected`) of the plot's
         `ColumnDataSource`, as a pandas data frame (``source.to_df()``). Empty
         while nothing is selected.
+
+        Readers re-run when the selection changes, not when ``source.data``
+        does: if you replace the data in place (keeping its length), also read
+        whatever reactive value triggered that replacement.
         """
         indices = self.selected()
         return selected_frame(cast("BokehModel", self._widget), indices)
@@ -2369,8 +2373,8 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     How they behave:
 
     * Each returns ``None`` until the interaction happens. That's a normal
-      state, not an error, so check for it, or use ``req(plot.clicked())`` to
-      wait for it.
+      state, not an error, so check for it (``req(pts is not None)``; not
+      ``req(pts)``, since a data frame has no truth value).
     * A re-render (e.g. when the render function reads an input) gives the user
       a new plot, so they all start over at ``None``.
     * Repeating an interaction (clicking the same point twice) isn't a change,
@@ -2472,7 +2476,8 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
 
     @reactive.effect
     def _():
-        pts = req(plot.clicked())
+        pts = plot.clicked()
+        req(pts is not None)
         plot.widget.layout.title.text = f"Clicked x={pts['x'].iloc[0]}"
     ```
     """
@@ -2486,9 +2491,10 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         Columns are ``trace_index``, ``point_index`` (the point's position
         within its trace, not a row of your data), ``x``, ``y``, and ``z`` and
         ``customdata`` when the figure has them. Returns ``None`` until the user
-        clicks, and again after a double-click or deselect, so use
-        ``req(plot.clicked())`` to wait for a click. Clicking the same point
-        twice doesn't fire twice. Not rate-limited. Requires pandas.
+        clicks, and again after a double-click or deselect, so check for
+        ``None`` (e.g. ``req(pts is not None)``) to wait for a click. Clicking
+        the same point twice doesn't fire twice. Not rate-limited. Requires
+        pandas.
         """
         return cast(Optional["pd.DataFrame"], self._read_accessor("clicked"))
 
