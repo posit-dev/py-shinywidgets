@@ -73,7 +73,8 @@ leafmap = ["leafmap", "plotly>=5.12.0,<7"]
 lonboard = ["lonboard; python_version < '3.15'"]
 maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
-mols2grid = ["mols2grid>=2.2.0,<3"]
+# TODO: restore "mols2grid>=3" pin once mols2grid 3.0 releases
+mols2grid = ["mols2grid @ git+https://github.com/cbouy/mols2grid.git@proper-widget"]
 mosaic_widget = ["mosaic-widget"]
 nglview = ["nglview"]
 niivue = ["ipyniivue>=2.4.0"]
@@ -147,7 +148,8 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
-  "mols2grid>=2.2.0,<3",
+  # TODO: restore "mols2grid>=3" pin once mols2grid 3.0 releases
+  "mols2grid @ git+https://github.com/cbouy/mols2grid.git@proper-widget",
   "nglview",
   "pandas",
   "networkx",
@@ -218,7 +220,8 @@ dev = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
-  "mols2grid>=2.2.0,<3",
+  # TODO: restore "mols2grid>=3" pin once mols2grid 3.0 releases
+  "mols2grid @ git+https://github.com/cbouy/mols2grid.git@proper-widget",
   "nglview",
   "pandas",
   "networkx",
@@ -295,7 +298,8 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
-  "mols2grid>=2.2.0,<3",
+  # TODO: restore "mols2grid>=3" pin once mols2grid 3.0 releases
+  "mols2grid @ git+https://github.com/cbouy/mols2grid.git@proper-widget",
   "nglview",
   "pandas",
   "networkx",
@@ -353,6 +357,11 @@ override-dependencies = [
 [build-system]
 requires = ["hatchling>=1.26.0", "hatch-vcs>=0.4.0"]
 build-backend = "hatchling.build"
+
+# Needed for the (temporary) git dependency on mols2grid's proper-widget
+# branch in the mols2grid extra (until mols2grid 3.0 releases)
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build]
 skip-excluded-dirs = true

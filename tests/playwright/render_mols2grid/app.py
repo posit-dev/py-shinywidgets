@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import ast
+import os
+
+# Expose window.__mols2grid__[name] (list.js instance etc.) for the tests
+os.environ["M2G_DEBUG"] = "1"
 
 import pandas as pd
 from shiny import App, reactive, render, ui
