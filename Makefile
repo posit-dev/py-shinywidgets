@@ -1,4 +1,4 @@
-.PHONY: help clean clean-build clean-pyc clean-test setup check-format check-types check-tests check check-tox build format coverage check-build test test-unit test-playwright test-playwright-coverage test-all-local coverage-ci coverage-combine coverage-html dist install pyright
+.PHONY: help clean clean-build clean-pyc clean-test setup check-format check-types check-tests check check-tox build format coverage check-build test test-unit test-reactable test-playwright test-playwright-reactable test-playwright-coverage test-all-local coverage-ci coverage-combine coverage-html dist install pyright
 
 .DEFAULT_GOAL := help
 
@@ -8,6 +8,15 @@ PYTHON_PATHS := shinywidgets tests
 PYRIGHT_PATHS := shinywidgets tests/__init__.py tests/unit/test_version_metadata.py
 PYTEST_UNIT := uv run pytest -c "$(REPO_ROOT)/pytest.ini" --confcutdir "$(REPO_ROOT)"
 PYTEST_PLAYWRIGHT := uv run pytest -c "$(REPO_ROOT)/tests/playwright/playwright-pytest.ini" --confcutdir "$(REPO_ROOT)/tests/playwright" "$(REPO_ROOT)/tests/playwright"
+# reactable can't join the shared test/dev groups (importing it builds a
+# process-global ipyreact Module widget that order-sensitive FakeSession unit
+# tests don't expect), it imports great_tables without declaring it, and it
+# pins ipyreact<=0.4.1. Overlay it instead, and only for reactable's own
+# tests: layering the overlay over every Playwright app shifts Jupyter's data
+# directories and breaks other widgets' nbextension lookup.
+REACTABLE_OVERLAY := --with reactable --with great_tables --with 'ipyreact>=0.6'
+PYTEST_REACTABLE := uv run $(REACTABLE_OVERLAY) pytest -c "$(REPO_ROOT)/pytest.ini" --confcutdir "$(REPO_ROOT)" "$(REPO_ROOT)/tests/unit/test_reactable.py" "$(REPO_ROOT)/tests/unit/test_reactable_accessors.py"
+PYTEST_REACTABLE_PLAYWRIGHT := uv run $(REACTABLE_OVERLAY) pytest -c "$(REPO_ROOT)/tests/playwright/playwright-pytest.ini" --confcutdir "$(REPO_ROOT)/tests/playwright" "$(REPO_ROOT)/tests/playwright/render_reactable"
 
 define PRINT_HELP_PYSCRIPT
 import re
@@ -86,6 +95,13 @@ test-unit: ## run unit tests only (explicit config/cutoff)
 test-playwright: ## run Playwright regression tests
 	uv run playwright install chromium
 	$(PYTEST_PLAYWRIGHT) $(PYTEST_PLAYWRIGHT_ARGS)
+
+test-reactable: ## run reactable unit tests (needs the overlay; see REACTABLE_OVERLAY)
+	$(PYTEST_REACTABLE)
+
+test-playwright-reactable: ## run reactable Playwright tests (needs the overlay)
+	uv run playwright install chromium
+	$(PYTEST_REACTABLE_PLAYWRIGHT) $(PYTEST_PLAYWRIGHT_ARGS)
 
 test-all-local: ## run unit tests then Playwright tests (requires browsers installed)
 	$(MAKE) test-unit
