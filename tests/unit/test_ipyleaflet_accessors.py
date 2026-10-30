@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import List
+
 import ipywidgets
 import pytest
 import shinywidgets._ipyleaflet as si
@@ -141,12 +143,18 @@ def test_rerender_dropping_draw_control_renders_but_read_raises(
 
 
 def test_accessors_reject_non_ipyleaflet_widgets(widget_session: Session) -> None:
-    # render_leafmap with a non-ipyleaflet backend hits the same guard
+    # render_leafmap with a non-ipyleaflet backend hits the same guard: the
+    # attach records a sentinel (it must never raise -- it runs during
+    # render), and the read raises
     with session_context(widget_session):
         w = ipywidgets.IntSlider()
     for spec in si.IPYLEAFLET_ACCESSORS:
-        with pytest.raises(TypeError, match="ipyleaflet map"):
-            spec.attach(w, lambda raw: None)
+        emitted: List[object] = []
+        spec.attach(w, emitted.append)
+        assert len(emitted) == 1
+        assert isinstance(emitted[0], si.NotIpyleaflet)
+        assert "ipyleaflet map" in emitted[0].message
+        assert "IntSlider" in emitted[0].message
 
 
 def test_leafmap_ipyleaflet_backend_shares_the_accessors(
@@ -178,5 +186,37 @@ def test_leafmap_other_backends_raise_a_naming_type_error(
         w = ipywidgets.IntSlider()  # stands in for a non-ipyleaflet backend
     r._widget = w
     r._accessors.on_render(w)
-    with pytest.raises(TypeError, match="ipyleaflet map"):
-        r.zoom()
+    for name in ("bounds", "zoom", "center", "clicked", "drawn_features"):
+        with pytest.raises(TypeError, match="ipyleaflet map"):
+            getattr(r, name)()
+
+
+def test_leafmap_backend_switch_renders_reads_raise_and_recovery(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_leafmap
+
+    LeafmapMap = type("Map", (L.Map,), {"__module__": "leafmap.leafmap"})
+    with session_context(widget_session):
+        m = LeafmapMap(center=(52, 0), zoom=4)
+    r = render_leafmap()
+    r._widget = m
+    r._accessors.on_render(m)
+    assert r.zoom() == 4
+
+    # Switching to a non-ipyleaflet backend renders fine (no raise)...
+    with session_context(widget_session):
+        w = ipywidgets.IntSlider()  # stands in for the maplibre/plotly backend
+    r._widget = w
+    r._accessors.on_render(w)
+    # ...and only the reads raise, naming the backend
+    for name in ("bounds", "zoom", "center", "clicked", "drawn_features"):
+        with pytest.raises(TypeError, match="ipyleaflet map"):
+            getattr(r, name)()
+
+    # Switching back to the ipyleaflet backend recovers
+    with session_context(widget_session):
+        m2 = LeafmapMap(center=(0, 0), zoom=7)
+    r._widget = m2
+    r._accessors.on_render(m2)
+    assert r.zoom() == 7

@@ -142,6 +142,7 @@ from ._ipyleaflet import (
     IPYLEAFLET_ACCESSORS,
     NO_DRAW_CONTROL,
     NO_DRAW_CONTROL_MESSAGE,
+    NotIpyleaflet,
 )
 from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
@@ -861,6 +862,16 @@ class _IpyleafletAccessors:
         # Defined by render_widget_base; declared so the mixin type-checks
         def _read_accessor(self, name: str, *, raw: bool = False) -> object: ...
 
+    def _read_ipyleaflet(self, name: str) -> object:
+        # A non-ipyleaflet backend (render_leafmap) is reported by the attach
+        # as a sentinel rather than a raise (attach runs during render, where
+        # a raise would break the output), so it's reported here, at read
+        # time.
+        raw = self._read_accessor(name, raw=True)
+        if isinstance(raw, NotIpyleaflet):
+            raise TypeError(raw.message)
+        return raw
+
     def bounds(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
         """
         The map's viewport as ``((south, west), (north, east))`` in
@@ -875,7 +886,7 @@ class _IpyleafletAccessors:
         """
         return cast(
             Tuple[Tuple[float, float], Tuple[float, float]],
-            self._read_accessor("bounds"),
+            self._read_ipyleaflet("bounds"),
         )
 
     def zoom(self) -> float:
@@ -883,13 +894,13 @@ class _IpyleafletAccessors:
         The map's current zoom level (``float``). Also fires when Python sets
         ``zoom``. Not rate-limited.
         """
-        return cast(float, self._read_accessor("zoom"))
+        return cast(float, self._read_ipyleaflet("zoom"))
 
     def center(self) -> List[float]:
         """
         The map's current center as ``[lat, lng]``. Not rate-limited.
         """
-        return cast(List[float], self._read_accessor("center"))
+        return cast(List[float], self._read_ipyleaflet("center"))
 
     def clicked(self) -> Optional[Dict[str, Any]]:
         """
@@ -900,7 +911,7 @@ class _IpyleafletAccessors:
         clicks don't bubble up to the map -- use a layer's own ``on_click``
         for those.
         """
-        return cast(Optional[Dict[str, Any]], self._read_accessor("clicked"))
+        return cast(Optional[Dict[str, Any]], self._read_ipyleaflet("clicked"))
 
     def drawn_features(self) -> List[Dict[str, Any]]:
         """
@@ -910,10 +921,10 @@ class _IpyleafletAccessors:
         ``DrawControl`` -- add one with ``m.add(DrawControl())`` (leafmap adds
         one by default).
         """
-        # The attach emits the NO_DRAW_CONTROL sentinel rather than raising
-        # (it runs during render, where a raise would break the output), so
-        # the missing control is reported here, at read time.
-        raw = self._read_accessor("drawn_features", raw=True)
+        # The attach emits sentinels rather than raising (it runs during
+        # render, where a raise would break the output): a non-ipyleaflet
+        # backend or a missing DrawControl is reported here, at read time.
+        raw = self._read_ipyleaflet("drawn_features")
         if raw is NO_DRAW_CONTROL:
             raise TypeError(NO_DRAW_CONTROL_MESSAGE)
         return cast(List[Dict[str, Any]], raw)
