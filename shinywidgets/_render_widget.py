@@ -135,6 +135,7 @@ from ._ipyaladin import IPYALADIN_ACCESSORS
 from ._ipydatagrid import IPYDATAGRID_ACCESSORS
 from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
+from ._k3d import CAMERA as K3D_CAMERA
 from ._matplotlib import CLICKED, MATPLOTLIB_ACCESSORS, AxesLimits
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._reactable import REACTABLE_ACCESSORS
@@ -1109,6 +1110,20 @@ class render_k3d(render_widget_base[ValueT, K3dPlot]):
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ---
+    **Reacting to user interaction**: ``plot.camera()`` reads the camera
+    after the browser's auto-fit and every orbit, much like
+    ``input.my_slider()`` reads an input. Call it in a reactive function (a
+    ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``),
+    which then re-runs whenever the camera changes.
+
+    There is deliberately no ``clicked()``: k3d only reports clicks with
+    ``plot.mode = "callback"``, a user-visible change to the plot's
+    interaction mode, which the accessor API doesn't make. To react to
+    clicks, set the mode and a ``click_callback`` on the objects yourself
+    (and set a :class:`~shiny.reactive.value` inside it).
+
     Parameters
     ----------
     width
@@ -1124,7 +1139,31 @@ class render_k3d(render_widget_base[ValueT, K3dPlot]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
+        ``reactive_read()`` unlimited; no accessor on this renderer declares
+        a default.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables
+        rate limiting.
     """
+
+    accessor_specs = (K3D_CAMERA,)
+
+    def camera(self) -> List[float]:
+        """
+        The plot's camera as a flat list of 9 floats (camera position,
+        look-at target, and up vector).
+
+        The camera is ``[]`` until the browser auto-fits it, so reading
+        ``camera()`` before that cancels silently (like ``req(False)``):
+        downstream outputs just wait. With ``camera_auto_fit=False`` and no
+        explicit camera it cancels forever -- set ``plot.camera`` to seed it.
+        Never returns ``None`` once it returns. Not rate-limited (k3d
+        throttles camera updates to roughly one per 200 ms upstream).
+        """
+        return cast(List[float], self._read_accessor("camera"))
 
     def _as_widget(self, value: ValueT) -> K3dPlot:
         try:
