@@ -92,9 +92,36 @@ def test_plotly_accessors_follow_real_gestures(page: Page, local_app) -> None:
 def test_plotly_accessors_on_an_app_defined_figure_subclass(
     page: Page, local_app
 ) -> None:
+    # DIAGNOSTIC (test PR): capture the full console so a CI failure shows why
+    # the click never round-tripped.
+    console: list[str] = []
+    page.on("console", lambda msg: console.append(f"{msg.type}: {msg.text[:300]}"))
+    page.on("pageerror", lambda err: console.append(f"pageerror: {str(err)[:300]}"))
     page.goto(local_app.url)
-    expect(page.locator("#sub_plot .js-plotly-plot")).to_have_count(1, timeout=30000)
-    expect(page.locator("#sub_clicked")).to_have_text("None", timeout=10000)
+    try:
+        expect(page.locator("#sub_plot .js-plotly-plot")).to_have_count(1, timeout=30000)
+        expect(page.locator("#sub_clicked")).to_have_text("None", timeout=10000)
 
-    page.locator("#sub_plot").scroll_into_view_if_needed()
-    click_until_bound(page, 3, 9, id="sub_plot", out="sub_clicked", text="3")
+        page.locator("#sub_plot").scroll_into_view_if_needed()
+        click_until_bound(page, 3, 9, id="sub_plot", out="sub_clicked", text="3")
+    except Exception:
+        diag = page.evaluate(
+            """() => {
+              const out = document.querySelector('#sub_plot');
+              const gd = document.querySelector('#sub_plot .js-plotly-plot');
+              const cs = out ? getComputedStyle(out) : null;
+              return {
+                outputVisibility: cs && cs.visibility,
+                outputDisplay: cs && cs.display,
+                outputRect: out && out.getBoundingClientRect().toJSON(),
+                graphPresent: !!gd,
+                graphVisibility: gd && getComputedStyle(gd).visibility,
+                fullLayout: !!(gd && gd._fullLayout),
+                graphRect: gd && gd.getBoundingClientRect().toJSON(),
+                plotlyGlobal: !!window.Plotly,
+              };
+            }"""
+        )
+        raise AssertionError(
+            f"diag: {diag}\nconsole (last 60):\n" + "\n".join(console[-60:])
+        )
