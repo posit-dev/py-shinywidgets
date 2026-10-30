@@ -113,3 +113,36 @@ def test_accessors_reject_non_ipyleaflet_widgets(widget_session: Session) -> Non
     for spec in si.IPYLEAFLET_ACCESSORS:
         with pytest.raises(TypeError, match="ipyleaflet map"):
             spec.attach(w, lambda raw: None)
+
+
+def test_leafmap_ipyleaflet_backend_shares_the_accessors(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_leafmap
+
+    # What leafmap.leafmap.Map is: an ipyleaflet.Map subclass defined in leafmap
+    LeafmapMap = type("Map", (L.Map,), {"__module__": "leafmap.leafmap"})
+    with session_context(widget_session):
+        m = LeafmapMap(center=(52, 0), zoom=4)
+    r = render_leafmap()
+    r._widget = m  # stands in for _render()
+    r._accessors.on_render(m)
+    assert r.zoom() == 4 and r.center() == [52, 0]
+    with pytest.raises(SilentException):
+        r.bounds()
+    set_viewport(m)
+    assert r.bounds() == ((51.0, -1.0), (53.0, 1.0))
+
+
+def test_leafmap_other_backends_raise_a_naming_type_error(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_leafmap
+
+    r = render_leafmap()
+    with session_context(widget_session):
+        w = ipywidgets.IntSlider()  # stands in for a non-ipyleaflet backend
+    r._widget = w
+    r._accessors.on_render(w)
+    with pytest.raises(TypeError, match="ipyleaflet map"):
+        r.zoom()

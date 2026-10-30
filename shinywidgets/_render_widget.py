@@ -1766,7 +1766,7 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
         return cast("Camera", camera)
 
 
-class render_leafmap(render_widget_base[ValueT, LeafletMap]):
+class render_leafmap(_IpyleafletAccessors, render_widget_base[ValueT, LeafletMap]):
     """
     Reactively render a [leafmap](https://leafmap.org) map as a Shiny output.
 
@@ -1798,10 +1798,16 @@ class render_leafmap(render_widget_base[ValueT, LeafletMap]):
     widget. Use `.widget` to programmatically update the rendered map in place
     (e.g., change its `zoom` or `center`, or add layers; trait changes on the
     widget are synced to the browser), or to reactively read map state with
-    :func:`~shinywidgets.reactive_read`, e.g. ``zoom``/``center``/``bounds`` for
-    the ipyleaflet backend, or ``view_state``/``clicked`` for the maplibre one.
+    :func:`~shinywidgets.reactive_read`.
     The Plotly backend is already a `FigureWidget`, so it is rendered directly;
     `.value` retains the original map and its leafmap methods.
+
+    On the ipyleaflet backend (the default), the map has the same accessors as
+    :class:`render_ipyleaflet` -- ``bounds()``, ``zoom()``, ``center()``,
+    ``clicked()``, and ``drawn_features()``. On the maplibre, plotly, and
+    kepler backends they raise a `TypeError`; read those backends' state with
+    :func:`~shinywidgets.reactive_read` instead (e.g., ``view_state`` for the
+    maplibre one).
 
     Note
     ----
@@ -1826,7 +1832,17 @@ class render_leafmap(render_widget_base[ValueT, LeafletMap]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves it
+        unlimited. This renderer's accessors declare no rate policy, so they
+        are unaffected.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        limiting.
     """
+
+    accessor_specs = IPYLEAFLET_ACCESSORS
 
 
 class render_lonboard(render_widget_base[ValueT, LonboardMap]):
