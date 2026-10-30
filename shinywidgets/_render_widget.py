@@ -117,6 +117,7 @@ from ._as_widget import (
 from ._bokeh import _bokeh_dependency
 from ._bokeh_accessors import BOKEH_ACCESSORS, selected_frame
 from ._dependencies import widget_pkg
+from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
@@ -797,7 +798,8 @@ class render_itables(render_widget_base[ValueT, ITable]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `ITable` instance. Use `.widget` to programmatically update the rendered table
+    `ITable` instance. Use ``.selected_rows()`` to reactively read the selected
+    rows, or `.widget` to programmatically update the rendered table
     in place (trait changes on the widget are synced to the browser), or to
     reactively read widget state (e.g., `selected_rows`) with
     :func:`~shinywidgets.reactive_read`.
@@ -831,7 +833,30 @@ class render_itables(render_widget_base[ValueT, ITable]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
+        ``reactive_read()`` unlimited.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        limiting.
     """
+
+    accessor_specs = ITABLES_ACCESSORS
+
+    def selected_rows(self) -> List[int]:
+        """
+        The currently selected rows as a list of positions into the table's
+        data frame (use ``df.iloc[table.selected_rows()]``), or ``[]`` while
+        nothing is selected.
+
+        Positions are in data order, not display order: they survive sorting
+        and searching, and the same position can refer to a different row
+        after ``.widget.update(df)``. Requires ``select=True`` on the
+        `itables.widget.ITable` (a plain data frame return has no selection).
+        Not rate-limited.
+        """
+        return cast(List[int], self._read_accessor("selected_rows"))
 
     def _as_widget(self, value: ValueT) -> ITable:
         if isinstance(value, Widget):
