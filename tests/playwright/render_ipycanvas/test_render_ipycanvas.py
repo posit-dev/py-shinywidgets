@@ -156,21 +156,39 @@ def test_ipycanvas_mouse_events_roundtrip_to_python(page: Page, local_app) -> No
     expect(page.locator("#mouse_pos")).to_have_text("")
 
     # Wait for the fill layout to finish settling: while the canvas's CSS
-    # size still differs from its buffer size, the widget scales mouse
-    # coords (e.g. a click at y=40 reported as y=34)
+    # size differs from its buffer size, the widget scales mouse coords
+    # (e.g. a click at y=40 reported as y=34 or y=46). Equality can hold
+    # transiently mid-settle, so also require the sizes to be stable across
+    # two polls.
     page.wait_for_function(
         """(sel) => {
           const c = document.querySelector(sel);
-          return c && c.width === c.offsetWidth && c.height === c.offsetHeight;
+          if (!c) return false;
+          const cur = [c.width, c.height, c.offsetWidth, c.offsetHeight].join(',');
+          const stable = window.__ipycanvasLastSize === cur;
+          window.__ipycanvasLastSize = cur;
+          return stable && c.width === c.offsetWidth && c.height === c.offsetHeight;
         }""",
         arg=CANVAS,
         timeout=30000,
+        polling=500,
     )
 
-    box = canvas.bounding_box()
-    assert box is not None
-    page.mouse.click(box["x"] + 30, box["y"] + 40)
-    expect(page.locator("#mouse_pos")).to_have_text("30,40", timeout=30000)
+    # Click via the locator: its position is resolved at click time, after
+    # Playwright's stability checks. A pre-measured bounding box goes stale
+    # when the layout shifts between measurement and click (the click then
+    # lands a few pixels off, e.g. 30,46 instead of 30,40). If a late layout
+    # shift still slips through, re-click (a mis-scaled click reports the
+    # wrong coords and the text won't match).
+    for _ in range(3):
+        canvas.click(position={"x": 30, "y": 40})
+        try:
+            expect(page.locator("#mouse_pos")).to_have_text("30,40", timeout=5000)
+            break
+        except AssertionError:
+            pass
+    else:
+        expect(page.locator("#mouse_pos")).to_have_text("30,40")
 
     assert_no_unexpected_errors(errors, failed_requests)
 
