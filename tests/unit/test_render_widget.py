@@ -494,6 +494,101 @@ def test_render_quak_missing_quak_package(monkeypatch: pytest.MonkeyPatch) -> No
         r._as_widget(object())
 
 
+def _sent_messages(widget, monkeypatch: pytest.MonkeyPatch) -> list:  # noqa: ANN001, ANN202
+    sent: list = []
+    monkeypatch.setattr(
+        widget, "send", lambda content, buffers=None: sent.append(content)
+    )
+    return sent
+
+
+def _quak_duckdb_settings(widget, *names: str) -> dict:  # noqa: ANN001, ANN202
+    quoted = ", ".join(f"'{name}'" for name in names)
+    rows = widget._conn.execute(
+        f"SELECT name, value FROM duckdb_settings() WHERE name IN ({quoted})"
+    ).fetchall()
+    return dict(rows)
+
+
+def test_render_quak_restricts_connection_by_default(
+    widget_session, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    pytest.importorskip("quak")
+    pd = pytest.importorskip("pandas")
+
+    secret = tmp_path / "secret.csv"
+    secret.write_text("a\n1\n")
+
+    r = rw.render_quak()
+
+    @r
+    def _():  # noqa: ANN202
+        return pd.DataFrame({"a": [1, 2, 3]})
+
+    with session_context(widget_session):
+        assert asyncio.run(r._render()) is not None
+
+    widget = r.widget
+    sent = _sent_messages(widget, monkeypatch)
+    # Without the lockdown, this is exactly the message the browser sends for
+    # any quak query -- and it would read the file straight off server disk
+    widget._handle_custom_msg(
+        {"uuid": "1", "sql": f"SELECT * FROM read_csv('{secret}')", "type": "json"},
+        [],
+    )
+    assert "Permission Error" in sent[0]["error"]
+
+
+def test_render_quak_allow_unrestricted_connection(
+    widget_session, monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    pytest.importorskip("quak")
+    pd = pytest.importorskip("pandas")
+
+    secret = tmp_path / "secret.csv"
+    secret.write_text("a\n1\n")
+
+    r = rw.render_quak(allow_unrestricted_connection=True)
+
+    @r
+    def _():  # noqa: ANN202
+        return pd.DataFrame({"a": [1, 2, 3]})
+
+    with session_context(widget_session):
+        assert asyncio.run(r._render()) is not None
+
+    widget = r.widget
+    sent = _sent_messages(widget, monkeypatch)
+    widget._handle_custom_msg(
+        {"uuid": "1", "sql": f"SELECT * FROM read_csv('{secret}')", "type": "json"},
+        [],
+    )
+    assert sent[0]["result"] == [{"a": 1}]
+
+
+def test_render_quak_respects_author_locked_connection(widget_session) -> None:
+    pytest.importorskip("quak")
+    import duckdb
+    import quak
+
+    con = duckdb.connect()
+    con.execute("CREATE TABLE df AS SELECT 1 AS a")
+    con.execute("SET lock_configuration = true")
+
+    r = rw.render_quak()
+
+    @r
+    def _():  # noqa: ANN202
+        return quak.Widget(con)
+
+    with session_context(widget_session):
+        assert asyncio.run(r._render()) is not None
+
+    assert _quak_duckdb_settings(
+        r.widget, "enable_external_access", "lock_configuration"
+    ) == {"enable_external_access": "true", "lock_configuration": "true"}
+
+
 def test_render_mosaic_widget_is_render_widget_base() -> None:
     renderer = rw.render_mosaic_widget()
     assert isinstance(renderer, rwb.render_widget_base)
