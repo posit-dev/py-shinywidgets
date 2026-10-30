@@ -83,11 +83,13 @@ if TYPE_CHECKING:
 
     # rerun requires Python 3.11+, so it's absent from 3.10 environments
     if sys.version_info >= (3, 11):
+        from rerun.notebook import SelectionChangeEvent
         from rerun.notebook import Viewer as RerunViewer
         from rerun_notebook import Viewer as RerunNotebookViewer
     else:
         from ipywidgets import Widget as RerunNotebookViewer
         from ipywidgets import Widget as RerunViewer
+        from ipywidgets import Widget as SelectionChangeEvent
 
     # vizarr isn't in the dev/test groups (it pins zarr<3)
     from vizarr import Viewer as VizarrViewer  # pyright: ignore[reportMissingImports]
@@ -107,7 +109,7 @@ else:
         RerunViewer
     ) = RerunNotebookViewer = NiiVue = object
     Reactable = ReactableWidget = object
-    MouseEvent = PickEvent = object
+    MouseEvent = PickEvent = SelectionChangeEvent = object
 
 from shiny.render.renderer import ValueFn
 
@@ -133,6 +135,7 @@ from ._matplotlib import CLICKED, MATPLOTLIB_ACCESSORS, AxesLimits
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._reactable import REACTABLE_ACCESSORS
 from ._render_widget_base import ValueT, WidgetT, render_widget_base
+from ._rerun import SELECTION
 
 if TYPE_CHECKING:
     # The values a @render_plotly render function may return (bound below):
@@ -3745,26 +3748,37 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
     Python-side trait updates (e.g., ``widget._width = 800``) also stream to
     the browser.
 
-    To react to viewer interactions (play/pause, timeline scrubbing, selection
-    changes), register a callback with `rerun.notebook.Viewer.on_event()` and
-    set a `shiny.reactive.Value` inside it. These interactions reach Python as
-    one-off messages, not as synced widget state, so
-    :func:`~shinywidgets.reactive_read` can't see them -- it only reads synced
-    traits. rerun keeps high-frequency interactions off the synced-trait
-    channel by design (syncing every timeline tick would be expensive), and the
-    explicit callback lets you choose which events are worth reacting to:
+    Note
+    ---
+    **Reacting to viewer interactions**: ``viewer.selection()`` reads the
+    viewer's current selection, much like ``input.my_slider()`` reads an
+    input. Call it in a reactive function (a ``@render.*`` function,
+    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
+    the selection changes. It returns ``None`` until the viewer first reports
+    (typically its empty load-time selection), and resets to ``None`` on
+    re-render.
+
+    For play/pause, timeline scrubbing, and other interactions (which have no
+    accessor), register a callback with `rerun.notebook.Viewer.on_event()`
+    and set a `shiny.reactive.Value` inside it. These interactions reach
+    Python as one-off messages, not as synced widget state, so
+    :func:`~shinywidgets.reactive_read` can't see them -- it only reads
+    synced traits. rerun keeps high-frequency interactions off the
+    synced-trait channel by design (syncing every timeline tick would be
+    expensive), and the explicit callback lets you choose which events are
+    worth reacting to:
 
     ```python
     from shiny import reactive
 
-    selection = reactive.Value(None)
+    playing = reactive.Value(False)
 
 
     @render_rerun
     def viewer():
         rec = rr.RecordingStream(application_id="my_app")
         v = rr.notebook.Viewer(recording=rec)
-        v.on_event(lambda evt: selection.set(evt))
+        v.on_event(lambda evt: playing.set(evt.type == "play"))
         return v
     ```
 
@@ -3799,6 +3813,14 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
+        ``reactive_read()`` unlimited; no accessor on this renderer declares
+        a default.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables
+        rate limiting.
 
     Examples
     --------
@@ -3817,6 +3839,24 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
         return Viewer(width="auto", height="auto", recording=rec)
     ```
     """
+
+    accessor_specs = (SELECTION,)
+
+    def selection(self) -> Optional[SelectionChangeEvent]:
+        """
+        The viewer's most recently reported selection, as a
+        `rerun.notebook.SelectionChangeEvent`. Its ``.items`` is a list of
+        `EntitySelectionItem` (with the selected ``entity_path``),
+        `ViewSelectionItem`, and `ContainerSelectionItem` objects; an empty
+        list means nothing is selected.
+
+        Returns ``None`` until the viewer first reports -- typically its
+        empty selection at load, so ``selection()`` soon reflects "nothing
+        selected" rather than staying ``None`` -- and resets to ``None`` on
+        re-render, so use ``req(viewer.selection())`` to wait for a report.
+        Selecting the same thing twice doesn't fire twice. Not rate-limited.
+        """
+        return cast(Optional["SelectionChangeEvent"], self._read_accessor("selection"))
 
 
 class render_pyvista(render_widget_base[PyvistaValueT, PyvistaHtmlWidget]):
