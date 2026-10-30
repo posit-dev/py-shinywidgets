@@ -11,7 +11,9 @@ from typing import TYPE_CHECKING, Any, Callable
 from ._accessors import AccessorSpec, Emit
 
 if TYPE_CHECKING:
-    from quak import Widget as QuakWidget
+    # quak is excluded from the 3.15 test/dev envs (duckdb has no cp315
+    # wheels), so pyright can't resolve it there
+    from quak import Widget as QuakWidget  # pyright: ignore[reportMissingImports]
 
 
 def attach_sql(widget: QuakWidget, emit: Emit) -> Callable[[], None]:

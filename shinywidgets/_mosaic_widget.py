@@ -11,7 +11,9 @@ from typing import TYPE_CHECKING, Any, Callable
 from ._accessors import AccessorSpec, Emit
 
 if TYPE_CHECKING:
-    from mosaic_widget import MosaicWidget
+    # mosaic-widget is excluded from the 3.15 test/dev envs (duckdb has no
+    # cp315 wheels), so pyright can't resolve it there
+    from mosaic_widget import MosaicWidget  # pyright: ignore[reportMissingImports]
 
 
 def attach_params(widget: MosaicWidget, emit: Emit) -> Callable[[], None]:
