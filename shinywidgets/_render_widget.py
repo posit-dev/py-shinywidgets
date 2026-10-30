@@ -123,6 +123,7 @@ from ._as_widget import (
 from ._bokeh import _bokeh_dependency
 from ._bokeh_accessors import BOKEH_ACCESSORS, selected_frame
 from ._bqplot import BPLOT_ACCESSORS
+from ._cytoscape import CYTOSCAPE_ACCESSORS
 from ._dependencies import widget_pkg
 from ._embedding_atlas import EMBEDDING_ATLAS_ACCESSORS, rows_for_predicate
 from ._ipydatagrid import IPYDATAGRID_ACCESSORS
@@ -1081,17 +1082,32 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
     `.widget.set_style()`, `.widget.set_layout()`, or setting `classes` on the nodes
     in `.widget.graph.nodes`) without re-rendering.
 
-    To react to user interaction, register callbacks with `CytoscapeWidget.on()`
-    inside the render function, before returning the widget, and have them set a
-    :class:`~shiny.reactive.value`. (ipycytoscape drops some callbacks registered
-    after the graph is displayed, e.g. from an effect: only the first event type
-    per element type is wired up.) Node selection is also synced to each node's
-    `selected` trait, readable with :func:`~shinywidgets.reactive_read`, but
-    ipycytoscape makes nodes unselectable by default: create the widget with
-    `auto_unselectify=False` and set `selectable = True` on each node (plus
-    `box_selection_enabled=True` for shift-drag selection).
-
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Reacting to user interaction**: the output has methods that read what
+    the user does in the graph, much like ``input.my_slider()`` reads an
+    input. Call them in a reactive function (a ``@render.*`` function,
+    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
+    the interaction changes:
+
+    * ``node_clicked()``: the JSON data of the most recently clicked node.
+    * ``edge_clicked()``: the JSON data of the most recently clicked edge.
+
+    Each returns ``None`` until the interaction happens (a normal state, not
+    an error, so check for it, or use ``req(graph.node_clicked())``), and
+    resets to ``None`` on re-render. For other event types, register
+    callbacks with `CytoscapeWidget.on()` inside the render function, before
+    returning the widget, and have them set a :class:`~shiny.reactive.value`
+    (ipycytoscape drops callbacks registered after the graph is displayed,
+    e.g. from an effect).
+
+    Node selection is also synced to each node's `selected` trait, readable
+    with :func:`~shinywidgets.reactive_read`, but ipycytoscape makes nodes
+    unselectable by default: create the widget with `auto_unselectify=False`
+    and set `selectable = True` on each node (plus `box_selection_enabled=True`
+    for shift-drag selection).
 
     Parameters
     ----------
@@ -1108,7 +1124,43 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
+        ``reactive_read()`` unlimited; no accessor on this renderer declares
+        a default.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables
+        rate limiting.
     """
+
+    accessor_specs = CYTOSCAPE_ACCESSORS
+
+    def node_clicked(self) -> Optional[Dict[str, Any]]:
+        """
+        The most recently clicked node, as its cytoscape ``ele.json()`` dict
+        (its ``"data"`` key holds the node's data, including ``"id"``).
+
+        Returns ``None`` until the user clicks a node, and resets to ``None``
+        on re-render, so use ``req(graph.node_clicked())`` to wait for a
+        click. Node ids are strings, even for integer networkx nodes.
+        Clicking the same node twice doesn't fire twice. Not rate-limited.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("node_clicked"))
+
+    def edge_clicked(self) -> Optional[Dict[str, Any]]:
+        """
+        The most recently clicked edge, as its cytoscape ``ele.json()`` dict
+        (its ``"data"`` key holds the edge's data, including ``"id"``,
+        ``"source"``, and ``"target"``).
+
+        Returns ``None`` until the user clicks an edge, and resets to
+        ``None`` on re-render, so use ``req(graph.edge_clicked())`` to wait
+        for a click. Edge ids generated from networkx graphs are fresh UUIDs
+        each render. Clicking the same edge twice doesn't fire twice. Not
+        rate-limited.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("edge_clicked"))
 
     def _as_widget(self, value: ValueT) -> CytoscapeWidget:
         # A networkx graph is a generic type (render_ipysigma accepts one too), so
