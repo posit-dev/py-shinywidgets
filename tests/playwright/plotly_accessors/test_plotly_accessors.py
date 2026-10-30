@@ -17,6 +17,21 @@ def point(page: Page, x: float, y: float, id: str = "plot") -> tuple[float, floa
     return px, py
 
 
+def click_until_bound(
+    page: Page, x: float, y: float, id: str, out: str, text: str
+) -> None:
+    # The click listener binds only once Python's bind request reaches the
+    # plot, which can take a while under load, so click until one lands
+    for _ in range(20):
+        page.mouse.click(*point(page, x, y, id=id))
+        try:
+            expect(page.locator(f"#{out}")).to_have_text(text, timeout=500)
+            return
+        except AssertionError:
+            pass
+    expect(page.locator(f"#{out}")).to_have_text(text)
+
+
 def drag(page: Page, start: tuple[float, float], end: tuple[float, float]) -> None:
     page.mouse.move(*start)
     page.mouse.down()
@@ -31,11 +46,9 @@ def test_plotly_accessors_follow_real_gestures(page: Page, local_app) -> None:
     expect(page.locator("#plot .js-plotly-plot")).to_have_count(1, timeout=30000)
     expect(page.locator("#clicked")).to_have_text("None", timeout=10000)
     expect(page.locator("#selected_rows")).to_have_text("")
-    page.wait_for_timeout(500)  # let the bind request reach the browser
 
     # Click the point (3, 9): the first point of trace 1 (group "b")
-    page.mouse.click(*point(page, 3, 9))
-    expect(page.locator("#clicked")).to_have_text("1,0,3,9", timeout=5000)
+    click_until_bound(page, 3, 9, id="plot", out="clicked", text="1,0,3,9")
 
     # Box-select x in [1.5, 4.5]: rows 1, 2, 3 of df, across both traces
     drag(page, point(page, 1.5, 26), point(page, 4.5, 0))
@@ -82,8 +95,6 @@ def test_plotly_accessors_on_an_app_defined_figure_subclass(
     page.goto(local_app.url)
     expect(page.locator("#sub_plot .js-plotly-plot")).to_have_count(1, timeout=30000)
     expect(page.locator("#sub_clicked")).to_have_text("None", timeout=10000)
-    page.wait_for_timeout(500)  # let the bind request reach the browser
 
     page.locator("#sub_plot").scroll_into_view_if_needed()
-    page.mouse.click(*point(page, 3, 9, id="sub_plot"))
-    expect(page.locator("#sub_clicked")).to_have_text("3", timeout=5000)
+    click_until_bound(page, 3, 9, id="sub_plot", out="sub_clicked", text="3")
