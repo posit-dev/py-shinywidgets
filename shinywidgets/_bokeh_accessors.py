@@ -77,6 +77,18 @@ def single_source(model: Any) -> ColumnDataSource:
     return sources[0]
 
 
+def attach_source_data(widget: BokehModel, emit: Emit) -> Callable[[], None]:
+    source = single_source(widget._model)
+    version = [0]
+
+    def on_change(attr: str, old: object, new: object) -> None:
+        version[0] += 1
+        emit(version[0])
+
+    source.on_change("data", on_change)
+    return lambda: source.remove_on_change("data", on_change)
+
+
 def selected_frame(widget: BokehModel, indices: Optional[List[int]]) -> Any:
     df = single_source(widget._model).to_df()
     # After `source.data` shrinks in place, the browser prunes the selection,
@@ -90,7 +102,10 @@ SELECTED = AccessorSpec(
     attach=attach_selected,
     rate_policy="debounce",
 )
+# Changes whenever `source.data` does. selected_rows() reads it, since data
+# replaced in place (at the same length) keeps the selected indices.
+SOURCE_DATA = AccessorSpec(name="source_data", kind="event", attach=attach_source_data)
 TAPPED = AccessorSpec(name="tapped", kind="event", attach=event_attach("tap"))
 ZOOMED = AccessorSpec(name="zoomed", kind="event", attach=event_attach("rangesupdate"))
 
-BOKEH_ACCESSORS = (SELECTED, TAPPED, ZOOMED)
+BOKEH_ACCESSORS = (SELECTED, SOURCE_DATA, TAPPED, ZOOMED)

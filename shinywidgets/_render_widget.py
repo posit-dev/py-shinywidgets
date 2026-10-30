@@ -1938,13 +1938,11 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         """
         The selected rows (see :meth:`selected`) of the plot's
         `ColumnDataSource`, as a pandas data frame (``source.to_df()``). Empty
-        while nothing is selected.
-
-        Readers re-run when the selection changes, not when ``source.data``
-        does: if you replace the data in place (keeping its length), also read
-        whatever reactive value triggered that replacement.
+        while nothing is selected. Readers also re-run when ``source.data``
+        changes.
         """
         indices = self.selected()
+        self._read_accessor("source_data")
         return selected_frame(cast("BokehModel", self._widget), indices)
 
     def tapped(self) -> Optional[Tap]:

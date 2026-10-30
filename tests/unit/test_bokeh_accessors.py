@@ -11,6 +11,7 @@ from bokeh.models import ColumnDataSource
 from bokeh.plotting import figure
 from jupyter_bokeh import BokehModel
 from shiny import Session
+from shiny.reactive._core import Context
 from shiny.session import session_context
 from shinywidgets._comm import run_comm_open_callbacks
 
@@ -89,6 +90,27 @@ def test_selected_rows(widget_session: Session) -> None:
     src.selected.indices = [2, 0]
     assert r.selected() == [2, 0]
     assert r.selected_rows()["x"].tolist() == [3, 1]
+
+
+def test_selected_rows_readers_rerun_when_the_data_is_replaced(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_bokeh
+
+    p, src = plot()
+    w = widget(widget_session, p)
+    r = render_bokeh(rate_delay=0)
+    r._widget = w  # stands in for _render()
+    r._accessors.on_render(w)
+    r.selected_rows()  # attaches
+    src.selected.indices = [0]
+    reader = Context()
+    with reader():
+        assert r.selected_rows()["x"].tolist() == [1]
+    # Same length, so the browser keeps the selected indices
+    src.data = {"x": [7, 8, 9], "y": [4, 5, 6]}
+    assert reader._invalidated
+    assert r.selected_rows()["x"].tolist() == [7]
 
 
 def test_selected_frame_drops_indices_past_the_end(widget_session: Session) -> None:
