@@ -4,7 +4,13 @@ import { setupJscatterAutoHeight, setupJscatterFixedHeight } from './jscatter';
 import { setupKeplerAutoHeight } from './keplergl';
 import { setupMplAutoResize } from './mpl';
 import { setupNglviewAutoSize } from './nglview';
-import { bindPlotlyEvents, findPlotlyGraphDiv, waitForPlotlyReadyToReveal } from './plotly';
+import {
+  bindPlotlyEvents,
+  findPlotlyGraphDiv,
+  waitForPlotlyAfterPlot,
+  waitForPlotlyGraphDiv,
+  waitForPlotlyReadyToReveal,
+} from './plotly';
 import { setupQuakFit } from './quak';
 import { bindReactableState } from './reactable';
 
@@ -89,8 +95,16 @@ const plotlyBehavior: WidgetBehavior = {
 
     const plotEl = findPlotlyGraphDiv(ctx.lmWidget);
     if (!plotEl) {
+      // Plotly hasn't drawn yet (this callback can fire before it does).
+      // Reveal now, but still bind once the graph div appears -- giving up
+      // here would leave the event bridge permanently unbound.
       ctx.dispatchResize();
       ctx.reveal();
+      void waitForPlotlyGraphDiv(ctx.lmWidget).then(async (late) => {
+        if (!late || ctx.isStale()) return;
+        await waitForPlotlyAfterPlot(late);
+        bindPlotlyEvents(late, ctx.model);
+      });
       return;
     }
 
