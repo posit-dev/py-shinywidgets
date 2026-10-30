@@ -9,7 +9,7 @@ app_ui = ui.page_fluid(
     output_widget("brain", height="400px"),
     ui.output_text("loaded"),
     ui.output_text("location"),
-    ui.output_text("eval_count"),
+    ui.output_text("publish_count"),
 )
 
 # Number of synthetic crosshair events the Burst button drives
@@ -17,8 +17,8 @@ BURST_N = 20
 
 
 def server(input, output, session):
-    n_evals = [0]
     image_loaded = reactive.value(False)
+    n_publishes = reactive.value(0)
 
     @render_niivue
     def brain():
@@ -30,6 +30,22 @@ def server(input, output, session):
             image_loaded.set(True)
 
         return nv
+
+    # Count PUBLISHES of the location accessor (one reactive.Value.set per
+    # publish). Unlike an evaluation count, this is insensitive to reactive
+    # flush batching: without the debounce, the burst publishes 20 times (20
+    # distinct set() calls, however they batch into flushes); with it, once
+    loc_value = brain._accessors.values["location"]
+    original_set = loc_value.set
+
+    def counting_set(box):
+        # Value.get() outside a reactive context raises; and exceptions in
+        # ipywidgets message handlers are swallowed silently
+        with reactive.isolate():
+            n_publishes.set(n_publishes.get() + 1)
+        return original_set(box)
+
+    loc_value.set = counting_set
 
     # Drive BURST_N synthetic crosshair events in a tight loop (the same drive
     # mechanism as the unit tests): all of them must coalesce into a single
@@ -54,26 +70,20 @@ def server(input, output, session):
                 None,
             )
 
-    @reactive.calc
-    def loc():
-        n_evals[0] += 1
-        return brain.location()
-
     @render.text
     def loaded():
         return "yes" if image_loaded() else "no"
 
     @render.text
     def location():
-        value = loc()
+        value = brain.location()
         if value is None:
             return "None"
         return ",".join(f"{v:.1f}" for v in value["mm"])
 
     @render.text
-    def eval_count():
-        loc()
-        return str(n_evals[0])
+    def publish_count():
+        return str(n_publishes())
 
 
 app = App(app_ui, server)

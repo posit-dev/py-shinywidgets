@@ -29,20 +29,22 @@ def test_location_reports_crosshair_and_debounces(page: Page, local_app) -> None
 
     # A burst of 20 crosshair events in a tight loop must coalesce into a
     # single debounced publish (the accessor debounces by 250 ms by default).
-    # Asserting on a synthetic burst keeps this deterministic: a real drag's
-    # event pacing depends on CI's event-loop timing, where the same
-    # assertion proved flaky.
-    expect(page.locator("#eval_count")).to_have_text(
+    # The assertion counts PUBLISHES, not evaluations: the events arrive
+    # synchronously, so without rate limiting their publishes would still
+    # batch into one flush (one evaluation) -- publish counting is what
+    # actually detects a lost debounce. A synthetic burst keeps the event
+    # pacing deterministic (a real drag's pacing made this flaky in CI).
+    expect(page.locator("#publish_count")).to_have_text(
         re.compile(r"^\d+$"), timeout=10000
     )
-    before = int(page.locator("#eval_count").inner_text())
+    before = int(page.locator("#publish_count").inner_text())
     page.click("#burst")
-    # The settled value is the burst's final event
+    # The settled value is the burst's final event -- which only appears once
+    # the (debounced) publish has happened, so the count is final by now
     expect(page.locator("#location")).to_have_text("19.0,0.0,0.0", timeout=10000)
-    page.wait_for_timeout(500)  # let any further flush settle
-    after = int(page.locator("#eval_count").inner_text())
+    after = int(page.locator("#publish_count").inner_text())
     assert after - before == 1, (
-        f"20 crosshair events caused {after - before} evaluations; "
+        f"20 crosshair events caused {after - before} publishes; "
         "the 250 ms debounce should coalesce them into 1"
     )
 
