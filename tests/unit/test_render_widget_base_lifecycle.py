@@ -281,7 +281,7 @@ class RecordingAttach:
 
 def renderer_with_clicked(att: RecordingAttach):  # type: ignore[no-untyped-def]
     class R(rwb.render_widget_base):
-        accessor_specs = (
+        _accessor_specs = (
             acc.AccessorSpec(name="clicked", kind="event", attach=att, eager=True),
         )
 
@@ -289,13 +289,6 @@ def renderer_with_clicked(att: RecordingAttach):  # type: ignore[no-untyped-def]
             return self._read_accessor("clicked")
 
     return R()
-
-
-def test_rate_kwargs_are_stored_and_default_none() -> None:
-    r = rwb.render_widget_base()
-    assert r.rate_policy is None and r.rate_delay is None
-    r2 = rwb.render_widget_base(rate_policy="throttle", rate_delay=100)
-    assert r2.rate_policy == "throttle" and r2.rate_delay == 100
 
 
 def test_render_attaches_accessors_to_the_coerced_widget(monkeypatch) -> None:
@@ -414,7 +407,34 @@ def test_render_registers_rate_policy_for_its_widget(monkeypatch) -> None:
     monkeypatch.setattr(rwb, "as_widget", lambda value: widget)
     asyncio.run(r._render())
     rate = acc.rate_policy_for(widget)  # type: ignore[arg-type]
-    assert rate is not None and (rate.policy, rate.delay_ms) == ("throttle", 250)
+    assert rate is not None and (rate.policy, rate.delay) == ("throttle", 0.25)
+
+
+def test_rate_delay_alone_debounces_reactive_read(monkeypatch) -> None:
+    widget = FakeLiveWidget()
+    r = rwb.render_widget_base(rate_delay=0.5)
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: widget)
+    asyncio.run(r._render())
+    rate = acc.rate_policy_for(widget)  # type: ignore[arg-type]
+    assert rate is not None and (rate.policy, rate.delay) == ("debounce", 0.5)
+
+
+def test_no_rate_kwargs_leave_reactive_read_unlimited(monkeypatch) -> None:
+    widget = FakeLiveWidget()
+    r = rwb.render_widget_base()
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: widget)
+    asyncio.run(r._render())
+    assert acc.rate_policy_for(widget) is None  # type: ignore[arg-type]
 
 
 def test_reading_an_accessor_in_its_own_render_raises(monkeypatch) -> None:

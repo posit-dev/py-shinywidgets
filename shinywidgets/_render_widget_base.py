@@ -73,11 +73,11 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     browser-side output binding uses to display the widget.
 
     Subclasses declare accessors (methods such as `clicked()` that read widget
-    events reactively) in `accessor_specs`, and implement each one as
+    events reactively) in `_accessor_specs`, and implement each one as
     `self._read_accessor(name)`.
     """
 
-    accessor_specs: ClassVar[Tuple[AccessorSpec, ...]] = ()
+    _accessor_specs: ClassVar[Tuple[AccessorSpec, ...]] = ()
 
     def auto_output_ui(self) -> Tag:
         return output_widget(
@@ -97,21 +97,25 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         fill: Optional[bool] = None,
         fillable: Optional[bool] = None,
         rate_policy: Optional[RatePolicy] = None,
-        rate_delay: Optional[int] = None,
+        rate_delay: Optional[float] = None,
     ):
         super().__init__(_fn)
         self.width = width
         self.height = height
         self.fill = fill
         self.fillable = fillable
-        self.rate_policy: Optional[RatePolicy] = rate_policy
-        self.rate_delay = rate_delay
+        # For `reactive_read()` on the widget, where (unlike accessors) there's
+        # no default policy for `rate_delay` alone to adjust
+        self._rate_policy: Optional[RatePolicy] = rate_policy or (
+            None if rate_delay is None else "debounce"
+        )
+        self._rate_delay = rate_delay
 
         self._value: ValueT | None = None
         self._widget: WidgetT | None = None
         self._contexts: set[Context] = set()
         self._accessors = Accessors(
-            type(self).accessor_specs, rate_policy=rate_policy, rate_delay=rate_delay
+            type(self)._accessor_specs, rate_policy=rate_policy, rate_delay=rate_delay
         )
         self._closes_accessors_on_destroy = False
 
@@ -174,7 +178,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         widget, fill = set_layout_defaults(widget)
 
         self._widget = cast(WidgetT, widget)
-        register_rate_policy(widget, self.rate_policy, self.rate_delay)
+        register_rate_policy(widget, self._rate_policy, self._rate_delay)
         self._accessors.on_render(widget)
         if (
             session is not None

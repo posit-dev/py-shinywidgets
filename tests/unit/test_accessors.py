@@ -30,7 +30,7 @@ class FakeSchedule:
 def test_no_policy_calls_immediately() -> None:
     calls: List[int] = []
     rl = acc.RateLimiter(
-        lambda: calls.append(1), policy=None, delay_ms=250, schedule=FakeSchedule()
+        lambda: calls.append(1), policy=None, delay=0.25, schedule=FakeSchedule()
     )
     rl.call()
     rl.call()
@@ -41,7 +41,7 @@ def test_zero_delay_disables_policy() -> None:
     calls: List[int] = []
     s = FakeSchedule()
     rl = acc.RateLimiter(
-        lambda: calls.append(1), policy="debounce", delay_ms=0, schedule=s
+        lambda: calls.append(1), policy="debounce", delay=0, schedule=s
     )
     rl.call()
     assert calls == [1] and s.timers == []
@@ -51,7 +51,7 @@ def test_debounce_is_trailing_only() -> None:
     calls: List[int] = []
     s = FakeSchedule()
     rl = acc.RateLimiter(
-        lambda: calls.append(1), policy="debounce", delay_ms=250, schedule=s
+        lambda: calls.append(1), policy="debounce", delay=0.25, schedule=s
     )
     rl.call()
     rl.call()
@@ -65,7 +65,7 @@ def test_throttle_is_leading_and_trailing() -> None:
     calls: List[int] = []
     s = FakeSchedule()
     rl = acc.RateLimiter(
-        lambda: calls.append(1), policy="throttle", delay_ms=100, schedule=s
+        lambda: calls.append(1), policy="throttle", delay=0.1, schedule=s
     )
     rl.call()
     assert calls == [1] and len(s.timers) == 1
@@ -82,7 +82,7 @@ def test_cancel_drops_pending_timer() -> None:
     calls: List[int] = []
     s = FakeSchedule()
     rl = acc.RateLimiter(
-        lambda: calls.append(1), policy="debounce", delay_ms=250, schedule=s
+        lambda: calls.append(1), policy="debounce", delay=0.25, schedule=s
     )
     rl.call()
     rl.cancel()
@@ -273,7 +273,7 @@ def test_zero_delay_override_disables_default_policy() -> None:
 
 def test_override_policy_and_delay_apply_to_specs_with_a_default() -> None:
     a, cap, s = make(
-        rate_policy="debounce", override_policy="throttle", override_delay=100
+        rate_policy="debounce", override_policy="throttle", override_delay=0.1
     )
     a.on_render(object())
     a.read("clicked")

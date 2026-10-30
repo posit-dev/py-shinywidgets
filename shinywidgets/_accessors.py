@@ -55,7 +55,7 @@ class AccessorSpec:
         "input" ignores a raw value equal to the previous one; "event"
         re-publishes it (so repeated identical clicks each fire).
     rate_policy, rate_delay
-        Default rate limit (`rate_delay` in milliseconds), overridable by the
+        Default rate limit (`rate_delay` in seconds), overridable by the
         renderer's kwargs.
     eager
         Attach during render rather than on first read, for widgets whose
@@ -71,7 +71,7 @@ class AccessorSpec:
     payload: Callable[[Any], object] = identity
     priority: Literal["input", "event"] = "input"
     rate_policy: Optional[RatePolicy] = None
-    rate_delay: int = 250
+    rate_delay: float = 0.25
     eager: bool = False
     not_ready: Callable[[Any], bool] = never_ready_check
 
@@ -87,23 +87,23 @@ class AccessorSpec:
 
 
 def register_rate_policy(
-    widget: object, policy: Optional[RatePolicy], delay_ms: Optional[int]
+    widget: object, policy: Optional[RatePolicy], delay: Optional[float]
 ) -> None:
     """
     Rate-limit `reactive_read()` on `widget`, as the renderer that rendered it
     asked (`policy=None` removes the limit).
     """
     key = id(widget)
-    delay_ms = 250 if delay_ms is None else delay_ms
+    delay = 0.25 if delay is None else delay
     current = RATE_POLICIES.get(key)
     if policy is None:
         RATE_POLICIES.pop(key, None)
-    elif current is None or (current.policy, current.delay_ms) != (policy, delay_ms):
+    elif current is None or (current.policy, current.delay) != (policy, delay):
         if current is None:
             # Keyed by id, since widgets may be unhashable (plotly's
             # FigureWidget defines __eq__ without __hash__)
             weakref.finalize(widget, RATE_POLICIES.pop, key, None)
-        RATE_POLICIES[key] = WidgetRate(policy, delay_ms)
+        RATE_POLICIES[key] = WidgetRate(policy, delay)
 
 
 def rate_policy_for(widget: object) -> Optional[WidgetRate]:
@@ -121,13 +121,13 @@ class WidgetRate:
     own session instead.
     """
 
-    def __init__(self, policy: RatePolicy, delay_ms: int) -> None:
+    def __init__(self, policy: RatePolicy, delay: float) -> None:
         self.policy: RatePolicy = policy
-        self.delay_ms = delay_ms
+        self.delay = delay
         self._pending: Dict[int, Tuple[Callable[[], None], Optional[Session]]] = {}
         self._calling = False
         self._limiter = RateLimiter(
-            self._fire, policy=policy, delay_ms=delay_ms, schedule=timer_schedule
+            self._fire, policy=policy, delay=delay, schedule=timer_schedule
         )
 
     def invalidate(
@@ -179,7 +179,7 @@ class Accessors:
         specs: Sequence[AccessorSpec],
         *,
         rate_policy: Optional[RatePolicy] = None,
-        rate_delay: Optional[int] = None,
+        rate_delay: Optional[float] = None,
         schedule: Optional[Schedule] = None,
     ) -> None:
         self._widget: object = None
@@ -195,7 +195,7 @@ class Accessors:
                 slot.limiter = RateLimiter(
                     lambda slot=slot: self._publish(slot),
                     policy=rate_policy or policy,
-                    delay_ms=spec.rate_delay if rate_delay is None else rate_delay,
+                    delay=spec.rate_delay if rate_delay is None else rate_delay,
                     schedule=schedule,
                 )
             self._slots[spec.name] = slot
@@ -322,12 +322,12 @@ class RateLimiter:
         fn: Callable[[], None],
         *,
         policy: Optional[RatePolicy],
-        delay_ms: int,
+        delay: float,
         schedule: Optional[Schedule] = None,
     ) -> None:
         self._fn = fn
-        self._policy = policy if delay_ms > 0 else None
-        self._delay = delay_ms / 1000
+        self._policy = policy if delay > 0 else None
+        self._delay = delay
         self._schedule = schedule or loop_schedule
         self._cancel_timer: Optional[Callable[[], None]] = None
         self._pending = False

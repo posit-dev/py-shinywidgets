@@ -148,7 +148,7 @@ def test_reactive_depend_debounces_when_renderer_registered_policy(
     ctx = FakeContext()
     monkeypatch.setattr(sw, "get_current_context", lambda: ctx)
     w = FakeWidget({"x": 1})
-    acc.register_rate_policy(w, "debounce", 100)  # type: ignore[arg-type]
+    acc.register_rate_policy(w, "debounce", 0.1)  # type: ignore[arg-type]
     sw.reactive_depend(w, "x")  # type: ignore[arg-type]
     handler = w.observe_calls[0][0]
     handler({})
@@ -169,7 +169,7 @@ def test_reactive_depend_throttle_window_spans_reruns(monkeypatch) -> None:
     timers = FakeTimers()
     monkeypatch.setattr(acc, "timer_schedule", timers)
     w = FakeWidget({"x": 1})
-    acc.register_rate_policy(w, "throttle", 1000)  # type: ignore[arg-type]
+    acc.register_rate_policy(w, "throttle", 1)  # type: ignore[arg-type]
 
     first = FakeContext()
     monkeypatch.setattr(sw, "get_current_context", lambda: first)
@@ -220,7 +220,7 @@ def test_throttle_survives_the_session_that_opened_its_window_ending(
     monkeypatch.setattr(sw, "get_current_session", lambda: current["session"])
     monkeypatch.setattr(acc, "get_current_session", lambda: current["session"])
     w = FakeWidget({"x": 1})
-    acc.register_rate_policy(w, "throttle", 10)  # type: ignore[arg-type]
+    acc.register_rate_policy(w, "throttle", 0.01)  # type: ignore[arg-type]
 
     def depend() -> FakeContext:
         ctx = FakeContext()
@@ -261,9 +261,9 @@ class UnhashableWidget(FakeWidget):
 
 def test_register_policy_for_unhashable_widget() -> None:
     w = UnhashableWidget({})
-    acc.register_rate_policy(w, "throttle", 50)  # type: ignore[arg-type]
+    acc.register_rate_policy(w, "throttle", 0.05)  # type: ignore[arg-type]
     rate = acc.rate_policy_for(w)  # type: ignore[arg-type]
-    assert rate is not None and (rate.policy, rate.delay_ms) == ("throttle", 50)
+    assert rate is not None and (rate.policy, rate.delay) == ("throttle", 0.05)
     assert acc.rate_policy_for(UnhashableWidget({})) is None  # type: ignore[arg-type]
 
 
@@ -271,7 +271,7 @@ def test_register_none_removes_policy() -> None:
     w = FakeWidget({})
     acc.register_rate_policy(w, "debounce", None)  # type: ignore[arg-type]
     rate = acc.rate_policy_for(w)  # type: ignore[arg-type]
-    assert rate is not None and (rate.policy, rate.delay_ms) == ("debounce", 250)
+    assert rate is not None and (rate.policy, rate.delay) == ("debounce", 0.25)
     acc.register_rate_policy(w, None, None)  # type: ignore[arg-type]
     assert acc.rate_policy_for(w) is None  # type: ignore[arg-type]
 
@@ -279,7 +279,7 @@ def test_register_none_removes_policy() -> None:
 def test_policy_is_forgotten_with_the_widget() -> None:
 
     w = FakeWidget({})
-    acc.register_rate_policy(w, "debounce", 100)  # type: ignore[arg-type]
+    acc.register_rate_policy(w, "debounce", 0.1)  # type: ignore[arg-type]
     key = id(w)
     assert key in acc.RATE_POLICIES
     del w

@@ -227,11 +227,11 @@ class render_widget(render_widget_base[WidgetT, WidgetT]):
     rate_policy
         How to rate-limit accessors on this renderer that declare a default
         policy, and :func:`~shinywidgets.reactive_read` on its widget. ``None``
-        (the default) leaves each accessor's own default in place and
-        ``reactive_read()`` unlimited.
+        (the default) leaves each accessor's own default in place, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
-        The rate-limit window in milliseconds. ``0`` disables rate limiting.
-        Defaults to each accessor's own setting (250 ms for those that declare
+        The rate-limit window in seconds. ``0`` disables rate limiting.
+        Defaults to each accessor's own setting (0.25 for those that declare
         one).
 
     Examples
@@ -420,14 +420,14 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     rate_policy
         How to rate-limit :meth:`selected` (debounced by default) and
         :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
-        ``"throttle"``. ``None`` (the default) keeps the debounce and leaves
-        ``reactive_read()`` unlimited.
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
 
-    accessor_specs = ALTAIR_ACCESSORS
+    _accessor_specs = ALTAIR_ACCESSORS
 
     def selected(self, name: Optional[str] = None) -> Selection:
         """
@@ -541,7 +541,7 @@ class render_embedding_atlas(
         fill: Optional[bool] = None,
         fillable: Optional[bool] = None,
         rate_policy: Optional[RatePolicy] = None,
-        rate_delay: Optional[int] = None,
+        rate_delay: Optional[float] = None,
         allow_unrestricted_connection: bool = False,
     ):
         super().__init__(
@@ -1915,11 +1915,11 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps the
         debounce.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
 
-    accessor_specs = BOKEH_ACCESSORS
+    _accessor_specs = BOKEH_ACCESSORS
 
     def selected(self) -> Optional[List[int]]:
         """
@@ -2427,9 +2427,10 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         How to rate-limit :meth:`selecting` and :meth:`brushing` (debounced by
         default) and :func:`~shinywidgets.reactive_read` on the widget:
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps each
-        accessor's own default and leaves ``reactive_read()`` unlimited.
+        accessor's own default, and debounces ``reactive_read()`` only if
+        ``rate_delay`` is given.
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
 
     Examples
@@ -2482,7 +2483,7 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     ```
     """
 
-    accessor_specs = PLOTLY_ACCESSORS
+    _accessor_specs = PLOTLY_ACCESSORS
 
     def clicked(self) -> Optional[pd.DataFrame]:
         """
@@ -2749,7 +2750,7 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
         fill: Optional[bool] = None,
         fillable: Optional[bool] = None,
         rate_policy: Optional[RatePolicy] = None,
-        rate_delay: Optional[int] = None,
+        rate_delay: Optional[float] = None,
     ):
         warnings.warn(
             "render_pydeck is deprecated: pydeck v0.9 removed its Jupyter widget, so "
