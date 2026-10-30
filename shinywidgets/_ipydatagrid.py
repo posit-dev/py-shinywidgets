@@ -7,7 +7,8 @@ dispatchers. The displayed row map lives in the (upstream-internal)
 `_visible_rows` trait, which `visible_data()` observes as its invalidation
 trigger (the frame itself comes from `get_visible_data()` at read time),
 plus the `_transforms` trait (a zero-match filter leaves the row map at
-``[]``, which never fires) and the cell-change notification (an edit can
+``[]``, which never fires), the `_data` trait (replacing the grid's data
+fires neither of the others), and the cell-change notification (an edit can
 change displayed values without changing the row map).
 """
 
@@ -60,12 +61,13 @@ CELL_EDITED = AccessorSpec(
 
 
 def attach_visible_rows(widget: DataGrid, emit: Emit) -> Callable[[], None]:
-    # `_visible_rows` and `_transforms` are upstream-internal (like
-    # `_predicate` in embedding-atlas); fail loudly if ipydatagrid removes
-    # them rather than silently stop invalidating `visible_data()` readers
+    # `_visible_rows`, `_transforms`, and `_data` are upstream-internal
+    # (like `_predicate` in embedding-atlas); fail loudly if ipydatagrid
+    # removes them rather than silently stop invalidating `visible_data()`
+    # readers
     missing = [
         name
-        for name in ("_visible_rows", "_transforms")
+        for name in ("_visible_rows", "_transforms", "_data")
         if getattr(widget, name, None) is None
     ]
     if missing:
@@ -90,12 +92,16 @@ def attach_visible_rows(widget: DataGrid, emit: Emit) -> Callable[[], None]:
     # (a zero-match filter straight from the initial state never fires
     # _visible_rows)
     widget.observe(trigger, "_transforms")
+    # Replacing the grid's data (`grid.data = df`) fires neither a cell
+    # change nor (necessarily) a row-map change
+    widget.observe(trigger, "_data")
     widget.on_cell_change(trigger)
     emit(widget._visible_rows)
 
     def detach() -> None:
         widget.unobserve(on_change, "_visible_rows")
         widget.unobserve(trigger, "_transforms")
+        widget.unobserve(trigger, "_data")
         widget.on_cell_change(trigger, remove=True)
 
     return detach

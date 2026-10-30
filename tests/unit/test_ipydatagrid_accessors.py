@@ -159,6 +159,34 @@ def test_visible_data_distinguishes_empty_filter_from_initial(
     assert r.visible_data()["a"].tolist() == [1, 2, 3]
 
 
+def test_visible_data_invalidates_on_data_replacement(
+    widget_session: Session,
+) -> None:
+    # Assigning new data fires neither on_cell_change nor (necessarily) a
+    # _visible_rows change, so _data must also be a trigger
+    g = grid(widget_session)
+    emitted: list[object] = []
+    detach = sd.VISIBLE_ROWS.attach(g, emitted.append)
+    assert len(emitted) == 1  # the seed
+    g.data = pd.DataFrame({"a": [7, 8, 9], "b": list("qrs")})  # same shape
+    assert len(emitted) == 2
+    detach()
+    g.data = pd.DataFrame({"a": [10], "b": ["t"]})
+    assert len(emitted) == 2
+
+
+def test_visible_data_follows_data_replacement(widget_session: Session) -> None:
+    from shinywidgets import render_ipydatagrid
+
+    g = grid(widget_session)
+    r = render_ipydatagrid()
+    r._widget = g  # stands in for _render()
+    r._accessors.on_render(g)
+    assert r.visible_data()["a"].tolist() == [1, 2, 3]
+    g.data = pd.DataFrame({"a": [7, 8, 9], "b": list("qrs")})
+    assert r.visible_data()["a"].tolist() == [7, 8, 9]
+
+
 def test_visible_data_accessor(widget_session: Session) -> None:
     from shinywidgets import render_ipydatagrid
 
