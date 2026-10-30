@@ -539,6 +539,28 @@ def test_render_quak_restricts_connection_by_default(
     assert "Permission Error" in sent[0]["error"]
 
 
+def test_render_quak_raises_when_connection_attr_missing(widget_session) -> None:  # noqa: ANN001
+    pytest.importorskip("quak")
+    from ipywidgets import IntSlider
+
+    # If quak renames `_conn`, fail loudly rather than render unrestricted
+    with session_context(widget_session):
+        with pytest.raises(RuntimeError, match="allow_unrestricted_connection"):
+            rw.restrict_quak_connection(IntSlider())  # type: ignore[arg-type]
+
+
+def test_render_quak_rejects_a_non_quak_widget(widget_session) -> None:  # noqa: ANN001
+    pytest.importorskip("quak")
+    from ipywidgets import IntSlider
+
+    # Any widget used to pass through; without a `_conn` it can't be locked
+    # down, so it now raises instead of rendering unrestricted
+    r = rw.render_quak()
+    with session_context(widget_session):
+        with pytest.raises(RuntimeError, match="allow_unrestricted_connection"):
+            r._as_widget(IntSlider())  # type: ignore[arg-type]
+
+
 def test_render_quak_allow_unrestricted_connection(
     widget_session, monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:

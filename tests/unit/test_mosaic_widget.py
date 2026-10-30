@@ -94,6 +94,24 @@ def test_render_mosaic_widget_restricts_connection_by_default(
     assert "Permission Error" in content["error"]
 
 
+def test_render_mosaic_widget_raises_when_connection_attr_missing(
+    widget_session,
+) -> None:  # noqa: ANN001
+    # If mosaic-widget renames `con`, fail loudly rather than render unrestricted
+    with session_context(widget_session):
+        with pytest.raises(RuntimeError, match="allow_unrestricted_connection"):
+            rw.restrict_mosaic_connection(widgets.IntSlider())  # type: ignore[arg-type]
+
+
+def test_render_mosaic_widget_rejects_a_non_mosaic_widget(widget_session) -> None:  # noqa: ANN001
+    # Any widget used to pass through; without a `con` it can't be locked
+    # down, so it now raises instead of rendering unrestricted
+    r = rw.render_mosaic_widget()
+    with session_context(widget_session):
+        with pytest.raises(RuntimeError, match="allow_unrestricted_connection"):
+            r._as_widget(widgets.IntSlider())  # type: ignore[arg-type]
+
+
 def test_render_mosaic_widget_allow_unrestricted_connection(
     widget_session, monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
