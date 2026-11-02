@@ -5319,9 +5319,12 @@ class render_pyvista(render_widget_base[PyvistaValueT, PyvistaHtmlWidget]):
     The export is a self-contained, client-side vtk.js view: camera
     interaction (rotate/zoom/pan) happens entirely in the browser, and no
     widget state is synced back to Python, so there is nothing to read with
-    :func:`~shinywidgets.reactive_read`. Each render embeds the entire scene
-    in the widget state (roughly 1 MB even for a trivial mesh, growing with
-    scene size), so prefer fewer, larger re-renders over frequent small ones.
+    :func:`~shinywidgets.reactive_read`. The vtk.js runtime ships once per
+    session (~400 KB, shared by every pyvista output in the app); each render
+    then embeds only the exported scene in the widget state (tens of KB for
+    a typical mesh, growing with scene size), so input-driven re-renders are
+    cheap. Still, very large scenes (millions of cells) produce multi-MB
+    exports, so prefer fewer, larger re-renders for those.
     For fully server-driven interactivity (e.g., picking, server-side
     rendering), use pyvista's ``jupyter_backend="trame"`` with a trame server
     embedded via ``shiny.ui.tags.iframe`` instead (shinywidgets can't host

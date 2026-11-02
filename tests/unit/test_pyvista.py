@@ -146,9 +146,13 @@ def test_ensure_pyvista_trame_server_retries_failed_start(monkeypatch) -> None:
 
 
 def test_as_widget_pyvista_coerces_plotter(widget_session) -> None:
+    from trame_pyvista.jupyter import EmbeddableWidget
+
     pl = make_plotter()
     w = coerce_plotter(widget_session, pl)
-    assert isinstance(w, HTML)
+    # trame-pyvista 0.3's EmbeddableWidget is an anywidget (not ipywidgets.HTML);
+    # its value is a read-only property computing the standalone iframe
+    assert isinstance(w, EmbeddableWidget)
     assert 'class="pyvista"' in w.value
     # The scene is embedded, client-side (no separate trame server)
     assert "srcdoc=" in w.value
@@ -163,9 +167,11 @@ def test_as_widget_pyvista_coerces_plotter(widget_session) -> None:
 
 
 def test_as_widget_coerces_plotter_via_package_map(widget_session) -> None:
+    from trame_pyvista.jupyter import EmbeddableWidget
+
     with session_context(widget_session):
         w = as_widget(make_plotter())
-    assert isinstance(w, HTML)
+    assert isinstance(w, EmbeddableWidget)
     assert 'class="pyvista"' in w.value
 
 
@@ -176,11 +182,13 @@ def test_as_widget_coerces_plotter_subclass_defined_in_app(widget_session) -> No
     class AppPlotter(pv.Plotter):  # type: ignore[misc]
         pass
 
+    from trame_pyvista.jupyter import EmbeddableWidget
+
     pl = AppPlotter(notebook=True, window_size=[400, 300])
     pl.add_mesh(pv.Sphere())
     with session_context(widget_session):
         w = as_widget(pl)
-    assert isinstance(w, HTML)
+    assert isinstance(w, EmbeddableWidget)
     assert 'class="pyvista"' in w.value
 
 
