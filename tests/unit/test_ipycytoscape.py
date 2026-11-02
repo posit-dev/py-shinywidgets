@@ -96,6 +96,34 @@ def test_rate_policy_registers_on_child_nodes_and_edges() -> None:
         assert (rate.policy, rate.delay) == ("debounce", 0.5)
 
 
+def test_rate_policy_covers_late_children_only_on_rerender() -> None:
+    # Children added to the graph after a render aren't covered (the
+    # documented limitation), but re-rendering the same widget covers them
+    from shinywidgets._accessors import rate_policy_for
+
+    w = ipycytoscape.CytoscapeWidget()
+    w.graph.add_graph_from_networkx(make_graph())
+
+    r = rw.render_ipycytoscape(rate_policy="debounce", rate_delay=0.5)
+
+    @r
+    def _():  # noqa: ANN202
+        return w
+
+    asyncio.run(r._render())
+    for child in (*w.graph.nodes, *w.graph.edges):
+        assert rate_policy_for(child) is not None
+
+    w.graph.add_node(ipycytoscape.Node(data={"id": "d"}))
+    late_node = w.graph.nodes[-1]
+    assert rate_policy_for(late_node) is None
+
+    asyncio.run(r._render())
+    rate = rate_policy_for(late_node)
+    assert rate is not None
+    assert (rate.policy, rate.delay) == ("debounce", 0.5)
+
+
 def test_layout_defaults_fill_by_default() -> None:
     _, fill = rwb.set_layout_defaults(ipycytoscape.CytoscapeWidget())
     assert fill is True

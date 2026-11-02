@@ -1381,8 +1381,8 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget
-        and on its graph's child ``Node``/``Edge`` widgets (whose
-        ``selected`` and ``grabbed`` traits are the ones worth reading):
+        and on its graph's child ``Node``/``Edge`` widgets, which own the
+        traits worth reading (``selected`` on both, ``grabbed`` on nodes):
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
         ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
         this renderer declares a default. Nodes or edges added to the graph
@@ -1395,8 +1395,9 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
     _accessor_specs = CYTOSCAPE_ACCESSORS
 
     def _rate_policy_widgets(self, widget: CytoscapeWidget) -> Tuple[Widget, ...]:
-        # The interaction traits worth rate-limiting (`selected`, `grabbed`)
-        # live on the child Node/Edge widgets, not the CytoscapeWidget itself
+        # The interaction traits worth rate-limiting (`selected` on both,
+        # `grabbed` on nodes) live on the child Node/Edge widgets, not the
+        # CytoscapeWidget itself
         return (widget, *widget.graph.nodes, *widget.graph.edges)
 
     def node_clicked(self) -> Optional[Dict[str, Any]]:
