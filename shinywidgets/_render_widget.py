@@ -786,11 +786,7 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
 
     **Network access**: the viewer loads its JavaScript from a CDN and its sky
     imagery (HiPS tiles) from CDS servers at render time, so it requires an
-    internet connection. A bare object name as the constructor ``target``
-    (e.g., ``Aladin(target="M42")``) is resolved through a blocking Sesame
-    lookup at construction time, which raises -- crashing the render -- if
-    CDS's Sesame service is unreachable; prefer coordinates (a ``"ra dec"``
-    string or an astropy `SkyCoord`), which parse locally without a lookup.
+    internet connection.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -4570,9 +4566,8 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       molecule's image (a distinct gesture from the selection checkbox)
       makes its row's data available reactively as ``grid.clicked()`` --
       every displayed column plus ``mols2grid-id`` -- for click-to-inspect
-      panels and drill-downs. The payload always includes ``img`` (the
-      cell's full SVG markup) and ``SMILES``, even when neither is in
-      ``subset``/``tooltip``, so pick the keys you display rather than
+      panels and drill-downs. The payload can be wide (it includes the
+      cell's image markup), so pick the keys you display rather than
       stringifying the whole dict. A click is an event, not state:
       ``clicked()`` is `None` until the first click and resets on re-render.
     * **Filtering (Python -> browser):** ``grid.grid.filter(mask)`` (a boolean
@@ -4838,10 +4833,8 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
 
         Unlike `.selection()` (the checkbox set), a click is an event: it
         carries the clicked row's data (every displayed column, plus
-        ``mols2grid-id``; ``img`` -- the cell's full SVG markup -- and
-        ``SMILES`` are always included, even when not displayed) and resets
-        to `None` on re-render. All values are strings except
-        ``mols2grid-id`` (an int), and clicking the same
+        ``mols2grid-id``) and resets to `None` on re-render. All values are
+        strings except ``mols2grid-id`` (an int), and clicking the same
         molecule twice in a row does not re-fire (a mols2grid limitation:
         the trait only changes when the payload does).
         """
@@ -5678,10 +5671,8 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
     `on_location_change` callbacks are swallowed by ipywidgets, so a failing
     callback just looks like "no updates".) Similarly,
     ``nv.frac2mm()``/``nv.mm2frac()`` don't work on Shiny (the coordinate
-    matrices exist only in the browser): they raise a `RuntimeError` once a
-    volume is loaded, and before that they silently return a meaningless,
-    identity-based answer; use the millimeter coordinates from the
-    ``location()`` payload instead.
+    matrices exist only in the browser); use the millimeter coordinates from
+    the ``location()`` payload instead.
 
     **Data size**: each render sends the viewer's JavaScript bundle (~5 MB)
     plus every volume (base64-encoded) to the browser, and the browser
