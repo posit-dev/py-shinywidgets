@@ -2,8 +2,8 @@ import logging
 import threading
 from base64 import b64encode
 from contextvars import ContextVar
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
 
 from shiny import Session
 
@@ -286,13 +286,25 @@ COMM_OPEN_CALLBACKS: Dict[str, List[Callable[[], None]]] = {}
 
 def when_comm_open(widget: object, fn: Callable[[], None]) -> None:
     """
-    Run `fn` once `widget`'s comm reaches the browser, e.g. to send it a custom
-    message. A widget built during a render gets its real comm only after the
-    render's flush; until then, sends are silently dropped.
+    Run `fn` once `widget`'s comm has opened to the browser (i.e., once the
+    browser has the widget's model).
+
+    A widget constructed during a render gets its real comm on a later
+    reactive flush; until then, `widget.comm` is an `OrphanedShinyComm`
+    placeholder. `widget.send(...)` calls made in that window queue up and are
+    delivered, in order, when the comm opens, so they don't need this helper;
+    use it for other work that must wait for the open (e.g., reading state
+    back from a model the browser just created).
+
+    If the widget's comm is already open, `fn` runs immediately. If the widget
+    is already closed, `fn` never runs.
     """
     comm = getattr(widget, "comm", None)
     if isinstance(comm, OrphanedShinyComm):
-        COMM_OPEN_CALLBACKS.setdefault(comm.comm_id, []).append(fn)
+        # A post-close placeholder's comm never opens; registering `fn` would
+        # leak it in COMM_OPEN_CALLBACKS forever.
+        if comm.pending_open:
+            COMM_OPEN_CALLBACKS.setdefault(comm.comm_id, []).append(fn)
     else:
         fn()
 
@@ -302,14 +314,40 @@ def run_comm_open_callbacks(model_id: str) -> None:
         fn()
 
 
+def flush_queued_sends(placeholder: object, comm: "ShinyComm") -> None:
+    """
+    Replay, in order, the sends queued on a pre-open placeholder through the
+    real comm that replaced it (see OrphanedShinyComm).
+    """
+    if not isinstance(placeholder, OrphanedShinyComm):
+        return
+    for args, kwargs in placeholder.take_queued_sends():
+        comm.send(*args, **kwargs)
+
+
 @dataclass
 class OrphanedShinyComm:
     """
-    A 'mock' `ShinyComm`. It's only purpose is to allow one to get
-    the `model_id` (i.e., `comm_id`) of a widget after closing it.
+    A placeholder `ShinyComm`, standing in for a widget's real comm in one of
+    two states:
+
+    * Pre-open (`pending_open=True`): the widget was constructed in a session,
+      but its real comm only opens on a later reactive flush (see
+      `init_shiny_widget()`). `send()` calls made in the meantime queue up and
+      replay, in FIFO order, through the real comm when it opens (see
+      `flush_queued_sends()`), so widget methods that send custom messages
+      (e.g., k3d's `start_auto_play()`) work even when called while their
+      output is still rendering.
+    * Post-close (`pending_open=False`): the widget was closed (or was never
+      meant to open); the placeholder only keeps `model_id` working, and
+      sends are no-ops, as they've always been for a closed widget.
     """
 
     comm_id: str
+    pending_open: bool = True
+    _queue: List[Tuple[Tuple[object, ...], Dict[str, object]]] = field(
+        default_factory=list, repr=False
+    )
 
     # Cross-library contract: ipywidgets treats a comm with `kernel = None`
     # like a `DummyComm`, and ipyvue >= 3 skips caching templates whose comm
@@ -321,17 +359,30 @@ class OrphanedShinyComm:
         *args: object,
         **kwargs: object,
     ) -> None:
-        pass
+        if self.pending_open:
+            self._queue.append((args, kwargs))
 
     def close(
         self,
         *args: object,
         **kwargs: object,
     ) -> None:
-        pass
+        # Closed before it opened: nothing left to wait for or flush
+        self.pending_open = False
+        self._queue.clear()
 
     def on_msg(self, callback: MsgCallback) -> None:
         pass
+
+    def take_queued_sends(self) -> List[Tuple[Tuple[object, ...], Dict[str, object]]]:
+        """
+        The sends queued while pre-open, in FIFO order. Drains the queue and
+        ends the pre-open state (the real comm is taking over), so a later
+        `send()` is a no-op here and goes through the real comm instead.
+        """
+        self.pending_open = False
+        queue, self._queue = self._queue, []
+        return queue
 
 
 class SharedShinyComm:
