@@ -221,6 +221,46 @@ def test_render_plotly_brushed_and_relayout() -> None:
     assert r.relayout() == {"xaxis.autorange": True}
 
 
+def test_selected_and_brushed_are_state_attached_at_render() -> None:
+    # A selection is state on the graph div, so these attach at render (and
+    # the browser seeds the current selection on bind): a lasso drawn before
+    # the first read is not lost. Clicked/streaming accessors stay events.
+    r, w = rendered()
+    assert sp.SELECTED.kind == "state" and sp.BRUSHED.kind == "state"
+    assert sp.CLICKED.kind == "event" and sp.RELAYOUT.kind == "event"
+    assert (
+        w.sent
+        == [{"shinywidgets": "bind", "events": ["plotly_selected", "plotly_deselect"]}]
+        * 2
+    )  # selected and brushed
+
+
+def test_selection_reported_before_first_read_survives() -> None:
+    r, w = rendered()
+    # The bind's seed (or an event) arrives before anything reads the accessor
+    w.message(event("plotly_selected", points=CLICK_POINTS))
+    selected = r.selected()
+    assert isinstance(selected, pd.DataFrame)
+    assert selected["point_index"].tolist() == [2, 0]
+
+
+def test_rerender_keeps_selection_until_the_new_plot_reports() -> None:
+    r, w = rendered()
+    w.message(event("plotly_selected", points=CLICK_POINTS))
+    assert r.selected() is not None
+    # State accessors don't reset on re-render ...
+    w2 = FakeFigureWidget()
+    r._accessors.on_render(w2)
+    assert r.selected() is not None
+    # ... the new plot's seed (no selection: a no-data plotly_selected) clears it
+    w2.message(event("plotly_selected"))
+    assert r.selected() is None
+    assert r.brushed() is None
+    # And the old widget's handlers are gone
+    w.message(event("plotly_selected", points=CLICK_POINTS))
+    assert r.selected() is None
+
+
 def test_selected_rows_requires_a_key_for_non_pandas_frames() -> None:
     # Their rows have no labels, and positions break once the frame is filtered
     df = pl.DataFrame({"a": [10, 20, 30]})

@@ -93,13 +93,75 @@ export function bindPlotlyEvents(plotEl: HTMLElement, model: WidgetModel): void 
   if (!requested || !hasMethod<PlotlyEventEmitter, "on">(plotEl, "on")) return;
   const bound = boundEvents.get(plotEl) ?? new Set<string>();
   boundEvents.set(plotEl, bound);
+  let boundSelected = false;
   for (const event of requested) {
     if (bound.has(event)) continue;
     bound.add(event);
+    if (event === "plotly_selected") boundSelected = true;
     plotEl.on(event, (data?: any) => {
       model.send({ shinywidgets: "event", event, ...eventPayload(event, data) }, {});
     });
   }
+  // A selection is state on the graph div (trace `selectedpoints`), not just
+  // an event: a lasso drawn before this bind (e.g. before an accessor's first
+  // read asked for the event) is still recoverable, so report the current
+  // selection as if plotly.js had just fired it. An empty payload is a
+  // no-data `plotly_selected`, which plotly.js itself sends for an empty
+  // selection and Python reads as "nothing selected".
+  if (boundSelected) {
+    model.send(
+      { shinywidgets: "event", event: "plotly_selected", ...selectionSeed(plotEl) },
+      {},
+    );
+  }
+}
+
+// Rebuilds a plotly_selected payload from graph-div state: one entry per
+// selected point, plus the region (box range or lasso vertices) plotly.js
+// keeps on the last layout selection.
+function selectionSeed(plotEl: HTMLElement): Record<string, unknown> {
+  const data = (plotEl as any).data;
+  if (!Array.isArray(data)) return {};
+  const points = data.flatMap((trace: any, curveNumber: number) => {
+    if (!Array.isArray(trace?.selectedpoints)) return [];
+    return (trace.selectedpoints as number[]).map((i) => {
+      const entry: Record<string, unknown> = {
+        trace_index: curveNumber,
+        point_index: i,
+      };
+      for (const key of ["x", "y", "z", "customdata"]) {
+        const value = trace[key]?.[i];
+        if (value !== undefined) entry[key] = jsonable(value);
+      }
+      return entry;
+    });
+  });
+  if (points.length === 0) return {};
+  return { points, ...regionSeed(plotEl) };
+}
+
+function regionSeed(plotEl: HTMLElement): Record<string, unknown> {
+  const selections = (plotEl as any)._fullLayout?.selections;
+  if (!Array.isArray(selections) || selections.length === 0) return {};
+  const last = selections[selections.length - 1];
+  // A box selection keeps its corners; the event reports each axis ascending
+  if (last.x0 !== undefined) {
+    const asc = (a: any, b: any) => (a <= b ? [a, b] : [b, a]);
+    return { range: { x: asc(last.x0, last.x1), y: asc(last.y0, last.y1) } };
+  }
+  // A lasso keeps its vertices as an SVG path: "M x,y L x,y ..."
+  if (typeof last.path === "string") {
+    const x: number[] = [];
+    const y: number[] = [];
+    const vertex = /[ML]\s*(-?[\d.eE+]+)\s*,\s*(-?[\d.eE+]+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = vertex.exec(last.path)) !== null) {
+      x.push(parseFloat(m[1]));
+      y.push(parseFloat(m[2]));
+    }
+    if (x.length > 0) return { lassoPoints: { x, y } };
+  }
+  return {};
 }
 
 // Shaped like R plotly's event_data(): one entry per point, with its trace

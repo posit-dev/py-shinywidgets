@@ -3433,7 +3433,11 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
       state, not an error, so check for it (``req(pts is not None)``; not
       ``req(pts)``, since a data frame has no truth value).
     * A re-render (e.g. when the render function reads an input) gives the user
-      a new plot, so they all start over at ``None``.
+      a new plot. ``clicked()``, ``selecting()``, ``brushing()``, and
+      ``relayout()`` start over at ``None``; ``selected()`` and ``brushed()``
+      follow the displayed plot's selection instead, keeping their value until
+      the new plot reports its own (initially empty, so they become ``None``
+      once it does).
     * Repeating an interaction (clicking the same point twice) isn't a change,
       so readers don't re-run.
     * A double-click on the plot background clears ``clicked()``, and a
