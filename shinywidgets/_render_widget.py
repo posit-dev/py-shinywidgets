@@ -1578,31 +1578,17 @@ class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
     ``set_center()``/``set_zoom()``/``fit_project_bounds()``, layer styling
     (``get_layer(id).set_style()``/``set_opacity()``), and
     ``set_identify()``/``show_control()``. Methods that send a command to the
-    app and block waiting for its reply can never work on Shiny's event-loop
-    thread -- not directly inside a render function, `reactive.calc`, or a
-    `reactive.effect`/observer (sync or async) -- because the wait would
-    block the very loop that must deliver the reply. These include
-    ``fly_to()``, ``fit_bounds()``, ``zoom_to_layer()``, ``identify()``,
+    app and wait for its reply -- ``fly_to()``, ``fit_bounds()``,
+    ``zoom_to_layer()``, ``identify()``,
     ``get_center()``/``get_view()``/``get_bounds()``,
     ``get_selected_features()``/``get_drawn_features()``, ``run_algorithm()``,
-    and ``to_image()``. They do work from a worker thread (where the event
-    loop stays free), e.g., inside `reactive.extended_task` via
-    ``asyncio.get_running_loop().run_in_executor(None, map.widget.fly_to, ...)``
-    -- geolibre polls for the reply instead of pumping a Jupyter kernel
-    event loop, so these work in Shiny from a worker thread. Better still,
-    geolibre >= 3.6.0 (enforced by the ``shinywidgets[geolibre]`` extra;
-    https://github.com/opengeos/GeoLibre/issues/3273) adds ``*_async()``
-    variants (``fly_to_async()``/``get_center_async()``/...) that await the
-    reply instead of blocking, so no worker thread is needed. The await
-    must still happen outside the reactive flush, though: do **not** await
-    them in the body of an async `reactive.effect`/observer. shinywidgets
-    delivers widget messages to the browser only once the flush completes,
-    and Shiny's flush waits for running effects, so a reply awaited
-    mid-effect can never arrive (the effect holds up the very flush that
-    would send the command -- a deadlock that surfaces as geolibre's
-    ``TimeoutError``). Await them in a `reactive.extended_task`, which runs
-    outside the flush. Where a non-blocking
-    alternative exists -- ``set_center()`` for ``fly_to()``,
+    and ``to_image()`` -- can't run inside a render function,
+    `reactive.calc`, or `reactive.effect`/observer (sync or async): the
+    reply is only delivered once the effect finishes, so waiting for it
+    there deadlocks. Instead, ``await`` the ``*_async()`` variants
+    (``fly_to_async()``/``get_center_async()``/...) in a
+    `reactive.extended_task`, which runs outside that flush. Where a
+    non-blocking alternative exists -- ``set_center()`` for ``fly_to()``,
     ``fit_project_bounds()`` for ``fit_bounds()``, the synced ``project``
     trait for the query methods -- it remains the cheaper option.
 

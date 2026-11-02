@@ -135,10 +135,8 @@ def server(input, output, session):
     def _():
         map.widget.add_cog(LOCAL_TIF, name="Local COG")
 
-    # Blocking command methods (fly_to(), get_center(), ...) must run off
-    # Shiny's event-loop thread, so the reply can be delivered while they
-    # wait. extended_task + run_in_executor puts them on a worker thread
-    # (requires geolibre >= 3.5.2, which sleep-polls for the reply).
+    # The blocking fly_to()/get_center() wait for a reply from the app, so
+    # run them off the event-loop thread (extended_task + run_in_executor).
     @extended_task
     async def fly_to_sf():
         loop = asyncio.get_running_loop()
@@ -159,13 +157,10 @@ def server(input, output, session):
     def _():
         fly_to_sf.invoke()
 
-    # geolibre >= 3.6.0 (opengeos/GeoLibre#3273) adds *_async() variants
-    # that await the reply instead of blocking a thread. The await still
-    # can't happen inside a reactive.effect: shinywidgets sends widget
-    # messages when the reactive flush completes, and the flush waits for
-    # running effects, so a reply awaited mid-effect could never arrive
-    # (deadlock). Await them in an extended_task, which runs outside the
-    # flush.
+    # The *_async() variants await the reply without blocking a thread, but
+    # the await still has to happen outside the reactive flush (an
+    # extended_task, not a reactive.effect), since the reply is only
+    # delivered once the effect finishes.
     @extended_task
     async def fly_to_sf_async():
         # Same ack-at-animation-start caveat as fly_to() above: let the

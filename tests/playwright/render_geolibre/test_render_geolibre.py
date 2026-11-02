@@ -145,10 +145,8 @@ def test_geolibre_local_cog_via_proxy(page: Page, local_app) -> None:
 def test_geolibre_blocking_methods_from_extended_task(page: Page, local_app) -> None:
     # geolibre's blocking command methods (fly_to(), get_center(), ...) wait
     # for a reply from the app, so they can only run off Shiny's event-loop
-    # thread -- and only with geolibre >= 3.5.2's sleep-polling for the
-    # reply instead of pumping a Jupyter kernel (opengeos/GeoLibre#3266);
-    # the geolibre extra enforces >= 3.6.0.
-    pytest.importorskip("geolibre", minversion="3.5.2")
+    # thread.
+    pytest.importorskip("geolibre")
 
     page.goto(local_app.url)
     wait_for_app(page, "map")
@@ -165,15 +163,12 @@ def test_geolibre_blocking_methods_from_extended_task(page: Page, local_app) -> 
 
 
 def test_geolibre_async_methods_from_extended_task(page: Page, local_app) -> None:
-    # geolibre's *_async() command methods (fly_to_async(), get_center_async(),
-    # ...) await the app's reply instead of blocking a thread, so no
-    # run_in_executor is needed. The await must still happen outside the
-    # reactive flush (an extended_task, not a reactive.effect): shinywidgets
-    # sends widget messages on flush completion, and the flush waits for
-    # running effects, so a reply awaited mid-effect could never arrive.
-    # Requires geolibre >= 3.6.0 (opengeos/GeoLibre#3273), enforced by the
-    # shinywidgets[geolibre] extra.
-    pytest.importorskip("geolibre", minversion="3.6.0")
+    # geolibre's *_async() command methods (fly_to_async(),
+    # get_center_async(), ...) await the reply instead of blocking a thread,
+    # but the await still has to happen outside the reactive flush (an
+    # extended_task, not a reactive.effect), since the reply is only
+    # delivered once the effect finishes.
+    pytest.importorskip("geolibre")
 
     page.goto(local_app.url)
     wait_for_app(page, "map")
