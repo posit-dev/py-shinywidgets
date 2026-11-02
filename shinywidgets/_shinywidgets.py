@@ -1206,6 +1206,10 @@ def close_render_widgets(session: Session, widgets: list[Widget]) -> None:
     in this session still references (e.g. a Layout first materialized while
     serializing a session-owned widget). Those are kept and re-checked the next
     time a render in this session is invalidated, rather than skipped forever.
+
+    Also closes the browser-created widgets (see open_client_comm()) only the
+    closing widgets referenced: they're session-owned, so without this sweep
+    they'd leak until the session ends.
     """
     widgets = KEPT_WIDGETS.pop(session.id, []) + widgets
     closing = {id(w) for w in widgets}
@@ -1236,20 +1240,23 @@ def close_render_widgets(session: Session, widgets: list[Widget]) -> None:
     # `widgets`: left alone, they'd live until the session ends even when only
     # closing widgets reference them (e.g. pythreejs's DirectionalLight
     # target/shadow/shadow-camera -- ~3 models leaked per re-render of a
-    # one-light scene). Collect the ones nothing else keeps alive.
-    client_garbage: dict[int, Widget] = {}
-    for w in widgets:
-        if is_closed_widget(w) or is_process_global(w) or id(w) in keep:
-            continue
-        for r in walk_widget_tree([w]):
-            if (
-                r is not w
-                and is_client_created(r)
-                and not is_closed_widget(r)
-                and not is_process_global(r)
-                and id(r) not in keep
-            ):
-                client_garbage[id(r)] = r
+    # one-light scene). One walk from every closing widget collects the ones
+    # nothing else keeps alive (the walk's roots are render-owned, hence never
+    # client-created themselves).
+    client_garbage = {
+        id(r): r
+        for r in walk_widget_tree(
+            w
+            for w in widgets
+            if not is_closed_widget(w)
+            and not is_process_global(w)
+            and id(w) not in keep
+        )
+        if is_client_created(r)
+        and not is_closed_widget(r)
+        and not is_process_global(r)
+        and id(r) not in keep
+    }
     kept: list[Widget] = []
     for w in widgets:
         if is_closed_widget(w):  # already closed (e.g. by this session ending)
