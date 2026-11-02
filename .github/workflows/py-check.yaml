@@ -67,6 +67,12 @@ jobs:
         if: matrix.python-version != '3.12'
         run: make check-tests
 
+      # reactable stays out of the shared test groups (see REACTABLE_OVERLAY
+      # in the Makefile), so its unit tests get their own step
+      - name: Run reactable unit tests
+        if: matrix.python-version == '3.12'
+        run: make test-reactable
+
       - name: Upload coverage artifact
         if: matrix.python-version == '3.12'
         uses: actions/upload-artifact@v4
@@ -106,3 +112,11 @@ jobs:
         # Healthy shards finish in ~5 minutes; kill stragglers quickly
         timeout-minutes: 10
         run: make test-playwright PYTEST_PLAYWRIGHT_ARGS="--num-shards 4 --shard-id ${{ matrix.shard }} -n 3"
+
+      # reactable needs its own dependency overlay (see REACTABLE_OVERLAY in
+      # the Makefile), which would break other widgets' nbextension lookup if
+      # applied to the whole suite -- so its tests run apart, once (shard 0)
+      - name: Run reactable Playwright tests
+        if: matrix.shard == 0
+        timeout-minutes: 10
+        run: make test-playwright-reactable PYTEST_PLAYWRIGHT_ARGS="-n 3"
