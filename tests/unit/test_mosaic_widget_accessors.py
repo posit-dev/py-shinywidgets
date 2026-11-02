@@ -60,7 +60,7 @@ def test_data_filter_by_selects_one_selection(widget_session: Session) -> None:
     r = renderer(w, rate_delay=0)
     w.params = {
         "brush": {"value": None, "predicate": '"x" > 1'},  # rows 2, 3
-        "brush2": {"value": None, "predicate": '"y" IN (\'a\', \'b\')'},  # rows 1, 2
+        "brush2": {"value": None, "predicate": "\"y\" IN ('a', 'b')"},  # rows 1, 2
     }
     # Default: every active selection filters
     assert len(r.data().df()) == 1

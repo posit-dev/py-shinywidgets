@@ -2443,7 +2443,7 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         self,
         table: Optional[str] = None,
         *,
-        filter_by: Optional[str | List[str]] = None,
+        filter_by: Optional[Union[str, List[str]]] = None,
     ) -> "duckdb.DuckDBPyRelation":
         """
         The rows of a source table matching the current selections, as a lazy
