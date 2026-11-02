@@ -370,6 +370,11 @@ def as_widget_mpl(x: object, *, context: str = "matplotlib") -> Widget:
         # ratio instead.
         x.set_dpi(x.dpi / x.canvas.device_pixel_ratio)
         canvas = Canvas(x)
+        # The header shows the figure's pyplot number ("Figure 1"), which is
+        # notebook chrome most Shiny apps don't want (render_plotnine hides it
+        # too). Only default it on canvases we create; a Canvas the user
+        # constructed keeps its own settings.
+        canvas.header_visible = False
     if canvas.manager is None:
         FigureManager(canvas, getattr(x, "number", id(x)))
 

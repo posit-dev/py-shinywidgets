@@ -196,18 +196,31 @@ assert canvas.manager is not None
     subprocess.run([sys.executable, "-c", script], check=True, env=env)
 
 
+def test_created_canvas_hides_the_header_by_default(
+    widget_session: Session,
+) -> None:
+    with session_context(widget_session):
+        canvas = cast("Canvas", as_widget(Figure()))
+        assert canvas.header_visible is False
+        # ... but the footer (cursor readout) stays visible, unlike plotnine
+        assert canvas.footer_visible is True
+
+
 def test_existing_canvas_is_reused_with_its_settings(widget_session: Session) -> None:
     with session_context(widget_session):
         figure = Figure()
         canvas = cast("Canvas", as_widget(figure))
         manager = canvas.manager
-        canvas.header_visible = False
+        # header_visible=True pins the reuse-preservation direction: the
+        # header_hidden default must apply only when the canvas is created,
+        # not re-applied when an existing canvas is re-coerced
+        canvas.header_visible = True
         canvas.toolbar_visible = False
         canvas.resizable = False
 
         assert as_widget(figure) is canvas
         assert canvas.manager is manager
-        assert canvas.header_visible is False
+        assert canvas.header_visible is True
         assert canvas.toolbar_visible is False
         assert canvas.resizable is False
 

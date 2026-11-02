@@ -2141,11 +2141,12 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     The decorated function may return a `matplotlib.figure.Figure`, a
     `matplotlib.axes.Axes` (rendered via its figure), or an `ipympl.backend_nbagg.Canvas`
     widget. Figures and axes are coerced to a `Canvas` (requires ``pip install
-    'shinywidgets[matplotlib]'``),
-    so this also works with libraries built on matplotlib (e.g., seaborn or
-    ``pandas.DataFrame.plot()``). In a filling layout, the figure is resized to fit its
-    container. With an explicit ``height``, the figure keeps its ``figsize`` unless the
-    output is also ``fillable=True``.
+    'shinywidgets[matplotlib]'``), so this also works with libraries built on matplotlib
+    (e.g., seaborn or ``pandas.DataFrame.plot()``). A coerced canvas's header (the
+    "Figure N" title) is hidden by default; a `Canvas` you construct yourself keeps its
+    own settings (e.g., ``header_visible=True``). In a filling layout, the figure is
+    resized to fit its container. With an explicit ``height``, the figure keeps its
+    ``figsize`` unless the output is also ``fillable=True``.
 
     Unlike `@render.plot`, which draws a static image, the figure stays alive on the
     server for as long as it is displayed, so it can respond to the user. Like
