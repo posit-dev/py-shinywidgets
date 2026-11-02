@@ -3857,7 +3857,13 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
             "it can't render maps. Pass pydeck.Layer objects to a maplibre Map's "
             "add_deck_layers() and use @render_maplibre instead (see "
             "help(shinywidgets.render_pydeck) for other alternatives).",
-            DeprecationWarning,
+            # FutureWarning, not DeprecationWarning: the latter is hidden by
+            # Python's default warning filters outside __main__, and a Shiny
+            # app's module is never __main__, so users would never see it.
+            # stacklevel=2 points at the line that constructed the decorator
+            # (class construction adds no Python frame between here and the
+            # caller).
+            FutureWarning,
             stacklevel=2,
         )
         super().__init__(
