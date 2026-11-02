@@ -25,9 +25,10 @@ def server(input, output, session):
     @reactive.effect
     @reactive.event(input.dark)
     def _():
-        w = fixed.widget
-        template = w.layout.template
-        w.update_layout(template="plotly" if template == "plotly_dark" else "plotly_dark")
+        # Drive the template from the click count: layout.template is a
+        # Template object, so comparing it to a string doesn't work
+        template = "plotly_dark" if input.dark() % 2 == 1 else "plotly"
+        fixed.widget.update_layout(template=template)
 
 
 app = App(app_ui, server)
