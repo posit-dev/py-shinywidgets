@@ -263,9 +263,7 @@ def test_event_attach_stays_lazy_by_default() -> None:
 
 def test_eager_false_keeps_a_state_accessor_lazy() -> None:
     cap = Capture()
-    spec = acc.AccessorSpec(
-        name="zoom", kind="state", attach=cap.attach, eager=False
-    )
+    spec = acc.AccessorSpec(name="zoom", kind="state", attach=cap.attach, eager=False)
     a = acc.Accessors([spec], schedule=FakeSchedule())
     a.on_render(object())
     assert cap.attached == 0
