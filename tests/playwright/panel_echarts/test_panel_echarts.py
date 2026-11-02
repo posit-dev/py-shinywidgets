@@ -33,18 +33,18 @@ def test_echarts_pane_and_gauge_render(page: Page, local_app) -> None:
     static_extension_failures: list[str] = []
     page.on(
         "response",
-        lambda res: static_extension_failures.append(f"{res.status} {res.url}")
-        if res.status >= 400 and "static/extensions" in res.url
-        else None,
+        lambda res: (
+            static_extension_failures.append(f"{res.status} {res.url}")
+            if res.status >= 400 and "static/extensions" in res.url
+            else None
+        ),
     )
     page.goto(local_app.url)
 
     # Both ECharts-backed components draw a non-trivial canvas
     for output_id, min_w, min_h in (("chart", 400, 250), ("gauge", 250, 200)):
         expect(page.locator(f"#{output_id}")).to_be_visible(timeout=30000)
-        page.wait_for_function(
-            CANVAS_HAS_PIXELS_JS, arg=f"#{output_id}", timeout=30000
-        )
+        page.wait_for_function(CANVAS_HAS_PIXELS_JS, arg=f"#{output_id}", timeout=30000)
         sizes = page.evaluate(CANVAS_SIZES_JS, f"#{output_id}")
         assert sizes, f"no canvas under #{output_id}"
         w, h = sizes[0]

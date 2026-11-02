@@ -4,6 +4,10 @@ import panel as pn
 from shiny import App, ui
 from shinywidgets import output_widget, render_panel
 
+# ECharts-backed components (pn.pane.ECharts, pn.indicators.Gauge) render
+# blank unless the echarts extension's JS is loaded with the page
+pn.extension("echarts")
+
 app_ui = ui.page_fluid(
     output_widget("chart"),
     output_widget("gauge"),
