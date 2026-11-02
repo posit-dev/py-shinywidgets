@@ -1,16 +1,22 @@
 import json
 import os
+import sys
 import types
 import warnings
+from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 import shinywidgets._dependencies as deps
 from htmltools import HTMLDependency
 from ipywidgets.widgets.domwidget import DOMWidget
+from shiny import Session
+from shiny.session import session_context
 from shinywidgets._dependencies import (
     amd_externals,
+    installed_widget_pkg,
     jupyter_extension_destination,
     jupyter_extension_path,
     output_binding_dependency,
@@ -50,6 +56,118 @@ def test_widget_pkg_accepts_classes_and_builtin_instances() -> None:
     assert widget_pkg({}) == "builtins"
     assert widget_pkg(1) == "builtins"
     assert widget_pkg(object()) == "builtins"
+
+
+@pytest.fixture
+def ipyreact_guard() -> Iterator[Any]:
+    # Importing ipyreact constructs its process-global ImportMap widget, which
+    # our hook registers in SHARED_WIDGETS; don't let it leak into other test
+    # modules (they would try to open it in every session they create). Evict
+    # ipyreact from sys.modules afterwards so test_ipyreact.py re-imports it
+    # fresh and finds the ImportMap widget it expects to be shared.
+    import shinywidgets._shinywidgets as sw
+
+    before = dict(sw.SHARED_WIDGETS)
+    mod = pytest.importorskip("ipyreact")
+    try:
+        yield mod
+    finally:
+        for model_id, w in list(sw.SHARED_WIDGETS.items()):
+            if before.get(model_id) is not w:
+                w.close()
+                sw.SHARED_WIDGETS.pop(model_id, None)
+        for name in (
+            n for n in list(sys.modules) if n == "ipyreact" or n.startswith("ipyreact.")
+        ):
+            del sys.modules[name]
+
+
+def test_ipyreact_subclass_in_app_module_resolves_dependencies(
+    ipyreact_guard: Any, widget_session: Session
+) -> None:
+    # Subclassing a third-party widget in app code (e.g.
+    # `class ConfettiButton(ipyreact.ValueWidget)` in app.py) makes the class's
+    # __module__ the app module; the MRO walk must still resolve to the
+    # installed base package. ipyreact is the case that actually breaks without
+    # this: its _model_module ("@widgetti/jupyter-react") doesn't match its
+    # nbextension dest ("jupyter-react"), so this fallback path is the only way
+    # its JS dependencies are found (previously require_dependencies() silently
+    # returned [] and the browser failed with `ReferenceError: React is not
+    # defined`).
+    ipyreact = ipyreact_guard
+
+    class ConfettiButton(ipyreact.ValueWidget):
+        _esm = "export default { render: () => null }"
+
+    # Defined in an app module ("app" is not an installed distribution)
+    ConfettiButton.__module__ = "app"
+
+    assert installed_widget_pkg(ConfettiButton) == "ipyreact"
+    assert jupyter_extension_destination(ConfettiButton) == "jupyter-react"
+
+    with session_context(widget_session):
+        w = ConfettiButton()
+    resolved = require_dependencies(w, widget_session)
+    assert len(resolved) > 0
+    assert resolved[0].name == "@widgetti/jupyter-react"
+
+
+def test_anywidget_subclass_in_app_module_dependencies_unchanged(
+    widget_session: Session,
+) -> None:
+    # Regression: anywidget subclasses resolved fine before (their _model_module
+    # matches their nbextension dest, so the first lookup path hits) and must
+    # keep resolving.
+    anywidget = pytest.importorskip("anywidget")
+
+    class MyWidget(anywidget.AnyWidget):
+        _esm = "export default { render: () => null }"
+
+    MyWidget.__module__ = "app"
+
+    assert installed_widget_pkg(MyWidget) == "anywidget"
+    assert jupyter_extension_destination(MyWidget) == "anywidget"
+
+    with session_context(widget_session):
+        w = MyWidget()
+    resolved = require_dependencies(w, widget_session)
+    assert len(resolved) > 0
+    assert resolved[0].name == "anywidget"
+
+
+def test_ipyleaflet_subclass_in_app_module_dependencies_unchanged(
+    widget_session: Session,
+) -> None:
+    # Regression: ipyleaflet subclasses resolved fine before (its _model_module,
+    # "jupyter-leaflet", matches its nbextension dest, so resolution succeeds on
+    # the first lookup path) and must keep resolving.
+    ipyleaflet = pytest.importorskip("ipyleaflet")
+
+    class MyMap(ipyleaflet.Map):
+        pass
+
+    MyMap.__module__ = "app"
+
+    assert installed_widget_pkg(MyMap) == "ipyleaflet"
+
+    with session_context(widget_session):
+        w = MyMap()
+    resolved = require_dependencies(w, widget_session)
+    assert len(resolved) > 0
+    assert resolved[0].name == "jupyter-leaflet"
+
+
+def test_jupyter_extension_destination_unresolvable_package_error() -> None:
+    # When no class in the widget's inheritance hierarchy comes from an
+    # installed package, the error should name the cause and the _esm workaround
+    # rather than surfacing a bare ModuleNotFoundError.
+    class LocalWidget:
+        __module__ = "not_an_installed_pkg.sub"
+
+    with pytest.raises(RuntimeError, match="_esm") as excinfo:
+        jupyter_extension_destination(LocalWidget())
+    assert "not_an_installed_pkg" in str(excinfo.value)
+    assert "anywidget.AnyWidget" in str(excinfo.value)
 
 
 def test_jupyter_extension_path_finds_index_js(
