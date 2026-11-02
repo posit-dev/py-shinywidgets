@@ -47,15 +47,17 @@ def _():
 # like set_center() above, and unlike the blocking fly_to() -- they can run
 # directly on Shiny's event loop inside an extended_task. See README.md.
 @extended_task
-async def fly_to_city():
-    lng, lat = CITIES[input.city()]
+async def fly_to_city(city):
+    lng, lat = CITIES[city]
     await glmap.widget.fly_to_async(lng, lat, zoom=9)
 
 
 @reactive.effect
 @reactive.event(input.fly)
 def _():
-    fly_to_city.invoke()
+    # Read inputs here, not inside fly_to_city(): an @extended_task body runs
+    # outside a reactive context, where reading input.city() errors.
+    fly_to_city.invoke(input.city())
 
 
 with ui.card():

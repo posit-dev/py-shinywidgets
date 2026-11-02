@@ -10,6 +10,19 @@ export function setConnected(value: boolean): void {
   connected = value;
 }
 
+const IDLE = {content: {execution_state: "idle"}};
+
+const comms = new Map<string, ShinyComm>();
+
+export function ack_comm(comm_id: string, msg_id: string): void {
+  comms.get(comm_id)?.ack(msg_id);
+}
+
+// For comms Python closed, where the model closes without calling close().
+export function dispose_comm(comm_id: string): void {
+  comms.get(comm_id)?.dispose();
+}
+
 // This class is a striped down version of Comm from @jupyter-widgets/base
 // https://github.com/jupyter-widgets/ipywidgets/blob/88cec8/packages/base/src/services-shim.ts#L192-L335
 // Note that the Kernel.IComm implementation is located here
@@ -21,8 +34,11 @@ export class ShinyComm {
   throttler: Throttler;
   private msgCount = 0;
   private closed = false;
+  // msg_id -> the model's status callback, for messages awaiting a server ack.
+  private pending = new Map<string, (msg: any) => void>();
   constructor(model_id: string) {
     this.comm_id = model_id;
+    comms.set(model_id, this);
     // TODO: make this configurable (see comments in send() below)?
     this.throttler = new Throttler(100);
   }
@@ -55,29 +71,22 @@ export class ShinyComm {
       data.content.event === "interaction" &&
       data.content.type === "mousemove";
 
+    // ipywidgets keeps one sync message in flight and buffers the rest until
+    // the status callback reports idle (see
+    // https://github.com/jupyter-widgets/ipywidgets/blob/88cec8b/packages/base/src/widget.ts#L550-L557).
+    // The server acks each message after the flush that handled it, and ack()
+    // reports idle then, so bursts coalesce under load as they do in Jupyter.
+    const onIdle = callbacks?.iopub?.status;
     if (is_mousemove) {
       this.throttler.throttle(() => {
         Shiny.setInputValue("shinywidgets_comm_send", msg_txt, {priority: "event"});
       });
+      // The throttler may drop this message, so it may never be acked.
+      if (onIdle) setTimeout(() => onIdle(IDLE), 0);
     } else {
       this.throttler.flush();
+      if (onIdle) this.pending.set(msg_id, onIdle);
       Shiny.setInputValue("shinywidgets_comm_send", msg_txt, {priority: "event"});
-    }
-
-    // When client-side changes happen to the WidgetModel, this send method
-    // won't get called for _every_  change (just the first one). The
-    // expectation is that this method will eventually end up calling itself
-    // (via callbacks) when the server is ready (i.e., idle) to receive more
-    // updates. To make sense of this, see
-    // https://github.com/jupyter-widgets/ipywidgets/blob/88cec8b/packages/base/src/widget.ts#L550-L557
-    if (callbacks && callbacks.iopub && callbacks.iopub.status) {
-      setTimeout(() => {
-        // TODO-future: it doesn't seem quite right to report that shiny is always idle.
-        // Maybe listen to the shiny-busy flag?
-        // const state = document.querySelector("html").classList.contains("shiny-busy") ? "busy" : "idle";
-        const msg = {content: {execution_state: "idle"}};
-        callbacks.iopub.status(msg);
-      }, 0);
     }
 
     return msg_id;
@@ -109,6 +118,7 @@ export class ShinyComm {
     }
     this.closed = true;
     this.throttler.flush();
+    this.dispose();
     const content = {data: data || {}};
     const [msg_id, msg_txt] = this._message("comm_close", content, metadata, buffers);
     if (connected) {
@@ -118,6 +128,20 @@ export class ShinyComm {
     // too, which is what makes it fire comm:close so the manager drops it.
     this.handle_close({content: {comm_id: this.comm_id, ...content}});
     return msg_id;
+  }
+
+  // Not ack(): reporting idle would make the closing model flush its buffered
+  // change through this closed comm.
+  dispose(): void {
+    this.pending.clear();
+    if (comms.get(this.comm_id) === this) comms.delete(this.comm_id);
+  }
+
+  ack(msg_id: string): void {
+    const onIdle = this.pending.get(msg_id);
+    if (!onIdle) return;
+    this.pending.delete(msg_id);
+    onIdle(IDLE);
   }
 
   on_msg(callback: (x: any) => void): void {

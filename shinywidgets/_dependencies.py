@@ -101,6 +101,24 @@ def custom_elements_dependency() -> HTMLDependency:
     )
 
 
+def reactable_dependency() -> HTMLDependency:
+    """
+    The reactable stylesheet (reactable-py's widget JS is loaded as an ipyreact
+    module, but its CSS isn't part of that bundle: Jupyter users are expected to
+    call ``reactable.embed_css()`` themselves, which has no effect in Shiny).
+    """
+    from importlib.metadata import version as package_version
+
+    return HTMLDependency(
+        name="reactable",
+        version=package_version("reactable"),
+        source=HTMLDependencySource(
+            subdir=os.path.join(package_dir("reactable"), "static")
+        ),
+        stylesheet={"href": "reactable-py.esm.css"},
+    )
+
+
 # TODO: this function might have to be recursive since it's technically
 # possible for a Widget to have traits that are themselves Widgets
 # (which could have their own npm module), but in practice, I haven't seen any cases

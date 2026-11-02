@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+import ast
+import hashlib
+import inspect
+import re
 import sys
 import warnings
+from functools import lru_cache, partial
 from importlib.metadata import version as package_version
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    ClassVar,
     Dict,
+    Iterable,
     List,
     Optional,
     Tuple,
@@ -21,12 +28,15 @@ from ipywidgets.widgets.widget import Widget
 from packaging.version import Version
 
 if TYPE_CHECKING:
-    # Absent from 3.15+ environments (duckdb has no cp315 wheels, so its
-    # dependents are excluded there; see pyproject.toml)
+    # duckdb ships with the embedding-atlas extra, so it may be absent
     import duckdb  # pyright: ignore[reportMissingImports]
+    import numpy as np
     import pandas as pd
     import plotly.graph_objects as go
     from altair import JupyterChart
+    from astropy.coordinates import Angle, Latitude, Longitude, SkyCoord
+    from astropy.table import Table
+    from bokeh.events import RangesUpdate, Tap
     from bqplot import Figure as BqplotFigure
     from drawdata import BarWidget as DrawdataBarWidget
     from drawdata import ScatterWidget as DrawdataScatterWidget
@@ -53,14 +63,27 @@ if TYPE_CHECKING:
     from k3d.plot import Plot as K3dPlot
     from keplergl import KeplerGl
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
+    from lonboard.view_state import (  # pyright: ignore[reportMissingImports]
+        BaseViewState,
+    )
     from maplibre.ipywidget import MapWidget
     from maplibre.map import Map as MaplibreMap
+    from matplotlib.backend_bases import MouseEvent, PickEvent
+    from mols2grid.molgrid import MolGrid
     from mosaic_widget import MosaicWidget  # pyright: ignore[reportMissingImports]
+    from narwhals.typing import IntoDataFrameT
     from nglview import NGLWidget
     from perspective.widget import PerspectiveWidget
     from plotly.graph_objects import FigureWidget
     from pydeck.widget import DeckGLWidget
     from pyobsplot.widget import ObsplotWidget
+    from pythreejs import Camera
+
+    # reactable isn't in the dev/test groups (see pyproject.toml)
+    from reactable import Reactable  # pyright: ignore[reportMissingImports]
+    from reactable.widgets import ReactableWidget  # pyright: ignore[reportMissingImports]
+
+    from ._altair import Selection
 
     # embedding-atlas requires Python 3.11+, so it's absent from 3.10 environments
     if sys.version_info >= (3, 11):
@@ -68,15 +91,19 @@ if TYPE_CHECKING:
     else:
         from ipywidgets import Widget as EmbeddingAtlasWidget
     from pythreejs import Renderer as PythreejsRenderer
+    from pyvista import Plotter as PyvistaPlotter  # pyright: ignore[reportMissingImports]
     from quak import Widget as QuakWidget  # pyright: ignore[reportMissingImports]
+    from trame_pyvista.jupyter import EmbeddableWidget as PyvistaHtmlWidget  # pyright: ignore[reportMissingImports]
 
     # rerun requires Python 3.11+, so it's absent from 3.10 environments
     if sys.version_info >= (3, 11):
+        from rerun.notebook import SelectionChangeEvent
         from rerun.notebook import Viewer as RerunViewer
         from rerun_notebook import Viewer as RerunNotebookViewer
     else:
         from ipywidgets import Widget as RerunNotebookViewer
         from ipywidgets import Widget as RerunViewer
+        from ipywidgets import Widget as SelectionChangeEvent
 
     # vizarr isn't in the dev/test groups (it pins zarr<3)
     from vizarr import Viewer as VizarrViewer  # pyright: ignore[reportMissingImports]
@@ -92,12 +119,19 @@ else:
         LonboardMap
     ) = QuakWidget = PerspectiveWidget = GeolibreMap = IpyvolumeFigure = (
         PythreejsRenderer
-    ) = ObsplotWidget = VizarrViewer = RerunViewer = RerunNotebookViewer = NiiVue = (
-        object
-    )
+    ) = PyvistaPlotter = PyvistaHtmlWidget = ObsplotWidget = VizarrViewer = (
+        RerunViewer
+    ) = RerunNotebookViewer = NiiVue = MolGrid = object
+    Reactable = ReactableWidget = object
+    MouseEvent = PickEvent = SelectionChangeEvent = object
+    Angle = Latitude = Longitude = SkyCoord = Table = Camera = object
 
-from shiny.render.renderer import ValueFn
+from ipywidgets.widgets import HTML, Box, Layout
+from shiny.render.renderer import Jsonifiable, ValueFn
+from shiny.session import get_current_session
 
+from ._accessors import AccessorSpec, Emit, RatePolicy
+from ._altair import ALTAIR_ACCESSORS, chart_frame, filter_selection, pick_selection
 from ._as_widget import (
     PYDECK_NO_WIDGET_MESSAGE,
     as_widget_panel,
@@ -106,8 +140,37 @@ from ._as_widget import (
     pydeck_has_widget,
 )
 from ._bokeh import _bokeh_dependency
+from ._bokeh_accessors import BOKEH_ACCESSORS, selected_frame
+from ._bqplot import BPLOT_ACCESSORS
+from ._cytoscape import CYTOSCAPE_ACCESSORS
 from ._dependencies import widget_pkg
-from ._render_widget_base import ValueT, WidgetT, render_widget_base
+from ._embedding_atlas import EMBEDDING_ATLAS_ACCESSORS, rows_for_predicate
+from ._ipyaladin import IPYALADIN_ACCESSORS
+from ._ipydatagrid import IPYDATAGRID_ACCESSORS
+from ._ipyleaflet import (
+    IPYLEAFLET_ACCESSORS,
+    NO_DRAW_CONTROL,
+    NO_DRAW_CONTROL_MESSAGE,
+    NotIpyleaflet,
+)
+from ._itables import ITABLES_ACCESSORS
+from ._jscatter import JSCATTER_ACCESSORS
+from ._k3d import CAMERA as K3D_CAMERA
+from ._lonboard import LONBOARD_ACCESSORS
+from ._matplotlib import CLICKED, LIMITS, MATPLOTLIB_ACCESSORS, AxesLimits
+from ._mosaic_widget import MOSAIC_ACCESSORS
+from ._niivue import LOCATION
+from ._perspective import PERSPECTIVE_ACCESSORS
+from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
+from ._pythreejs import CAMERA as PYTHREEJS_CAMERA
+from ._quak import QUAK_ACCESSORS
+from ._reactable import REACTABLE_ACCESSORS
+from ._render_widget_base import (
+    ValueT,
+    WidgetT,
+    render_widget_base,
+)
+from ._rerun import SELECTION
 
 if TYPE_CHECKING:
     # The values a @render_plotly render function may return (bound below):
@@ -139,6 +202,18 @@ DrawdataWidgetT = TypeVar(
 # notebook Viewer (coerced to its inner widget) or the rerun_notebook widget
 # itself. String bound since rerun is an optional dependency.
 RerunValueT = TypeVar("RerunValueT", bound="Union[RerunViewer, RerunNotebookViewer]")
+# The values a @render_reactable render function may return: a Reactable (a
+# props dataclass, coerced to its widget) or the ReactableWidget itself. String
+# bound since reactable is an optional dependency.
+ReactableValueT = TypeVar("ReactableValueT", bound="Union[Reactable, ReactableWidget]")
+
+if TYPE_CHECKING:
+    # The values a @render_pyvista render function may return (bound below):
+    # a pyvista Plotter or the pre-exported html-backend widget itself.
+    PyvistaValue = Union[PyvistaPlotter, PyvistaHtmlWidget]
+PyvistaValueT = TypeVar("PyvistaValueT", bound="PyvistaValue")
+# String bound: mols2grid (and pandas) are optional dependencies.
+Mols2GridValueT = TypeVar("Mols2GridValueT", bound="Union[MolGrid, pd.DataFrame]")
 
 __all__ = (
     "render_widget",
@@ -165,6 +240,7 @@ __all__ = (
     "render_lonboard",
     "render_maplibre",
     "render_matplotlib",
+    "render_mols2grid",
     "render_mosaic_widget",
     "render_nglview",
     "render_niivue",
@@ -176,7 +252,9 @@ __all__ = (
     "render_pydeck",
     "render_pygwalker",
     "render_pythreejs",
+    "render_pyvista",
     "render_quak",
+    "render_reactable",
     "render_vizarr",
     "render_rerun",
 )
@@ -216,6 +294,15 @@ class render_widget(render_widget_base[WidgetT, WidgetT]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit accessors on this renderer that declare a default
+        policy, and :func:`~shinywidgets.reactive_read` on its widget. ``None``
+        (the default) leaves each accessor's own default in place, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds. ``0`` disables rate limiting.
+        Defaults to each accessor's own setting (0.25 for those that declare
+        one).
 
     Examples
     --------
@@ -346,14 +433,33 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
 
     Note
     ---
-    **Selections and params**: name your selections and params (e.g.,
-    ``alt.selection_interval(name="brush")``), then read them with
-    ``reactive_read(chart.widget.selections, "brush").value``, or observe them on a
-    `JupyterChart` you build yourself (``jchart.selections.observe(fn, ["brush"])``).
-    Selections can't be set from Python, but params can: setting
+    **Reacting to selections**: give each selection a name (e.g.,
+    ``alt.selection_interval(name="brush")``; altair's generated names change
+    between renders). Then read it in a reactive function (a ``@render.*``
+    function, ``@reactive.calc``, or ``@reactive.effect``), which re-runs
+    whenever the user changes it, much like ``input.my_slider()``:
+
+    * ``chart.selected("brush")``: the selection's current state.
+    * ``chart.selected_rows("brush")``: the rows of the chart's data it selects,
+      evaluated the way Vega-Lite does (including binned and date fields).
+
+    How they behave:
+
+    * Unlike other renderers' accessors, ``selected()`` isn't ``None`` once the
+      chart has rendered: altair reports its selections from the start, so it's
+      an empty selection (and ``selected_rows()`` an empty frame) until the user
+      selects.
+    * A re-render (e.g. when the render function reads an input) gives the user
+      a new chart, whose selections start out empty.
+    * While the user drags, they update at most once the user pauses for 250 ms
+      (see ``rate_policy`` and ``rate_delay``).
+    * They can't be read inside this output's own render function, which builds
+      a new chart each time it runs. To change the chart in response, set a
+      param (below) from a ``@reactive.effect``.
+
+    **Params**: selections can't be set from Python, but params can: setting
     ``chart.widget.params.<name> = value`` updates the chart in place without
-    re-sending its data. To throttle how often selections update Python while
-    dragging, return ``alt.JupyterChart(chart, debounce_wait=150)``. Prefer params
+    re-sending its data. Prefer params
     (or a re-render) over replacing ``chart.widget.chart``, which re-sends the data,
     drops the container sizing described below, and replaces
     ``chart.widget.selections`` and ``chart.widget.params``.
@@ -381,7 +487,54 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`selected` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = ALTAIR_ACCESSORS
+
+    def selected(self, name: Optional[str] = None) -> Selection:
+        """
+        The current state of one of the chart's selections: an altair
+        `IntervalSelection`, `PointSelection`, or `IndexSelection` (see
+        `altair.utils.selection`), whose ``.value`` holds what's selected.
+
+        Unlike other renderers' accessors, this is never ``None`` once the
+        chart has rendered: until the user selects, it's an empty selection.
+        `name` is the name given to the selection (e.g.
+        ``alt.selection_interval(name="brush")``), and may be omitted when the
+        chart has only one. Always name selections: altair's generated names
+        change between renders. Debounced (250 ms) by default; see the
+        ``rate_policy`` and ``rate_delay`` parameters.
+        """
+        selections = cast(Dict[str, "Selection"], self._read_accessor("selected"))
+        return pick_selection(selections, name)
+
+    def selected_rows(
+        self, name: Optional[str] = None, *, df: Optional[IntoDataFrameT] = None
+    ) -> IntoDataFrameT:
+        """
+        The rows of `df` in a selection (see :meth:`selected`), evaluated the
+        way Vega-Lite does (including binned and temporal fields).
+
+        `df` defaults to the chart's own data frame (pandas or polars); pass it
+        for charts whose data is a URL, or that concatenate charts with
+        different data. For a layered chart, the default only resolves when
+        every layer uses the *identical* data frame object (the same object,
+        not an equal copy) -- otherwise pass `df` explicitly. Returns an empty
+        frame while nothing is selected. Dates are compared in UTC, reading
+        time-zone-naive columns in the browser's time zone, as Vega-Lite does.
+        """
+        selection = self.selected(name)
+        widget = cast(JupyterChart, self._widget)
+        frame = chart_frame(widget) if df is None else df
+        return filter_selection(selection, frame, widget.local_tz)
 
 
 class render_embedding_atlas(
@@ -405,10 +558,12 @@ class render_embedding_atlas(
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
     `EmbeddingAtlasWidget` instance. The filter a user builds in the browser is
-    synced to the widget's (upstream-internal) `_predicate` trait, so
-    ``reactive_read(my_atlas.widget, "_predicate")`` followed by
-    ``my_atlas.widget.selection()`` gives the selected rows reactively. The explorer
-    doesn't respond to trait changes made from Python; to change it, re-render.
+    synced to the widget's (upstream-internal) `_predicate` trait: read
+    ``atlas.selection()`` for the filtered rows, or ``atlas.predicate()`` for
+    the filter as a SQL expression, reactively
+    (``reactive_read(my_atlas.widget, "_predicate")`` remains available for the
+    raw trait). The explorer doesn't respond to trait changes made from Python;
+    to change it, re-render.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -436,6 +591,15 @@ class render_embedding_atlas(
         (``False``) is strongly recommended for deployed apps: an unrestricted
         connection lets any visitor run arbitrary SQL with the server process's
         permissions.
+    rate_policy
+        How to rate-limit :meth:`predicate` and :meth:`selection` (debounced
+        by default) and :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps the
+        debounce, and debounces ``reactive_read()`` only if ``rate_delay`` is
+        given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -459,10 +623,52 @@ class render_embedding_atlas(
         height: Optional[str] = None,
         fill: Optional[bool] = None,
         fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[float] = None,
         allow_unrestricted_connection: bool = False,
     ):
-        super().__init__(_fn, width=width, height=height, fill=fill, fillable=fillable)
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+        )
         self.allow_unrestricted_connection = allow_unrestricted_connection
+
+    _accessor_specs = EMBEDDING_ATLAS_ACCESSORS
+
+    def predicate(self) -> Optional[str]:
+        """
+        The explorer's current cross-filter as a DuckDB SQL boolean
+        expression (e.g. ``(("group")::TEXT IS NOT DISTINCT FROM 'c')``), or
+        ``None`` when nothing is filtered. Built from every chart's clicks
+        and brushes and the embedding view's lasso.
+
+        For pushing the filter into your own SQL or aggregation; use
+        :meth:`selection` for the filtered rows themselves. Debounced
+        (250 ms) by default; see the ``rate_policy`` and ``rate_delay``
+        parameters.
+        """
+        return cast(Optional[str], self._read_accessor("predicate"))
+
+    def selection(self) -> Any:
+        """
+        The rows passing the explorer's current cross-filter (see
+        :meth:`predicate`), as the same frame type (pandas or polars) the
+        `EmbeddingAtlasWidget` was built from, including a ``__row_index__``
+        column of positions into the original frame.
+
+        All rows while nothing is filtered (library semantics). Computed
+        from the same published filter :meth:`predicate` reports, so the two
+        always describe the same selection, even mid-debounce. Runs a
+        DuckDB query per call, so read it in a ``@reactive.calc`` when
+        several outputs need it. Debounced (250 ms) by default.
+        """
+        predicate = cast(Optional[str], self._read_accessor("predicate", raw=True))
+        return rows_for_predicate(cast("EmbeddingAtlasWidget", self._widget), predicate)
 
     def _as_widget(self, value: EmbeddingAtlasWidget) -> EmbeddingAtlasWidget:
         widget = super()._as_widget(value)
@@ -544,12 +750,23 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
 
     Note
     ---
-    **Reactive state**: the viewer's center and field of view are synced from the
-    browser to the ``_target`` (a ``"ra dec"`` string, in degrees) and ``_fov``
-    (degrees) traits, so panning or zooming the sky can drive a reactive
-    calculation (e.g., ``reactive_read(sky.widget, "_target")``). The public
-    ``.target``/``.fov`` properties (an astropy `SkyCoord`/`Angle`) parse these
-    traits, but are not themselves traits, so they can't be read reactively.
+    **Reacting to user interaction**: the output has methods that read what
+    the user does in the viewer, much like ``input.my_slider()`` reads an
+    input. Call them in a reactive function (a ``@render.*`` function,
+    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
+    the interaction changes:
+
+    * ``clicked_object()``: the catalog source most recently clicked.
+    * ``selected_objects()``: the catalog sources inside the current box
+      selection (needs selection mode armed, e.g.
+      ``.widget.selection("rectangle")``).
+    * ``target()``: the sky position at the center of the view.
+    * ``fov()``: the view's field of view.
+
+    ``clicked_object()`` returns ``None`` until a source is clicked, and
+    resets to ``None`` on re-render. The others are seeded from the viewer's
+    state at render (they never return ``None``) and follow every pan, zoom,
+    or selection -- and Python-side ``.widget.target = ...`` assignments too.
 
     **Updating in place**: ipyaladin queues method calls (e.g.,
     ``.widget.add_table()``) until the viewer has loaded in the browser, but
@@ -557,11 +774,10 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
     effects that set them on ``reactive_read(sky.widget, "_is_loaded")``. Don't
     gate on the ``_ready`` trait instead: ipyaladin 0.8.1 never sets it.
 
-    **Interacting with catalogs**: clicking a catalog source syncs it to the
-    ``clicked_object`` trait, and box-selecting
-    (``.widget.selection("rectangle")``) syncs the sources inside to
-    ``_selected_objects`` — both work with
-    :func:`~shinywidgets.reactive_read`. Prefer these traits over
+    **Interacting with catalogs**: ``clicked_object()`` and
+    ``selected_objects()`` (above) cover the common cases; the trait-level
+    equivalents (``clicked_object`` and ``_selected_objects``) also work with
+    :func:`~shinywidgets.reactive_read`. Prefer any of these over
     ``.widget.set_listener()``: in ipyaladin 0.8.x listener callbacks are
     shared across all `Aladin` instances, so they are not session-safe in a
     multi-user Shiny app. When setting ``.widget.target`` in place, use a
@@ -589,10 +805,151 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
 
+    _accessor_specs = IPYALADIN_ACCESSORS
 
-class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
+    def clicked_object(self) -> Optional[Dict[str, Any]]:
+        """
+        The catalog source the user most recently clicked, as a dict with
+        ``ra``, ``dec``, and ``data`` (the source's catalog row).
+
+        Returns ``None`` until the user clicks a source, and resets to
+        ``None`` on re-render, so use ``req(sky.clicked_object())`` to wait
+        for a click. (Unlike the ``clicked_object`` trait, this is
+        message-backed, so it works per instance.) Clicking the same source
+        twice doesn't fire twice. Not rate-limited.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("clicked_object"))
+
+    def selected_objects(self) -> List[Table]:
+        """
+        The catalog sources inside the current selection, as a list of
+        astropy `Table`s (one per catalog).
+
+        ``[]`` from mount until the user selects, which needs selection mode
+        armed first (e.g., ``.widget.selection("rectangle")``). Seeded at
+        render, so it never returns ``None``; reading before the first render
+        cancels silently (like ``req(False)``). Not rate-limited.
+        """
+        self._read_accessor("selected_objects")
+        return cast(Aladin, self._widget).selected_objects
+
+    def target(self) -> Union[SkyCoord, Tuple[Longitude, Latitude]]:
+        """
+        The sky position at the center of the view, as an astropy `SkyCoord`
+        (a ``(Longitude, Latitude)`` tuple for planetary surveys).
+
+        Seeded at render and follows every pan (and Python-side
+        ``.widget.target = ...`` assignments); reading before the first
+        render cancels silently (like ``req(False)``). Not rate-limited.
+        """
+        self._read_accessor("target")
+        # ipyaladin annotates the property as `SkyCoord | tuple[float, float]`,
+        # but the tuple actually holds a (Longitude, Latitude) pair
+        return cast(
+            Union["SkyCoord", Tuple["Longitude", "Latitude"]],
+            cast(Aladin, self._widget).target,
+        )
+
+    def fov(self) -> Angle:
+        """
+        The view's field of view, as an astropy `Angle`.
+
+        Seeded at render and follows every zoom (and Python-side
+        ``.widget.fov = ...`` assignments); reading before the first render
+        cancels silently (like ``req(False)``). Not rate-limited.
+        """
+        self._read_accessor("fov")
+        return cast(Aladin, self._widget).fov
+
+
+class _IpyleafletAccessors:
+    """Accessor methods shared by render_ipyleaflet and render_leafmap (whose
+    ipyleaflet backend is an ipyleaflet.Map)."""
+
+    if TYPE_CHECKING:
+        # Defined by render_widget_base; declared so the mixin type-checks
+        def _read_accessor(self, name: str, *, raw: bool = False) -> object: ...
+
+    def _read_ipyleaflet(self, name: str) -> object:
+        # A non-ipyleaflet backend (render_leafmap) is reported by the attach
+        # as a sentinel rather than a raise (attach runs during render, where
+        # a raise would break the output), so it's reported here, at read
+        # time.
+        raw = self._read_accessor(name, raw=True)
+        if isinstance(raw, NotIpyleaflet):
+            raise TypeError(raw.message)
+        return raw
+
+    def bounds(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+        """
+        The map's viewport as ``((south, west), (north, east))`` in
+        ``[lat, lng]`` order.
+
+        Cancels (like a not-yet-rendered output) until the browser first
+        reports it -- no ``req()`` guard needed. One update per pan or zoom,
+        at gesture end, so not rate-limited. Reading it in a hidden (e.g.
+        inactive tab) map reports the browser's last known bounds, which
+        ipyleaflet may corrupt while hidden -- guard with your own visibility
+        check if that matters (see ``examples/superzip``).
+        """
+        return cast(
+            Tuple[Tuple[float, float], Tuple[float, float]],
+            self._read_ipyleaflet("bounds"),
+        )
+
+    def zoom(self) -> float:
+        """
+        The map's current zoom level (``float``). Also fires when Python sets
+        ``zoom``. Not rate-limited.
+        """
+        return cast(float, self._read_ipyleaflet("zoom"))
+
+    def center(self) -> List[float]:
+        """
+        The map's current center as ``[lat, lng]``. Not rate-limited.
+        """
+        return cast(List[float], self._read_ipyleaflet("center"))
+
+    def clicked(self) -> Optional[Dict[str, Any]]:
+        """
+        The most recent map click as ipyleaflet reports it: a dict with
+        ``coordinates: [lat, lng]`` (note the order; lonboard reports
+        ``(lng, lat)``), or ``None`` until the first click. A double-click
+        publishes once: the second click has the same coordinates, so it
+        isn't a change (the ``dblclick`` itself is ignored). Marker clicks
+        don't bubble up to the map -- use a layer's own ``on_click`` for
+        those.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_ipyleaflet("clicked"))
+
+    def drawn_features(self) -> List[Dict[str, Any]]:
+        """
+        The shapes drawn on the map's ``ipyleaflet.DrawControl``, as a list
+        of GeoJSON Feature dicts (``[]`` until something is drawn; edits and
+        deletions update it). Raises ``TypeError`` if the map has no
+        ``DrawControl`` -- add one with ``m.add(DrawControl())`` (leafmap adds
+        one by default).
+        """
+        # The attach emits sentinels rather than raising (it runs during
+        # render, where a raise would break the output): a non-ipyleaflet
+        # backend or a missing DrawControl is reported here, at read time.
+        raw = self._read_ipyleaflet("drawn_features")
+        if raw is NO_DRAW_CONTROL:
+            raise TypeError(NO_DRAW_CONTROL_MESSAGE)
+        return cast(List[Dict[str, Any]], raw)
+
+
+class render_ipyleaflet(_IpyleafletAccessors, render_widget_base[ValueT, LeafletMap]):
     """
     Reactively render an [ipyleaflet](https://ipyleaflet.readthedocs.io) map as a Shiny
     output.
@@ -604,14 +961,30 @@ class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
     most recently returned by the render function, and `.widget`, the rendered
     `Map` instance. Use `.widget` to programmatically update the rendered map in
     place (e.g., change its `zoom` or `center`, or add layers; trait changes on the
-    widget are synced to the browser), or to reactively read map state (e.g., `zoom`,
-    `center`, `bounds`) with :func:`~shinywidgets.reactive_read`.
+    widget are synced to the browser), or to reactively read map state with
+    :func:`~shinywidgets.reactive_read`.
 
     In a filling layout, the map fills its container unless it has its own height
     (e.g., ``Layout(height="300px")``). Default heights set by a subclass (e.g.,
     leafmap's 600px) are treated as unset.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Reacting to the map**: read the map's accessors in a reactive function
+    (a ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``),
+    which re-runs whenever the user gestures, much like ``input.my_slider()``:
+
+    * ``map.bounds()``: the viewport, ``((south, west), (north, east))``.
+    * ``map.zoom()`` and ``map.center()``: the camera.
+    * ``map.clicked()``: the most recent map click.
+    * ``map.drawn_features()``: the shapes drawn on the map's DrawControl.
+
+    Coordinates are ``[lat, lng]``, as ipyleaflet reports them (lonboard is
+    ``(lng, lat)``). The accessors can't be read inside this output's own
+    render function, which builds a new map each time it runs. For anything
+    beyond them, use :func:`~shinywidgets.reactive_read` on ``map.widget``.
 
     Parameters
     ----------
@@ -628,7 +1001,17 @@ class render_ipyleaflet(render_widget_base[ValueT, LeafletMap]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = IPYLEAFLET_ACCESSORS
 
 
 class render_ipysigma(render_widget_base[ValueT, Sigma]):
@@ -695,7 +1078,8 @@ class render_itables(render_widget_base[ValueT, ITable]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `ITable` instance. Use `.widget` to programmatically update the rendered table
+    `ITable` instance. Use ``.selected_rows()`` to reactively read the selected
+    rows, or `.widget` to programmatically update the rendered table
     in place (trait changes on the widget are synced to the browser), or to
     reactively read widget state (e.g., `selected_rows`) with
     :func:`~shinywidgets.reactive_read`.
@@ -729,7 +1113,30 @@ class render_itables(render_widget_base[ValueT, ITable]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = ITABLES_ACCESSORS
+
+    def selected_rows(self) -> List[int]:
+        """
+        The currently selected rows as a list of positions into the table's
+        data frame (use ``df.iloc[table.selected_rows()]``), or ``[]`` while
+        nothing is selected.
+
+        Positions are in data order, not display order: they survive sorting
+        and searching, and the same position can refer to a different row
+        after ``.widget.update(df)``. Requires ``select=True`` on the
+        `itables.widget.ITable` (a plain data frame return has no selection).
+        Not rate-limited.
+        """
+        return cast(List[int], self._read_accessor("selected_rows"))
 
     def _as_widget(self, value: ValueT) -> ITable:
         if isinstance(value, Widget):
@@ -758,16 +1165,27 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `JupyterScatter` instance. Use `.widget` to programmatically update the rendered
-    plot in place (trait changes on the widget are synced to the browser), or to
-    reactively read widget state (e.g., the selected points via ``"selection"``) with
-    :func:`~shinywidgets.reactive_read`. The selection is an array of row *positions*
-    (use ``df.iloc[...]``), not index labels.
+    `JupyterScatter` instance. Use ``.selection()`` to reactively read the selected
+    points (below), or `.widget` to programmatically update the rendered plot in
+    place (trait changes on the widget are synced to the browser), or to reactively
+    read widget state with :func:`~shinywidgets.reactive_read`. The selection
+    is an array of row *positions* (use ``df.iloc[...]``), not index labels.
+    Other traits worth reading with :func:`~shinywidgets.reactive_read` are
+    ``"hovering"`` (the hovered point's row position), ``"zoom_level"``, and
+    ``"lasso_selection_polygon"`` (the lasso path in data coordinates).
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Note
     ---
+    **Reacting to selections**: read ``plot.selection()`` in a reactive function (a
+    ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``), which
+    re-runs whenever the user selects points (with the lasso, or by clicking one),
+    much like ``input.my_slider()`` reads an input. A re-render (e.g. when the
+    render function reads an input) gives the user a new plot, whose selection
+    starts out empty. It can't be read inside this output's own render function,
+    which builds a new plot each time it runs.
+
     **Large selections**: selecting more than about 3 million points sends the
     server a message larger than the default 16 MiB websocket limit, which
     disconnects the session. Raise the limit with ``shiny run --ws-max-size``.
@@ -787,7 +1205,31 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = JSCATTER_ACCESSORS
+
+    def selection(self) -> "np.ndarray":
+        """
+        The currently selected points as a `numpy.ndarray` (uint32) of row
+        *positions* into the plot's data (use ``df.iloc[plot.selection()]``),
+        from a lasso or single click.
+
+        Empty while nothing is selected. Cancels (like `.widget`) until the
+        browser first reports, which a bare `JupyterScatter` only does after
+        the first selection. For index labels instead of positions (when the
+        render function returns a `jscatter.Scatter` with
+        ``data_use_index=True``), use ``plot.value.selection()``.
+        Not rate-limited.
+        """
+        return cast("np.ndarray", self._read_accessor("selection"))
 
 
 class render_k3d(render_widget_base[ValueT, K3dPlot]):
@@ -808,6 +1250,20 @@ class render_k3d(render_widget_base[ValueT, K3dPlot]):
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ---
+    **Reacting to user interaction**: ``plot.camera()`` reads the camera
+    after the browser's auto-fit and every orbit, much like
+    ``input.my_slider()`` reads an input. Call it in a reactive function (a
+    ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``),
+    which then re-runs whenever the camera changes.
+
+    There is deliberately no ``clicked()``: k3d only reports clicks with
+    ``plot.mode = "callback"``, a user-visible change to the plot's
+    interaction mode, which the accessor API doesn't make. To react to
+    clicks, set the mode and a ``click_callback`` on the objects yourself
+    (and set a :class:`~shiny.reactive.value` inside it).
+
     Parameters
     ----------
     width
@@ -823,7 +1279,33 @@ class render_k3d(render_widget_base[ValueT, K3dPlot]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = (K3D_CAMERA,)
+
+    def camera(self) -> List[float]:
+        """
+        The plot's camera as a flat list of 9 floats (camera position,
+        look-at target, and up vector).
+
+        The camera is ``[]`` until the browser auto-fits it, so reading
+        ``camera()`` before that cancels silently (like ``req(False)``):
+        downstream outputs just wait. With ``camera_auto_fit=False`` and no
+        explicit camera it cancels forever -- set ``plot.camera`` to seed it.
+        Never returns ``None`` once it returns. Not rate-limited (k3d
+        throttles camera updates to roughly one per 200 ms upstream).
+        """
+        # The camera trait (ListOrArray) accepts numpy arrays, so normalize
+        # to the documented plain list
+        return list(cast(Iterable[float], self._read_accessor("camera")))
 
     def _as_widget(self, value: ValueT) -> K3dPlot:
         try:
@@ -862,17 +1344,32 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
     `.widget.set_style()`, `.widget.set_layout()`, or setting `classes` on the nodes
     in `.widget.graph.nodes`) without re-rendering.
 
-    To react to user interaction, register callbacks with `CytoscapeWidget.on()`
-    inside the render function, before returning the widget, and have them set a
-    :class:`~shiny.reactive.value`. (ipycytoscape drops some callbacks registered
-    after the graph is displayed, e.g. from an effect: only the first event type
-    per element type is wired up.) Node selection is also synced to each node's
-    `selected` trait, readable with :func:`~shinywidgets.reactive_read`, but
-    ipycytoscape makes nodes unselectable by default: create the widget with
-    `auto_unselectify=False` and set `selectable = True` on each node (plus
-    `box_selection_enabled=True` for shift-drag selection).
-
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Reacting to user interaction**: the output has methods that read what
+    the user does in the graph, much like ``input.my_slider()`` reads an
+    input. Call them in a reactive function (a ``@render.*`` function,
+    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
+    the interaction changes:
+
+    * ``node_clicked()``: the JSON data of the most recently clicked node.
+    * ``edge_clicked()``: the JSON data of the most recently clicked edge.
+
+    Each returns ``None`` until the interaction happens (a normal state, not
+    an error, so check for it, or use ``req(graph.node_clicked())``), and
+    resets to ``None`` on re-render. For other event types, register
+    callbacks with `CytoscapeWidget.on()` inside the render function, before
+    returning the widget, and have them set a :class:`~shiny.reactive.value`
+    (ipycytoscape drops callbacks registered after the graph is displayed,
+    e.g. from an effect).
+
+    Node selection is also synced to each node's `selected` trait, readable
+    with :func:`~shinywidgets.reactive_read`, but ipycytoscape makes nodes
+    unselectable by default: create the widget with `auto_unselectify=False`
+    and set `selectable = True` on each node (plus `box_selection_enabled=True`
+    for shift-drag selection).
 
     Parameters
     ----------
@@ -889,7 +1386,43 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = CYTOSCAPE_ACCESSORS
+
+    def node_clicked(self) -> Optional[Dict[str, Any]]:
+        """
+        The most recently clicked node, as its cytoscape ``ele.json()`` dict
+        (its ``"data"`` key holds the node's data, including ``"id"``).
+
+        Returns ``None`` until the user clicks a node, and resets to ``None``
+        on re-render, so use ``req(graph.node_clicked())`` to wait for a
+        click. Node ids are strings, even for integer networkx nodes.
+        Clicking the same node twice doesn't fire twice. Not rate-limited.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("node_clicked"))
+
+    def edge_clicked(self) -> Optional[Dict[str, Any]]:
+        """
+        The most recently clicked edge, as its cytoscape ``ele.json()`` dict
+        (its ``"data"`` key holds the edge's data, including ``"id"``,
+        ``"source"``, and ``"target"``).
+
+        Returns ``None`` until the user clicks an edge, and resets to
+        ``None`` on re-render, so use ``req(graph.edge_clicked())`` to wait
+        for a click. Edge ids generated from networkx graphs are fresh UUIDs
+        each render. Clicking the same edge twice doesn't fire twice. Not
+        rate-limited.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("edge_clicked"))
 
     def _as_widget(self, value: ValueT) -> CytoscapeWidget:
         # A networkx graph is a generic type (render_ipysigma accepts one too), so
@@ -946,6 +1479,20 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ---
+    **Reacting to selections**: read ``fig.selection()`` (the selected
+    elements of each mark) or ``fig.brush()`` (the current brush region) in a
+    reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which re-runs whenever the user selects or brushes
+    (with a brush/lasso `bqplot.interacts.Selector`, or by click-select), much
+    like ``input.my_slider()`` reads an input. A re-render (e.g. when the
+    render function reads an input) gives the user a new figure, whose marks
+    start out unselected. They can't be read inside this output's own render
+    function, which builds a new figure each time it runs. To react to one
+    mark's selection specifically,
+    ``reactive_read(fig.widget.marks[0], "selected")`` remains available.
+
     Parameters
     ----------
     width
@@ -961,7 +1508,50 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`selection` and :meth:`brush` (debounced by
+        default) and :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps the
+        debounce, and debounces ``reactive_read()`` only if ``rate_delay`` is
+        given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = BPLOT_ACCESSORS
+
+    def selection(self) -> List[Optional["np.ndarray"]]:
+        """
+        The selected elements of each mark, as a list aligned with
+        ``fig.marks``: each entry is a `numpy.ndarray` of element indices, or
+        ``None`` until that mark has been selected.
+
+        Set by a brush/lasso `bqplot.interacts.Selector` (the figure's
+        ``interaction``) or by click-select (``interactions={"click": "select"}``).
+        Single-mark figures read ``fig.selection()[0]``. Debounced (250 ms) by
+        default, since brush selectors update during the drag; see the
+        ``rate_policy`` and ``rate_delay`` parameters.
+        """
+        return cast(List[Optional["np.ndarray"]], self._read_accessor("selection"))
+
+    def brush(self) -> Optional[Union["np.ndarray", Dict[str, Any]]]:
+        """
+        The region of the figure's current brush selector, in data
+        coordinates: a 2x2 `numpy.ndarray` ``[[x0, y0], [x1, y1]]`` for a
+        `BrushSelector`, a length-2 array for a `BrushIntervalSelector`, or a
+        dict of named intervals for a `MultiSelector` — the selector's own
+        `selected` trait.
+
+        ``None`` while nothing is brushed, and whenever the figure's
+        ``interaction`` isn't a brush selector (e.g., `PanZoom`;
+        `LassoSelector` has no region trait). Debounced (250 ms) by default;
+        see the ``rate_policy`` and ``rate_delay`` parameters.
+        """
+        return cast(
+            Optional[Union["np.ndarray", Dict[str, Any]]],
+            self._read_accessor("brush"),
+        )
 
 
 class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
@@ -1137,12 +1727,21 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
     `ipyvolume.Figure` instance. Use `.widget` to programmatically update the
     rendered figure in place (trait changes on the widget are synced to the
     browser), or to reactively read widget state with
-    :func:`~shinywidgets.reactive_read` (e.g., ``reactive_read(plot.widget,
-    "camera")``). For selections, register a callback with
+    :func:`~shinywidgets.reactive_read` (e.g., ``reactive_read(
+    plot.widget.camera, "position")``; ``plot.camera()`` covers the
+    orbit-driven camera, since the camera *instance* never changes). For
+    selections, register a callback with
     ``plot.widget.on_selection(fn)`` (selections arrive as custom messages, not
     trait changes) and set a `reactive.value` inside it.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Reacting to user interaction**: ``plot.camera()`` reads the live camera
+    after every orbit, much like ``input.my_slider()`` reads an input. Call
+    it in a reactive function (a ``@render.*`` function, ``@reactive.calc``,
+    or ``@reactive.effect``), which then re-runs whenever the camera changes.
 
     Parameters
     ----------
@@ -1159,6 +1758,14 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
 
     Examples
     --------
@@ -1183,8 +1790,29 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
     ```
     """
 
+    _accessor_specs = (PYTHREEJS_CAMERA,)
 
-class render_leafmap(render_widget_base[ValueT, LeafletMap]):
+    def camera(self) -> Camera:
+        """
+        The figure's live `pythreejs.Camera` (a `PerspectiveCamera` by
+        default).
+
+        Readers are invalidated when its ``position``/``quaternion``/``zoom``
+        change (at the end of each orbit) or the camera is replaced. Reading
+        before the first render cancels silently (like ``req(False)``), as
+        does reading while the figure has no camera (``fig.camera = None``).
+        The returned object is the same mutable instance across reads -- copy
+        what you keep. Not rate-limited (the browser syncs once per orbit).
+        """
+        self._read_accessor("camera")
+        camera = cast(IpyvolumeFigure, self._widget).camera
+        # The trait allows None, but a rendered figure always has its
+        # (possibly default-constructed) camera
+        assert camera is not None
+        return cast("Camera", camera)
+
+
+class render_leafmap(_IpyleafletAccessors, render_widget_base[ValueT, LeafletMap]):
     """
     Reactively render a [leafmap](https://leafmap.org) map as a Shiny output.
 
@@ -1216,10 +1844,16 @@ class render_leafmap(render_widget_base[ValueT, LeafletMap]):
     widget. Use `.widget` to programmatically update the rendered map in place
     (e.g., change its `zoom` or `center`, or add layers; trait changes on the
     widget are synced to the browser), or to reactively read map state with
-    :func:`~shinywidgets.reactive_read`, e.g. ``zoom``/``center``/``bounds`` for
-    the ipyleaflet backend, or ``view_state``/``clicked`` for the maplibre one.
+    :func:`~shinywidgets.reactive_read`.
     The Plotly backend is already a `FigureWidget`, so it is rendered directly;
     `.value` retains the original map and its leafmap methods.
+
+    On the ipyleaflet backend (the default), the map has the same accessors as
+    :class:`render_ipyleaflet` -- ``bounds()``, ``zoom()``, ``center()``,
+    ``clicked()``, and ``drawn_features()``. On the maplibre, plotly, and
+    kepler backends they raise a `TypeError`; read those backends' state with
+    :func:`~shinywidgets.reactive_read` instead (e.g., ``view_state`` for the
+    maplibre one).
 
     Note
     ----
@@ -1244,7 +1878,17 @@ class render_leafmap(render_widget_base[ValueT, LeafletMap]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = IPYLEAFLET_ACCESSORS
 
 
 class render_lonboard(render_widget_base[ValueT, LonboardMap]):
@@ -1268,6 +1912,23 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ---
+    **Reacting to the map**: read the map's accessors in a reactive function
+    (a ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``),
+    which re-runs whenever the user gestures, much like ``input.my_slider()``:
+
+    * ``map.view_state()``: the camera (longitude, latitude, zoom, pitch,
+      bearing).
+    * ``map.selected_index()``: the most recently picked row, across layers.
+    * ``map.selected_bounds()``: the bbox dragged with the Select BBox control.
+    * ``map.clicked()``: the most recent map click, as ``(lng, lat)`` -- note
+      the order; ipyleaflet reports ``[lat, lng]``.
+
+    They can't be read inside this output's own render function, which builds
+    a new map each time it runs. For anything beyond them, use
+    :func:`~shinywidgets.reactive_read` on ``map.widget``.
+
     Parameters
     ----------
     width
@@ -1283,7 +1944,70 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`view_state` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = LONBOARD_ACCESSORS
+
+    def view_state(self) -> "BaseViewState":
+        """
+        The map's current view state: a `lonboard.view_state.MapViewState` (or
+        `GlobeViewState`) dataclass with ``longitude``, ``latitude``, ``zoom``,
+        ``pitch``, and ``bearing``, in lng/lat order.
+
+        Available as soon as the map has rendered (it's computed from the
+        layers), and updated by the browser during each pan or zoom -- the
+        browser reports continuously through the gesture, so this accessor
+        is debounced by default (0.25 s; see the renderer's
+        ``rate_policy``/``rate_delay``). Never ``None`` once rendered; the
+        map is immutable per render, so a re-render starts from the new
+        map's own view state.
+        """
+        return cast("BaseViewState", self._read_accessor("view_state"))
+
+    def selected_index(self) -> Optional[int]:
+        """
+        The positional index of the most recently picked row, as
+        ``gdf.iloc[map.selected_index()]``, or ``None`` until the first pick.
+
+        With several pickable layers this is the most recent pick across all
+        of them; it doesn't say which layer, and picking the same index on two
+        different layers in a row doesn't re-fire -- with several pickable
+        layers, observe each layer yourself instead:
+        ``reactive_read(layer, "selected_index")``. A layer only reports when
+        ``pickable=True`` (the default). Picking the same row of the same
+        layer twice doesn't re-fire (the trait only changes when the value
+        does), and clicking empty space doesn't clear it.
+        """
+        return cast(Optional[int], self._read_accessor("selected_index"))
+
+    def selected_bounds(self) -> Optional[Tuple[float, float, float, float]]:
+        """
+        The bounding box the user dragged with the map's built-in Select BBox
+        control, as ``(minx, miny, maxx, maxy)`` -- i.e. (west, south, east,
+        north) in lng/lat -- or ``None`` until the first selection.
+        """
+        return cast(
+            Optional[Tuple[float, float, float, float]],
+            self._read_accessor("selected_bounds"),
+        )
+
+    def clicked(self) -> Optional[Tuple[float, float]]:
+        """
+        The ``(lng, lat)`` of the most recent map click -- note the order;
+        ipyleaflet reports ``[lat, lng]`` -- or ``None`` until the first
+        click. Clicking the same spot twice doesn't re-fire. Reading this is
+        what enables click reporting in the browser (registering the handler
+        flips the map's ``_has_click_handlers`` trait).
+        """
+        return cast(Optional[Tuple[float, float]], self._read_accessor("clicked"))
 
     def _as_widget(self, value: ValueT) -> LonboardMap:
         if isinstance(value, Widget):
@@ -1423,11 +2147,12 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     The decorated function may return a `matplotlib.figure.Figure`, a
     `matplotlib.axes.Axes` (rendered via its figure), or an `ipympl.backend_nbagg.Canvas`
     widget. Figures and axes are coerced to a `Canvas` (requires ``pip install
-    'shinywidgets[matplotlib]'``),
-    so this also works with libraries built on matplotlib (e.g., seaborn or
-    ``pandas.DataFrame.plot()``). In a filling layout, the figure is resized to fit its
-    container. With an explicit ``height``, the figure keeps its ``figsize`` unless the
-    output is also ``fillable=True``.
+    'shinywidgets[matplotlib]'``), so this also works with libraries built on matplotlib
+    (e.g., seaborn or ``pandas.DataFrame.plot()``). A coerced canvas's header (the
+    "Figure N" title) is hidden by default; a `Canvas` you construct yourself keeps its
+    own settings (e.g., ``header_visible=True``). In a filling layout, the figure is
+    resized to fit its container. With an explicit ``height``, the figure keeps its
+    ``figsize`` unless the output is also ``fillable=True``.
 
     Unlike `@render.plot`, which draws a static image, the figure stays alive on the
     server for as long as it is displayed, so it can respond to the user. Like
@@ -1446,17 +2171,44 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     automated tests can't exercise, so it is supported on a best-effort basis and
     warns at render time.
 
-    Browser interactions reach Python through matplotlib's own callbacks, e.g.,
-    ``fig.canvas.mpl_connect("button_press_event", f)`` or
-    ``ax.callbacks.connect("xlim_changed", f)`` (which fires on every zoom and pan). To
-    make other outputs respond, set a `reactive.value` from the callback.
-
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
     `Canvas` instance. To update the rendered figure without losing the user's zoom,
     modify the artists of ``.widget.figure`` and call ``.widget.draw_idle()``.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Reacting to user interaction**: the output has methods that read what
+    the user does in the plot, much like ``input.my_slider()`` reads an
+    input. Call them in a reactive function (a ``@render.*`` function,
+    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
+    the interaction changes:
+
+    * ``clicked()``: the most recent mouse press on an axes.
+    * ``picked()``: the most recent pick of an artist created with
+      ``picker=``.
+    * ``limits(ax=0)``: an axes' x/y limits after a zoom or pan.
+
+    How they behave:
+
+    * ``clicked()`` and ``picked()`` return ``None`` until the interaction
+      happens. That's a normal state, not an error, so check for it, or use
+      ``req(plot.clicked())`` to wait for it; they reset to ``None`` on
+      re-render. ``limits()`` waits for the first render, then always holds
+      the axes' current limits.
+    * Each press fires ``clicked()`` -- a double-click arrives as three
+      presses.
+    * ``limits()`` updates at most once the user pauses for 250 ms (see
+      ``rate_policy`` and ``rate_delay``).
+    * They can't be read inside this output's own render function, which
+      builds a new figure each time it runs. To change the figure in
+      response, modify ``.widget`` from a ``@reactive.effect`` instead.
+
+    For anything else, matplotlib's own callbacks (e.g.,
+    ``fig.canvas.mpl_connect("motion_notify_event", f)``) still work too,
+    and may set `reactive.value`s.
 
     Parameters
     ----------
@@ -1473,6 +2225,14 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`limits` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
 
     Examples
     --------
@@ -1508,6 +2268,56 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     app = App(app_ui, server)
     ```
     """
+
+    _accessor_specs = MATPLOTLIB_ACCESSORS
+
+    def clicked(self) -> Optional[MouseEvent]:
+        """
+        The most recent mouse press on an axes, as a
+        `matplotlib.backend_bases.MouseEvent` (``.xdata``/``.ydata`` in the
+        data coordinates of the axes under the press, ``.inaxes`` that axes).
+
+        Returns ``None`` until the user clicks, and resets to ``None`` on
+        re-render, so use ``req(plot.clicked())`` to wait for a click.
+        Presses that start a toolbar pan/zoom drag, or land outside any axes,
+        don't count. Every press fires -- a double-click arrives as three
+        presses (MouseEvent defines no equality, so presses are never
+        deduplicated). Not rate-limited.
+        """
+        return cast(Optional["MouseEvent"], self._read_accessor("clicked"))
+
+    def picked(self) -> Optional[PickEvent]:
+        """
+        The most recent pick of an artist, as a
+        `matplotlib.backend_bases.PickEvent` (``.artist`` the picked artist,
+        ``.ind`` the picked point indices). Only artists created with
+        ``picker=`` (e.g., ``ax.plot(x, y, picker=5)``) are pickable.
+
+        Returns ``None`` until the user picks, and resets to ``None`` on
+        re-render. Every pick fires (PickEvent defines no equality). Not
+        rate-limited.
+        """
+        return cast(Optional["PickEvent"], self._read_accessor("picked"))
+
+    def limits(self, ax: int = 0) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+        """
+        The x and y limits of axes ``ax`` (an index into
+        ``.widget.figure.axes``), as ``((x0, x1), (y0, y1))``.
+
+        Seeded from the figure's current limits at render and updated after
+        every zoom or pan (including ones made in Python). Reading it before
+        the first render cancels silently (like ``req(False)``); it never
+        returns ``None`` after that. Debounced (250 ms) by default; see the
+        ``rate_policy`` and ``rate_delay`` parameters. Raises `IndexError`
+        when the figure has no axes ``ax``.
+        """
+        all_limits = cast(AxesLimits, self._read_accessor("limits"))
+        if not -len(all_limits) <= ax < len(all_limits):
+            raise IndexError(
+                f"`limits(ax={ax})` is out of range: the rendered figure has "
+                f"{len(all_limits)} axes (see `.widget.figure.axes`)."
+            )
+        return all_limits[ax]
 
 
 class render_nglview(render_widget_base[ValueT, NGLWidget]):
@@ -1565,14 +2375,25 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     The decorated function also gains two read-only attributes: `.value` and
     `.widget`, which are both the rendered `MosaicWidget` instance. Use `.widget`
     to programmatically update the rendered dashboard in place (trait changes on the
-    widget are synced to the browser), or to reactively read widget state (e.g., the
-    `params` trait, which holds the current selections) with
+    widget are synced to the browser), or to reactively read widget state with
     :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Note
     ----
+    **Reacting to selections**: read the dashboard's accessors in a reactive
+    function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which re-runs whenever the user brushes, much like
+    ``input.my_slider()``:
+
+    * ``dashboard.params()``: the current selection params.
+    * ``dashboard.data()``: the rows matching them, as a lazy DuckDB relation.
+
+    They can't be read inside this output's own render function, which builds
+    a new dashboard each time it runs. For anything beyond them, use
+    :func:`~shinywidgets.reactive_read` on ``dashboard.widget``.
+
     Mosaic runs its queries server-side, in the DuckDB connection the widget holds,
     so which connection that is decides what each Shiny session can see. DataFrames
     passed as ``data=`` are registered in a fresh in-memory connection per widget,
@@ -1584,6 +2405,26 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     queries match. Only share a connection for data that is the same for every
     user.
 
+    **Security**: like `render_embedding_atlas`, Mosaic runs its queries by
+    sending SQL from the browser to the widget's connection, so without
+    restrictions any visitor can send arbitrary SQL, including SQL that reads or
+    writes files on the server. The renderer locks down the connection before
+    display (``SET enable_external_access = false``; ``SET lock_configuration =
+    true``); pass ``allow_unrestricted_connection=True`` to opt out (e.g., a
+    local, single-user app). A connection whose configuration is already locked
+    is left untouched (its owner took control of its settings). This lockdown
+    can reach a connection the app is still using elsewhere: DuckDB's lockdown
+    is permanent (it can't be undone) and database-wide (it also locks every
+    other cursor on the same database, not just the one it was set on). So for
+    a shared connection as described above (``con=``, or a relation in
+    ``data=`` landing on ``duckdb.default_connection()``), the *first* render
+    locks it for every other use in the process. Do any server-side file reads
+    (``read_parquet()``, etc.) on that connection before the first render, or
+    pass ``allow_unrestricted_connection=True`` for it.
+
+    Even with the lockdown, a visitor can still send expensive queries, which
+    block the Python process while they run.
+
     Each re-render creates a new `MosaicWidget` and DuckDB connection, which
     anywidget currently keeps alive for the life of the server process, and loads
     another copy of the widget's JavaScript into the page. To restyle a dashboard,
@@ -1592,6 +2433,12 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
 
     Parameters
     ----------
+    allow_unrestricted_connection
+        When ``True``, the widget's DuckDB connection is left as the render
+        function returned it, without the lockdown described above. The default
+        (``False``) is strongly recommended for deployed apps: an unrestricted
+        connection lets any visitor run arbitrary SQL with the server process's
+        permissions.
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -1605,7 +2452,103 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`params` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[MosaicWidget]] = None,
+        *,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[float] = None,
+        allow_unrestricted_connection: bool = False,
+    ):
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+        )
+        self.allow_unrestricted_connection = allow_unrestricted_connection
+
+    _accessor_specs = MOSAIC_ACCESSORS
+
+    def params(self) -> Dict[str, Any]:
+        """
+        The dashboard's current selection params: ``{name: {"value": ...,
+        "predicate": ...}}`` for each active selection, ``{}`` while nothing
+        is selected.
+
+        ``predicate`` is the selection's clauses ANDed together (ready to
+        embed in SQL); ``value`` is the latest value only. Updates are
+        debounced (250 ms) by default while the user drags a brush -- see the
+        ``rate_policy`` and ``rate_delay`` parameters.
+        """
+        return cast(Dict[str, Any], self._read_accessor("params"))
+
+    def data(
+        self,
+        table: Optional[str] = None,
+        *,
+        filter_by: Optional[Union[str, List[str]]] = None,
+    ) -> "duckdb.DuckDBPyRelation":
+        """
+        The rows of a source table matching the current selections, as a lazy
+        DuckDB relation (materialize it with ``.df()``, ``.pl()``, or
+        ``.aggregate(...)``).
+
+        `table` names the source table to query and may be omitted when the
+        spec and the registered data name exactly one. `filter_by` names the
+        selection (or selections) to filter by, with or without the leading
+        ``"$"`` -- the default, ``None``, filters by every active selection.
+        Re-reads whenever :meth:`params` changes and runs the query on each
+        read, so prefer calling it once inside a ``@reactive.calc``.
+
+        Note that this queries the widget's live ``params`` trait: while a
+        brush is settling, the live value can be up to ``rate_delay`` (250 ms
+        by default) ahead of the debounced value :meth:`params` returns, and
+        the two reconverge when the debounce settles. (MosaicWidget builds
+        its filter SQL internally from the live trait, so the published
+        value can't be substituted.)
+        """
+        self.params()  # take the dependency
+        return cast(MosaicWidget, self._widget).data(table, filter_by=filter_by)
+
+    def _as_widget(self, value: MosaicWidget) -> MosaicWidget:
+        widget = super()._as_widget(value)
+        if not self.allow_unrestricted_connection:
+            restrict_mosaic_connection(widget)
+        return widget
+
+
+def restrict_mosaic_connection(widget: MosaicWidget) -> None:
+    """
+    Lock down a `MosaicWidget`'s DuckDB connection, so the SQL the browser
+    sends can't reach server files or change the connection's configuration.
+    """
+    con = getattr(widget, "con", None)
+    if con is None:
+        raise RuntimeError(
+            "Couldn't find the MosaicWidget's DuckDB connection (`con`), so its "
+            "SQL access can't be restricted. If mosaic-widget renamed this "
+            "attribute, please report it. To render anyway, pass "
+            "`allow_unrestricted_connection=True` to `@render_mosaic_widget`."
+        )
+    restrict_duckdb_connection(con)
 
 
 class render_obsplot(render_widget_base[ObsplotWidget, ObsplotWidget]):
@@ -1727,6 +2670,25 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ---
+    **Reacting to user interaction**: the output has methods that read what
+    the user does in the plot, much like ``input.my_slider()`` reads an
+    input. Call them in a reactive function (a ``@render.*`` function,
+    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
+    the interaction changes:
+
+    * ``clicked()``: the most recent mouse press on the plot. It returns
+      ``None`` until the user clicks (a normal state, not an error, so check
+      for it, or use ``req(plot.clicked())``), and resets to ``None`` on
+      re-render.
+    * ``limits(ax=0)``: an axes' x/y limits after a zoom or pan, seeded from
+      the rendered plot and updated once the user pauses for 250 ms
+      (debounced; see ``rate_policy`` and ``rate_delay``).
+
+    They can't be read inside this output's own render function, which builds
+    a new plot each time it runs.
+
     Parameters
     ----------
     width
@@ -1742,7 +2704,56 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`limits` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = (CLICKED, LIMITS)
+
+    def clicked(self) -> Optional[MouseEvent]:
+        """
+        The most recent mouse press on the plot, as a
+        `matplotlib.backend_bases.MouseEvent`.
+
+        Note that ``.xdata``/``.ydata`` are in plotnine's *transformed*
+        coordinate space -- under ``scale_x_log10()`` they're the log10 of
+        the data, and discrete (categorical) scales use integer positions --
+        and with ``facet_wrap()``/``facet_grid()``, ``.inaxes`` names the
+        panel's axes, but nothing in the event names its facet. Returns
+        ``None`` until the user clicks, and resets to ``None`` on re-render,
+        so use ``req(plot.clicked())`` to wait for a click. Presses that
+        start a toolbar pan/zoom drag, or land outside any axes, don't count.
+        Every press fires -- a double-click arrives as three presses. Not
+        rate-limited.
+        """
+        return cast(Optional["MouseEvent"], self._read_accessor("clicked"))
+
+    def limits(self, ax: int = 0) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+        """
+        The x and y limits of axes ``ax`` (an index into
+        ``.widget.figure.axes``; with ``facet_wrap()``/``facet_grid()``, the
+        panels' axes, in figure order), as ``((x0, x1), (y0, y1))``.
+
+        Seeded from the plot's current limits at render and updated after
+        every zoom or pan. Like ``clicked()``, the limits are in plotnine's
+        *transformed* coordinate space -- under ``scale_x_log10()`` they're
+        the log10 of the data. Debounced (250 ms) by default; see the
+        ``rate_policy`` and ``rate_delay`` parameters. Raises `IndexError`
+        when the figure has no axes ``ax``.
+        """
+        all_limits = cast(AxesLimits, self._read_accessor("limits"))
+        if not -len(all_limits) <= ax < len(all_limits):
+            raise IndexError(
+                f"`limits(ax={ax})` is out of range: the rendered figure has "
+                f"{len(all_limits)} axes (see `.widget.figure.axes`)."
+            )
+        return all_limits[ax]
 
 
 class render_bokeh(render_widget_base[ValueT, BokehModel]):
@@ -1763,18 +2774,51 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
 
     The decorated function also gains two read-only attributes: `.value`, the bokeh
     object most recently returned by the render function, and `.widget`, the rendered
-    `BokehModel` instance. Bokeh model properties are not widget traits, so instead
-    of :func:`~shinywidgets.reactive_read`, use bokeh's own callbacks to react to user
-    interaction (e.g., ``source.selected.on_change("indices", lambda attr, old, new:
-    selected.set(new))``, or ``fig.on_event(Tap, ...)``). These callbacks may set
-    `reactive.value`s. To update the plot without re-rendering, modify the bokeh
-    models in place (e.g., ``source.data = ...``). Plots that share a
+    `BokehModel` instance. To update the plot without re-rendering, modify the
+    bokeh models in place (e.g., ``source.data = ...``). Plots that share a
     `ColumnDataSource` (e.g., for linked selection) must be returned together, in
     one layout, from a single render function. Create bokeh models per session
     (e.g., inside the render function), not at the top level of a Shiny Core app,
     where every visitor would share them.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Reacting to user interaction**: bokeh model properties aren't widget
+    traits, so :func:`~shinywidgets.reactive_read` can't see them. Instead, the
+    output has methods that read what the user does in the plot, much like
+    ``input.my_slider()`` reads an input. Call them in a reactive function (a
+    ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``), which
+    then re-runs whenever the interaction changes:
+
+    * ``selected()``: the indices of the selected rows of the plot's
+      `ColumnDataSource` (from the tap, box, or lasso select tools), and
+      ``selected_rows()``: those rows, as a data frame. These need a plot with
+      exactly one `ColumnDataSource`.
+    * ``tapped()``: the most recent tap, with its ``.x`` and ``.y`` in data
+      units.
+    * ``zoomed()``: the plot's ranges after a zoom or pan.
+
+    How they behave:
+
+    * Each returns ``None`` until the interaction happens (``selected_rows()``
+      an empty frame). That's a normal state, not an error, so check for it, or
+      use ``req(plot.tapped())`` to wait for it.
+    * A re-render (e.g. when the render function reads an input) gives the user
+      a new plot, so they all start over.
+    * Selecting the same points again isn't a change, so readers of
+      ``selected()`` don't re-run. Every tap, zoom, or pan re-runs readers of
+      ``tapped()`` and ``zoomed()``.
+    * ``selected()`` updates at most once the user pauses for 250 ms (see
+      ``rate_policy`` and ``rate_delay``).
+    * They can't be read inside this output's own render function, which builds
+      a new plot each time it runs. To change the plot in response, modify the
+      bokeh models from a ``@reactive.effect`` instead.
+
+    For anything else, bokeh's own callbacks (e.g.,
+    ``source.selected.on_change("indices", ...)``) work too, and may set
+    `reactive.value`s.
 
     Parameters
     ----------
@@ -1791,7 +2835,57 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`selected` (debounced by default):
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps the
+        debounce.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = BOKEH_ACCESSORS
+
+    def selected(self) -> Optional[List[int]]:
+        """
+        The row indices (into the plot's `ColumnDataSource`) of the most recent
+        selection, from a tap, box, or lasso select tool.
+
+        Returns ``None`` until the user selects, and ``[]`` after a selection
+        that caught nothing.
+        Requires a plot (or layout) with exactly one `ColumnDataSource`.
+        Debounced (250 ms) by default; see the ``rate_policy`` and
+        ``rate_delay`` parameters.
+        """
+        return cast(Optional[List[int]], self._read_accessor("selected"))
+
+    def selected_rows(self) -> pd.DataFrame:
+        """
+        The selected rows (see :meth:`selected`) of the plot's
+        `ColumnDataSource`, as a pandas data frame (``source.to_df()``). Empty
+        while nothing is selected. Readers also re-run when ``source.data``
+        changes.
+        """
+        indices = self.selected()
+        self._read_accessor("source_data")
+        return selected_frame(cast("BokehModel", self._widget), indices)
+
+    def tapped(self) -> Optional[Tap]:
+        """
+        The most recent tap on a plot, as a `bokeh.events.Tap` (``.x`` and
+        ``.y`` in data units, ``.model`` the plot). Returns ``None`` until the
+        user taps. Not rate-limited.
+        """
+        return cast(Optional["Tap"], self._read_accessor("tapped"))
+
+    def zoomed(self) -> Optional[RangesUpdate]:
+        """
+        The plot ranges after the most recent zoom or pan, as a
+        `bokeh.events.RangesUpdate` (``.x0``, ``.x1``, ``.y0``, ``.y1``,
+        ``.model``). Returns ``None`` until the user zooms or pans. Not
+        rate-limited (bokeh reports once per gesture).
+        """
+        return cast(Optional["RangesUpdate"], self._read_accessor("zoomed"))
 
     def auto_output_ui(self) -> Tag:
         res = super().auto_output_ui()
@@ -1959,13 +3053,29 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
     most recently returned by the render function, and `.widget`, the rendered
     `PerspectiveWidget` instance. Use `.widget` to programmatically update the rendered
     viewer in place (e.g., `.widget.update()` streams new rows, and trait changes are
-    synced to the browser), or to reactively read widget state (e.g., `plugin`,
-    `group_by`, `sort`, or `filter`) with :func:`~shinywidgets.reactive_read`.
+    synced to the browser), or to reactively read widget state with
+    :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
     Note
     ---
+    **Reacting to the viewer's state**: read the viewer's accessors in a
+    reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which re-runs whenever the user changes it, much
+    like ``input.my_slider()``:
+
+    * ``grid.filter()``: the viewer's current filters.
+    * ``grid.view_config()``: the viewer's structural configuration (plugin,
+      columns, group/split by, aggregates, sort, filter, expressions).
+
+    They can't be read inside this output's own render function, which builds
+    a new viewer each time it runs. For anything beyond them (e.g.,
+    ``theme`` or ``title``), use :func:`~shinywidgets.reactive_read` on
+    ``grid.widget`` -- but unlike the accessors (which are seeded at render),
+    a cosmetic trait read this way can be ``None`` until the first browser
+    sync, so guard with ``req()``.
+
     Perspective keeps every table it hosts in memory for the life of the process, so a
     table created from a DataFrame is not freed when the output re-renders. To change
     the data, prefer updating the existing viewer in place: `.widget.update(df)`
@@ -1997,7 +3107,45 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = PERSPECTIVE_ACCESSORS
+
+    def filter(self) -> List[list]:
+        """
+        The viewer's current filters, as ``[[column, op, value], ...]`` (e.g.
+        ``[["x", ">", 1]]``); ``[]`` while nothing is filtered.
+
+        Edits made in the viewer's settings panel sync back to Python. Not
+        rate-limited (filter edits are discrete gestures, and the renderer's
+        ``rate_policy``/``rate_delay`` parameters don't apply to it -- they
+        only govern accessors that declare a default, plus
+        :func:`~shinywidgets.reactive_read` on the widget).
+        """
+        return cast(List[list], self._read_accessor("filter"))
+
+    def view_config(self) -> Dict[str, Any]:
+        """
+        The viewer's current configuration as a dict with the keys ``plugin``,
+        ``columns``, ``group_by``, ``split_by``, ``aggregates``, ``sort``,
+        ``filter``, and ``expressions`` -- the subset of
+        ``PerspectiveWidget.save()`` that determines the rows shown, so
+        cosmetic changes (opening the settings panel, switching the theme)
+        don't re-fire it. ``plugin`` is viewer-only (it says how the rows are
+        displayed, not which rows), so exclude it before reproducing the
+        rows: ``widget.table.view(**{k: v for k, v in cfg.items() if k !=
+        "plugin"})``. Row clicks and selections never reach Python. Not
+        rate-limited.
+        """
+        return cast(Dict[str, Any], self._read_accessor("view_config"))
 
     def _as_widget(self, value: ValueT) -> PerspectiveWidget:
         # DataFrames are generic types that other renderers accept too, so
@@ -2024,7 +3172,9 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `DataGrid` instance. Use `.widget` to programmatically update the rendered grid
+    `DataGrid` instance. Use ``.selections()``, ``.cell_clicked()``, and
+    ``.cell_edited()`` to reactively read what the user does in the grid, or
+    `.widget` to programmatically update the rendered grid
     in place (trait changes on the widget are synced to the browser), or to
     reactively read widget state (e.g., `selections`) with
     :func:`~shinywidgets.reactive_read`.
@@ -2035,7 +3185,8 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
       `selections` stays empty; return ``DataGrid(df, selection_mode="row")`` (or
       ``"cell"``/``"column"``) to let users select.
     * `selections` index the grid as displayed (after any sort or filter), so map
-      them through ``.widget.get_visible_data()``.
+      them through ``.widget.get_visible_data()``; ``.visible_data()`` returns
+      those displayed rows as a data frame, reactively.
     * ``DataGrid.select()``, ``DataGrid.clear_selection()`` and cell edits modify the
       widget's state in place, which doesn't trigger
       :func:`~shinywidgets.reactive_read`. Assign a new list to ``.widget.selections``
@@ -2060,7 +3211,86 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`selections` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    _accessor_specs = IPYDATAGRID_ACCESSORS
+
+    def selections(self) -> List[Dict[str, int]]:
+        """
+        The grid's current selection rectangles, as ``[{"r1", "r2", "c1",
+        "c2"}, ...]`` (inclusive), in *visible* row/column coordinates —
+        i.e., after any sort or filter. Map them to data rows with
+        ``.widget.get_visible_data()`` (or use :meth:`visible_data`).
+
+        ``[]`` while nothing is selected, and after a sort (sorting clears
+        the selection). Requires ``selection_mode`` other than ``"none"``;
+        a plain data frame return uses ``"none"``, so return
+        ``DataGrid(df, selection_mode="row")`` to let users select.
+
+        Dragging a selection rectangle reports continuously (on every
+        pointer move), so this accessor is debounced by default (0.25 s;
+        see the renderer's ``rate_policy``/``rate_delay``).
+        """
+        return cast(List[Dict[str, int]], self._read_accessor("selections"))
+
+    def cell_clicked(self) -> Optional[Dict[str, Any]]:
+        """
+        The most recently clicked cell, or ``None`` if no click has happened
+        since the last render: ``{"region", "column", "column_index", "row",
+        "primary_key_row", "cell_value"}``, where ``row`` is the *visible*
+        row and ``primary_key_row`` the *data* row (they differ after a sort).
+
+        Fires in any ``selection_mode``, including ``"none"``; fires for
+        column-header clicks (``region="column-header"``) and twice per
+        double-click. Not rate-limited.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("cell_clicked"))
+
+    def cell_edited(self) -> Optional[Dict[str, Any]]:
+        """
+        The most recent cell edit, or ``None`` if no edit has happened since
+        the last render: ``{"row", "column", "column_index", "value"}``,
+        where ``row`` is the *data* row. The widget's data is already updated
+        when this fires.
+
+        Requires ``editable=True``. Also fires for Python-side
+        ``set_cell_value*()`` calls. Not rate-limited.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("cell_edited"))
+
+    def visible_data(self) -> "pd.DataFrame":
+        """
+        The grid's rows as currently displayed (after its sort and filter),
+        as a pandas data frame — the ``selections()`` rectangles' coordinate
+        space, so ``visible_data().iloc[r1:r2 + 1]`` maps a selection to rows.
+
+        The whole frame until the user sorts, filters, or edits, and an
+        empty frame when the filter matches nothing. Backed by ipydatagrid's
+        private ``_visible_rows``, ``_transforms``, and ``_data`` traits plus
+        the grid's cell-change notification (the one public alternative,
+        ``get_visible_data()``, isn't reactive on its own, and returns the
+        whole frame for an empty filtered view); raises if ipydatagrid
+        removes the traits. May be briefly stale after a Python-side data
+        replacement (``grid.data = df``) while a filter/sort is active,
+        until the browser re-syncs the row map. Not rate-limited.
+        """
+        self._read_accessor("visible_data", raw=True)
+        widget = cast("DataGrid", self._widget)
+        if not widget._visible_rows and widget._transforms:
+            # An empty row map with transforms applied is a filter that
+            # matched nothing; get_visible_data() would return the whole
+            # frame (it only applies a truthy row map). The same row map
+            # with no transforms is the initial state (the whole frame).
+            return widget.data.iloc[0:0]
+        return widget.get_visible_data()
 
     # A DataFrame is a generic type (several renderers accept one), so it isn't
     # registered with as_widget()
@@ -2186,12 +3416,41 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
 
     Note
     ---
-    **Events**: to respond to user interaction, return a `go.FigureWidget` and
-    register plotly callbacks on it (e.g., ``fig.data[0].on_click(fn)``,
-    ``fig.data[0].on_selection(fn)``, or ``fig.layout.xaxis.on_change(fn,
-    "range")``), typically setting a `reactive.value` inside the callback.
-    Callbacks registered on a `go.Figure` don't carry over when it's coerced to a
-    `FigureWidget`, so they never fire.
+    **Reacting to user interaction**: the output has methods that read what the
+    user does in the plot, much like ``input.my_slider()`` reads an input. Call
+    them in a reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which then re-runs whenever the interaction changes:
+
+    * ``clicked()``: the clicked points.
+    * ``selected()``: the points of a box or lasso selection, once the drag ends
+      (``selecting()``: the same, while the user drags).
+    * ``brushed()``: the selected region itself (``brushing()``: while dragging).
+    * ``relayout()``: the axis ranges after a zoom, pan, or autoscale.
+    * ``selected_rows(df)``: the rows of your data the user selected. This needs
+      each point to carry its row as ``customdata``, e.g.
+      ``px.scatter(df, ..., custom_data=[df.index])``; see the method for
+      details.
+
+    How they behave:
+
+    * Each returns ``None`` until the interaction happens. That's a normal
+      state, not an error, so check for it (``req(pts is not None)``; not
+      ``req(pts)``, since a data frame has no truth value).
+    * A re-render (e.g. when the render function reads an input) gives the user
+      a new plot, so they all start over at ``None``.
+    * Repeating an interaction (clicking the same point twice) isn't a change,
+      so readers don't re-run.
+    * A double-click on the plot background clears ``clicked()``, and a
+      deselect (double-clicking after a selection) clears the selection
+      accessors. A double-click on a marker re-fires the click after the
+      clear, so it leaves ``clicked()`` unchanged. With ``dragmode="select"``
+      or ``"lasso"``, a plain click also resets ``selected()`` and
+      ``brushed()`` (plotly.js reports it as a zero-area selection).
+    * The streaming ones, ``selecting()`` and ``brushing()``, update at most
+      once the user pauses for 250 ms (see ``rate_policy`` and ``rate_delay``).
+    * They can't be read inside this output's own render function, which builds
+      a new plot each time it runs. To change the plot in response to a click,
+      modify ``.widget`` from a ``@reactive.effect`` instead (see the example).
 
     **Updating in place**: re-rendering rebuilds the figure, resetting zoom and
     selection. To change a displayed figure instead, read inputs under
@@ -2229,6 +3488,15 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`selecting` and :meth:`brushing` (debounced by
+        default) and :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps each
+        accessor's own default, and debounces ``reactive_read()`` only if
+        ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
 
     Examples
     --------
@@ -2249,7 +3517,129 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
 
     app = App(app_ui, server)
     ```
+
+    Reacting to clicks and selections:
+
+    ```python
+    import plotly.express as px
+    from shiny import reactive, req
+    from shiny.express import render
+    from shinywidgets import render_plotly
+
+    df = px.data.iris()
+
+
+    @render_plotly
+    def plot():
+        fig = px.scatter(df, x="sepal_width", y="sepal_length", custom_data=[df.index])
+        return fig.update_layout(dragmode="select")
+
+
+    @render.data_frame
+    def picked():
+        return plot.selected_rows(df)  # empty until the user selects
+
+
+    @reactive.effect
+    def _():
+        pts = plot.clicked()
+        req(pts is not None)
+        plot.widget.layout.title.text = f"Clicked x={pts['x'].iloc[0]}"
+    ```
     """
+
+    _accessor_specs = PLOTLY_ACCESSORS
+
+    def clicked(self) -> Optional[pd.DataFrame]:
+        """
+        The points of the most recent click, one row per point.
+
+        Columns are ``trace_index``, ``point_index`` (the point's position
+        within its trace, not a row of your data), ``x``, ``y``, and ``z`` and
+        ``customdata`` when the figure has them. Returns ``None`` until the user
+        clicks, and again after a double-click on the plot background or a
+        deselect, so check for ``None`` (e.g. ``req(pts is not None)``) to
+        wait for a click. A double-click on a marker re-fires the click after
+        the clear, so it leaves the value unchanged. Clicking the same point
+        twice doesn't fire twice. Not rate-limited. Requires pandas.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("clicked"))
+
+    def selected(self) -> Optional[pd.DataFrame]:
+        """
+        The points of the most recent box or lasso selection, once the gesture
+        ends, with the same columns as :meth:`clicked`.
+
+        Returns ``None`` until the user selects, and again after a deselect
+        (double-click); an empty frame for a selection that caught no points.
+        With ``dragmode="select"`` or ``"lasso"``, a plain click also resets
+        it (plotly.js reports the click as a zero-area selection). Not
+        rate-limited. Requires pandas. See :meth:`selected_rows` for rows of
+        your data.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("selected"))
+
+    def selecting(self) -> Optional[pd.DataFrame]:
+        """
+        Like :meth:`selected`, but updates while the user drags the selection.
+        Debounced (250 ms) by default; see the ``rate_policy`` and
+        ``rate_delay`` parameters.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("selecting"))
+
+    def brushed(self) -> Optional[Dict[str, Any]]:
+        """
+        The region of the most recent selection, once the gesture ends:
+        ``{"range": {"x": [x0, x1], "y": [y0, y1]}}`` for a box, or
+        ``{"lassoPoints": {"x": [...], "y": [...]}}`` for a lasso, in data
+        coordinates (as plotly.js reports them).
+
+        Returns ``None`` until the user selects, and again after a deselect,
+        or after a plain click with ``dragmode="select"``/``"lasso"`` (a
+        zero-area selection). Not rate-limited.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("brushed"))
+
+    def brushing(self) -> Optional[Dict[str, Any]]:
+        """
+        Like :meth:`brushed`, but updates while the user drags the selection.
+        Debounced (250 ms) by default; see the ``rate_policy`` and
+        ``rate_delay`` parameters.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("brushing"))
+
+    def relayout(self) -> Optional[Dict[str, Any]]:
+        """
+        The axis changes of the most recent zoom, pan, or autoscale, as
+        plotly.js reports them: keys like ``"xaxis.range[0]"`` and
+        ``"xaxis.autorange"`` (other relayout keys are dropped).
+
+        Returns ``None`` until the user changes an axis. Not rate-limited
+        (plotly.js reports once per gesture).
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("relayout"))
+
+    def selected_rows(
+        self, df: IntoDataFrameT, *, key: Optional[str] = None
+    ) -> IntoDataFrameT:
+        """
+        The rows of `df` that the user selected (see :meth:`selected`).
+
+        Plotly reports points of the plot, not rows of your data, so each point
+        must carry its row's identity as ``customdata``, which is matched to
+        `df`:
+
+        * pandas: ``px.scatter(df, ..., custom_data=[df.index])``. Matched to
+          `df`'s index labels, so this also works on a filtered or sorted `df`.
+        * Any frame (e.g., polars), by a key column: ``custom_data=["id"]``
+          with ``key="id"``. Matched to that column's values. Without an id
+          column, add one with ``df.with_row_index("id")``.
+
+        Returns an empty frame while nothing is selected, so it can be passed
+        straight to ``@render.data_frame``.
+        """
+        points = self._read_accessor("selected", raw=True)
+        return select_rows(cast(Optional[List[Point]], points), df, key)
 
     def _as_widget(self, value: PlotlyValueT) -> FigureWidget:
         fig, config = _split_config(value)
@@ -2296,10 +3686,20 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
     reactively read widget state with :func:`~shinywidgets.reactive_read`. With
     `pythreejs.OrbitControls` (or `TrackballControls`), the camera's ``position``,
     ``quaternion``, and ``zoom`` sync back to Python each time the user finishes
-    orbiting, so e.g. ``reactive_read(scene.widget.camera, "position")`` picks up
-    every interaction.
+    orbiting.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Note
+    ---
+    **Reacting to user interaction**: ``scene.camera()`` reads the live
+    camera after every orbit, much like ``input.my_slider()`` reads an input.
+    Call it in a reactive function (a ``@render.*`` function,
+    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
+    the camera changes. Until the first orbit it reports the Python-side
+    camera as constructed (pythreejs doesn't sync it at mount). For a single
+    trait, ``reactive_read(scene.widget.camera, "position")`` is the
+    per-trait alternative.
 
     Parameters
     ----------
@@ -2316,6 +3716,14 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
 
     Notes
     -----
@@ -2329,6 +3737,24 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
     * Rotate objects via ``mesh.quaternion``; pythreejs's ``rotation`` (Euler)
       updates don't render (an upstream pythreejs bug).
     """
+
+    _accessor_specs = (PYTHREEJS_CAMERA,)
+
+    def camera(self) -> Camera:
+        """
+        The scene's live `pythreejs.Camera` (a `PerspectiveCamera` by
+        default).
+
+        Readers are invalidated when its ``position``/``quaternion``/``zoom``
+        change (at the end of each orbit) or the camera is replaced. Reading
+        before the first render cancels silently (like ``req(False)``). Until
+        the first orbit, this is the Python-side camera as constructed
+        (pythreejs doesn't sync it at mount). The returned object is the same
+        mutable instance across reads -- copy what you keep. Not rate-limited
+        (the browser syncs once per orbit).
+        """
+        self._read_accessor("camera")
+        return cast(PythreejsRenderer, self._widget).camera
 
 
 class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
@@ -2427,6 +3853,8 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
         height: Optional[str] = None,
         fill: Optional[bool] = None,
         fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[float] = None,
     ):
         warnings.warn(
             "render_pydeck is deprecated: pydeck v0.9 removed its Jupyter widget, so "
@@ -2436,7 +3864,15 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
             DeprecationWarning,
             stacklevel=2,
         )
-        super().__init__(_fn, width=width, height=height, fill=fill, fillable=fillable)
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+        )
 
     def _as_widget(self, value: ValueT) -> DeckGLWidget:
         # A DeckGLWidget (which as_widget() passes through) can't render either
@@ -2796,18 +4232,53 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `quak.Widget` instance. Use `.widget` to reactively read the table's state with
-    :func:`~shinywidgets.reactive_read`: `reactive_read(table.widget, "sql")` is the
-    SQL query for the table's current sort and filter state, and
-    `table.widget.data()` runs it, returning a DuckDB relation of the matching rows.
-    The query is an empty string while the table starts up (so guard with
-    ``req(reactive_read(table.widget, "sql"))``), and it's read-only: setting it from
-    Python doesn't change the table.
+    `quak.Widget` instance. Use `.widget` to programmatically update the rendered
+    table in place (trait changes on the widget are synced to the browser), or to
+    reactively read widget state with :func:`~shinywidgets.reactive_read`.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
+    Note
+    ---
+    **Reacting to the table's state**: read the table's accessors in a
+    reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which re-runs whenever the user sorts or brushes,
+    much like ``input.my_slider()``:
+
+    * ``table.sql()``: the SQL query for the table's current sort and filter
+      state.
+    * ``table.data()``: the matching rows, as a lazy DuckDB relation.
+
+    They can't be read inside this output's own render function, which builds
+    a new table each time it runs. For anything beyond them, use
+    :func:`~shinywidgets.reactive_read` on ``table.widget``.
+
+    **Security**: like `render_embedding_atlas`, quak runs its queries by
+    sending SQL from the browser to the widget's DuckDB connection, so without
+    restrictions any visitor can send arbitrary SQL, including SQL that reads or
+    writes files on the server. The renderer locks down the widget's connection
+    before display (``SET enable_external_access = false``; ``SET
+    lock_configuration = true``); pass ``allow_unrestricted_connection=True`` to
+    opt out (e.g., a local, single-user app). A connection whose configuration
+    is already locked is left untouched (its owner took control of its
+    settings). If you build the `quak.Widget` yourself from a DuckDB connection
+    (``quak.Widget(con)``), the widget uses that connection directly, and
+    DuckDB's lockdown is permanent (it can't be undone) and database-wide, so
+    the first render locks it for every other use in the process: do any
+    server-side file reads on it before the first render, or pass
+    ``allow_unrestricted_connection=True`` for it.
+
+    Even with the lockdown, a visitor can still send expensive queries, which
+    block the Python process while they run.
+
     Parameters
     ----------
+    allow_unrestricted_connection
+        When ``True``, the widget's DuckDB connection is left as the render
+        function returned it, without the lockdown described above. The default
+        (``False``) is strongly recommended for deployed apps: an unrestricted
+        connection lets any visitor run arbitrary SQL with the server process's
+        permissions.
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -2821,22 +4292,107 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`sql` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
     """
+
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[ValueT]] = None,
+        *,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[float] = None,
+        allow_unrestricted_connection: bool = False,
+    ):
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+        )
+        self.allow_unrestricted_connection = allow_unrestricted_connection
+
+    _accessor_specs = QUAK_ACCESSORS
+
+    def sql(self) -> str:
+        """
+        The SQL query for the table's current sort and filter state (a `str`).
+
+        Brush quak's column histograms or sort a column and this query updates,
+        debounced (250 ms) by default -- see the ``rate_policy`` and
+        ``rate_delay`` parameters. While the table initializes the query is
+        briefly empty, in which case reading this cancels (like reading an
+        output that hasn't rendered yet), so no ``req()`` guard is needed. The
+        query is read-only: setting it from Python doesn't change the table.
+        """
+        return cast(str, self._read_accessor("sql"))
+
+    def data(self) -> "duckdb.DuckDBPyRelation":
+        """
+        The rows matching the current sort and filter, as a lazy DuckDB
+        relation (materialize it with ``.df()``, ``.pl()``, or
+        ``.aggregate(...)``).
+
+        Re-reads whenever :meth:`sql` changes and runs the query on each read,
+        so prefer calling it once inside a ``@reactive.calc`` and sharing the
+        result over calling it in several outputs. Runs the published query
+        that :meth:`sql` returns, so the two always describe the same state
+        (even inside the debounce window).
+        """
+        # Run the published (debounced) query, not the live `sql` trait:
+        # quak's own data() is `self._conn.query(self.sql)`, so this is the
+        # same query path with the published sql (`_conn` is
+        # upstream-internal).
+        sql = self.sql()  # take the dependency (and cancel until the query is ready)
+        return cast(QuakWidget, self._widget)._conn.query(sql)
 
     # DataFrames are a generic type that several renderers accept, so rather than
     # registering them in AS_WIDGET_MAP, coerce them here
     def _as_widget(self, value: ValueT) -> QuakWidget:
         if isinstance(value, Widget):
-            return super()._as_widget(value)
+            widget = cast(QuakWidget, super()._as_widget(value))
+        else:
+            try:
+                import quak  # pyright: ignore[reportMissingImports]
+            except ImportError:
+                raise ImportError(
+                    "Install the quak package to use render_quak with shinywidgets (pip install 'shinywidgets[quak]')."
+                )
 
-        try:
-            import quak  # pyright: ignore[reportMissingImports]
-        except ImportError:
-            raise ImportError(
-                "Install the quak package to use render_quak with shinywidgets (pip install 'shinywidgets[quak]')."
-            )
+            widget = quak.Widget(value)
 
-        return quak.Widget(value)
+        if not self.allow_unrestricted_connection:
+            restrict_quak_connection(widget)
+        return widget
+
+
+def restrict_quak_connection(widget: QuakWidget) -> None:
+    """
+    Lock down a `quak.Widget`'s DuckDB connection, so the SQL the browser sends
+    can't reach server files or change the connection's configuration.
+    """
+    con = getattr(widget, "_conn", None)
+    if con is None:
+        raise RuntimeError(
+            "Couldn't find the quak.Widget's DuckDB connection (`_conn`), so its "
+            "SQL access can't be restricted. If quak renamed this attribute, "
+            "please report it. To render anyway, pass "
+            "`allow_unrestricted_connection=True` to `@render_quak`."
+        )
+    restrict_duckdb_connection(con)
 
 
 class render_vizarr(render_widget_base[ValueT, VizarrViewer]):
@@ -2900,6 +4456,709 @@ class render_vizarr(render_widget_base[ValueT, VizarrViewer]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     """
+
+
+def _grid_widget_of(box: Widget) -> Any:
+    """
+    The MolGridWidget inside the composite Box that _as_widget() returns
+    (Box([grid.widget, html])).
+
+    Attach functions for render_mols2grid's accessors receive the composite
+    Box, so they locate the bridge widget structurally; an isinstance check
+    (rather than children[0]) fails loudly if the composite ever changes.
+    """
+    # local import: mols2grid is an optional extra
+    from mols2grid.widget import MolGridWidget
+
+    for child in getattr(box, "children", ()):
+        if isinstance(child, MolGridWidget):
+            return child
+    raise RuntimeError(
+        "render_mols2grid's composite widget does not hold a MolGridWidget; "
+        "the Box structure in _as_widget() must have changed."
+    )
+
+
+def _parse_trait_dict(raw: object) -> object:
+    # The selection/callback_kwargs traits are repr strings with unquoted
+    # keys, not JSON, so parse them with ast.literal_eval, as mols2grid itself
+    # does
+    return ast.literal_eval(str(raw))
+
+
+def _attach_selection(widget: Widget, emit: Emit) -> Callable[[], None]:
+    grid_widget = _grid_widget_of(widget)
+
+    def _on(change: Any) -> None:
+        emit(change["new"])
+
+    grid_widget.observe(_on, names=["selection"])
+    # A state accessor reads correctly from mount: publish the current value
+    # at attach, or selection() is None until the first checkbox toggle (and
+    # after every re-render, since the runtime re-attaches)
+    emit(grid_widget.selection)
+    return lambda: grid_widget.unobserve(_on, names=["selection"])
+
+
+def _attach_clicked(widget: Widget, emit: Emit) -> Callable[[], None]:
+    grid_widget = _grid_widget_of(widget)
+
+    def _on(change: Any) -> None:
+        emit(change["new"])
+
+    grid_widget.observe(_on, names=["callback_kwargs"])
+    # No seeding: an event is None until it happens
+    return lambda: grid_widget.unobserve(_on, names=["callback_kwargs"])
+
+
+def _noop_click_callback(data: object) -> None:
+    # Enables mols2grid's per-cell click target (and so callback_kwargs
+    # posts) when the user asks for clicks but supplies no callback of their
+    # own; the clicks are consumed reactively via .clicked() instead
+    pass
+
+
+class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
+    """
+    Reactively render a [mols2grid](https://mols2grid.readthedocs.io) molecule
+    grid as a Shiny output.
+
+    The decorated function may return either a `mols2grid.MolGrid`, or a
+    `pandas.DataFrame` with a SMILES column (``smiles_col``, ``"SMILES"`` by
+    default) or an RDKit molecule column (``mol_col``), which is coerced to a
+    `MolGrid` (requires ``pip install 'shinywidgets[mols2grid]'``). Don't return
+    the object returned by ``mols2grid.display()`` -- it's an IPython HTML
+    object, not a grid.
+
+    Extra keyword arguments are forwarded to mols2grid, split the way
+    ``mols2grid.display()`` splits them: the rendering options (``subset``,
+    ``tooltip``, ``sort_by``, ``n_items_per_page``, ``selection``,
+    ``custom_css``, ``transform``, ``callback``, ...) go to the grid's
+    rendering, and everything else goes to `MolGrid()` -- its constructor
+    options (``size``, ``useSVG``, ``prerender``, ``cache_selection``,
+    ``removeHs``, ``use_coords``, ``coordGen``, ``MolDrawOptions``, ``name``,
+    ``rename``), or, for any other name, an RDKit draw option
+    (``addStereoAnnotation=True``, ``addAtomIndices=True``, ...). The grid is
+    always displayed in an iframe (``use_iframe=True``), which keeps its
+    jQuery/Bootstrap globals out of your app's page.
+
+    The decorated function also gains three read-only attributes: `.value`, the
+    value most recently returned by the render function, `.widget`, the rendered
+    `ipywidgets.Box` holding the output, and `.grid`, the `MolGrid` instance
+    backing it -- plus a `.selection()` method for the current molecule
+    selection, and a `.clicked()` method for the most recently clicked
+    molecule's row data (with ``clicks=True``). The `MolGridWidget` that syncs
+    selection state is `.grid.widget`.
+
+    * **Selection (browser -> Python):** ``grid.selection()`` gives the selected
+      rows reactively, as a dict, e.g. ``{0: "CCO"}``. Row indices are
+      positional against the rows *as rendered*. ``grid.grid.get_selection()``
+      returns the selected rows as a DataFrame. (The underlying
+      ``grid.grid.widget.selection`` trait is a repr string with unquoted keys,
+      not JSON; if you read it directly with `reactive_read()`, parse it with
+      `ast.literal_eval`, as mols2grid itself does.)
+    * **Clicks (browser -> Python):** with ``clicks=True``, clicking a
+      molecule's image (a distinct gesture from the selection checkbox)
+      makes its row's data available reactively as ``grid.clicked()`` --
+      every displayed column plus ``mols2grid-id`` -- for click-to-inspect
+      panels and drill-downs. A click is an event, not state: ``clicked()``
+      is `None` until the first click and resets on re-render.
+    * **Filtering (Python -> browser):** ``grid.grid.filter(mask)`` (a boolean
+      mask, Series, or list) hides non-matching molecules in the already
+      rendered grid, without re-rendering. The mask is positional against the
+      rows *as rendered* (mols2grid matches it up by each row's
+      ``mols2grid-id``), so pass it in the DataFrame's row order -- a Series
+      taken from a filtered or reordered frame hides the wrong molecules. Call
+      it in response to user input: a filter issued while the grid is still
+      loading is recorded on the widget's ``filter_mask`` trait but not applied
+      by mols2grid's frontend (upstream limitation -- it applies the mask only
+      when the trait *changes*, with no initial application and no retry), so a
+      grid can't start out filtered: re-issue it once the grid is visible, and
+      filter the DataFrame in the render function for a grid that is filtered
+      from the start.
+    * **Grid name**: mols2grid keys selections in a process-global registry,
+      so grids coerced from a DataFrame get a name unique to the session and
+      the output (a stable ``"shiny-<session>-<id>"`` slug, where the id is
+      the output's *namespaced* id, so two module instances' ``grid`` outputs
+      don't collide). Since the generated name is stable across re-renders,
+      selections survive them (the renderer passes ``cache_selection=True``
+      unless you say otherwise; with an explicit ``name`` it defers to
+      mols2grid's default, since an explicit name may be deliberately
+      shared across grids). A `MolGrid` you construct keeps its own
+      ``name`` -- give it a unique one (a grid still named ``"default"``
+      is rejected with an error, since it collides across sessions and
+      across multiple grids on a page), and note that a `MolGrid` is
+      itself process-global state, so construct it inside the render
+      function, not at the top level of the app.
+    * **Network access**: the grid's JavaScript (list.js, jQuery, RDKit
+      MinimalLib, Bootstrap) loads from CDNs at render time, so the grid needs
+      an internet connection (it renders empty, without an error, when the CDNs
+      are unreachable). mols2grid hardcodes those URLs inside the iframe's
+      document, so they can't be served from the app's own assets; if you need
+      an offline or air-gapped deployment, please open an issue.
+    * **Sizing**: the grid sizes its own height to fit its contents (mols2grid's
+      ``fitIframe``), so it scrolls with the page rather than stretching to a
+      filling container; an explicit ``height`` on the output acts as a viewport
+      that clips the grid. Grid data is inlined into the iframe document
+      (roughly 0.5-1 KB per molecule, depending on how many columns are
+      shown), so grids in the tens of thousands of molecules can approach
+      Shiny's default 16 MiB websocket message limit (raise it with ``shiny
+      run --ws-max-size``). To bound the *grid* rather than
+      its container, pass ``iframe_height`` (e.g.
+      ``render_mols2grid(iframe_height="400px")``): it sets the iframe element's
+      height, which switches off mols2grid's auto-fit so the grid scrolls
+      inside the iframe. (``iframe_width``, ``iframe_allow``, and
+      ``iframe_sandbox`` are forwarded to the iframe the same way.)
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    smiles_col
+        The DataFrame column holding SMILES strings. Set to ``None`` when
+        using ``mol_col`` instead.
+    mol_col
+        The DataFrame column holding RDKit molecules (e.g., from
+        ``mols2grid.sdf_to_dataframe()``, which produces both). With
+        ``smiles_col=None``, a SMILES column named ``"SMILES"`` is generated
+        from the molecules (mols2grid itself mis-renders a ``None`` SMILES
+        column).
+    clicks
+        Whether clicking a molecule's image posts its row data for
+        `.clicked()` to read. Adds a click target to each cell. Ignored when
+        an explicit ``callback`` is passed (a Python one enables the same
+        target; note that with a JavaScript callback the browser runs it
+        instead of posting the row data, so `.clicked()` receives nothing).
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
+        ``reactive_read()`` unlimited.
+    rate_delay
+        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        limiting.
+    kwargs
+        Extra keyword arguments forwarded to mols2grid (split between
+        `MolGrid()` and its rendering, as described above). The split is by
+        name and by mols2grid's own signatures: a name that the grid's
+        rendering accepts (``subset``, ``tooltip``, ``sort_by``, ...) goes to
+        the rendering, and any other name goes to `MolGrid()` -- so
+        `render_mols2grid(addStereoAnnotation=True)` sets an RDKit draw option,
+        the same passthrough ``mols2grid.display()`` provides.
+
+    Examples
+    --------
+    ```python
+    import mols2grid
+    from shiny import App, reactive, render, ui
+    from shinywidgets import output_widget, render_mols2grid
+
+    mols = mols2grid.sdf_to_dataframe(mols2grid.datafiles.SOLUBILITY_SDF)
+
+    app_ui = ui.page_fluid(
+        output_widget("grid"),
+        ui.output_text("n_selected"),
+    )
+
+
+    def server(input, output, session):
+        @render_mols2grid(subset=["ID"], tooltip=["ID", "SOL"])
+        def grid():
+            return mols
+
+        @render.text
+        def n_selected():
+            return f"{len(grid.selection() or {})} molecule(s) selected"
+
+
+    app = App(app_ui, server)
+    ```
+    """
+
+    _accessor_specs: ClassVar[tuple[AccessorSpec, ...]] = (
+        AccessorSpec(
+            name="selection",
+            kind="state",
+            attach=_attach_selection,
+            payload=_parse_trait_dict,
+        ),
+        AccessorSpec(
+            name="clicked",
+            kind="event",
+            attach=_attach_clicked,
+            payload=_parse_trait_dict,
+            # Attach at render, not on first read: with no seeding (an event
+            # is None until it happens), a click that lands before the first
+            # read would otherwise never be emitted
+            eager=True,
+        ),
+    )
+
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[Mols2GridValueT]] = None,
+        *,
+        smiles_col: Optional[str] = "SMILES",
+        mol_col: Optional[str] = None,
+        clicks: bool = False,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[int] = None,
+        **kwargs: Any,
+    ):
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+        )
+        self.smiles_col = smiles_col
+        self.mol_col = mol_col
+        self.clicks = clicks
+        # The rendering options (subset, tooltip, sort_by, ...) belong to the
+        # grid's rendering, while everything else belongs to MolGrid(), whose
+        # remaining **kwargs are RDKit draw options -- split them the way
+        # mols2grid's own dispatch wrapper does, so that both
+        # render_mols2grid(subset=[...]) and
+        # render_mols2grid(addStereoAnnotation=True) just work
+        render_params = _mols2grid_render_kwargs()
+        self.render_kwargs: Dict[str, Any] = {
+            key: val for key, val in kwargs.items() if key in render_params
+        }
+        self.grid_kwargs: Dict[str, Any] = {
+            key: val for key, val in kwargs.items() if key not in render_params
+        }
+        self._grid: Optional[MolGrid] = None
+        # Grid names this renderer has already registered a selection-registry
+        # cleanup for (see _cleanup_selection_registry)
+        self._selection_cleanup_names: set[str] = set()
+        # Molecule-per-row fingerprint of the last DataFrame coerced to a grid,
+        # so a cached selection is only restored while it refers to the same
+        # molecules (see as_grid)
+        self._row_fingerprint: Optional[str] = None
+
+    # The session- and namespace-qualified output id, captured when the decorated
+    # function is registered (see __call__ and _set_output_metadata). `output_id`
+    # alone isn't unique: two module instances in one session can each have an
+    # output named "grid"
+    _grid_output_id: Optional[str] = None
+
+    def __call__(
+        self, _fn: ValueFn[Mols2GridValueT]
+    ) -> "render_mols2grid[Mols2GridValueT]":
+        super().__call__(_fn)
+        self._capture_grid_output_id(self.output_id)
+        return self
+
+    def _set_output_metadata(self, *, output_id: str) -> None:
+        super()._set_output_metadata(output_id=output_id)
+        # The id captured in __call__ is only the function's name: @output(id=...)
+        # assigns the final id afterwards, so capture it here too -- otherwise two
+        # functions with the same name under different explicit ids would share a
+        # grid name, cross-wiring their selections
+        self._capture_grid_output_id(output_id)
+
+    def _capture_grid_output_id(self, output_id: str) -> None:
+        # A module's server function runs with its SessionProxy in context, so
+        # that's where the namespace is known; rendering runs with the root
+        # session, so this has to be captured at registration, not in as_grid()
+        session = getattr(self, "_session", None) or get_current_session()
+        if session is not None and not session.is_stub_session():
+            self._grid_output_id = str(session.ns(output_id))
+
+    @property
+    def grid(self) -> Optional[MolGrid]:
+        """
+        The `mols2grid.MolGrid` most recently rendered (read-only). Read it
+        reactively like `.value`/`.widget`; use `.grid.widget` (the
+        `MolGridWidget`) for `reactive_read()`.
+        """
+        return self._get_reactive_obj(self._grid)
+
+    @grid.setter
+    def grid(self, grid: object):
+        raise RuntimeError(
+            "The `grid` attribute of a @render_mols2grid function is read only."
+        )
+
+    def selection(self) -> Optional[Dict[int, str]]:
+        """
+        The grid's current molecule selection, as ``{row_index: SMILES}``.
+
+        Call it in a reactive context (a render function, ``@reactive.Calc``,
+        or ``@reactive.Effect``) to be invalidated when the selection changes
+        in the browser; outside a reactive context, it reads the current value
+        without taking a dependency. Row indices are positional against the
+        rows *as rendered* -- after the data changes, the same index can refer
+        to a different molecule. For the selected rows as a DataFrame, use
+        ``.grid.get_selection()``.
+        """
+        return cast(Optional[Dict[int, str]], self._read_accessor("selection"))
+
+    def clicked(self) -> Optional[Dict[str, Any]]:
+        """
+        The row data of the molecule image most recently clicked since the
+        last render, or `None` if no click has happened yet (requires
+        ``clicks=True`` or a Python ``callback``).
+
+        Unlike `.selection()` (the checkbox set), a click is an event: it
+        carries the clicked row's data (every displayed column, plus
+        ``mols2grid-id``) and resets to `None` on re-render. All values are
+        strings except ``mols2grid-id`` (an int), and clicking the same
+        molecule twice in a row does not re-fire (a mols2grid limitation:
+        the trait only changes when the payload does).
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("clicked"))
+
+    async def _render(self) -> Jsonifiable | None:
+        # Reset before rendering, so `.grid` mirrors `.value`/`.widget` (readers
+        # are invalidated by the base render before a new grid is set)
+        self._grid = None
+        return await super()._render()
+
+    def as_grid(self, value: Mols2GridValueT) -> MolGrid:
+        try:
+            from mols2grid import MolGrid
+        except ImportError:
+            raise ImportError(
+                "Install the mols2grid package to use render_mols2grid with shinywidgets (pip install 'shinywidgets[mols2grid]')."
+            )
+
+        if isinstance(value, MolGrid):
+            # A user-supplied MolGrid keeps its own name; mols2grid's default
+            # name lives in a process-global selection registry, so it collides
+            # across sessions (and across multiple grids on one page).
+            # mols2grid 2.2.0 private trait: the 3.0 refactor
+            # (https://github.com/cbouy/mols2grid/pull/71) renames `grid_id`
+            # to `name`
+            if value.widget.grid_id == "default":
+                raise ValueError(
+                    "This mols2grid.MolGrid uses the default grid name ('default'), "
+                    "which mols2grid stores in a process-global selection registry: "
+                    "other sessions (and other grids on the same page) using the "
+                    "same name would overwrite its selection, and this grid would "
+                    "read theirs. Either construct it with a name that is unique "
+                    "per session and output (mols2grid.MolGrid(df, name=...)), or "
+                    "return the DataFrame instead and pass any constructor options "
+                    "to the decorator (e.g. @render_mols2grid(size=(150, 100))) -- "
+                    "the decorator gives the grid a collision-free generated name "
+                    "unless you override it with an explicit `name`."
+                )
+            # local imports: _shinywidgets imports this module
+            from ._shinywidgets import (
+                foreign_or_closed_widget,
+                is_process_global,
+                ownership_error,
+            )
+
+            # The base renderer rejects foreign/closed widgets, but only after
+            # _as_widget() returns -- and the cleanup registration below is a
+            # side effect on the owning session's state, so validate ownership
+            # first: a rejected render must not touch another session's registry
+            session = get_current_session()
+            if session is not None and not session.is_stub_session():
+                bad = foreign_or_closed_widget(value.widget, session.root_scope())
+                if bad is not None:
+                    raise ownership_error(bad)
+            # A supplied grid's selection entry lives in the same process-global
+            # registry, so prune it at session end too -- unless the grid is
+            # process-global itself (deliberately shared across sessions), where
+            # the one entry is bounded and still in use
+            if not is_process_global(value.widget):
+                self._cleanup_selection_registry(value.widget.grid_id)
+            return value
+        if not is_pandas_dataframe(value):
+            raise TypeError(
+                "A @render_mols2grid render function should return a "
+                f"mols2grid.MolGrid or a pandas.DataFrame, not an object of type "
+                f"'{type(value).__name__}'. (Note that mols2grid.display() returns "
+                "an IPython HTML object, which can't be rendered; return the "
+                "MolGrid or DataFrame instead.)"
+            )
+        # A name passed to the decorator overrides the default, which is
+        # unique per session *and* output: two grids in the same session share
+        # the window, so a shared name would cross-wire their selections
+        # (mols2grid keys models and lists by name on window)
+        # (_grid_output_id/output_id are only set once the renderer decorates a
+        # function)
+        output_id = self._grid_output_id or getattr(self, "output_id", "grid")
+        raw_name = f"{grid_name()}-{output_id}"
+        name = _MOLS2GRID_NAME_SLUG.sub("-", raw_name)
+        if name != raw_name:
+            # Sanitization was lossy: distinct ids can slug to the same name
+            # (e.g. café and cafè both become caf-), which would cross-wire
+            # their selections, so disambiguate with a stable digest
+            digest = hashlib.sha256(raw_name.encode()).hexdigest()[:8]
+            name = f"{name}-{digest}"
+        grid_kwargs = {"name": name, **self.grid_kwargs}
+        if "name" not in self.grid_kwargs:
+            # The generated name is stable across re-renders of this output,
+            # and mols2grid restores a same-named grid's selection only with
+            # cache_selection=True (its default clears it), so selections
+            # survive re-renders. Explicit names may be shared across grids,
+            # so keep mols2grid's default there.
+            grid_kwargs.setdefault("cache_selection", True)
+        # An explicit `name` replaces the generated one above, so register the
+        # selection-registry cleanup under the effective name -- otherwise the
+        # session-end callback would pop the wrong entry (or none), retaining the
+        # selection indefinitely
+        self._cleanup_selection_registry(grid_kwargs["name"])
+        smiles_col = self.smiles_col
+        if smiles_col is None:
+            if self.mol_col is None:
+                raise ValueError(
+                    "One of `smiles_col` or `mol_col` must be set for "
+                    "@render_mols2grid."
+                )
+            # mols2grid 2.2.0 creates a column named NaN (which its rendering
+            # then chokes on) when smiles_col is None, so name the SMILES it
+            # generates from the molecules instead
+            smiles_col = "SMILES"
+        if grid_kwargs.get("cache_selection"):
+            # A cached selection is positional ({0: "CCO"} refers to a row, not
+            # a molecule), so restoring it is only sound while the
+            # row-to-molecule mapping is unchanged. Fingerprint the columns
+            # MolGrid will actually see: it applies a `rename` option in its
+            # constructor, so a molecule column that only gets its expected
+            # name via rename otherwise isn't found, leaving the fingerprint
+            # constant while molecules change
+            rename = grid_kwargs.get("rename")
+            fp_value = value.rename(columns=rename) if rename else value
+            fingerprint = _mols2grid_row_fingerprint(fp_value, smiles_col, self.mol_col)
+            if (
+                self._row_fingerprint is not None
+                and fingerprint != self._row_fingerprint
+            ):
+                grid_kwargs["cache_selection"] = False
+            self._row_fingerprint = fingerprint
+        return MolGrid(
+            value,
+            smiles_col=smiles_col,
+            mol_col=self.mol_col,
+            **grid_kwargs,
+        )
+
+    def _cleanup_selection_registry(self, name: str) -> None:
+        """
+        Drop this grid's entry from mols2grid's process-global selection registry when
+        the session ends.
+
+        mols2grid keys selections in a module-level dict that it never prunes (and its
+        entries hold the selected rows), so a long-running server would otherwise keep
+        one selection dict per session and grid output, forever. The name is unique to
+        this session and output, so no other session can be using the entry.
+        """
+        if name in self._selection_cleanup_names:
+            return
+        self._selection_cleanup_names.add(name)
+        session = get_current_session()
+        if session is None or session.is_stub_session():
+            return
+        # Private module path in mols2grid 2.2.0: the registry survives the 3.0
+        # refactor (https://github.com/cbouy/mols2grid/pull/71), where
+        # `register._init_grid` becomes `register.add_grid`
+        from mols2grid.select import register
+
+        session.on_ended(partial(register.SELECTIONS.pop, name, None))
+
+    def _as_widget(self, value: Mols2GridValueT) -> Widget:
+        grid = self.as_grid(value)
+        self._grid = grid
+
+        render_kwargs = dict(self.render_kwargs)
+        if self.clicks and not render_kwargs.get("callback"):
+            # mols2grid only renders the per-cell click target (and so only
+            # posts callback_kwargs) when a Python callback is set; supply a
+            # no-op so .clicked() has a channel without an imperative
+            # callback. Any explicit callback is preserved: a Python one
+            # already enables the same channel, and a JavaScript one (a raw
+            # JS string, or a _JSCallback from mols2grid.callbacks) is
+            # non-callable, so a `callable()` guard would clobber it
+            render_kwargs["callback"] = _noop_click_callback
+        if not render_kwargs.pop("use_iframe", True):
+            warnings.warn(
+                "@render_mols2grid always renders the grid in an iframe "
+                "(use_iframe=True), so the `use_iframe` argument is ignored.",
+                stacklevel=3,
+            )
+
+        # MolGridWidget's own frontend is a 0x0 element that only bridges
+        # selection/filter state; the grid itself is a separate HTML document.
+        # mols2grid's marimo integration displays the two stacked, and an
+        # ipywidgets Box does the same here. display() (rather than render())
+        # escapes the document for the iframe's srcdoc attribute.
+        # mols2grid 2.2.0 internals: https://github.com/cbouy/mols2grid/pull/71
+        # ignores `use_iframe` and makes the widget render the grid itself, so
+        # render `grid.widget` directly instead of this stacking then.
+        if callable(render_kwargs.get("callback")):
+            _unobserve_mols2grid_callbacks(grid.widget)
+        # mols2grid 2.2.0 private attr: display() renders checkbox state from
+        # the constructor-time _cached_selection, but a supplied grid may have
+        # been displayed before, with a newer selection on its widget -- sync
+        # it, or the re-rendered document shows stale checkboxes while the
+        # widget trait says otherwise (parsed like mols2grid's own handler)
+        grid._cached_selection = ast.literal_eval(grid.widget.selection)
+        iframe = grid.display(use_iframe=True, **render_kwargs)
+        # The inner width hint is load-bearing: ipywidgets renders HTML as an
+        # inline-flex container, so without it the iframe collapses to its
+        # 300px replaced-element default instead of filling the output
+        html = HTML(str(iframe.data), layout=Layout(width="100%"))
+        return Box(
+            [grid.widget, html],
+            layout=Layout(width="100%", height="auto"),
+        )
+
+
+# What MolGrid's rendering accepts, per mols2grid 2.2.0 (the fallback for
+# _mols2grid_render_kwargs() when mols2grid isn't importable yet, e.g. because
+# the app is being rendered before the extra is installed)
+_MOLS2GRID_RENDER_KWARGS_FALLBACK = frozenset(
+    {
+        "template",
+        "subset",
+        "tooltip",
+        "tooltip_fmt",
+        "tooltip_placement",
+        "transform",
+        "sort_by",
+        "use_iframe",
+        "truncate",
+        "n_items_per_page",
+        "selection",
+        "substruct_highlight",
+        "single_highlight",
+        "border",
+        "gap",
+        "pad",
+        "fontsize",
+        "fontfamily",
+        "textalign",
+        "background_color",
+        "hover_color",
+        "custom_css",
+        "style",
+        "custom_header",
+        "callback",
+        "iframe_width",
+        "iframe_height",
+        "iframe_allow",
+        "iframe_sandbox",
+    }
+)
+
+
+@lru_cache(maxsize=1)
+def _mols2grid_render_kwargs() -> frozenset[str]:
+    """
+    The kwargs that belong to a `MolGrid`'s *rendering*, rather than to `MolGrid()`
+    itself.
+
+    Derived from mols2grid's own signatures (rather than a hardcoded list, which a
+    mols2grid upgrade would silently invalidate) so that everything else can be handed
+    to `MolGrid()`, which is where its constructor options -- and, via its remaining
+    ``**kwargs``, its RDKit draw options -- belong.
+    """
+    try:
+        from mols2grid.molgrid import MolGrid
+    except ImportError:
+        return _MOLS2GRID_RENDER_KWARGS_FALLBACK
+
+    # display() pops its own iframe options before forwarding to render(), which pops
+    # `template` before forwarding to the matching to_<template>() method
+    names: set[str] = {"template"}
+    for member in ("display", "render", "to_interactive", "to_static"):
+        fn = getattr(MolGrid, member, None)
+        if fn is not None:
+            names.update(set(inspect.signature(fn).parameters) - {"self", "kwargs"})
+    return frozenset(names)
+
+
+_MOLS2GRID_NAME_SLUG = re.compile(r"[^0-9a-zA-Z_-]+")
+
+
+def _mols2grid_row_fingerprint(
+    df: "pd.DataFrame", smiles_col: str, mol_col: Optional[str]
+) -> str:
+    """
+    A digest of the molecule identity of each row of `df`, in row order.
+
+    mols2grid selections are positional (``{0: "CCO"}`` refers to a row, not a
+    molecule), so a cached selection stays valid only while the
+    row-to-molecule mapping does.
+    """
+    if smiles_col in df.columns:
+        col = df[smiles_col]
+    elif mol_col is not None and mol_col in df.columns:
+        # smiles_col=None: mols2grid generates the SMILES from the molecules,
+        # so the molecules are the identity
+        from rdkit import Chem
+
+        # Missing molecules (None/NaN/pd.NA -- mols2grid drops them before
+        # drawing) all fingerprint the same; only actual mols get hashed
+        col = df[mol_col].map(
+            lambda m: Chem.MolToSmiles(m) if isinstance(m, Chem.Mol) else ""
+        )
+    else:
+        # Nothing to fingerprint (mols2grid will raise on the missing column);
+        # an empty digest at least stays stable per renderer
+        return ""
+    # SMILES don't contain null bytes, so the joined values are unambiguous
+    return hashlib.sha256("\x00".join(map(str, col)).encode()).hexdigest()
+
+
+def _unobserve_mols2grid_callbacks(widget: Widget) -> None:
+    """
+    Remove the callback observers mols2grid's display() installed on `widget`.
+
+    display() observes ``callback_kwargs`` with a fresh
+    ``partial(callback_handler, callback)`` every time and never unobserves,
+    so re-displaying a supplied grid would invoke the callback once per past
+    display. Remove only those partials -- not application observers of the
+    same trait (``unobserve_all()`` would also drop ``widget.observe()``
+    subscriptions the app added itself).
+    """
+    # unobserve() needs the exact partial object, so read traitlets' notifier
+    # registry (private, but stable across traitlets 5). mols2grid 2.2.0
+    # private function: callback_handler is what to_interactive() partials in
+    from mols2grid.utils import callback_handler
+
+    notifiers = widget._trait_notifiers.get("callback_kwargs", {})  # pyright: ignore[reportPrivateUsage]
+    for handlers in notifiers.values():
+        for handler in list(handlers):
+            if isinstance(handler, partial) and handler.func is callback_handler:
+                widget.unobserve(handler, names=["callback_kwargs"])
+
+
+def grid_name() -> str:
+    """
+    A stable, session-unique mols2grid grid name.
+
+    mols2grid keys selections by a process-global registry, so two sessions
+    using the default name (``"default"``) clobber each other's selection.
+    Keying on the Shiny session keeps sessions isolated while staying stable
+    across re-renders, so that registry doesn't grow without bound.
+    """
+    session = get_current_session()
+    raw = "shiny" if session is None else f"shiny-{session.id}"
+    return _MOLS2GRID_NAME_SLUG.sub("-", raw).strip("-")
 
 
 def dataframe_to_keplergl(df: pd.DataFrame) -> KeplerGl:
@@ -2975,26 +5234,37 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
     Python-side trait updates (e.g., ``widget._width = 800``) also stream to
     the browser.
 
-    To react to viewer interactions (play/pause, timeline scrubbing, selection
-    changes), register a callback with `rerun.notebook.Viewer.on_event()` and
-    set a `shiny.reactive.Value` inside it. These interactions reach Python as
-    one-off messages, not as synced widget state, so
-    :func:`~shinywidgets.reactive_read` can't see them -- it only reads synced
-    traits. rerun keeps high-frequency interactions off the synced-trait
-    channel by design (syncing every timeline tick would be expensive), and the
-    explicit callback lets you choose which events are worth reacting to:
+    Note
+    ---
+    **Reacting to viewer interactions**: ``viewer.selection()`` reads the
+    viewer's current selection, much like ``input.my_slider()`` reads an
+    input. Call it in a reactive function (a ``@render.*`` function,
+    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
+    the selection changes. It returns ``None`` until the viewer first reports
+    (typically its empty load-time selection), and resets to ``None`` on
+    re-render.
+
+    For play/pause, timeline scrubbing, and other interactions (which have no
+    accessor), register a callback with `rerun.notebook.Viewer.on_event()`
+    and set a `shiny.reactive.Value` inside it. These interactions reach
+    Python as one-off messages, not as synced widget state, so
+    :func:`~shinywidgets.reactive_read` can't see them -- it only reads
+    synced traits. rerun keeps high-frequency interactions off the
+    synced-trait channel by design (syncing every timeline tick would be
+    expensive), and the explicit callback lets you choose which events are
+    worth reacting to:
 
     ```python
     from shiny import reactive
 
-    selection = reactive.Value(None)
+    playing = reactive.Value(False)
 
 
     @render_rerun
     def viewer():
         rec = rr.RecordingStream(application_id="my_app")
         v = rr.notebook.Viewer(recording=rec)
-        v.on_event(lambda evt: selection.set(evt))
+        v.on_event(lambda evt: playing.set(evt.type == "play"))
         return v
     ```
 
@@ -3029,6 +5299,14 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
 
     Examples
     --------
@@ -3047,6 +5325,295 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
         return Viewer(width="auto", height="auto", recording=rec)
     ```
     """
+
+    _accessor_specs = (SELECTION,)
+
+    def selection(self) -> Optional[SelectionChangeEvent]:
+        """
+        The viewer's most recently reported selection, as a
+        `rerun.notebook.SelectionChangeEvent`. Its ``.items`` is a list of
+        `EntitySelectionItem` (with the selected ``entity_path``),
+        `ViewSelectionItem`, and `ContainerSelectionItem` objects; an empty
+        list means nothing is selected.
+
+        Returns ``None`` until the viewer first reports -- typically its
+        empty selection at load, so ``selection()`` soon reflects "nothing
+        selected" rather than staying ``None`` -- and resets to ``None`` on
+        re-render, so use ``req(viewer.selection())`` to wait for a report.
+        Selecting the same thing twice doesn't fire twice. Not rate-limited.
+        """
+        return cast(Optional["SelectionChangeEvent"], self._read_accessor("selection"))
+
+
+class render_pyvista(render_widget_base[PyvistaValueT, PyvistaHtmlWidget]):
+    """
+    Reactively render a [pyvista](https://pyvista.org) 3D plot as a Shiny output.
+
+    The decorated function may return either a `pyvista.Plotter` (which is
+    coerced to an ipywidget via pyvista's ``jupyter_backend="html"`` export;
+    requires ``pip install 'shinywidgets[pyvista]'``) or the exported
+    `trame_pyvista.jupyter.EmbeddableWidget` itself. In a filling layout, the
+    view fills its container unless an explicit ``height`` is given. On a
+    headless server, set ``pyvista.OFF_SCREEN = True`` before plotting.
+
+    Return the `Plotter` itself -- do not call `Plotter.show()`. Outside
+    Jupyter, `show()` ignores ``jupyter_backend``, returns `None`, and the
+    output renders nothing. If you pre-build the widget (e.g., via
+    ``trame_pyvista.jupyter.show_trame(pl, mode="html")``), pass
+    ``width="100%", height="100%"`` or it keeps the plotter's pixel
+    ``window_size`` instead of filling the container.
+
+    The export is a self-contained, client-side vtk.js view: camera
+    interaction (rotate/zoom/pan) happens entirely in the browser, and no
+    widget state is synced back to Python, so there is nothing to read with
+    :func:`~shinywidgets.reactive_read`. The vtk.js runtime ships once per
+    session (~400 KB, shared by every pyvista output in the app); each render
+    then embeds only the exported scene in the widget state (tens of KB for
+    a typical mesh, growing with scene size), so input-driven re-renders are
+    cheap. Still, very large scenes (millions of cells) produce multi-MB
+    exports, so prefer fewer, larger re-renders for those.
+    For fully server-driven interactivity (e.g., picking, server-side
+    rendering), use pyvista's ``jupyter_backend="trame"`` with a trame server
+    embedded via ``shiny.ui.tags.iframe`` instead (shinywidgets can't host
+    trame's websocket server).
+
+    The decorated function also gains two read-only attributes: `.value`, the
+    value most recently returned by the render function, and `.widget`, the
+    rendered `EmbeddableWidget` instance. Note that, unlike most other
+    ``render_*`` decorators, the widget has no live connection to the plotter,
+    so the scene can't be updated in place via `.widget` -- re-render instead.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    import pyvista as pv
+    from shiny import App, ui
+    from shinywidgets import output_widget, render_pyvista
+
+    pv.OFF_SCREEN = True
+
+    app_ui = ui.page_fillable(output_widget("plot"))
+
+
+    def server(input, output, session):
+        @render_pyvista
+        def plot():
+            pl = pv.Plotter()
+            pl.add_mesh(pv.Sphere(), show_edges=True)
+            return pl
+
+
+    app = App(app_ui, server)
+    ```
+    """
+
+
+class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
+    """
+    Reactively render a [reactable](https://machow.github.io/reactable-py/) table
+    (the Python port of R's [reactable](https://glin.github.io/reactable/)) as a
+    Shiny output.
+
+    reactable builds interactive data tables -- sorting, per-column and global
+    filtering, searching, pagination, row selection, row grouping/aggregation,
+    expandable detail rows, custom cell renderers (Python or JavaScript), and
+    themes -- all computed client-side, so interacting with the table never
+    round-trips to the server.
+
+    The decorated function may return either a `reactable.Reactable` (the usual
+    choice; it is coerced to its widget) or a `reactable.widgets.ReactableWidget`.
+    Both require ``pip install 'shinywidgets[reactable]'``.
+
+    The decorated function also gains two read-only attributes: `.value`, the
+    value most recently returned by the render function, and `.widget`, the
+    rendered `ReactableWidget` instance.
+
+    To update the table when the data changes, either re-render it (i.e.,
+    have the render function read the relevant inputs/reactives) or send new
+    data through ``.widget.props`` -- a props update preserves the user's
+    sort, filter, page, and selection. Note the dict is a trait, so replace
+    it (mutating ``.widget.props["data"]`` in place never syncs), for
+    example:
+
+    ```python
+    @reactive.effect
+    def _():
+        tbl.widget.props = {**tbl.widget.props, "data": df().to_dict(orient="records")}
+    ```
+
+    Other props update the same way:
+
+    ```python
+    @reactive.effect
+    def _():
+        tbl.widget.props = {**tbl.widget.props, "defaultPageSize": input.page_size()}
+    ```
+
+    Note
+    ---
+    **Table state**: to respond to user interaction, read the output's
+    accessors in a reactive context, e.g. ``tbl.selected_rows()`` or
+    ``tbl.sorted()`` (see the methods below). Each silently cancels (like
+    ``req(False)``) until the browser has reported the table's state, shortly
+    after the table first renders.
+
+    Row *clicks* aren't part of the reported state, but reactable's own
+    ``on_click=JS(...)`` prop can forward them as an ordinary Shiny input:
+
+    ```python
+    Reactable(
+        df,
+        on_click=JS(
+            "function(rowInfo, colInfo, state) {"
+            "  Shiny.setInputValue('row_clicked', {row: rowInfo.index, col: colInfo.id}, {priority: 'event'});"
+            "}"
+        ),
+    )
+    ```
+
+    Note
+    ---
+    The accessors address the table through its ``element_id`` prop, so
+    ``render_reactable`` defaults it to a unique value when unset (a
+    user-provided ``element_id`` is respected, and must be unique per page,
+    as in R).
+
+    In a filling layout, the table fills its container. Setting reactable's own
+    ``height=`` prop opts out of filling (akin to an explicit ipywidgets
+    ``Layout(height=...)``). Missing values (NaN) in the data render as empty
+    cells.
+
+    Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
+
+    Parameters
+    ----------
+    width
+        A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
+    height
+        A CSS length unit for the output's height. When ``None`` (the default), the
+        output is designed to fill the height of its parent container (see ``fill``
+        and ``fillable``).
+    fill
+        Whether the output should grow or shrink to fit its parent container. When
+        ``None`` (the default), this is ``True`` if ``height`` is not specified.
+    fillable
+        Whether the output container should fill available space (scrolling its
+        contents on overflow). When ``None`` (the default), this is ``True`` if
+        ``height`` is not specified.
+
+    Examples
+    --------
+    ```python
+    from reactable import ColFormat, Column, Reactable
+    from reactable.data import cars_93
+    from shiny.express import ui
+    from shinywidgets import render_reactable
+
+
+    @render_reactable
+    def tbl():
+        return Reactable(
+            cars_93[:, ["manufacturer", "model", "price"]],
+            columns={"price": Column(format=ColFormat(prefix="$"))},
+            filterable=True,
+            searchable=True,
+        )
+    ```
+    """
+
+    _accessor_specs = REACTABLE_ACCESSORS
+
+    def selected_rows(self) -> List[int]:
+        """
+        The currently selected rows, as 0-based positions in the table's data.
+
+        Positions are in *data* coordinates (like ``df.iloc``), not display
+        coordinates: sorting, filtering, or paging the table doesn't change
+        them. Empty when nothing is selected. Requires the table's
+        ``selection=`` prop to be set. Silently cancels (``req(False)``) until
+        the browser first reports the table's state, shortly after render. Not
+        rate-limited.
+        """
+        return cast("List[int]", self._read_accessor("selected_rows"))
+
+    def page(self) -> int:
+        """
+        The current page, 0-based (reactable's own convention; add 1 to match
+        the page numbers the table displays).
+
+        Silently cancels (``req(False)``) until the browser first reports the
+        table's state, shortly after render. Not rate-limited.
+        """
+        return cast("int", self._read_accessor("page"))
+
+    def sorted(self) -> List[Dict[str, Any]]:
+        """
+        The current sort, as a list of ``{"id": column, "desc": bool}``
+        entries (one per sorted column, in priority order; empty when unsorted).
+
+        Silently cancels (``req(False)``) until the browser first reports the
+        table's state, shortly after render. Not rate-limited.
+        """
+        return cast("List[Dict[str, Any]]", self._read_accessor("sorted"))
+
+    def filtered(self) -> List[Dict[str, Any]]:
+        """
+        The current per-column filters, as a list of ``{"id": column,
+        "value": filter}`` entries (empty when unfiltered).
+
+        Silently cancels (``req(False)``) until the browser first reports the
+        table's state, shortly after render. Debounced (250 ms) by default,
+        since filters update per keystroke; see the ``rate_policy`` and
+        ``rate_delay`` parameters.
+        """
+        return cast("List[Dict[str, Any]]", self._read_accessor("filtered"))
+
+    def search(self) -> str:
+        """
+        The current global search string (``""`` when the search box is
+        empty).
+
+        Silently cancels (``req(False)``) until the browser first reports the
+        table's state, shortly after render. Debounced (250 ms) by default,
+        since search updates per keystroke; see the ``rate_policy`` and
+        ``rate_delay`` parameters.
+        """
+        return cast("str", self._read_accessor("search"))
+
+    def _as_widget(self, value: ReactableValueT) -> ReactableWidget:
+        # Both accepted value types route through as_widget() (a ReactableWidget
+        # is returned as-is; a Reactable goes to as_widget_reactable()). The
+        # reactable stylesheet rides along with every widget open (see
+        # widget_open_extras()), not auto_output_ui(), so it's also present in
+        # core-UI apps that write output_widget() themselves.
+        widget = cast("ReactableWidget", super()._as_widget(value))
+        # The state bridge addresses tables by their elementId prop (see
+        # shinywidgets/_reactable.py); default it to a unique value when unset
+        # so the accessors work without the user setting one.
+        props = dict(widget.props or {})
+        if not props.get("elementId"):
+            comm_id = getattr(widget.comm, "comm_id", None)
+            props["elementId"] = f"shinywidgets-reactable-{comm_id or id(widget)}"
+            widget.props = props
+        return widget
 
 
 class render_niivue(render_widget_base[ValueT, NiiVue]):
@@ -3075,17 +5642,25 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
 
     Note
     ---
+    **Reacting to user interaction**: ``nv.location()`` reads the crosshair
+    position, much like ``input.my_slider()`` reads an input. Call it in a
+    reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which then re-runs whenever the crosshair moves.
+    It returns ``None`` until the first crosshair move (the position is not
+    sent on load), and resets to ``None`` on re-render. Debounced (250 ms)
+    by default; see ``rate_policy`` and ``rate_delay``. For every event
+    un-debounced, register a callback with ``@nv.on_location_change`` inside
+    the render function and have it set a session-scoped `reactive.Value`.
+
     **Reading the crosshair**: the crosshair position does *not* sync back
     as a trait (``reactive_read(nv.widget.scene, "crosshair_pos")`` never
-    updates). Instead, register a callback with
-    ``@nv.on_location_change`` inside the render function and have it set a
-    session-scoped `reactive.Value` -- the payload includes fractional and
-    millimeter coordinates and the voxel intensities under the crosshair.
-    (Beware: exceptions raised inside these callbacks are swallowed by
-    ipywidgets, so a failing callback just looks like "no updates".)
-    Similarly, ``nv.frac2mm()``/``nv.mm2frac()`` don't work on Shiny (the
-    coordinate matrices exist only in the browser); use the millimeter
-    coordinates from the `on_location_change` payload instead.
+    updates); ``location()`` (above) and the `on_location_change` callback
+    are the ways to read it. (Beware: exceptions raised inside
+    `on_location_change` callbacks are swallowed by ipywidgets, so a failing
+    callback just looks like "no updates".) Similarly,
+    ``nv.frac2mm()``/``nv.mm2frac()`` don't work on Shiny (the coordinate
+    matrices exist only in the browser); use the millimeter coordinates from
+    the ``location()`` payload instead.
 
     **Data size**: each render sends the viewer's JavaScript bundle (~5 MB)
     plus every volume (base64-encoded) to the browser, and the browser
@@ -3111,6 +5686,14 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :meth:`location` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
 
     Examples
     --------
@@ -3149,3 +5732,21 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
     app = App(app_ui, server)
     ```
     """
+
+    _accessor_specs = (LOCATION,)
+
+    def location(self) -> Optional[Dict[str, Any]]:
+        """
+        The most recent crosshair position, as a dict with keys
+        ``ax_cor_sag`` (the view index), ``frac`` (fractional volume
+        coordinates), ``mm`` (millimeter coordinates), ``vox`` (voxel
+        coordinates), ``values`` (voxel intensities under the crosshair, one
+        per volume), ``string`` (a formatted summary), and ``xy`` (canvas
+        coordinates).
+
+        Returns ``None`` until the first crosshair move (the position is not
+        sent on load), and resets to ``None`` on re-render, so use
+        ``req(nv.location())`` to wait for a report. Debounced (250 ms) by
+        default; see the ``rate_policy`` and ``rate_delay`` parameters.
+        """
+        return cast(Optional[Dict[str, Any]], self._read_accessor("location"))

@@ -44,10 +44,12 @@ from shiny.reactive._core import (
 )
 from shiny.session import get_current_session, require_active_session, session_context
 
+from ._accessors import rate_policy_for
 from ._as_widget import as_widget, pydeck_has_widget
 from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import (
+    COMM_OPEN_CALLBACKS,
     BufferType,
     DataType,
     OrphanedShinyComm,
@@ -55,11 +57,13 @@ from ._comm import (
     ShinyComm,
     ShinyCommManager,
     is_sessionless,
+    run_comm_open_callbacks,
 )
 from ._dependencies import (
     custom_elements_dependency,
     geolibre_app_mount,
     localtileserver_layer_proxy,
+    reactable_dependency,
     require_dependencies,
     widget_pkg,
 )
@@ -244,6 +248,7 @@ def init_shiny_widget(w: Widget):
         # Closed before it was opened (explicitly, or because its render was
         # invalidated): leave it closed rather than reopening it.
         if w is None or WIDGET_INSTANCE_MAP.get(id) is not w:
+            COMM_OPEN_CALLBACKS.pop(id, None)
             return
 
         if is_ipyreact_registry_widget(w):
@@ -254,6 +259,7 @@ def init_shiny_widget(w: Widget):
         # ShinyComm here would cut that session off.
         if isinstance(w.comm, SharedShinyComm):
             open_shared_in(w, session)
+            run_comm_open_callbacks(id)
             return
 
         # A shared widget's lazily created defaults (e.g. its Layout) are shared too
@@ -297,6 +303,7 @@ def init_shiny_widget(w: Widget):
         )
 
         flush_ipycanvas_manager(w)
+        run_comm_open_callbacks(id)
 
     # If the widget initialized in a reactive _output_ context, then cleanup the widget
     # when the context gets invalidated. Use the render output's Context (captured by
@@ -629,6 +636,8 @@ def widget_open_extras(
         # itables' bundle replaces the global `$` when its module is evaluated (see
         # protectPageJQuery() in js/src/utils.ts), which happens after this open
         open_keys["protect_jquery"] = True
+    if "reactable" in pkgs:
+        deps.append(reactable_dependency())
     return deps, open_keys
 
 
@@ -657,17 +666,38 @@ def prepare_to_serialize(w: Widget) -> None:
 
 def handle_client_comm_msg(session: Session, msg: Dict[str, Any]) -> None:
     """Route a message the browser sent on the `shinywidgets_comm_send` input."""
-    msg = _decode_comm_buffers(msg)
     header = msg.get("header")
     msg_type = header.get("msg_type") if isinstance(header, dict) else None
-    if msg_type == "comm_open":
-        open_client_comm(session, msg)
-    elif msg_type == "comm_close":
-        close_client_comm(session, msg)
-    else:
-        comm = COMM_MANAGERS[session.id].comms.get(msg["content"]["comm_id"])
-        if comm is not None:
-            comm.handle_msg(msg)
+    try:
+        msg = _decode_comm_buffers(msg)
+        if msg_type == "comm_open":
+            open_client_comm(session, msg)
+        elif msg_type == "comm_close":
+            close_client_comm(session, msg)
+        else:
+            comm = COMM_MANAGERS[session.id].comms.get(msg["content"]["comm_id"])
+            if comm is not None:
+                comm.handle_msg(msg)
+    finally:
+        msg_id = header.get("msg_id") if isinstance(header, dict) else None
+        if isinstance(msg_id, str):
+            ack_after_flush(session, msg["content"]["comm_id"], msg_id)
+
+
+def ack_after_flush(session: Session, comm_id: str, msg_id: str) -> None:
+    """
+    The browser fires the model's idle callback on this ack, which is what
+    restores ipywidgets' one-message-in-flight throttle. Registering after the
+    handler ran puts the ack behind any echoes it scheduled on the same flush,
+    as a kernel's idle status follows its iopub output.
+    """
+
+    async def send_ack() -> None:
+        await session.send_custom_message(
+            "shinywidgets_comm_ack", {"comm_id": comm_id, "msg_id": msg_id}
+        )
+
+    session.on_flushed(send_ack)
 
 
 def open_client_comm(session: Session, msg: Dict[str, Any]) -> None:
@@ -800,15 +830,37 @@ _CONSTRUCTION_SENTINELS: tuple[Callable[[], bool], ...] = (
 )
 
 
+def is_pyvista_viewer_page(w: Widget) -> bool:
+    """
+    Is `w` trame-pyvista's process-wide shared viewer page?
+
+    trame-pyvista >= 0.3's `EmbeddableWidget` renders through
+    `trame_pyvista.jupyter._get_viewer_page()`, which caches a single
+    `_ViewerPage` anywidget per process (recreating it only once the cached
+    one is closed) holding the vtk.js runtime every scene's iframe loads --
+    so it must be process-global here too, however it got constructed,
+    unlike the per-render `EmbeddableWidget` that references it. Checked by
+    class identity (not `widget_pkg()`) so a stale cached reference to an
+    uninstalled or reloaded trame_pyvista can't match a different class.
+    """
+    viewer_page_cls = getattr(
+        sys.modules.get("trame_pyvista.jupyter"), "_ViewerPage", None
+    )
+    return viewer_page_cls is not None and isinstance(w, viewer_page_cls)
+
+
 def is_process_global_construction(w: Widget) -> bool:
     """
     Is `w` a package's process-global widget, currently under construction?
 
     Such widgets are process-global even when constructed inside a session
-    (e.g. by a lazy import in a render function).
+    (e.g. by a lazy import in a render function, or trame-pyvista's shared
+    viewer page).
     """
-    return is_ipyreact_registry_widget(w) or any(
-        sentinel() for sentinel in _CONSTRUCTION_SENTINELS
+    return (
+        is_ipyreact_registry_widget(w)
+        or is_pyvista_viewer_page(w)
+        or any(sentinel() for sentinel in _CONSTRUCTION_SENTINELS)
     )
 
 
@@ -1036,7 +1088,9 @@ def shared_lifetime() -> Iterator[None]:
 
     Works with or without an active session, so a widget can be built at module
     level and returned from any session's render. Layout defaults a renderer
-    applies to it (e.g., filling its container) affect it for all sessions.
+    applies to it (e.g., filling its container) affect it for all sessions. Output
+    accessors (e.g., a plotly output's ``clicked()``) aren't scoped to a session
+    on a shared widget, so don't rely on what they report there.
 
     Construct each shared widget once: at the top level of a module the app
     imports, or lazily, cached in a module-level variable. Don't construct one in
@@ -1566,13 +1620,21 @@ def reactive_depend(
                 "For a list of widget traits, call `.trait_names()` on the widget."
             )
 
+    rate = rate_policy_for(widget)
+    session = get_current_session()
+
     def invalidate(change: object):
-        ctx.invalidate()
+        if rate is None:
+            ctx.invalidate()
+        else:
+            rate.invalidate(id(ctx), ctx.invalidate, session)
 
     widget.observe(invalidate, names, type)  # type: ignore
 
     def _():
         widget.unobserve(invalidate, names, type)  # type: ignore
+        if rate is not None:
+            rate.discard(id(ctx))
 
     ctx.on_invalidate(_)
 

@@ -1,9 +1,11 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
-import { setConnected, ShinyComm } from './comm';
+import { ack_comm, dispose_comm, setConnected, ShinyComm } from './comm';
 import { behaviorForModel, ipyleafletBehavior, WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
 import { isJQuery, jsonParse, lendDataTables, protectPageJQuery } from './utils';
 import { NGLVIEW_COLORMAKER_REGISTRY_MODEL, renderHiddenColormakerRegistry } from './nglview';
-import { disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
+import { isPlotlyBindRequest, requestPlotlyEvents } from './plotly';
+import { isReactableBindRequest, requestReactableState } from './reactable';
+import { disposeMols2GridGlobalsOnRemove, disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
 import { uuid } from '@jupyter-widgets/base';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
@@ -76,6 +78,11 @@ class OutputManager extends HTMLManager {
     viewPromise.then(
       (view) => {
         patchMplCanvasRemove(view);
+        // Register before the orphan check below: an orphaned late view is
+        // torn down without ever reaching the bottom of this callback, but
+        // its grid's page globals still need cleaning up
+        // (see disposeMols2GridGlobalsOnRemove)
+        disposeMols2GridGlobalsOnRemove(view);
         // An ancestor may have been removed while this view was still being
         // created (e.g. dynamic UI removed the output mid-render).
         // removeViewTree() only sweeps views live at the time, so tear the
@@ -597,12 +604,29 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
 Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
   const msg = jsonParse(msg_txt);
   const id = msg.content.comm_id;
-  if (!manager.has_model(id)) {
+  if (!manager.has_model(id) && closedModels.has(id)) {
     console.error(`Couldn't handle message for model ${id} because it doesn't exist.`);
     return;
   }
   try {
+    // get_model() waits for late registrations: the comm_open handler must
+    // load the widget's JS dependencies before it can register the model, so
+    // a message sent right after the open (e.g. a plotly event-bridge bind
+    // request) can arrive while the model is still pending. Waiting here
+    // instead of dropping the message is what lets those binds land.
     const m = await manager.get_model(id);
+    // Requests for shinywidgets' event/state bridges are for us, not the model
+    const data = msg.content.data;
+    if (data?.method === "custom" && isPlotlyBindRequest(data.content)) {
+      // Not awaited: binding waits for the plot to draw, which mustn't hold up
+      // Shiny's queue of later messages
+      void requestPlotlyEvents(m, data.content.events);
+      return;
+    }
+    if (data?.method === "custom" && isReactableBindRequest(data.content)) {
+      await requestReactableState(m);
+      return;
+    }
     // @ts-ignore for some reason IClassicComm doesn't have this method, but we do
     m.comm.handle_msg(msg);
   } catch (err) {
@@ -610,12 +634,17 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
   }
 });
 
+// The server's ack that it finished handling a message this browser sent.
+Shiny.addCustomMessageHandler("shinywidgets_comm_ack", (msg: {comm_id: string, msg_id: string}) => {
+  ack_comm(msg.comm_id, msg.msg_id);
+});
 
 // Handle the closing of a widget/comm/model
 Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
   const msg = jsonParse(msg_txt);
   const id = msg.content.comm_id;
   closedModels.add(id);
+  dispose_comm(id);
   if (!manager.has_model(id)) {
     console.error(`Couldn't close model ${id} because it doesn't exist.`);
     return;

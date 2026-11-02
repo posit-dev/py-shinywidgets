@@ -25,10 +25,20 @@ from shinywidgets._bokeh import (
     extension_urls_to_dependencies,
 )
 
+from tests.unit._fakes import FakeDependencyHandler
+
 
 def _fake_session() -> Session:
-    # Extension asset resolution only needs the app's lib_prefix
-    return cast(Session, SimpleNamespace(app=SimpleNamespace(lib_prefix="lib")))
+    # Extension asset resolution only needs the app's lib_prefix, plus a
+    # dependency handler for the panel static/extensions mount
+    return cast(
+        Session,
+        SimpleNamespace(
+            app=SimpleNamespace(
+                lib_prefix="lib", _dependency_handler=FakeDependencyHandler()
+            )
+        ),
+    )
 
 
 def _bokeh_model(root):
@@ -80,6 +90,36 @@ def test_no_extension_for_non_bokeh_widget():
 
     w = Widget.__new__(Widget)
     assert bokeh_extension_assets(w, _fake_session()).deps == []
+
+
+def test_panel_static_extensions_mount() -> None:
+    # panel >= 1.10 lazily loads some component resources (e.g., echarts-gl
+    # for ECharts/Gauge) from bokeh-server-style static/extensions/panel/...
+    # URLs; the mount makes those resolve on a Shiny app
+    session = _fake_session()
+    w = _bokeh_model(pn.pane.ECharts({"series": []}).get_root())
+    bokeh_extension_assets(w, session)
+
+    mounts = session.app._dependency_handler.mounts  # type: ignore[attr-defined]
+    assert len(mounts) == 1
+    assert mounts[0]["path"] == "/static/extensions/panel/"
+    assert mounts[0]["name"] == "panel-static-extensions"
+
+    # Mounts once per app, not once per render
+    bokeh_extension_assets(w, session)
+    assert len(mounts) == 1
+
+
+def test_panel_static_extensions_mount_serves_bundled_files() -> None:
+    # The mounted directory must be the one panel's bundled/... URLs resolve
+    # against (echarts-gl is the resource behind the ECharts regression test)
+    session = _fake_session()
+    w = _bokeh_model(pn.pane.ECharts({"series": []}).get_root())
+    bokeh_extension_assets(w, session)
+
+    (mount,) = session.app._dependency_handler.mounts  # type: ignore[attr-defined]
+    directory = Path(mount["app"].directory)
+    assert any(directory.glob("bundled/echarts/*echarts-gl*"))
 
 
 def test_panel_tabulator_extension_files():

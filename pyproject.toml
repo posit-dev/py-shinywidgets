@@ -36,7 +36,7 @@ Issues = "https://github.com/rstudio/py-shinywidgets/issues"
 # Per-renderer extras: each installs the packages needed to use the
 # corresponding render decorator (e.g., `pip install 'shinywidgets[plotly]'`).
 # anywidget is already a core dependency, so extras don't need to repeat it.
-altair = ["altair>=5.1"]
+altair = ["altair>=5.1", "narwhals"]
 bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 # embedding-atlas requires Python 3.11+, so it's not installable on 3.10
 embedding_atlas = ["embedding-atlas>=0.26; python_version >= '3.11'"]
@@ -73,6 +73,7 @@ leafmap = ["leafmap", "plotly>=5.12.0,<7"]
 lonboard = ["lonboard; python_version < '3.15'"]
 maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
+mols2grid = ["mols2grid>=2.2.0,<3"]
 mosaic_widget = ["mosaic-widget"]
 nglview = ["nglview"]
 niivue = ["ipyniivue>=2.4.0"]
@@ -81,7 +82,7 @@ panel = ["panel", "jupyter_bokeh>=4.1"]
 # pyarrow is required for pandas DataFrame conversion (perspective-python
 # doesn't depend on it)
 perspective = ["perspective-python>=3.0", "pyarrow"]
-plotly = ["plotly>=5.12.0"]
+plotly = ["plotly>=5.12.0", "narwhals", "pandas"]
 plotnine = ["plotnine", "ipympl"]
 # duckdb is listed because the security model requires apps to `import duckdb`
 # and lock down the default connection themselves (see render_pygwalker's docs),
@@ -89,7 +90,22 @@ plotnine = ["plotnine", "ipympl"]
 # validate_visitor_sql), not just transitively through pygwalker
 pygwalker = ["pygwalker>=0.4.9.13", "duckdb>=0.10.4", "sqlglot>=23.15.8"]
 pythreejs = ["pythreejs"]
+# pyvista needs trame-pyvista 0.3.x, which requires Python 3.11+, and vtk
+# (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet
+pyvista = [
+  "pyvista[jupyter]; python_version >= '3.11' and python_version < '3.15'",
+  "trame-pyvista>=0.3; python_version >= '3.11' and python_version < '3.15'",
+]
 quak = ["quak"]
+# reactable 0.1.6 pins ipyreact<=0.4.1 (unnecessarily -- it works with the
+# ipyreact>=0.6 that the test/dev groups require, verified with 0.4.1 and 0.7.0)
+# and imports great_tables without declaring it. The tool.uv override below
+# relaxes the pin so the lock resolves, but reactable still isn't in the shared
+# test/dev groups: importing it constructs a process-global ipyreact Module
+# widget that order-sensitive unit tests (FakeSession-based) don't expect.
+# Its tests run via an overlay instead: `make test-reactable` (unit) and
+# `make test-playwright-reactable` (see REACTABLE_OVERLAY in the Makefile).
+reactable = ["reactable>=0.1.6"]
 # vizarr pins zarr<3, so it is not in the shared test/dev groups
 vizarr = ["vizarr>=0.1.1"]
 rerun = ["rerun-sdk[notebook]>=0.40; python_version >= '3.11'"]
@@ -135,6 +151,7 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "mols2grid>=2.2.0,<3",
   "nglview",
   "pandas",
   "networkx",
@@ -156,6 +173,10 @@ test = [
   "pytest-timeout>=2.2",
   "pytest-xdist>=3.5",
   "pythreejs",
+  # pyvista needs trame-pyvista 0.3.x, which requires Python 3.11+, and
+  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet
+  "pyvista[jupyter]; python_version >= '3.11' and python_version < '3.15'",
+  "trame-pyvista>=0.3; python_version >= '3.11' and python_version < '3.15'",
   "quak; python_version < '3.15'",
   "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "tox-uv>=1",
@@ -202,6 +223,7 @@ dev = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "mols2grid>=2.2.0,<3",
   "nglview",
   "pandas",
   "networkx",
@@ -223,6 +245,10 @@ dev = [
   "pytest-timeout>=2.2",
   "pytest-xdist>=3.5",
   "pythreejs",
+  # pyvista needs trame-pyvista 0.3.x, which requires Python 3.11+, and
+  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet
+  "pyvista[jupyter]; python_version >= '3.11' and python_version < '3.15'",
+  "trame-pyvista>=0.3; python_version >= '3.11' and python_version < '3.15'",
   "quak; python_version < '3.15'",
   "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "ruff>=0.6.5",
@@ -275,6 +301,7 @@ test = [
   # Python 3.15+ yet, so lonboard can't be installed there
   "lonboard; python_version < '3.15'",
   "maplibre[anywidget]",
+  "mols2grid>=2.2.0,<3",
   "nglview",
   "pandas",
   "networkx",
@@ -296,6 +323,10 @@ test = [
   "pytest-timeout>=2.2",
   "pytest-xdist>=3.5",
   "pythreejs",
+  # pyvista needs trame-pyvista 0.3.x, which requires Python 3.11+, and
+  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet
+  "pyvista[jupyter]; python_version >= '3.11' and python_version < '3.15'",
+  "trame-pyvista>=0.3; python_version >= '3.11' and python_version < '3.15'",
   "quak; python_version < '3.15'",
   "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "tox-uv>=1",
@@ -314,7 +345,12 @@ constraint-dependencies = ["narwhals>=2.22"]
 # keeps torch (and CUDA wheels on Linux) out of the dev/CI env, and keeps litellm's
 # fastuuid dependency (no cp315 wheels) from breaking Python 3.15 installs.
 # uv-only: the published package metadata is unaffected.
+# reactable 0.1.6 pins ipyreact<=0.4.1, but it works with the ipyreact>=0.6 the
+# test/dev groups require (verified with 0.4.1 and 0.7.0). Drop this once
+# upstream relaxes the pin (machow/reactable-py still has it on main).
+# uv-only: the published package metadata is unaffected.
 override-dependencies = [
+  "ipyreact>=0.6",
   "torch; python_version < '0'",
   "sentence-transformers; python_version < '0'",
   "umap-learn; python_version < '0'",

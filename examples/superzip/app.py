@@ -8,7 +8,12 @@ from ratelimit import debounce
 from shiny import App, Inputs, Outputs, Session, reactive, render, req, ui
 from utils import col_numeric, create_map, density_plot, heatmap_gradient
 
-from shinywidgets import output_widget, reactive_read, render_plotly, render_widget
+from shinywidgets import (
+    output_widget,
+    render_ipyleaflet,
+    render_plotly,
+    render_widget,
+)
 
 # Load data
 app_dir = Path(__file__).parent
@@ -97,7 +102,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     # ------------------------------------------------------------------------
     # Main map logic
     # ------------------------------------------------------------------------
-    @render_widget
+    @render_ipyleaflet
     def map():
         return create_map()
 
@@ -168,7 +173,7 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     @reactive.effect
     def _():
-        bb = reactive_read(map.widget, "bounds")
+        bb = map.bounds()  # cancels until the browser first reports
         if input.navbar() != "Interactive map":
             return
         with reactive.isolate():

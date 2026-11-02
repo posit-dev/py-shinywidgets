@@ -1,4 +1,5 @@
 import importlib
+import math
 import os
 import tempfile
 from typing import Any
@@ -37,3 +38,22 @@ def restrict_client_traits(w: Widget, allowed: frozenset[str], flag: str) -> Non
 
     w.set_state = guarded_set_state  # type: ignore[method-assign]
     setattr(w, flag, True)
+
+
+def sanitize_json_floats(x: object) -> object:
+    """
+    Replace non-finite floats (NaN, +/-inf) with None, recursively.
+
+    Widget state is serialized with ``allow_nan=False`` (see _serialization.py),
+    so a NaN anywhere in a synced trait is a hard error at send time. Widget
+    packages that pass data-frame contents through as plain floats (e.g.
+    reactable's ``props["data"]``) can carry NaNs for missing values; Jupyter
+    tolerates them (its parser accepts the NaN literal), but we don't.
+    """
+    if isinstance(x, float):
+        return x if math.isfinite(x) else None
+    if isinstance(x, dict):
+        return {k: sanitize_json_floats(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [sanitize_json_floats(v) for v in x]
+    return x

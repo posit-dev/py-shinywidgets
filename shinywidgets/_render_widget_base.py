@@ -6,6 +6,7 @@ from contextvars import ContextVar, Token
 from typing import (
     TYPE_CHECKING,
     Callable,
+    ClassVar,
     Generic,
     Iterator,
     Optional,
@@ -25,6 +26,7 @@ from shiny.reactive._core import (
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
 from shiny.session import get_current_session
 
+from ._accessors import Accessors, AccessorSpec, RatePolicy, register_rate_policy
 from ._as_widget import as_widget, refresh_stale_mpl_canvases
 from ._comm import OrphanedShinyComm
 from ._dependencies import widget_pkg
@@ -55,6 +57,12 @@ The type of the widget created from the renderer's ValueT
 """
 T = TypeVar("T", bound=object)
 
+# The renderer whose render function is running (per task, so concurrent
+# renders don't see each other)
+rendering_renderer: ContextVar[Optional[object]] = ContextVar(
+    "rendering_renderer", default=None
+)
+
 
 class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     """
@@ -63,7 +71,13 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     Handles coercion of the render function's return value into an ipywidget (via
     `_as_widget()`), applies smart layout defaults, and produces the payload that the
     browser-side output binding uses to display the widget.
+
+    Subclasses declare accessors (methods such as `clicked()` that read widget
+    events reactively) in `_accessor_specs`, and implement each one as
+    `self._read_accessor(name)`.
     """
+
+    _accessor_specs: ClassVar[Tuple[AccessorSpec, ...]] = ()
 
     def auto_output_ui(self) -> Tag:
         return output_widget(
@@ -82,23 +96,39 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         height: Optional[str] = None,
         fill: Optional[bool] = None,
         fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[float] = None,
     ):
         super().__init__(_fn)
         self.width = width
         self.height = height
         self.fill = fill
         self.fillable = fillable
+        # For `reactive_read()` on the widget, where (unlike accessors) there's
+        # no default policy for `rate_delay` alone to adjust
+        self._rate_policy: Optional[RatePolicy] = rate_policy or (
+            None if rate_delay is None else "debounce"
+        )
+        self._rate_delay = rate_delay
 
         self._value: ValueT | None = None
         self._widget: WidgetT | None = None
         self._contexts: set[Context] = set()
+        self._accessors = Accessors(
+            type(self)._accessor_specs, rate_policy=rate_policy, rate_delay=rate_delay
+        )
+        self._closes_accessors_on_destroy = False
 
     async def render(self) -> Jsonifiable | None:
         with WidgetRenderContext():
             return await self._render()
 
     async def _render(self) -> Jsonifiable | None:
-        value = await self.fn()
+        token = rendering_renderer.set(self)
+        try:
+            value = await self.fn()
+        finally:
+            rendering_renderer.reset(token)
 
         # Attach value/widget attributes to user func so they can be accessed (in other reactive contexts)
         self._value = value
@@ -108,6 +138,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._invalidate_contexts()
 
         if value is None:
+            self._accessors.on_render(None)
             return None
 
         # Ensure we have a widget & smart layout defaults
@@ -147,6 +178,17 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         widget, fill = set_layout_defaults(widget)
 
         self._widget = cast(WidgetT, widget)
+        register_rate_policy(widget, self._rate_policy, self._rate_delay)
+        self._accessors.on_render(widget)
+        if (
+            session is not None
+            and not session.is_stub_session()
+            and not self._closes_accessors_on_destroy
+        ):
+            # Fires at session end, and when a module's scope is destroyed
+            # (whose values then raise if a listener or timer sets them)
+            session.on_destroy(self._accessors.close)
+            self._closes_accessors_on_destroy = True
 
         # Don't actually display anything unless this is a DOMWidget
         if not isinstance(widget, DOMWidget):
@@ -167,6 +209,15 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
     @property
     def value(self) -> ValueT | None:
+        if rendering_renderer.get() is self:
+            # Same hazard as `.widget` below
+            raise RuntimeError(
+                f"`{self.output_id}.value` can't be read inside "
+                f"`{self.output_id}`'s own render function, which builds a new "
+                "value each time it runs (it would return the previous "
+                "render's value, or nothing on the first render). Read it in "
+                "another output or a `reactive.effect` instead."
+            )
         return self._get_reactive_obj(self._value)
 
     @value.setter
@@ -177,6 +228,17 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
     @property
     def widget(self) -> WidgetT | None:
+        if rendering_renderer.get() is self:
+            # Like `_read_accessor`: a render builds a new widget, so `.widget`
+            # still points at the *previous* render's widget (or nothing on the
+            # first render) -- fail loudly instead of handing back a stale one.
+            raise RuntimeError(
+                f"`{self.output_id}.widget` can't be read inside "
+                f"`{self.output_id}`'s own render function, which builds a new "
+                "widget each time it runs (it would return the previous "
+                "render's widget, or nothing on the first render). Read it in "
+                "another output or a `reactive.effect` instead."
+            )
         return self._get_reactive_obj(self._widget)
 
     @widget.setter
@@ -184,6 +246,22 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         raise RuntimeError(
             "The `widget` attribute of a @render_widget function is read only."
         )
+
+    def _read_accessor(self, name: str, *, raw: bool = False) -> object:
+        if rendering_renderer.get() is self:
+            # It would cancel (no widget yet) or reset (a new widget), so the
+            # output would never render
+            raise RuntimeError(
+                f"`{self.output_id}.{name}()` can't be read inside "
+                f"`{self.output_id}`'s own render function, which builds a new "
+                "widget each time it runs. Read it in another output or an effect; "
+                f"to change the plot in response, update `{self.output_id}.widget` "
+                "in place from a `reactive.effect`."
+            )
+        # Depend on the widget too, so a re-render invalidates readers even
+        # before the new widget reports anything.
+        self._register_current_context()
+        return self._accessors.read(name, raw=raw)
 
     def _get_reactive_obj(self, x: T) -> T | None:
         self._register_current_context()
@@ -194,7 +272,9 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         return None
 
     def _invalidate_contexts(self) -> None:
-        for ctx in self._contexts:
+        # Copy: invalidate() runs the on_invalidate callback that drops the
+        # context from this set
+        for ctx in list(self._contexts):
             ctx.invalidate()
 
     # If the widget/value is read in a reactive context, then we'll need to invalidate
@@ -202,7 +282,17 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     def _register_current_context(self) -> None:
         if not has_current_context():
             return
-        self._contexts.add(get_current_context())
+        ctx = get_current_context()
+        if ctx in self._contexts:
+            return
+        self._contexts.add(ctx)
+        try:
+            ctx.on_invalidate(lambda: self._contexts.discard(ctx))
+        except RuntimeError:
+            # An extended task's body runs under a context that refuses
+            # dependencies; still let it reach `.widget` (e.g. to call
+            # geolibre's blocking methods)
+            self._contexts.discard(ctx)
 
 
 def has_current_context() -> bool:
@@ -221,8 +311,14 @@ def set_layout_defaults(widget: Widget) -> Tuple[Widget, bool]:
     if not isinstance(widget, DOMWidget):
         return (widget, fill)
 
-    # Do nothing for "input-like" widgets (e.g., ipywidgets.IntSlider())
-    if getattr(widget, "_model_module", None) == "@jupyter-widgets/controls":
+    # Do nothing for "input-like" widgets (e.g., ipywidgets.IntSlider()),
+    # unless a package-specific handler below applies (e.g., trame_pyvista's
+    # html-backend widget is an ipywidgets HTML output, not an input)
+    if getattr(
+        widget, "_model_module", None
+    ) == "@jupyter-widgets/controls" and not any(
+        widget_pkg(cls) in _LAYOUT_DEFAULTS for cls in type(widget).__mro__
+    ):
         return (widget, False)
 
     layout = widget.layout  # type: ignore
@@ -463,6 +559,19 @@ def _frontend_size(widget: Widget) -> Optional[Tuple[int, int]]:
         setattr(widget, _FRONTEND_SIZE_TRACKING_ATTR, True)
 
     return getattr(widget, _FRONTEND_SIZE_ATTR, None)
+
+
+def reactable_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # A Reactable fills its container by default (its root is a flex column with
+    # `flex: auto 1` on the table body), which is what fill layouts want. A
+    # user-set `height` prop loses to the fill CSS (`flex: 1 1 auto` stretches the
+    # element past its inline height), so treat it like an explicit widget height:
+    # opt out of filling. reactable's ipyreact widget keeps everything in a single
+    # `props` trait (there's no ipywidgets Layout height to inspect).
+    props = getattr(widget, "props", None)
+    if isinstance(props, dict) and props.get("height") is not None:
+        return False
+    return fill
 
 
 def itables_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
@@ -779,6 +888,19 @@ def _track_pythreejs_sizing_intent(renderer: DOMWidget, intent: bool) -> None:
     renderer.observe(update_intent, names=["width", "height"])
 
 
+def pyvista_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    from trame_pyvista.jupyter import EmbeddableWidget  # pyright: ignore[reportMissingImports]
+
+    if not isinstance(widget, EmbeddableWidget):
+        return fill
+
+    # as_widget_pyvista() sets layout height to "100%" (sizing the iframe to
+    # the container), which the generic check above mistakes for a
+    # user-specified height. A height the user set themselves is still
+    # respected (they don't get fill).
+    return widget.layout.height in (None, "auto", "100%")
+
+
 def vizarr_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     # vizarr's Viewer styles its root element with an inline `height` taken from
     # its `height` trait (default "500px"), which the generic Layout check above
@@ -842,6 +964,9 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "maplibre": maplibre_layout_defaults,
     "nglview": nglview_layout_defaults,
     "pythreejs": pythreejs_layout_defaults,
+    # pyvista's html jupyter backend widget lives in the trame_pyvista package
+    "trame_pyvista": pyvista_layout_defaults,
+    "reactable": reactable_layout_defaults,
     "vizarr": vizarr_layout_defaults,
     "rerun_notebook": rerun_layout_defaults,
 }
