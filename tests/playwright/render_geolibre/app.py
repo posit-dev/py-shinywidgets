@@ -159,10 +159,10 @@ def server(input, output, session):
     def _():
         fly_to_sf.invoke()
 
-    # geolibre releases containing opengeos/GeoLibre#3273 (pending; the first
-    # after 3.5.2) add *_async() variants that await the reply instead of
-    # blocking a thread, so they run directly on Shiny's event loop inside an
-    # extended_task -- no run_in_executor.
+    # geolibre >= 3.6.0 (opengeos/GeoLibre#3273) adds *_async() variants
+    # that await the reply instead of blocking a thread, so they run
+    # directly on Shiny's event loop inside an extended_task -- no
+    # run_in_executor.
     @extended_task
     async def fly_to_sf_async():
         # Same ack-at-animation-start caveat as fly_to() above: let the

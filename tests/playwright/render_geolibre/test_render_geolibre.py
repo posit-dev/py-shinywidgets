@@ -145,10 +145,10 @@ def test_geolibre_local_cog_via_proxy(page: Page, local_app) -> None:
 def test_geolibre_blocking_methods_from_extended_task(page: Page, local_app) -> None:
     # geolibre's blocking command methods (fly_to(), get_center(), ...) wait
     # for a reply from the app, so they can only run off Shiny's event-loop
-    # thread -- and only with geolibre >= 3.5.2 (enforced by the geolibre
-    # extra), which sleep-polls for the reply instead of pumping a Jupyter
-    # kernel (opengeos/GeoLibre#3266).
-    pytest.importorskip("geolibre")
+    # thread -- and only with geolibre >= 3.5.2's sleep-polling for the
+    # reply instead of pumping a Jupyter kernel (opengeos/GeoLibre#3266);
+    # the geolibre extra enforces >= 3.6.0.
+    pytest.importorskip("geolibre", minversion="3.5.2")
 
     page.goto(local_app.url)
     wait_for_app(page, "map")
@@ -168,15 +168,9 @@ def test_geolibre_async_methods_from_extended_task(page: Page, local_app) -> Non
     # geolibre's *_async() command methods (fly_to_async(), get_center_async(),
     # ...) await the app's reply instead of blocking a thread, so they run
     # directly on Shiny's event loop inside an extended_task -- no
-    # run_in_executor. They require a geolibre release containing
-    # opengeos/GeoLibre#3273 (pending; the first after 3.5.2), so skip (rather
-    # than fail) until then.
-    geolibre = pytest.importorskip("geolibre")
-    if not hasattr(geolibre.Map, "fly_to_async"):
-        pytest.skip(
-            "geolibre without the async command methods "
-            "(needs a release containing opengeos/GeoLibre#3273)"
-        )
+    # run_in_executor. They require geolibre >= 3.6.0
+    # (opengeos/GeoLibre#3273), enforced by the shinywidgets[geolibre] extra.
+    pytest.importorskip("geolibre", minversion="3.6.0")
 
     page.goto(local_app.url)
     wait_for_app(page, "map")

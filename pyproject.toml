@@ -42,9 +42,9 @@ bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 embedding_atlas = ["embedding-atlas>=0.26; python_version >= '3.11'"]
 bqplot = ["bqplot"]
 drawdata = ["drawdata>=0.5"]
-# geolibre requires Python 3.11+; >=3.5.2 for blocking command methods
-# (fly_to(), get_center(), ...) from a worker thread outside Jupyter
-geolibre = ["geolibre>=3.5.2; python_version >= '3.11'"]
+# geolibre requires Python 3.11+; >=3.6.0 for the async command methods
+# (fly_to_async(), get_center_async(), ...) that run on Shiny's event loop
+geolibre = ["geolibre>=3.6.0; python_version >= '3.11'"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
