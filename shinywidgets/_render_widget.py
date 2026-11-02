@@ -2953,8 +2953,10 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
 
     The decorated function may return either a holoviews/hvplot/geoviews object
     (which is rendered through panel; requires ``pip install 'shinywidgets[holoviews]'``)
-    or the underlying `jupyter_bokeh.BokehModel` widget. geoviews 1.15 requires
-    ``cartopy<0.26``. If you call ``.opts()`` without importing hvplot, call
+    or the underlying `jupyter_bokeh.BokehModel` widget. For geoviews objects,
+    also ``pip install geoviews 'cartopy<0.26'`` (geoviews 1.15/1.16 breaks
+    with cartopy 0.26, and cartopy 0.25 has no Python 3.14 wheels). If you
+    call ``.opts()`` without importing hvplot, call
     ``hv.extension("bokeh")`` first. Plots rasterized with
     [datashader](https://datashader.org) are supported too (e.g., hvPlot's
     ``rasterize=True`` or holoviews' ``rasterize()`` operation; requires
