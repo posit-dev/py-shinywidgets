@@ -1,6 +1,9 @@
+import asyncio
 import sys
 import threading
+from collections.abc import Coroutine, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, TypeVar
 
 import pytest
 from ipywidgets import HTML, Widget
@@ -10,6 +13,9 @@ pytest.importorskip("trame_pyvista")
 
 pv.OFF_SCREEN = True
 
+import shinywidgets._shinywidgets as sw  # noqa: E402
+from shiny import App, Session, ui  # noqa: E402
+from shiny._connection import MockConnection  # noqa: E402
 from shiny.session import session_context  # noqa: E402
 from shinywidgets._as_widget import (  # noqa: E402
     _isolated_trame_cli_args,
@@ -21,6 +27,42 @@ from shinywidgets._render_widget_base import (  # noqa: E402
     pyvista_layout_defaults,
     set_layout_defaults,
 )
+
+from tests.unit.conftest import widget_test_server  # noqa: E402
+
+T = TypeVar("T")
+
+
+def run(coro: Coroutine[Any, Any, T]) -> T:
+    return asyncio.get_event_loop().run_until_complete(coro)
+
+
+@pytest.fixture
+def other_session() -> Iterator[Session]:
+    session = App(ui.page_fluid(), widget_test_server)._create_session(MockConnection())
+    try:
+        yield session
+    finally:
+        run(session.close())
+
+
+@pytest.fixture
+def fresh_viewer_page(shared_state: None) -> Iterator[None]:
+    """
+    Give this test its own trame-pyvista viewer page.
+
+    `trame_pyvista.jupyter._get_viewer_page()` caches one `_ViewerPage` per
+    process (recreating it only once the cached one is closed), so tests that
+    construct one would otherwise share -- and interfere with -- whichever
+    instance an earlier test left behind.
+    """
+    import trame_pyvista.jupyter as tpj
+
+    tpj._shared_viewer_page = None
+    try:
+        yield
+    finally:
+        tpj._shared_viewer_page = None
 
 
 def coerce_plotter(widget_session, pl: "pv.Plotter") -> Widget:
@@ -266,3 +308,54 @@ def test_pyvista_layout_defaults_respects_user_height(widget_session) -> None:
     w.layout.height = "300px"
     _, fill = set_layout_defaults(w)
     assert fill is False
+
+
+# trame-pyvista >= 0.3 renders through an anywidget EmbeddableWidget whose
+# `_viewer_page` trait references a process-wide singleton
+# (trame_pyvista.jupyter._get_viewer_page(), caching the vtk.js runtime so
+# it isn't resent on every render). shinywidgets must treat that singleton as
+# process-global, or a second session can never display it: see
+# is_pyvista_viewer_page() and is_process_global_construction() in
+# _shinywidgets.py.
+
+
+def test_viewer_page_is_process_global(widget_session, fresh_viewer_page: None) -> None:
+    w = coerce_plotter(widget_session, make_plotter())
+    viewer_page = w._viewer_page
+    assert viewer_page is not None
+    assert sw.is_process_global(viewer_page)
+    assert sw.SHARED_WIDGETS.get(viewer_page.model_id) is viewer_page
+
+
+def test_viewer_page_reaches_second_concurrent_session(
+    widget_session, other_session, fresh_viewer_page: None
+) -> None:
+    from tests.unit.test_shared_widgets import flush, render_in
+
+    # Session A renders first, constructing (and caching) the viewer page
+    render_in(widget_session, make_plotter)
+    flush()
+
+    # Before the fix: session B's render raises RuntimeError("_ViewerPage
+    # belongs to another Shiny session, so it can't be displayed here.")
+    # because the viewer page is still owned by session A.
+    render_in(other_session, make_plotter)
+    flush()
+
+
+def test_viewer_page_survives_owning_sessions_close(
+    widget_session, other_session, fresh_viewer_page: None
+) -> None:
+    from tests.unit.test_shared_widgets import flush, render_in
+
+    render_in(widget_session, make_plotter)
+    flush()
+    run(widget_session.close())
+
+    # Before the fix: the viewer page belonged to widget_session and was
+    # closed along with it, so this raises RuntimeError("_ViewerPage was
+    # closed (its render was invalidated, or it was closed explicitly), so
+    # it can't be displayed again."). In production this breaks the app for
+    # every visitor after the first one leaves, until the server restarts.
+    render_in(other_session, make_plotter)
+    flush()

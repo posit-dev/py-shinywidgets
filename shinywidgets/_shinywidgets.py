@@ -830,15 +830,37 @@ _CONSTRUCTION_SENTINELS: tuple[Callable[[], bool], ...] = (
 )
 
 
+def is_pyvista_viewer_page(w: Widget) -> bool:
+    """
+    Is `w` trame-pyvista's process-wide shared viewer page?
+
+    trame-pyvista >= 0.3's `EmbeddableWidget` renders through
+    `trame_pyvista.jupyter._get_viewer_page()`, which caches a single
+    `_ViewerPage` anywidget per process (recreating it only once the cached
+    one is closed) holding the vtk.js runtime every scene's iframe loads --
+    so it must be process-global here too, however it got constructed,
+    unlike the per-render `EmbeddableWidget` that references it. Checked by
+    class identity (not `widget_pkg()`) so a stale cached reference to an
+    uninstalled or reloaded trame_pyvista can't match a different class.
+    """
+    viewer_page_cls = getattr(
+        sys.modules.get("trame_pyvista.jupyter"), "_ViewerPage", None
+    )
+    return viewer_page_cls is not None and isinstance(w, viewer_page_cls)
+
+
 def is_process_global_construction(w: Widget) -> bool:
     """
     Is `w` a package's process-global widget, currently under construction?
 
     Such widgets are process-global even when constructed inside a session
-    (e.g. by a lazy import in a render function).
+    (e.g. by a lazy import in a render function, or trame-pyvista's shared
+    viewer page).
     """
-    return is_ipyreact_registry_widget(w) or any(
-        sentinel() for sentinel in _CONSTRUCTION_SENTINELS
+    return (
+        is_ipyreact_registry_widget(w)
+        or is_pyvista_viewer_page(w)
+        or any(sentinel() for sentinel in _CONSTRUCTION_SENTINELS)
     )
 
 
