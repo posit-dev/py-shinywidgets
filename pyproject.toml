@@ -45,6 +45,14 @@ drawdata = ["drawdata>=0.5"]
 # geolibre requires Python 3.11+; >=3.5.2 for blocking command methods
 # (fly_to(), get_center(), ...) from a worker thread outside Jupyter
 geolibre = ["geolibre>=3.5.2; python_version >= '3.11'"]
+# geoviews 1.15/1.16 breaks with cartopy 0.26 (KeyError 'lon_0' in
+# project_extents); cartopy 0.25 has no Python 3.14 wheels. Drop the pin and
+# the markers once geoviews supports cartopy>=0.26 (which has 3.14 wheels).
+geoviews = [
+  "shinywidgets[holoviews]",
+  "geoviews; python_version < '3.14'",
+  "cartopy<0.26; python_version < '3.14'",
+]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]

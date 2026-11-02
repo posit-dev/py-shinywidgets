@@ -25,6 +25,7 @@ everything it needs:
 | `@render_bqplot` | `pip install 'shinywidgets[bqplot]'` |
 | `@render_drawdata` | `pip install 'shinywidgets[drawdata]'` |
 | `@render_geolibre` | `pip install 'shinywidgets[geolibre]'` (Python ≥ 3.11) |
+| `@render_holoviews` (GeoViews objects) | `pip install 'shinywidgets[geoviews]'` (Python < 3.14) |
 | `@render_holoviews` | `pip install 'shinywidgets[holoviews]'` |
 | `@render_ipyaladin` | `pip install 'shinywidgets[ipyaladin]'` |
 | `@render_ipycanvas` | `pip install 'shinywidgets[ipycanvas]'` |
