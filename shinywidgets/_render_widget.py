@@ -5326,7 +5326,7 @@ class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
     ```
     """
 
-    accessor_specs = REACTABLE_ACCESSORS
+    _accessor_specs = REACTABLE_ACCESSORS
 
     def selected_rows(self) -> List[int]:
         """
