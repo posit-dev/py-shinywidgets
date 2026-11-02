@@ -1593,8 +1593,15 @@ class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
     geolibre >= 3.6.0 (enforced by the ``shinywidgets[geolibre]`` extra;
     https://github.com/opengeos/GeoLibre/issues/3273) adds ``*_async()``
     variants (``fly_to_async()``/``get_center_async()``/...) that await the
-    reply instead of blocking, so they run directly on the event loop
-    inside an `extended_task` -- no worker thread. Where a non-blocking
+    reply instead of blocking, so no worker thread is needed. The await
+    must still happen outside the reactive flush, though: do **not** await
+    them in the body of an async `reactive.effect`/observer. shinywidgets
+    delivers widget messages to the browser only once the flush completes,
+    and Shiny's flush waits for running effects, so a reply awaited
+    mid-effect can never arrive (the effect holds up the very flush that
+    would send the command -- a deadlock that surfaces as geolibre's
+    ``TimeoutError``). Await them in a `reactive.extended_task`, which runs
+    outside the flush. Where a non-blocking
     alternative exists -- ``set_center()`` for ``fly_to()``,
     ``fit_project_bounds()`` for ``fit_bounds()``, the synced ``project``
     trait for the query methods -- it remains the cheaper option.

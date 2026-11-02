@@ -160,9 +160,12 @@ def server(input, output, session):
         fly_to_sf.invoke()
 
     # geolibre >= 3.6.0 (opengeos/GeoLibre#3273) adds *_async() variants
-    # that await the reply instead of blocking a thread, so they run
-    # directly on Shiny's event loop inside an extended_task -- no
-    # run_in_executor.
+    # that await the reply instead of blocking a thread. The await still
+    # can't happen inside a reactive.effect: shinywidgets sends widget
+    # messages when the reactive flush completes, and the flush waits for
+    # running effects, so a reply awaited mid-effect could never arrive
+    # (deadlock). Await them in an extended_task, which runs outside the
+    # flush.
     @extended_task
     async def fly_to_sf_async():
         # Same ack-at-animation-start caveat as fly_to() above: let the

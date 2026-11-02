@@ -26,10 +26,14 @@ a Jupyter kernel event loop). Where a project-mutation alternative exists
 Better still, geolibre >= 3.6.0
 (https://github.com/opengeos/GeoLibre/issues/3273) adds `*_async()` variants
 (`await map.fly_to_async(...)`, ...) that await the reply instead of
-blocking, so they run directly on the event loop inside an `extended_task`
--- no worker thread. The app shows both patterns: `set_center()` on
-selection change, and `fly_to_async()` from an `extended_task` (the "Fly
-there" button).
+blocking, so no worker thread is needed. One caveat: the await must still
+happen outside the reactive flush -- i.e., in a `reactive.extended_task`,
+not in the body of a `reactive.effect`/observer. shinywidgets delivers
+widget messages to the browser only once the flush completes, and Shiny's
+flush waits for running effects, so a reply awaited mid-effect can never
+arrive (the effect holds up the very flush that would send the command).
+The app shows both patterns: `set_center()` on selection change, and
+`fly_to_async()` awaited in an `extended_task` (the "Fly there" button).
 
 (Layers read from files on the server's disk, e.g. `add_raster()` of a local
 GeoTIFF, *do* work in deployed apps: shinywidgets proxies geolibre's

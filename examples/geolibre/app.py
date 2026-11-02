@@ -43,9 +43,13 @@ def _():
 
 # geolibre's command methods send a command to the app and wait for its
 # reply. The *_async() variants (geolibre >= 3.6.0;
-# https://github.com/opengeos/GeoLibre/issues/3273) await that reply, so --
-# like set_center() above, and unlike the blocking fly_to() -- they can run
-# directly on Shiny's event loop inside an extended_task. See README.md.
+# https://github.com/opengeos/GeoLibre/issues/3273) await that reply instead
+# of blocking a thread -- but the await still can't happen inside a
+# reactive.effect: shinywidgets delivers widget messages to the browser only
+# once the reactive flush completes, and the flush waits for running
+# effects, so a reply awaited mid-effect could never arrive (deadlock).
+# Await them in an extended_task, which runs outside the flush. See
+# README.md.
 @extended_task
 async def fly_to_city(city):
     lng, lat = CITIES[city]
