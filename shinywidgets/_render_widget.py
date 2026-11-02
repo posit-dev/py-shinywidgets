@@ -1616,12 +1616,11 @@ class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
     its file routes are protected by unguessable per-process tokens. Basemap
     tiles and remote data URLs require internet access from the browser.
 
-    **The ``layout`` parameter**: `geolibre.Map(layout=...)` chooses the
-    app's chrome (``"embed"``, ``"full"``, or ``"maponly"``); it is *not*
-    an `ipywidgets.Layout`, so ipywidgets layout styling (e.g.,
-    ``Layout(border=...)``) isn't available on this widget. (geolibre
-    reuses the ``layout`` trait name, which also causes a harmless
-    "Cannot read properties of undefined" error in the browser console.)
+    **The ``app_layout`` parameter**: `geolibre.Map(app_layout=...)`
+    chooses the app's chrome (``"embed"``, ``"full"``, or ``"maponly"``).
+    (geolibre < 3.6.1 named this parameter ``layout``, shadowing
+    ipywidgets' ``Layout`` trait; geolibre >= 3.6.1 renamed it to
+    ``app_layout`` and deprecated passing a string as ``layout``.)
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
