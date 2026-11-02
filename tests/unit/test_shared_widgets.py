@@ -347,6 +347,81 @@ def test_pending_open_defers_to_shared_comm(
     assert w.comm.has_session(b.id)
 
 
+def test_pre_open_sends_flush_once_through_the_first_sessions_comm(
+    widget_session: Session,
+    other_session: Session,
+    shared_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Sends queued on a shared widget's pre-open placeholder flush exactly once,
+    through the first session's comm to open the widget. A session that opens
+    the widget later gets its full state via comm_open, not the backlog (a
+    shared widget never closes, so keeping the backlog would leak it).
+    """
+    a, b = widget_session, other_session
+    sent: dict[str, list[Any]] = {"a": [], "b": []}
+
+    async def record_a(msg_type: str, msg_txt: str) -> None:
+        sent["a"].append(msg_type)
+
+    async def record_b(msg_type: str, msg_txt: str) -> None:
+        sent["b"].append(msg_type)
+
+    monkeypatch.setattr(a, "send_custom_message", record_a)
+    monkeypatch.setattr(b, "send_custom_message", record_b)
+
+    with session_context(a), sw.shared_construction():
+        w = HTML()
+        assert isinstance(w.comm, OrphanedShinyComm)
+        w.comm.send(data={"method": "custom", "data": "startup"})
+        flush()
+        assert isinstance(w.comm, ShinyComm)
+        run(w.comm.session._flushed_callbacks.invoke())
+
+    assert sent["a"] == ["shinywidgets_comm_msg"]
+
+    sw.open_shared_in(w, b)
+    assert isinstance(w.comm, SharedShinyComm)
+    run(b._flushed_callbacks.invoke())
+
+    # b's comm_open is scheduled on_flush (which this harness never fires);
+    # the point is no backlog message reaches b
+    assert sent["b"] == []
+
+
+def test_open_shared_in_flushes_sends_queued_before_the_wrap(
+    widget_session: Session,
+    other_session: Session,
+    shared_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    A shared widget opened in a session before its deferred open flushes (e.g.
+    rendered in the same flush it was constructed) flushes its queued sends
+    through that session's comm.
+    """
+    a, b = widget_session, other_session
+    sent: list[str] = []
+
+    async def record(msg_type: str, msg_txt: str) -> None:
+        sent.append(msg_type)
+
+    monkeypatch.setattr(b, "send_custom_message", record)
+
+    with session_context(a):
+        with Context()(), WidgetRenderContext():
+            with sw.shared_construction():
+                w = HTML()
+            assert isinstance(w.comm, OrphanedShinyComm)
+            w.comm.send(data={"method": "custom", "data": "startup"})
+            sw.open_shared_in(w, b)
+        flush()
+    assert isinstance(w.comm, SharedShinyComm)
+    run(b._flushed_callbacks.invoke())
+    assert sent == ["shinywidgets_comm_msg"]
+
+
 def test_open_shared_in_opens_sessionless_references(
     widget_session: Session,
     shared_state: None,

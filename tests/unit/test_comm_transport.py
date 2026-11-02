@@ -228,14 +228,150 @@ def test_msg_and_close_callbacks(monkeypatch):
     assert seen["close"] == {"bye": "world"}
 
 
-def test_orphaned_shiny_comm_methods_are_noops() -> None:
+def test_orphaned_shiny_comm_methods_are_noops_after_close() -> None:
     import shinywidgets._comm as comm
 
-    orphan = comm.OrphanedShinyComm("c1")
+    orphan = comm.OrphanedShinyComm("c1", pending_open=False)
 
     assert orphan.send() is None
     assert orphan.close() is None
     assert orphan.on_msg(lambda msg: msg) is None
+    assert orphan.take_queued_sends() == []
+
+
+def test_orphaned_shiny_comm_queues_sends_until_open_or_close() -> None:
+    import shinywidgets._comm as comm
+
+    # Pre-open sends queue FIFO; taking them ends the pre-open state
+    orphan = comm.OrphanedShinyComm("c1")
+    orphan.send(data={"n": 1})
+    orphan.send(data={"n": 2}, metadata={"m": 0})
+    assert orphan.take_queued_sends() == [
+        ((), {"data": {"n": 1}}),
+        ((), {"data": {"n": 2}, "metadata": {"m": 0}}),
+    ]
+    assert orphan.take_queued_sends() == []
+    # Once the real comm has taken over, sends here are no-ops
+    orphan.send(data={"n": 3})
+    assert orphan.take_queued_sends() == []
+
+    # Closing a pre-open placeholder drops its queue, and later sends no-op
+    closing = comm.OrphanedShinyComm("c2")
+    closing.send(data={"n": 1})
+    closing.close()
+    closing.send(data={"n": 2})
+    assert closing.take_queued_sends() == []
+
+    # A post-close placeholder never queues
+    closed = comm.OrphanedShinyComm("c3", pending_open=False)
+    closed.send(data={"n": 1})
+    assert closed.take_queued_sends() == []
+
+
+def test_queued_sends_flush_through_the_replacement_comm() -> None:
+    import shinywidgets._comm as comm
+
+    session = FakeSession()
+    mgr = comm.ShinyCommManager()
+    real = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
+    session._flush_handlers.clear()
+    session._flushed_handlers.clear()
+
+    orphan = comm.OrphanedShinyComm("c1")
+    orphan.send(data={"method": "custom", "data": "first"})
+    orphan.send(data={"method": "custom", "data": "second"})
+    comm.flush_queued_sends(orphan, real)
+
+    # Both sends scheduled, in order; the queue is empty and stays that way
+    assert len(session._flushed_handlers) == 2
+    first, second = (
+        json.loads(closure_map(fn)["msg_txt"])["content"]["data"]["data"]
+        for fn in session._flushed_handlers
+    )
+    assert (first, second) == ("first", "second")
+    assert orphan.take_queued_sends() == []
+
+
+def test_sends_made_before_the_comm_opens_are_delivered_in_order(
+    widget_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    The k3d-style repro: a custom message sent while the widget's output is
+    still rendering (its comm is still a placeholder) is no longer dropped.
+    """
+    import asyncio
+
+    from ipywidgets import IntSlider
+    from shiny import reactive
+    from shiny.session import session_context
+    from shinywidgets._comm import OrphanedShinyComm, ShinyComm
+
+    sent: list[Dict[str, Any]] = []
+
+    async def record(msg_type: str, msg_txt: str) -> None:
+        sent.append({"type": msg_type, **json.loads(msg_txt)})
+
+    monkeypatch.setattr(widget_session, "send_custom_message", record)
+    loop = asyncio.get_event_loop()
+
+    with session_context(widget_session):
+        w = IntSlider(value=1)
+        assert isinstance(w.comm, OrphanedShinyComm)
+        w.comm.send(data={"method": "custom", "data": "first"})
+        w.comm.send(data={"method": "custom", "data": "second"})
+        loop.run_until_complete(reactive.flush())
+        assert isinstance(w.comm, ShinyComm)
+        loop.run_until_complete(widget_session._flushed_callbacks.invoke())
+
+    customs = [
+        m["content"]["data"]["data"]
+        for m in sent
+        if m["type"] == "shinywidgets_comm_msg"
+    ]
+    assert customs == ["first", "second"]
+    w.close()
+
+
+def test_comm_open_work_does_not_leak_for_never_opened_widgets(
+    widget_session,
+) -> None:
+    """
+    A widget closed before its comm opened must drop the callbacks registered
+    for that open (and the queued sends die with the placeholder), and
+    registering a callback on an already-closed widget must not linger either.
+    """
+    import asyncio
+
+    from ipywidgets import HTML
+    from shiny import reactive
+    from shiny.session import session_context
+    from shinywidgets import when_comm_open
+    from shinywidgets._comm import COMM_OPEN_CALLBACKS, OrphanedShinyComm
+    from shinywidgets._shinywidgets import close_widget
+
+    loop = asyncio.get_event_loop()
+
+    with session_context(widget_session):
+        w = HTML(value="pending")
+        model_id = w.model_id
+        calls: list[int] = []
+        when_comm_open(w, lambda: calls.append(1))
+        assert model_id in COMM_OPEN_CALLBACKS
+        assert isinstance(w.comm, OrphanedShinyComm)
+        w.comm.send(data={"method": "custom"})
+
+        close_widget(w)
+        assert model_id not in COMM_OPEN_CALLBACKS
+
+        # Registering on an already-closed widget doesn't leak (or run)
+        when_comm_open(w, lambda: calls.append(2))
+        assert model_id not in COMM_OPEN_CALLBACKS
+
+        loop.run_until_complete(reactive.flush())
+        loop.run_until_complete(widget_session._flushed_callbacks.invoke())
+    assert calls == []
 
 
 def test_messages_go_to_the_session_that_opened_the_comm():
@@ -423,4 +559,10 @@ def test_when_comm_open_waits_for_the_real_comm() -> None:
         comm: object = object()
 
     when_comm_open(Open(), lambda: calls.append(2))
+    assert calls == [1, 2]
+
+    class Closed:
+        comm: object = OrphanedShinyComm("m2", pending_open=False)
+
+    when_comm_open(Closed(), lambda: calls.append(3))
     assert calls == [1, 2]

@@ -3,7 +3,7 @@ import threading
 from base64 import b64encode
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, cast
 
 from shiny import Session
 
@@ -322,7 +322,9 @@ def flush_queued_sends(placeholder: object, comm: "ShinyComm") -> None:
     if not isinstance(placeholder, OrphanedShinyComm):
         return
     for args, kwargs in placeholder.take_queued_sends():
-        comm.send(*args, **kwargs)
+        # The queue replays exactly what was passed to send() (typed `object`
+        # so the placeholder accepts every widget's call signature)
+        comm.send(*cast(Any, args), **cast(Any, kwargs))
 
 
 @dataclass
