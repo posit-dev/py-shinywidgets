@@ -142,44 +142,23 @@ def test_geolibre_local_cog_via_proxy(page: Page, local_app) -> None:
     check_errors(errors, failed_requests)
 
 
-def test_geolibre_blocking_methods_from_extended_task(page: Page, local_app) -> None:
-    # geolibre's blocking command methods (fly_to(), get_center(), ...) wait
-    # for a reply from the app, so they can only run off Shiny's event-loop
-    # thread.
+def test_geolibre_async_methods_from_extended_task(page: Page, local_app) -> None:
+    # geolibre's command methods (fly_to(), get_center(), ...) wait for a
+    # reply from the app, so the app awaits their *_async() variants in an
+    # extended_task -- the reply can't be delivered while a reactive.effect
+    # is still running (see app.py).
     pytest.importorskip("geolibre")
 
     page.goto(local_app.url)
     wait_for_app(page, "map")
 
-    # The app calls fly_to(-122.4, 37.8) then get_center(), both via
-    # run_in_executor inside an extended_task (see app.py). Compare floats
-    # with tolerance: the reported center carries fp jitter either side of
-    # the target (e.g. -122.4000000000043 or -122.3999999999952).
+    # The app awaits fly_to_async(-122.4, 37.8), lets the camera animation
+    # settle, then awaits get_center_async(). Compare floats with tolerance:
+    # the reported center carries fp jitter either side of the target (e.g.
+    # -122.4000000000043 or -122.3999999999952).
     page.click("#fly")
     expect(page.locator("#flown")).not_to_have_text("", timeout=LOAD_TIMEOUT)
     center = json.loads(page.locator("#flown").inner_text())
-    assert center[0] == pytest.approx(-122.4, abs=1e-6)
-    assert center[1] == pytest.approx(37.8, abs=1e-6)
-
-
-def test_geolibre_async_methods_from_extended_task(page: Page, local_app) -> None:
-    # geolibre's *_async() command methods (fly_to_async(),
-    # get_center_async(), ...) await the reply instead of blocking a thread,
-    # but the await still has to happen outside the reactive flush (an
-    # extended_task, not a reactive.effect), since the reply is only
-    # delivered once the effect finishes.
-    pytest.importorskip("geolibre")
-
-    page.goto(local_app.url)
-    wait_for_app(page, "map")
-
-    # Same flow and float-tolerance rationale as
-    # test_geolibre_blocking_methods_from_extended_task, but via
-    # fly_to_async()/get_center_async() awaited directly in the extended_task
-    # (see app.py).
-    page.click("#fly_async")
-    expect(page.locator("#flown_async")).not_to_have_text("", timeout=LOAD_TIMEOUT)
-    center = json.loads(page.locator("#flown_async").inner_text())
     assert center[0] == pytest.approx(-122.4, abs=1e-6)
     assert center[1] == pytest.approx(37.8, abs=1e-6)
 

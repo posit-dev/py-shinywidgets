@@ -4,7 +4,6 @@ import asyncio
 import json
 import struct
 import tempfile
-from functools import partial
 from pathlib import Path
 
 from geolibre import Map
@@ -87,12 +86,10 @@ app_ui = ui.page_fillable(
         ui.input_action_button("rerender", "Rerender"),
         ui.input_action_button("add_local", "Add local COG"),
         ui.input_action_button("fly", "Fly to SF"),
-        ui.input_action_button("fly_async", "Fly to SF (async)"),
         ui.output_text("render_count", inline=True),
         ui.output_text("clicked", inline=True),
         ui.output_text("view", inline=True),
         ui.output_text("flown", inline=True),
-        ui.output_text("flown_async", inline=True),
         style="display: flex; gap: 0.5rem; align-items: center; height: 45px; overflow: hidden;",
     ),
 )
@@ -102,7 +99,6 @@ def server(input, output, session):
     counter = reactive.value(0)
     click = reactive.value(None)
     flown_center = reactive.value("")
-    flown_async_center = reactive.value("")
 
     @reactive.effect
     @reactive.event(input.rerender)
@@ -135,21 +131,16 @@ def server(input, output, session):
     def _():
         map.widget.add_cog(LOCAL_TIF, name="Local COG")
 
-    # The blocking fly_to()/get_center() wait for a reply from the app, so
-    # run them off the event-loop thread (extended_task + run_in_executor).
+    # fly_to()/get_center() wait for a reply from the app, so await their
+    # *_async() variants in an extended_task -- the reply can't be delivered
+    # while a reactive.effect is still running.
     @extended_task
     async def fly_to_sf():
-        loop = asyncio.get_running_loop()
-        # fly_to() only waits for the app's acknowledgement (sent when the
-        # animation starts), not for the camera animation to finish, so give
-        # it a beat before get_center(). An upstream `wait=` option (ack at
-        # animation end, or final view state in the ack payload) would make
-        # this sleep unnecessary.
-        await loop.run_in_executor(
-            None, partial(map.widget.fly_to, -122.4, 37.8, duration=1000)
-        )
+        # fly_to_async() acks when the animation starts, not when it
+        # finishes, so give it a beat before get_center_async().
+        await map.widget.fly_to_async(-122.4, 37.8, duration=1000)
         await asyncio.sleep(2)
-        center = await loop.run_in_executor(None, map.widget.get_center)
+        center = await map.widget.get_center_async()
         flown_center.set(json.dumps(center))
 
     @reactive.effect
@@ -157,31 +148,9 @@ def server(input, output, session):
     def _():
         fly_to_sf.invoke()
 
-    # The *_async() variants await the reply without blocking a thread, but
-    # the await still has to happen outside the reactive flush (an
-    # extended_task, not a reactive.effect), since the reply is only
-    # delivered once the effect finishes.
-    @extended_task
-    async def fly_to_sf_async():
-        # Same ack-at-animation-start caveat as fly_to() above: let the
-        # animation settle before querying the center.
-        await map.widget.fly_to_async(-122.4, 37.8, duration=1000)
-        await asyncio.sleep(2)
-        center = await map.widget.get_center_async()
-        flown_async_center.set(json.dumps(center))
-
-    @reactive.effect
-    @reactive.event(input.fly_async)
-    def _():
-        fly_to_sf_async.invoke()
-
     @render.text
     def flown():
         return flown_center.get()
-
-    @render.text
-    def flown_async():
-        return flown_async_center.get()
 
     @render.text
     def clicked():
