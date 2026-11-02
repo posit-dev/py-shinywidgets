@@ -254,3 +254,75 @@ def test_comm_open_puts_buffers_into_state(primed: Session) -> None:
     with session_context(primed):
         sw.handle_client_comm_msg(primed, msg)
     assert bytes(cast(ipywidgets.Image, WIDGET_INSTANCE_MAP["img-1"]).value) == png
+
+
+def open_browser_model(
+    session: Session, comm_id: str, **traits: Any
+) -> ipywidgets.Widget:
+    """Simulate the browser creating a model (e.g. pythreejs's light target)."""
+    with session_context(session):
+        sw.handle_client_comm_msg(
+            session,
+            open_msg(comm_id, model_state("IntSliderModel", "IntSliderView", **traits)),
+        )
+    return cast(ipywidgets.Widget, WIDGET_INSTANCE_MAP[comm_id])
+
+
+def test_render_invalidation_closes_browser_created_references(
+    primed: Session,
+) -> None:
+    """
+    Browser-created models (e.g. pythreejs's default DirectionalLight
+    target/shadow) are session-owned, but exist only to back the state of the
+    widget referencing them. When that widget's render is invalidated, they
+    must close with it, not leak one set per re-render.
+    """
+    from ipywidgets import VBox
+    from shiny.reactive._core import Context
+    from shinywidgets._render_widget_base import WidgetRenderContext
+
+    with session_context(primed):
+        ctx = Context()
+        with ctx(), WidgetRenderContext():
+            parent = VBox()  # render-owned, like the light
+        flush()
+
+        target = open_browser_model(primed, "target-1")
+        parent.children = (target,)  # like the light's `target` reference
+        flush()
+        assert not is_closed_widget(target)
+
+        ctx.invalidate()
+        flush()
+
+    assert is_closed_widget(parent)
+    assert is_closed_widget(target)
+    assert "target-1" not in WIDGET_INSTANCE_MAP
+
+
+def test_live_reference_keeps_a_browser_created_widget(primed: Session) -> None:
+    """A browser-created widget another live widget references must survive."""
+    from ipywidgets import VBox
+    from shiny.reactive._core import Context
+    from shinywidgets import session_lifetime
+    from shinywidgets._render_widget_base import WidgetRenderContext
+
+    with session_context(primed):
+        with session_lifetime():
+            keeper = VBox()
+
+        ctx = Context()
+        with ctx(), WidgetRenderContext():
+            parent = VBox()
+        flush()
+
+        target = open_browser_model(primed, "target-2")
+        parent.children = (target,)
+        keeper.children = (target,)  # shared with a live widget
+        flush()
+
+        ctx.invalidate()
+        flush()
+
+        assert is_closed_widget(parent)
+        assert not is_closed_widget(target)

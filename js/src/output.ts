@@ -727,7 +727,13 @@ function isIgnorableTeardownError(err: unknown): boolean {
   const msg = errorMessage(err).toLowerCase();
   return (
     msg.includes("widget is not attached") ||
-    msg.includes("no comm channel defined")
+    msg.includes("no comm channel defined") ||
+    // pythreejs's browser-created light target/shadow models register a
+    // Backbone listener on the "uninitialized" string sentinel (an upstream
+    // setupListeners bug), so the stopListening() inside their close() throws
+    // "<listening>.obj.off is not a function". Harmless during teardown: the
+    // listeners die with the three.js objects anyway.
+    msg.includes(".obj.off is not a function")
   );
 }
 
