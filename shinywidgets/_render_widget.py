@@ -2454,9 +2454,8 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         spec and the registered data name exactly one. `filter_by` names the
         selection (or selections) to filter by, with or without the leading
         ``"$"`` -- the default, ``None``, filters by every active selection.
-        Re-reads whenever
-        :meth:`params` changes and runs the query on each read, so prefer
-        calling it once inside a ``@reactive.calc``.
+        Re-reads whenever :meth:`params` changes and runs the query on each
+        read, so prefer calling it once inside a ``@reactive.calc``.
 
         Note that this queries the widget's live ``params`` trait: while a
         brush is settling, the live value can be up to ``rate_delay`` (250 ms
