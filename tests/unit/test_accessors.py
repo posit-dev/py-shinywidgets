@@ -238,6 +238,41 @@ def test_eager_attach_in_on_render() -> None:
     assert cap.attached == 1
 
 
+def test_eager_defaults_to_kind() -> None:
+    # State accessors attach at render (a change before the first read -- a
+    # lasso drawn before a chat handler's first read -- is then not lost);
+    # event accessors stay lazy
+    state = acc.AccessorSpec(name="zoom", kind="state", attach=noop_attach)
+    event = acc.AccessorSpec(name="clicked", kind="event", attach=noop_attach)
+    assert state.eager is True and event.eager is False
+
+
+def test_state_attach_is_eager_by_default() -> None:
+    cap = Capture()
+    spec = acc.AccessorSpec(name="zoom", kind="state", attach=cap.attach)
+    a = acc.Accessors([spec], schedule=FakeSchedule())
+    a.on_render(object())
+    assert cap.attached == 1  # attached at render, with no read
+
+
+def test_event_attach_stays_lazy_by_default() -> None:
+    a, cap, _ = make()  # make() builds a kind="event" spec
+    a.on_render(object())
+    assert cap.attached == 0
+
+
+def test_eager_false_keeps_a_state_accessor_lazy() -> None:
+    cap = Capture()
+    spec = acc.AccessorSpec(
+        name="zoom", kind="state", attach=cap.attach, eager=False
+    )
+    a = acc.Accessors([spec], schedule=FakeSchedule())
+    a.on_render(object())
+    assert cap.attached == 0
+    a.read("zoom")
+    assert cap.attached == 1
+
+
 def test_event_publishes_and_resets_on_render() -> None:
     a, cap, _ = make()
     a.on_render(object())
