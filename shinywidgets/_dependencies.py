@@ -1,6 +1,8 @@
 import asyncio
+import functools
 import http.client
 import importlib
+import importlib.metadata
 import inspect
 import json
 import os
@@ -1016,8 +1018,23 @@ def jupyter_extension_path(module_name: str) -> Optional[str]:
 # plotly's FigureWidget() pointing to the plotly package, but the actual
 # dependencies actually live in a separate jupyterlab_plotly package.
 def jupyter_extension_destination(w: Widget) -> str:
-    with tempfile.TemporaryDirectory():
-        mod: ModuleType = importlib.import_module(".", package=widget_pkg(w))
+    pkg = installed_widget_pkg(w)
+    try:
+        with tempfile.TemporaryDirectory():
+            mod: ModuleType = importlib.import_module(".", package=pkg)
+    except ModuleNotFoundError as e:
+        raise RuntimeError(
+            f"Couldn't locate JavaScript dependencies for widget of type "
+            f"'{type(w).__module__}.{type(w).__name__}': none of the classes in "
+            f"its inheritance hierarchy is defined in an installed package, and "
+            f"'{pkg}' (guessed from {type(w).__name__}'s __module__) isn't "
+            f"importable. This usually means the widget class is defined outside "
+            f"of an installed package (e.g., directly in your app module). For "
+            f"anywidget-style widgets, subclass `anywidget.AnyWidget` and provide "
+            f"the JavaScript via the `_esm` attribute instead of subclassing a "
+            f"third-party widget (or construct the base widget directly with its "
+            f"`_esm=` argument, e.g. `ipyreact.ValueWidget(_esm=...)`)."
+        ) from e
 
     if mod.__file__ is None:
         raise RuntimeError(f"Module {mod.__name__} has no __file__ attribute")
@@ -1025,13 +1042,44 @@ def jupyter_extension_destination(w: Widget) -> str:
     if hasattr(mod, "_jupyter_nbextension_paths"):
         return mod._jupyter_nbextension_paths()[0]["dest"]
     else:
-        return widget_pkg(w)
+        return pkg
+
+
+@functools.lru_cache(maxsize=1)
+def _installed_top_level_packages() -> FrozenSet[str]:
+    # Top-level module names provided by installed distributions. Unlike
+    # sys.modules, this excludes the running app itself (e.g., an "app" module
+    # registered by `shiny run`), so it's a safe test for whether a widget
+    # class's module names a real, installed package.
+    return frozenset(importlib.metadata.packages_distributions())
 
 
 def widget_pkg(w: object) -> str:
     # Instances of builtins (e.g., "x", {}) have no __module__ attribute
     module: str = getattr(w, "__module__", None) or type(w).__module__
     return module.split(".")[0]
+
+
+def installed_widget_pkg(w: object) -> str:
+    """Like ``widget_pkg()``, but resolved to an *installed* package.
+
+    When a widget is subclassed outside of its own package (e.g.,
+    ``class ConfettiButton(ipyreact.ValueWidget)`` in app.py), the class's
+    ``__module__`` points at the app module, not at the installed package that
+    ships the widget's JavaScript. Walk the MRO to the nearest ancestor class
+    defined in an installed package. (``widget_pkg()`` itself must stay purely
+    syntactic: callers like ``as_widget()`` routing and layout defaults match
+    per-class package names against packages that may not be installed.)
+    """
+    klass = w if isinstance(w, type) else type(w)
+    installed = _installed_top_level_packages()
+    for base in klass.__mro__:
+        module = getattr(base, "__module__", None)
+        if module and module.split(".")[0] in installed:
+            return module.split(".")[0]
+    # No ancestor is defined in an installed package (e.g., a widget defined
+    # entirely in the app module); fall back to the syntactic answer
+    return widget_pkg(w)
 
 
 def parse_version(v: str) -> str:
