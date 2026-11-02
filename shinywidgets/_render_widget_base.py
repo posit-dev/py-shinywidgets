@@ -178,7 +178,8 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         widget, fill = set_layout_defaults(widget)
 
         self._widget = cast(WidgetT, widget)
-        register_rate_policy(widget, self._rate_policy, self._rate_delay)
+        for w in self._rate_policy_widgets(self._widget):
+            register_rate_policy(w, self._rate_policy, self._rate_delay)
         self._accessors.on_render(widget)
         if (
             session is not None
@@ -206,6 +207,15 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         to support additional return shapes (e.g., a (value, options) tuple).
         """
         return cast(WidgetT, as_widget(value))
+
+    def _rate_policy_widgets(self, widget: WidgetT) -> Tuple[Widget, ...]:
+        """
+        The widgets the renderer's `rate_policy`/`rate_delay` apply to for
+        :func:`~shinywidgets.reactive_read`. Subclasses may override to
+        include child widgets whose traits are the interesting ones to read
+        (e.g., ipycytoscape's Node/Edge widgets).
+        """
+        return (widget,)
 
     @property
     def value(self) -> ValueT | None:
