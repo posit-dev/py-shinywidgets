@@ -291,6 +291,7 @@ def test_render_invalidation_closes_browser_created_references(
         parent.children = (target,)  # like the light's `target` reference
         flush()
         assert not is_closed_widget(target)
+        assert "target-1" in sw.CLIENT_CREATED_IDS
 
         ctx.invalidate()
         flush()
@@ -298,6 +299,7 @@ def test_render_invalidation_closes_browser_created_references(
     assert is_closed_widget(parent)
     assert is_closed_widget(target)
     assert "target-1" not in WIDGET_INSTANCE_MAP
+    assert "target-1" not in sw.CLIENT_CREATED_IDS
 
 
 def test_live_reference_keeps_a_browser_created_widget(primed: Session) -> None:
@@ -326,3 +328,5 @@ def test_live_reference_keeps_a_browser_created_widget(primed: Session) -> None:
 
         assert is_closed_widget(parent)
         assert not is_closed_widget(target)
+        assert "target-2" in WIDGET_INSTANCE_MAP
+        assert "target-2" in sw.CLIENT_CREATED_IDS

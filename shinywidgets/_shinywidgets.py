@@ -188,6 +188,7 @@ def init_shiny_widget(w: Widget):
         # (it's session-owned above, so a leaked one would otherwise live
         # until the session ends).
         w._shinywidgets_client_created = True  # type: ignore[attr-defined]
+        CLIENT_CREATED_IDS.add(w.comm.comm_id)
         return
 
     # Make sure window.require() calls made by 3rd party widgets
@@ -1190,6 +1191,15 @@ RENDER_OWNED_WIDGETS: dict[int, list[Widget]] = {}
 # session references them anymore.
 KEPT_WIDGETS: dict[str, list[Widget]] = {}
 
+# Model ids of the live browser-created widgets (see open_client_comm()),
+# across all sessions. close_render_widgets() skips its client-created garbage
+# sweep when this is empty (the common case: an app whose widgets' JS never
+# creates models), so such an app pays nothing for the sweep. Entries are
+# added where widgets are marked and discarded in close_widget(), which every
+# close path (render invalidation, session end, browser-initiated close)
+# funnels through.
+CLIENT_CREATED_IDS: set[str] = set()
+
 
 def is_client_created(w: Widget) -> bool:
     """
@@ -1242,21 +1252,28 @@ def close_render_widgets(session: Session, widgets: list[Widget]) -> None:
     # target/shadow/shadow-camera -- ~3 models leaked per re-render of a
     # one-light scene). One walk from every closing widget collects the ones
     # nothing else keeps alive (the walk's roots are render-owned, hence never
-    # client-created themselves).
-    client_garbage = {
-        id(r): r
-        for r in walk_widget_tree(
-            w
-            for w in widgets
-            if not is_closed_widget(w)
-            and not is_process_global(w)
-            and id(w) not in keep
-        )
-        if is_client_created(r)
-        and not is_closed_widget(r)
-        and not is_process_global(r)
-        and id(r) not in keep
-    }
+    # client-created themselves). Skipped entirely when no browser-created
+    # widgets are live, and pruned at kept widgets: anything past a kept
+    # widget is reachable from live roots, hence in `keep`, never garbage.
+    client_garbage: dict[int, Widget] = {}
+    if CLIENT_CREATED_IDS:
+        client_garbage = {
+            id(r): r
+            for r in walk_widget_tree(
+                (
+                    w
+                    for w in widgets
+                    if not is_closed_widget(w)
+                    and not is_process_global(w)
+                    and id(w) not in keep
+                ),
+                prune=lambda w: id(w) in keep,
+            )
+            if is_client_created(r)
+            and not is_closed_widget(r)
+            and not is_process_global(r)
+            and id(r) not in keep
+        }
     kept: list[Widget] = []
     for w in widgets:
         if is_closed_widget(w):  # already closed (e.g. by this session ending)
@@ -1285,6 +1302,7 @@ def close_widget(w: Widget) -> None:
     # at runtime, and some packages like ipyleaflet want to use this id
     # to manage references between widgets.
     w.comm = OrphanedShinyComm(model_id)
+    CLIENT_CREATED_IDS.discard(model_id)
     # Assigning a comm has the side-effect of adding back a reference to
     # the widget instance, so remove it again
     if WIDGET_INSTANCE_MAP.get(model_id) is w:
