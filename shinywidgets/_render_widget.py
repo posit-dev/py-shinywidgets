@@ -786,7 +786,11 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
 
     **Network access**: the viewer loads its JavaScript from a CDN and its sky
     imagery (HiPS tiles) from CDS servers at render time, so it requires an
-    internet connection.
+    internet connection. A bare object name as the constructor ``target``
+    (e.g., ``Aladin(target="M42")``) is resolved through a blocking Sesame
+    lookup at construction time, which raises -- crashing the render -- if
+    CDS's Sesame service is unreachable; prefer coordinates (a ``"ra dec"``
+    string or an astropy `SkyCoord`), which parse locally without a lookup.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -1798,7 +1802,10 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
         before the first render cancels silently (like ``req(False)``), as
         does reading while the figure has no camera (``fig.camera = None``).
         The returned object is the same mutable instance across reads -- copy
-        what you keep. Not rate-limited (the browser syncs once per orbit).
+        what you keep. Not rate-limited (the browser syncs once per orbit);
+        the renderer's ``rate_policy``/``rate_delay`` affect only
+        :func:`~shinywidgets.reactive_read` -- no accessor on this renderer
+        declares a default rate limit.
         """
         self._read_accessor("camera")
         camera = cast(IpyvolumeFigure, self._widget).camera
@@ -4563,8 +4570,11 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       molecule's image (a distinct gesture from the selection checkbox)
       makes its row's data available reactively as ``grid.clicked()`` --
       every displayed column plus ``mols2grid-id`` -- for click-to-inspect
-      panels and drill-downs. A click is an event, not state: ``clicked()``
-      is `None` until the first click and resets on re-render.
+      panels and drill-downs. The payload always includes ``img`` (the
+      cell's full SVG markup) and ``SMILES``, even when neither is in
+      ``subset``/``tooltip``, so pick the keys you display rather than
+      stringifying the whole dict. A click is an event, not state:
+      ``clicked()`` is `None` until the first click and resets on re-render.
     * **Filtering (Python -> browser):** ``grid.grid.filter(mask)`` (a boolean
       mask, Series, or list) hides non-matching molecules in the already
       rendered grid, without re-rendering. The mask is positional against the
@@ -4609,7 +4619,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       its container, pass ``iframe_height`` (e.g.
       ``render_mols2grid(iframe_height="400px")``): it sets the iframe element's
       height, which switches off mols2grid's auto-fit so the grid scrolls
-      inside the iframe. (``iframe_width``, ``iframe_allow``, and
+      inside the iframe. ``iframe_height`` bounds the iframe, not the output,
+      so pair it with ``fill=False`` to actually shrink the output in a
+      filling container. (``iframe_width``, ``iframe_allow``, and
       ``iframe_sandbox`` are forwarded to the iframe the same way.)
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
@@ -4646,10 +4658,13 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
-        ``reactive_read()`` unlimited.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default, so ``rate_policy``/``rate_delay``
+        don't affect :meth:`selection` or :meth:`clicked` (each fires at
+        most once per gesture).
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     kwargs
         Extra keyword arguments forwarded to mols2grid (split between
@@ -4823,8 +4838,10 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
 
         Unlike `.selection()` (the checkbox set), a click is an event: it
         carries the clicked row's data (every displayed column, plus
-        ``mols2grid-id``) and resets to `None` on re-render. All values are
-        strings except ``mols2grid-id`` (an int), and clicking the same
+        ``mols2grid-id``; ``img`` -- the cell's full SVG markup -- and
+        ``SMILES`` are always included, even when not displayed) and resets
+        to `None` on re-render. All values are strings except
+        ``mols2grid-id`` (an int), and clicking the same
         molecule twice in a row does not re-fire (a mols2grid limitation:
         the trait only changes when the payload does).
         """
@@ -5661,8 +5678,10 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
     `on_location_change` callbacks are swallowed by ipywidgets, so a failing
     callback just looks like "no updates".) Similarly,
     ``nv.frac2mm()``/``nv.mm2frac()`` don't work on Shiny (the coordinate
-    matrices exist only in the browser); use the millimeter coordinates from
-    the ``location()`` payload instead.
+    matrices exist only in the browser): they raise a `RuntimeError` once a
+    volume is loaded, and before that they silently return a meaningless,
+    identity-based answer; use the millimeter coordinates from the
+    ``location()`` payload instead.
 
     **Data size**: each render sends the viewer's JavaScript bundle (~5 MB)
     plus every volume (base64-encoded) to the browser, and the browser
