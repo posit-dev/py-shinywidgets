@@ -1581,7 +1581,7 @@ class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
     and ``to_image()``. They do work from a worker thread (where the event
     loop stays free), e.g., inside `reactive.extended_task` via
     ``asyncio.get_running_loop().run_in_executor(None, map.widget.fly_to, ...)``
-    (this requires geolibre >= 3.5.2, enforced by the
+    (this requires geolibre >= 3.6.1, enforced by the
     ``shinywidgets[geolibre]`` extra). Where a non-blocking
     alternative exists -- ``set_center()`` for ``fly_to()``,
     ``fit_project_bounds()`` for ``fit_bounds()``, the synced ``project``
@@ -1608,10 +1608,9 @@ class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
     its file routes are protected by unguessable per-process tokens. Basemap
     tiles and remote data URLs require internet access from the browser.
 
-    **The ``layout`` parameter**: `geolibre.Map(layout=...)` chooses the
-    app's chrome (``"embed"``, ``"full"``, or ``"maponly"``); it is *not*
-    an `ipywidgets.Layout`, so ipywidgets layout styling (e.g.,
-    ``Layout(border=...)``) isn't available on this widget.
+    **App chrome**: `geolibre.Map(app_layout=...)` chooses the app's chrome
+    (``"embed"``, ``"full"``, or ``"maponly"``; geolibre < 3.6.1 called
+    this parameter ``layout``).
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 

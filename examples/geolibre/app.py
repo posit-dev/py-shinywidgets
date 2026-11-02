@@ -26,7 +26,7 @@ clicked = reactive.value(None)
 
 @render_geolibre
 def glmap():
-    m = Map(center=(-98.5, 39.8), zoom=4, layout="embed")
+    m = Map(center=(-98.5, 39.8), zoom=4, app_layout="embed")
     m.add_geojson(
         "https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json",
         name="US States",

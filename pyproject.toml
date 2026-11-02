@@ -42,9 +42,10 @@ bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 embedding_atlas = ["embedding-atlas>=0.26; python_version >= '3.11'"]
 bqplot = ["bqplot"]
 drawdata = ["drawdata>=0.5"]
-# geolibre requires Python 3.11+; >=3.5.2 for blocking command methods
-# (fly_to(), get_center(), ...) from a worker thread outside Jupyter
-geolibre = ["geolibre>=3.5.2; python_version >= '3.11'"]
+# geolibre requires Python 3.11+; >=3.6.1 for blocking command methods
+# (fly_to(), get_center(), ...) from a worker thread outside Jupyter, and
+# for app_layout= (3.6.1 restores layout as ipywidgets' Layout)
+geolibre = ["geolibre>=3.6.1; python_version >= '3.11'"]
 # geoviews 1.15/1.16 breaks with cartopy 0.26 (KeyError 'lon_0' in
 # project_extents); cartopy 0.25 has no Python 3.14 wheels. Drop the pin and
 # the markers once geoviews supports cartopy>=0.26 (which has 3.14 wheels).
