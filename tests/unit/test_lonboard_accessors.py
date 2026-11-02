@@ -73,6 +73,8 @@ def test_view_state_rate_delay_zero_disables_the_debounce(
     m = lon_map(widget_session)
     a = Accessors([sl.VIEW_STATE], rate_delay=0, schedule=FakeSchedule())
     a.on_render(m)
+    # The first read attaches the observer, so the set below goes through
+    # the limiter (without it, the set would be picked up as the seed)
     a.read("view_state")
     m.view_state = MapViewState(longitude=1.0, latitude=2.0, zoom=5.0)
     assert a.read("view_state") == MapViewState(longitude=1.0, latitude=2.0, zoom=5.0)

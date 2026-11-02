@@ -45,6 +45,8 @@ def test_selections_rate_delay_zero_disables_the_debounce(
     g = grid(widget_session)
     a = Accessors([sd.SELECTIONS], rate_delay=0, schedule=FakeSchedule())
     a.on_render(g)
+    # The first read attaches the observer, so the set below goes through
+    # the limiter (without it, the set would be picked up as the seed)
     a.read("selections")
     g.selections = [{"r1": 0, "r2": 1, "c1": 0, "c2": 0}]
     assert a.read("selections") == [{"r1": 0, "r2": 1, "c1": 0, "c2": 0}]
