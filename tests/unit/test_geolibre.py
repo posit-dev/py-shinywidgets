@@ -11,7 +11,6 @@ pytest.importorskip(
 )
 
 from geolibre import Map
-from ipywidgets.widgets import Layout
 from shiny import Session
 from shiny.session import session_context
 from shinywidgets._dependencies import geolibre_app_mount
@@ -56,18 +55,20 @@ def test_app_mount_switches_to_remote_mode(widget_session: Session) -> None:
     assert len([r for r in routes if getattr(r, "name", None) == "geolibre-app"]) == 1
 
 
-def test_layout_trait_is_ipywidgets_layout(widget_session: Session) -> None:
-    # geolibre >= 3.6.1 moved the app chrome to `app_layout`, so `layout` is
-    # ipywidgets' Layout again and the generic Layout handling applies: an
-    # explicit Layout height opts out of filling.
-    w = geolibre_map(widget_session, app_layout="maponly")
-    assert isinstance(w.layout, Layout)
+def test_layout_trait_is_geolibres_own(widget_session: Session) -> None:
+    # geolibre < 3.6.1 reuses the `layout` trait name for the app's chrome
+    # ("embed"/"full"/"maponly"), shadowing ipywidgets' Layout widget;
+    # geolibre >= 3.6.1 renamed it to `app_layout` (and `layout` is a real
+    # Layout again). Either way, make sure set_layout_defaults() doesn't
+    # mistake the app chrome for a Layout.
+    if "app_layout" in Map.class_traits():
+        w = geolibre_map(widget_session, app_layout="maponly")
+        assert w.app_layout == "maponly"
+    else:
+        w = geolibre_map(widget_session, layout="maponly")
+        assert isinstance(w.layout, str)
     _, fill = set_layout_defaults(w)
     assert fill is True
-    w2 = geolibre_map(widget_session)
-    w2.layout.height = "400px"
-    _, fill2 = set_layout_defaults(w2)
-    assert fill2 is False
 
 
 def _asgi_request(

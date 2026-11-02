@@ -1571,19 +1571,17 @@ class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
     ``set_center()``/``set_zoom()``/``fit_project_bounds()``, layer styling
     (``get_layer(id).set_style()``/``set_opacity()``), and
     ``set_identify()``/``show_control()``. Methods that send a command to the
-    app and block waiting for its reply can never work on Shiny's event-loop
-    thread -- not directly inside a render function, `reactive.calc`, or a
-    `reactive.effect`/observer (sync or async) -- because the wait would
-    block the very loop that must deliver the reply. These include
-    ``fly_to()``, ``fit_bounds()``, ``zoom_to_layer()``, ``identify()``,
+    app and wait for its reply -- ``fly_to()``, ``fit_bounds()``,
+    ``zoom_to_layer()``, ``identify()``,
     ``get_center()``/``get_view()``/``get_bounds()``,
     ``get_selected_features()``/``get_drawn_features()``, ``run_algorithm()``,
-    and ``to_image()``. They do work from a worker thread (where the event
-    loop stays free), e.g., inside `reactive.extended_task` via
-    ``asyncio.get_running_loop().run_in_executor(None, map.widget.fly_to, ...)``
-    (this requires geolibre >= 3.6.1, enforced by the
-    ``shinywidgets[geolibre]`` extra). Where a non-blocking
-    alternative exists -- ``set_center()`` for ``fly_to()``,
+    and ``to_image()`` -- can't run inside a render function,
+    `reactive.calc`, or `reactive.effect`/observer (sync or async): the
+    reply is only delivered once the effect finishes, so waiting for it
+    there deadlocks. Instead, ``await`` the ``*_async()`` variants
+    (``fly_to_async()``/``get_center_async()``/...) in a
+    `reactive.extended_task`, which runs outside that flush. Where a
+    non-blocking alternative exists -- ``set_center()`` for ``fly_to()``,
     ``fit_project_bounds()`` for ``fit_bounds()``, the synced ``project``
     trait for the query methods -- it remains the cheaper option.
 
@@ -1608,9 +1606,11 @@ class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
     its file routes are protected by unguessable per-process tokens. Basemap
     tiles and remote data URLs require internet access from the browser.
 
-    **App chrome**: `geolibre.Map(app_layout=...)` chooses the app's chrome
-    (``"embed"``, ``"full"``, or ``"maponly"``; geolibre < 3.6.1 called
-    this parameter ``layout``).
+    **The ``app_layout`` parameter**: `geolibre.Map(app_layout=...)`
+    chooses the app's chrome (``"embed"``, ``"full"``, or ``"maponly"``).
+    (geolibre < 3.6.1 named this parameter ``layout``, shadowing
+    ipywidgets' ``Layout`` trait; geolibre >= 3.6.1 renamed it to
+    ``app_layout`` and deprecated passing a string as ``layout``.)
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
