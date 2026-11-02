@@ -986,6 +986,17 @@ class render_ipyleaflet(_IpyleafletAccessors, render_widget_base[ValueT, Leaflet
     render function, which builds a new map each time it runs. For anything
     beyond them, use :func:`~shinywidgets.reactive_read` on ``map.widget``.
 
+    ``clicked()`` attaches to the map on its first read, so a click made
+    before that first read is lost. If the first reader runs late -- e.g. a
+    chat handler, or an effect gated on ``input.action_button()`` -- read it
+    once, unconditionally, at startup to attach it immediately:
+
+    ```python
+    @reactive.effect
+    def _():
+        map.clicked()  # attach now, so early clicks aren't lost
+    ```
+
     Parameters
     ----------
     width
@@ -3451,6 +3462,17 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     * They can't be read inside this output's own render function, which builds
       a new plot each time it runs. To change the plot in response to a click,
       modify ``.widget`` from a ``@reactive.effect`` instead (see the example).
+
+    These accessors attach to the plot on their first read, so a gesture made
+    before that first read is lost. If the first reader runs late -- e.g. a
+    chat handler, or an effect gated on ``input.action_button()`` -- read the
+    accessor once, unconditionally, at startup to attach it immediately:
+
+    ```python
+    @reactive.effect
+    def _():
+        plot.selected()  # attach now, so early selections aren't lost
+    ```
 
     **Updating in place**: re-rendering rebuilds the figure, resetting zoom and
     selection. To change a displayed figure instead, read inputs under
