@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
-* `@render_pydeck` is deprecated. pydeck v0.9 (April 2024) removed its Jupyter widget, so `@render_pydeck` (and `@render_widget` with a `pydeck.Deck`) can't render a map with any pydeck release that works with ipywidgets 8. It now emits a `DeprecationWarning`, and returning a `Deck` raises a `TypeError` that explains the alternatives up front (previously the advice was wrong, and with pandas 3 a cryptic `vars()` error from pydeck hid it). To keep using pydeck layers reactively, pass `pydeck.Layer` objects to a maplibre map's `add_deck_layers()` and render it with `@render_maplibre` (see `examples/pydeck/app.py`). For large data, consider `@render_lonboard`. For a static map, use shiny's `@render.ui` and return `deck.show()`. (#187)
+* `@render_pydeck` is deprecated. pydeck v0.9 (April 2024) removed its Jupyter widget, so `@render_pydeck` (and `@render_widget` with a `pydeck.Deck`) can't render a map with any pydeck release that works with ipywidgets 8. It emits a `FutureWarning`, and returning a `Deck` raises a `TypeError` that explains the alternatives up front (previously the advice was wrong, and with pandas 3 a cryptic `vars()` error from pydeck hid it). To keep using pydeck layers reactively, pass `pydeck.Layer` objects to a maplibre map's `add_deck_layers()` and render it with `@render_maplibre` (see `examples/pydeck/app.py`). For large data, consider `@render_lonboard`. For a static map, use shiny's `@render.ui` and return `deck.show()`. (#187)
 
 ### New features
 
