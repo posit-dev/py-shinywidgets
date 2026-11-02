@@ -3463,15 +3463,17 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
       a new plot each time it runs. To change the plot in response to a click,
       modify ``.widget`` from a ``@reactive.effect`` instead (see the example).
 
-    These accessors attach to the plot on their first read, so a gesture made
-    before that first read is lost. If the first reader runs late -- e.g. a
-    chat handler, or an effect gated on ``input.action_button()`` -- read the
-    accessor once, unconditionally, at startup to attach it immediately:
+    ``clicked()``, ``selecting()``, ``brushing()``, and ``relayout()`` attach
+    to the plot on their first read, so a gesture made before that first read
+    is lost (``selected()`` and ``brushed()`` attach at render, so they don't
+    need this). If the first reader runs late -- e.g. a chat handler, or an
+    effect gated on ``input.action_button()`` -- read the accessor once,
+    unconditionally, at startup to attach it immediately:
 
     ```python
     @reactive.effect
     def _():
-        plot.selected()  # attach now, so early selections aren't lost
+        plot.clicked()  # attach now, so early clicks aren't lost
     ```
 
     **Updating in place**: re-rendering rebuilds the figure, resetting zoom and
