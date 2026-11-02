@@ -56,11 +56,17 @@ def test_app_mount_switches_to_remote_mode(widget_session: Session) -> None:
 
 
 def test_layout_trait_is_geolibres_own(widget_session: Session) -> None:
-    # geolibre reuses the `layout` trait name for the app's chrome
-    # ("embed"/"full"/"maponly"), shadowing ipywidgets' Layout widget. Make
-    # sure set_layout_defaults() doesn't mistake it for a Layout.
-    w = geolibre_map(widget_session, layout="maponly")
-    assert isinstance(w.layout, str)
+    # geolibre < 3.6.1 reuses the `layout` trait name for the app's chrome
+    # ("embed"/"full"/"maponly"), shadowing ipywidgets' Layout widget;
+    # geolibre >= 3.6.1 renamed it to `app_layout` (and `layout` is a real
+    # Layout again). Either way, make sure set_layout_defaults() doesn't
+    # mistake the app chrome for a Layout.
+    if "app_layout" in Map.class_traits():
+        w = geolibre_map(widget_session, app_layout="maponly")
+        assert w.app_layout == "maponly"
+    else:
+        w = geolibre_map(widget_session, layout="maponly")
+        assert isinstance(w.layout, str)
     _, fill = set_layout_defaults(w)
     assert fill is True
 
