@@ -2496,16 +2496,23 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         """
         return cast(Dict[str, Any], self._read_accessor("params"))
 
-    def data(self, table: Optional[str] = None) -> "duckdb.DuckDBPyRelation":
+    def data(
+        self,
+        table: Optional[str] = None,
+        *,
+        filter_by: Optional[Union[str, List[str]]] = None,
+    ) -> "duckdb.DuckDBPyRelation":
         """
         The rows of a source table matching the current selections, as a lazy
         DuckDB relation (materialize it with ``.df()``, ``.pl()``, or
         ``.aggregate(...)``).
 
         `table` names the source table to query and may be omitted when the
-        spec and the registered data name exactly one. Re-reads whenever
-        :meth:`params` changes and runs the query on each read, so prefer
-        calling it once inside a ``@reactive.calc``.
+        spec and the registered data name exactly one. `filter_by` names the
+        selection (or selections) to filter by, with or without the leading
+        ``"$"`` -- the default, ``None``, filters by every active selection.
+        Re-reads whenever :meth:`params` changes and runs the query on each
+        read, so prefer calling it once inside a ``@reactive.calc``.
 
         Note that this queries the widget's live ``params`` trait: while a
         brush is settling, the live value can be up to ``rate_delay`` (250 ms
@@ -2515,7 +2522,7 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         value can't be substituted.)
         """
         self.params()  # take the dependency
-        return cast(MosaicWidget, self._widget).data(table)
+        return cast(MosaicWidget, self._widget).data(table, filter_by=filter_by)
 
     def _as_widget(self, value: MosaicWidget) -> MosaicWidget:
         widget = super()._as_widget(value)
