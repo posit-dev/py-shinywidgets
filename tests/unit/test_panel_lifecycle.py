@@ -222,9 +222,7 @@ def test_rangexy_subscriber_does_not_invalidate_its_render(
             stream = hv.streams.RangeXY(source=el)
             # A counter subscriber is the classic loop trigger: the read is
             # what would register the render's Context as a dependent.
-            stream.add_subscriber(
-                lambda x_range, y_range: counter.set(counter() + 1)
-            )
+            stream.add_subscriber(lambda x_range, y_range: counter.set(counter() + 1))
             return el
 
         context = Context()
