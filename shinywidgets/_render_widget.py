@@ -157,7 +157,7 @@ from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
 from ._k3d import CAMERA as K3D_CAMERA
 from ._lonboard import LONBOARD_ACCESSORS
-from ._matplotlib import CLICKED, MATPLOTLIB_ACCESSORS, AxesLimits
+from ._matplotlib import CLICKED, LIMITS, MATPLOTLIB_ACCESSORS, AxesLimits
 from ._mosaic_widget import MOSAIC_ACCESSORS
 from ._niivue import LOCATION
 from ._perspective import PERSPECTIVE_ACCESSORS
@@ -525,9 +525,11 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
 
         `df` defaults to the chart's own data frame (pandas or polars); pass it
         for charts whose data is a URL, or that concatenate charts with
-        different data. Returns an empty frame while nothing is selected. Dates
-        are compared in UTC, reading time-zone-naive columns in the browser's
-        time zone, as Vega-Lite does.
+        different data. For a layered chart, the default only resolves when
+        every layer uses the *identical* data frame object (the same object,
+        not an equal copy) -- otherwise pass `df` explicitly. Returns an empty
+        frame while nothing is selected. Dates are compared in UTC, reading
+        time-zone-naive columns in the browser's time zone, as Vega-Lite does.
         """
         selection = self.selected(name)
         widget = cast(JupyterChart, self._widget)
@@ -923,9 +925,10 @@ class _IpyleafletAccessors:
         The most recent map click as ipyleaflet reports it: a dict with
         ``coordinates: [lat, lng]`` (note the order; lonboard reports
         ``(lng, lat)``), or ``None`` until the first click. A double-click
-        fires two clicks (the ``dblclick`` itself is ignored), and marker
-        clicks don't bubble up to the map -- use a layer's own ``on_click``
-        for those.
+        publishes once: the second click has the same coordinates, so it
+        isn't a change (the ``dblclick`` itself is ignored). Marker clicks
+        don't bubble up to the map -- use a layer's own ``on_click`` for
+        those.
         """
         return cast(Optional[Dict[str, Any]], self._read_ipyleaflet("clicked"))
 
@@ -1165,9 +1168,11 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
     `JupyterScatter` instance. Use ``.selection()`` to reactively read the selected
     points (below), or `.widget` to programmatically update the rendered plot in
     place (trait changes on the widget are synced to the browser), or to reactively
-    read widget state (e.g., the selected points via ``"selection"``) with
-    :func:`~shinywidgets.reactive_read`. The selection is an array of row *positions*
-    (use ``df.iloc[...]``), not index labels.
+    read widget state with :func:`~shinywidgets.reactive_read`. The selection
+    is an array of row *positions* (use ``df.iloc[...]``), not index labels.
+    Other traits worth reading with :func:`~shinywidgets.reactive_read` are
+    ``"hovering"`` (the hovered point's row position), ``"zoom_level"``, and
+    ``"lasso_selection_polygon"`` (the lasso path in data coordinates).
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -1945,10 +1950,10 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     rate_policy
-        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
-        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
-        this renderer declares a default.
+        How to rate-limit :meth:`view_state` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
@@ -1963,10 +1968,12 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         ``pitch``, and ``bearing``, in lng/lat order.
 
         Available as soon as the map has rendered (it's computed from the
-        layers), and updated by the browser after each pan or zoom -- lonboard
-        reports ~300 ms after the gesture settles, so no rate limit is
-        applied. Never ``None`` once rendered; the map is immutable per
-        render, so a re-render starts from the new map's own view state.
+        layers), and updated by the browser during each pan or zoom -- the
+        browser reports continuously through the gesture, so this accessor
+        is debounced by default (0.25 s; see the renderer's
+        ``rate_policy``/``rate_delay``). Never ``None`` once rendered; the
+        map is immutable per render, so a re-render starts from the new
+        map's own view state.
         """
         return cast("BaseViewState", self._read_accessor("view_state"))
 
@@ -2145,11 +2152,12 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     The decorated function may return a `matplotlib.figure.Figure`, a
     `matplotlib.axes.Axes` (rendered via its figure), or an `ipympl.backend_nbagg.Canvas`
     widget. Figures and axes are coerced to a `Canvas` (requires ``pip install
-    'shinywidgets[matplotlib]'``),
-    so this also works with libraries built on matplotlib (e.g., seaborn or
-    ``pandas.DataFrame.plot()``). In a filling layout, the figure is resized to fit its
-    container. With an explicit ``height``, the figure keeps its ``figsize`` unless the
-    output is also ``fillable=True``.
+    'shinywidgets[matplotlib]'``), so this also works with libraries built on matplotlib
+    (e.g., seaborn or ``pandas.DataFrame.plot()``). A coerced canvas's header (the
+    "Figure N" title) is hidden by default; a `Canvas` you construct yourself keeps its
+    own settings (e.g., ``header_visible=True``). In a filling layout, the figure is
+    resized to fit its container. With an explicit ``height``, the figure keeps its
+    ``figsize`` unless the output is also ``fillable=True``.
 
     Unlike `@render.plot`, which draws a static image, the figure stays alive on the
     server for as long as it is displayed, so it can respond to the user. Like
@@ -2402,6 +2410,26 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     queries match. Only share a connection for data that is the same for every
     user.
 
+    **Security**: like `render_embedding_atlas`, Mosaic runs its queries by
+    sending SQL from the browser to the widget's connection, so without
+    restrictions any visitor can send arbitrary SQL, including SQL that reads or
+    writes files on the server. The renderer locks down the connection before
+    display (``SET enable_external_access = false``; ``SET lock_configuration =
+    true``); pass ``allow_unrestricted_connection=True`` to opt out (e.g., a
+    local, single-user app). A connection whose configuration is already locked
+    is left untouched (its owner took control of its settings). This lockdown
+    can reach a connection the app is still using elsewhere: DuckDB's lockdown
+    is permanent (it can't be undone) and database-wide (it also locks every
+    other cursor on the same database, not just the one it was set on). So for
+    a shared connection as described above (``con=``, or a relation in
+    ``data=`` landing on ``duckdb.default_connection()``), the *first* render
+    locks it for every other use in the process. Do any server-side file reads
+    (``read_parquet()``, etc.) on that connection before the first render, or
+    pass ``allow_unrestricted_connection=True`` for it.
+
+    Even with the lockdown, a visitor can still send expensive queries, which
+    block the Python process while they run.
+
     Each re-render creates a new `MosaicWidget` and DuckDB connection, which
     anywidget currently keeps alive for the life of the server process, and loads
     another copy of the widget's JavaScript into the page. To restyle a dashboard,
@@ -2410,6 +2438,12 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
 
     Parameters
     ----------
+    allow_unrestricted_connection
+        When ``True``, the widget's DuckDB connection is left as the render
+        function returned it, without the lockdown described above. The default
+        (``False``) is strongly recommended for deployed apps: an unrestricted
+        connection lets any visitor run arbitrary SQL with the server process's
+        permissions.
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -2433,6 +2467,29 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         limiting.
     """
 
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[MosaicWidget]] = None,
+        *,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[float] = None,
+        allow_unrestricted_connection: bool = False,
+    ):
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+        )
+        self.allow_unrestricted_connection = allow_unrestricted_connection
+
     _accessor_specs = MOSAIC_ACCESSORS
 
     def params(self) -> Dict[str, Any]:
@@ -2448,16 +2505,23 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         """
         return cast(Dict[str, Any], self._read_accessor("params"))
 
-    def data(self, table: Optional[str] = None) -> "duckdb.DuckDBPyRelation":
+    def data(
+        self,
+        table: Optional[str] = None,
+        *,
+        filter_by: Optional[Union[str, List[str]]] = None,
+    ) -> "duckdb.DuckDBPyRelation":
         """
         The rows of a source table matching the current selections, as a lazy
         DuckDB relation (materialize it with ``.df()``, ``.pl()``, or
         ``.aggregate(...)``).
 
         `table` names the source table to query and may be omitted when the
-        spec and the registered data name exactly one. Re-reads whenever
-        :meth:`params` changes and runs the query on each read, so prefer
-        calling it once inside a ``@reactive.calc``.
+        spec and the registered data name exactly one. `filter_by` names the
+        selection (or selections) to filter by, with or without the leading
+        ``"$"`` -- the default, ``None``, filters by every active selection.
+        Re-reads whenever :meth:`params` changes and runs the query on each
+        read, so prefer calling it once inside a ``@reactive.calc``.
 
         Note that this queries the widget's live ``params`` trait: while a
         brush is settling, the live value can be up to ``rate_delay`` (250 ms
@@ -2467,7 +2531,29 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         value can't be substituted.)
         """
         self.params()  # take the dependency
-        return cast(MosaicWidget, self._widget).data(table)
+        return cast(MosaicWidget, self._widget).data(table, filter_by=filter_by)
+
+    def _as_widget(self, value: MosaicWidget) -> MosaicWidget:
+        widget = super()._as_widget(value)
+        if not self.allow_unrestricted_connection:
+            restrict_mosaic_connection(widget)
+        return widget
+
+
+def restrict_mosaic_connection(widget: MosaicWidget) -> None:
+    """
+    Lock down a `MosaicWidget`'s DuckDB connection, so the SQL the browser
+    sends can't reach server files or change the connection's configuration.
+    """
+    con = getattr(widget, "con", None)
+    if con is None:
+        raise RuntimeError(
+            "Couldn't find the MosaicWidget's DuckDB connection (`con`), so its "
+            "SQL access can't be restricted. If mosaic-widget renamed this "
+            "attribute, please report it. To render anyway, pass "
+            "`allow_unrestricted_connection=True` to `@render_mosaic_widget`."
+        )
+    restrict_duckdb_connection(con)
 
 
 class render_obsplot(render_widget_base[ObsplotWidget, ObsplotWidget]):
@@ -2591,13 +2677,22 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
 
     Note
     ---
-    **Reacting to user interaction**: ``plot.clicked()`` reads the most
-    recent mouse press on the plot, much like ``input.my_slider()`` reads an
-    input. Call it in a reactive function (a ``@render.*`` function,
-    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs on each
-    click. It returns ``None`` until the user clicks (a normal state, not an
-    error, so check for it, or use ``req(plot.clicked())``), and resets to
-    ``None`` on re-render.
+    **Reacting to user interaction**: the output has methods that read what
+    the user does in the plot, much like ``input.my_slider()`` reads an
+    input. Call them in a reactive function (a ``@render.*`` function,
+    ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
+    the interaction changes:
+
+    * ``clicked()``: the most recent mouse press on the plot. It returns
+      ``None`` until the user clicks (a normal state, not an error, so check
+      for it, or use ``req(plot.clicked())``), and resets to ``None`` on
+      re-render.
+    * ``limits(ax=0)``: an axes' x/y limits after a zoom or pan, seeded from
+      the rendered plot and updated once the user pauses for 250 ms
+      (debounced; see ``rate_policy`` and ``rate_delay``).
+
+    They can't be read inside this output's own render function, which builds
+    a new plot each time it runs.
 
     Parameters
     ----------
@@ -2615,16 +2710,16 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     rate_policy
-        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
-        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
-        this renderer declares a default.
+        How to rate-limit :meth:`limits` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
 
-    _accessor_specs = (CLICKED,)
+    _accessor_specs = (CLICKED, LIMITS)
 
     def clicked(self) -> Optional[MouseEvent]:
         """
@@ -2643,6 +2738,27 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
         rate-limited.
         """
         return cast(Optional["MouseEvent"], self._read_accessor("clicked"))
+
+    def limits(self, ax: int = 0) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+        """
+        The x and y limits of axes ``ax`` (an index into
+        ``.widget.figure.axes``; with ``facet_wrap()``/``facet_grid()``, the
+        panels' axes, in figure order), as ``((x0, x1), (y0, y1))``.
+
+        Seeded from the plot's current limits at render and updated after
+        every zoom or pan. Like ``clicked()``, the limits are in plotnine's
+        *transformed* coordinate space -- under ``scale_x_log10()`` they're
+        the log10 of the data. Debounced (250 ms) by default; see the
+        ``rate_policy`` and ``rate_delay`` parameters. Raises `IndexError`
+        when the figure has no axes ``ax``.
+        """
+        all_limits = cast(AxesLimits, self._read_accessor("limits"))
+        if not -len(all_limits) <= ax < len(all_limits):
+            raise IndexError(
+                f"`limits(ax={ax})` is out of range: the rendered figure has "
+                f"{len(all_limits)} axes (see `.widget.figure.axes`)."
+            )
+        return all_limits[ax]
 
 
 class render_bokeh(render_widget_base[ValueT, BokehModel]):
@@ -2961,7 +3077,9 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
     They can't be read inside this output's own render function, which builds
     a new viewer each time it runs. For anything beyond them (e.g.,
     ``theme`` or ``title``), use :func:`~shinywidgets.reactive_read` on
-    ``grid.widget``.
+    ``grid.widget`` -- but unlike the accessors (which are seeded at render),
+    a cosmetic trait read this way can be ``None`` until the first browser
+    sync, so guard with ``req()``.
 
     Perspective keeps every table it hosts in memory for the life of the process, so a
     table created from a DataFrame is not freed when the output re-renders. To change
@@ -3099,9 +3217,10 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     rate_policy
-        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
-        ``reactive_read()`` only if ``rate_delay`` is given.
+        How to rate-limit :meth:`selections` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps the debounce, and
+        debounces ``reactive_read()`` only if ``rate_delay`` is given.
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
@@ -3119,8 +3238,11 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         ``[]`` while nothing is selected, and after a sort (sorting clears
         the selection). Requires ``selection_mode`` other than ``"none"``;
         a plain data frame return uses ``"none"``, so return
-        ``DataGrid(df, selection_mode="row")`` to let users select. Not
-        rate-limited.
+        ``DataGrid(df, selection_mode="row")`` to let users select.
+
+        Dragging a selection rectangle reports continuously (on every
+        pointer move), so this accessor is debounced by default (0.25 s;
+        see the renderer's ``rate_policy``/``rate_delay``).
         """
         return cast(List[Dict[str, int]], self._read_accessor("selections"))
 
@@ -3323,8 +3445,12 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
       a new plot, so they all start over at ``None``.
     * Repeating an interaction (clicking the same point twice) isn't a change,
       so readers don't re-run.
-    * As in the plot itself, a double-click clears ``clicked()``, and a deselect
-      (double-clicking after a selection) clears the selection accessors.
+    * A double-click on the plot background clears ``clicked()``, and a
+      deselect (double-clicking after a selection) clears the selection
+      accessors. A double-click on a marker re-fires the click after the
+      clear, so it leaves ``clicked()`` unchanged. With ``dragmode="select"``
+      or ``"lasso"``, a plain click also resets ``selected()`` and
+      ``brushed()`` (plotly.js reports it as a zero-area selection).
     * The streaming ones, ``selecting()`` and ``brushing()``, update at most
       once the user pauses for 250 ms (see ``rate_policy`` and ``rate_delay``).
     * They can't be read inside this output's own render function, which builds
@@ -3436,10 +3562,11 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         Columns are ``trace_index``, ``point_index`` (the point's position
         within its trace, not a row of your data), ``x``, ``y``, and ``z`` and
         ``customdata`` when the figure has them. Returns ``None`` until the user
-        clicks, and again after a double-click or deselect, so check for
-        ``None`` (e.g. ``req(pts is not None)``) to wait for a click. Clicking
-        the same point twice doesn't fire twice. Not rate-limited. Requires
-        pandas.
+        clicks, and again after a double-click on the plot background or a
+        deselect, so check for ``None`` (e.g. ``req(pts is not None)``) to
+        wait for a click. A double-click on a marker re-fires the click after
+        the clear, so it leaves the value unchanged. Clicking the same point
+        twice doesn't fire twice. Not rate-limited. Requires pandas.
         """
         return cast(Optional["pd.DataFrame"], self._read_accessor("clicked"))
 
@@ -3450,7 +3577,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
 
         Returns ``None`` until the user selects, and again after a deselect
         (double-click); an empty frame for a selection that caught no points.
-        Not rate-limited. Requires pandas. See :meth:`selected_rows` for rows of
+        With ``dragmode="select"`` or ``"lasso"``, a plain click also resets
+        it (plotly.js reports the click as a zero-area selection). Not
+        rate-limited. Requires pandas. See :meth:`selected_rows` for rows of
         your data.
         """
         return cast(Optional["pd.DataFrame"], self._read_accessor("selected"))
@@ -3470,8 +3599,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         ``{"lassoPoints": {"x": [...], "y": [...]}}`` for a lasso, in data
         coordinates (as plotly.js reports them).
 
-        Returns ``None`` until the user selects, and again after a deselect.
-        Not rate-limited.
+        Returns ``None`` until the user selects, and again after a deselect,
+        or after a plain click with ``dragmode="select"``/``"lasso"`` (a
+        zero-area selection). Not rate-limited.
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("brushed"))
 
@@ -4128,8 +4258,32 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
     a new table each time it runs. For anything beyond them, use
     :func:`~shinywidgets.reactive_read` on ``table.widget``.
 
+    **Security**: like `render_embedding_atlas`, quak runs its queries by
+    sending SQL from the browser to the widget's DuckDB connection, so without
+    restrictions any visitor can send arbitrary SQL, including SQL that reads or
+    writes files on the server. The renderer locks down the widget's connection
+    before display (``SET enable_external_access = false``; ``SET
+    lock_configuration = true``); pass ``allow_unrestricted_connection=True`` to
+    opt out (e.g., a local, single-user app). A connection whose configuration
+    is already locked is left untouched (its owner took control of its
+    settings). If you build the `quak.Widget` yourself from a DuckDB connection
+    (``quak.Widget(con)``), the widget uses that connection directly, and
+    DuckDB's lockdown is permanent (it can't be undone) and database-wide, so
+    the first render locks it for every other use in the process: do any
+    server-side file reads on it before the first render, or pass
+    ``allow_unrestricted_connection=True`` for it.
+
+    Even with the lockdown, a visitor can still send expensive queries, which
+    block the Python process while they run.
+
     Parameters
     ----------
+    allow_unrestricted_connection
+        When ``True``, the widget's DuckDB connection is left as the render
+        function returned it, without the lockdown described above. The default
+        (``False``) is strongly recommended for deployed apps: an unrestricted
+        connection lets any visitor run arbitrary SQL with the server process's
+        permissions.
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -4152,6 +4306,29 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     """
+
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[ValueT]] = None,
+        *,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[float] = None,
+        allow_unrestricted_connection: bool = False,
+    ):
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+        )
+        self.allow_unrestricted_connection = allow_unrestricted_connection
 
     _accessor_specs = QUAK_ACCESSORS
 
@@ -4191,16 +4368,36 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
     # registering them in AS_WIDGET_MAP, coerce them here
     def _as_widget(self, value: ValueT) -> QuakWidget:
         if isinstance(value, Widget):
-            return super()._as_widget(value)
+            widget = cast(QuakWidget, super()._as_widget(value))
+        else:
+            try:
+                import quak  # pyright: ignore[reportMissingImports]
+            except ImportError:
+                raise ImportError(
+                    "Install the quak package to use render_quak with shinywidgets (pip install 'shinywidgets[quak]')."
+                )
 
-        try:
-            import quak  # pyright: ignore[reportMissingImports]
-        except ImportError:
-            raise ImportError(
-                "Install the quak package to use render_quak with shinywidgets (pip install 'shinywidgets[quak]')."
-            )
+            widget = quak.Widget(value)
 
-        return quak.Widget(value)
+        if not self.allow_unrestricted_connection:
+            restrict_quak_connection(widget)
+        return widget
+
+
+def restrict_quak_connection(widget: QuakWidget) -> None:
+    """
+    Lock down a `quak.Widget`'s DuckDB connection, so the SQL the browser sends
+    can't reach server files or change the connection's configuration.
+    """
+    con = getattr(widget, "_conn", None)
+    if con is None:
+        raise RuntimeError(
+            "Couldn't find the quak.Widget's DuckDB connection (`_conn`), so its "
+            "SQL access can't be restricted. If quak renamed this attribute, "
+            "please report it. To render anyway, pass "
+            "`allow_unrestricted_connection=True` to `@render_quak`."
+        )
+    restrict_duckdb_connection(con)
 
 
 class render_vizarr(render_widget_base[ValueT, VizarrViewer]):
@@ -5174,9 +5371,12 @@ class render_pyvista(render_widget_base[PyvistaValueT, PyvistaHtmlWidget]):
     The export is a self-contained, client-side vtk.js view: camera
     interaction (rotate/zoom/pan) happens entirely in the browser, and no
     widget state is synced back to Python, so there is nothing to read with
-    :func:`~shinywidgets.reactive_read`. Each render embeds the entire scene
-    in the widget state (roughly 1 MB even for a trivial mesh, growing with
-    scene size), so prefer fewer, larger re-renders over frequent small ones.
+    :func:`~shinywidgets.reactive_read`. The vtk.js runtime ships once per
+    session (~400 KB, shared by every pyvista output in the app); each render
+    then embeds only the exported scene in the widget state (tens of KB for
+    a typical mesh, growing with scene size), so input-driven re-renders are
+    cheap. Still, very large scenes (millions of cells) produce multi-MB
+    exports, so prefer fewer, larger re-renders for those.
     For fully server-driven interactivity (e.g., picking, server-side
     rendering), use pyvista's ``jupyter_backend="trame"`` with a trame server
     embedded via ``shiny.ui.tags.iframe`` instead (shinywidgets can't host
@@ -5251,11 +5451,20 @@ class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
     value most recently returned by the render function, and `.widget`, the
     rendered `ReactableWidget` instance.
 
-    To update the table when the data changes, re-render it (i.e., have the
-    render function read the relevant inputs/reactives): reactable's JavaScript
-    reads the data once when the widget is created, so mutating
-    ``.widget.props["data"]`` in place has no effect. Non-data props do update
-    in place, for example:
+    To update the table when the data changes, either re-render it (i.e.,
+    have the render function read the relevant inputs/reactives) or send new
+    data through ``.widget.props`` -- a props update preserves the user's
+    sort, filter, page, and selection. Note the dict is a trait, so replace
+    it (mutating ``.widget.props["data"]`` in place never syncs), for
+    example:
+
+    ```python
+    @reactive.effect
+    def _():
+        tbl.widget.props = {**tbl.widget.props, "data": df().to_dict(orient="records")}
+    ```
+
+    Other props update the same way:
 
     ```python
     @reactive.effect
@@ -5335,7 +5544,7 @@ class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
     ```
     """
 
-    accessor_specs = REACTABLE_ACCESSORS
+    _accessor_specs = REACTABLE_ACCESSORS
 
     def selected_rows(self) -> List[int]:
         """

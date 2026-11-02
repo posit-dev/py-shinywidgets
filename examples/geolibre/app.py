@@ -48,8 +48,8 @@ def _():
 # an extended_task (geolibre >= 3.5.2 polls for the reply instead of pumping
 # a Jupyter kernel; see README.md).
 @extended_task
-async def fly_to_city():
-    lng, lat = CITIES[input.city()]
+async def fly_to_city(city):
+    lng, lat = CITIES[city]
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, glmap.widget.fly_to, lng, lat, zoom=9)
 
@@ -57,7 +57,9 @@ async def fly_to_city():
 @reactive.effect
 @reactive.event(input.fly)
 def _():
-    fly_to_city.invoke()
+    # Read inputs here, not inside fly_to_city(): an @extended_task body runs
+    # outside a reactive context, where reading input.city() errors.
+    fly_to_city.invoke(input.city())
 
 
 with ui.card():

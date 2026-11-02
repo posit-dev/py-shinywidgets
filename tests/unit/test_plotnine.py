@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 import shinywidgets._render_widget as rw
 from matplotlib.figure import Figure
-from plotnine import aes, geom_point, ggplot, theme
+from plotnine import aes, geom_point, ggplot, guide_legend, theme
 from shiny import Session
 from shiny.reactive import Context
 from shiny.session import session_context
@@ -142,6 +142,13 @@ def test_rejects_non_plot() -> None:
         as_widget_plotnine(geom_point())
 
 
+def test_rejects_plotnine_non_plot_with_a_helpful_error() -> None:
+    # A guide has a draw() method (which the coercer's old duck-typing
+    # accepted, only to fail cryptically inside it), but it isn't a plot
+    with pytest.raises(TypeError, match="not a plot"):
+        as_widget_plotnine(guide_legend())
+
+
 def test_missing_ipympl_error_mentions_plotnine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -173,6 +180,36 @@ def test_renderers_accept_ggplot(renderer: type, widget_session: Session) -> Non
     assert isinstance(r.value, ggplot)
 
 
+def test_limits_seeds_from_the_drawn_figure(widget_session: Session) -> None:
+    with session_context(widget_session):
+        canvas = cast("Canvas", as_widget(scatter()))
+
+    r = rw.render_plotnine()
+    r._widget = canvas  # stands in for _render()
+    r._accessors.on_render(canvas)
+
+    ax = canvas.figure.axes[0]
+    assert r.limits() == (tuple(ax.get_xlim()), tuple(ax.get_ylim()))
+    with pytest.raises(IndexError, match="1 axes"):
+        r.limits(ax=1)
+
+
+def test_limits_follows_zooms(widget_session: Session) -> None:
+    with session_context(widget_session):
+        canvas = cast("Canvas", as_widget(scatter()))
+
+    # rate_delay=0: publish synchronously (the default debounce needs a
+    # running event loop, which a sync test doesn't have)
+    r = rw.render_plotnine(rate_delay=0)
+    r._widget = canvas
+    r._accessors.on_render(canvas)
+    r.limits()  # attach
+
+    ax = canvas.figure.axes[0]
+    ax.set_xlim(0.5, 0.75)
+    assert r.limits() == ((0.5, 0.75), tuple(ax.get_ylim()))
+
+
 def scatter() -> ggplot:
     df = pd.DataFrame({"x": [1, 2, 3], "y": [3, 1, 2]})
     return ggplot(df, aes("x", "y")) + geom_point()
@@ -180,8 +217,6 @@ def scatter() -> ggplot:
 
 # Draws a figure outside of pyplot (whose backend may be ipympl, depending on
 # what ran earlier in the process, which would construct a widget on draw)
-class FakePlot:
-    __module__ = "plotnine.ggplot"
-
+class FakePlot(ggplot):
     def draw(self, *, show: bool = False) -> Figure:
         return Figure()

@@ -100,8 +100,53 @@ def bokeh_extension_assets(w: Widget, session: Session) -> ExtensionAssets:
     if not ext_pkgs:
         return ExtensionAssets([], [], {})
 
+    if "panel" in ext_pkgs:
+        panel_static_extensions_mount(session)
+
     js_urls, css_urls, modules = bokeh_extension_urls(model, ext_pkgs)
     return extension_assets(js_urls, css_urls, modules, session)
+
+
+def panel_static_extensions_mount(session: Session) -> None:
+    """
+    Serve panel's dist directory at /static/extensions/panel/ (once per app).
+
+    panel >= 1.10 lazily loads some component resources (e.g., echarts-gl for
+    ``pn.pane.ECharts`` and ``pn.indicators.Gauge``) through a client-side
+    registry whose URLs are generated in panel's 'server' resource mode --
+    bokeh-server-style relative paths (``static/extensions/panel/bundled/...``).
+    Jupyter serves those through panel's server extension, but nothing mounts
+    them on a Shiny app, so the fetch 404s and panel aborts the component's
+    render. Mounting the dist directory bokeh records for panel makes the URLs
+    resolve.
+    """
+    handler = session.app._dependency_handler
+
+    # Mount once per App (this runs for every panel render)
+    for route in handler.routes:
+        if getattr(route, "name", None) == "panel-static-extensions":
+            return
+
+    from bokeh.embed.bundle import extension_dirs
+    from starlette.staticfiles import StaticFiles
+
+    # Bokeh records the directory behind panel's static/extensions URLs,
+    # including bundles located by package.json outside the default dist
+    dist = extension_dirs.get("panel")
+    if dist is None:
+        import panel
+
+        if panel.__file__ is None:
+            return
+        dist = os.path.join(os.path.dirname(panel.__file__), "dist")
+    if not os.path.isdir(str(dist)):
+        return
+
+    handler.mount(
+        "/static/extensions/panel/",
+        StaticFiles(directory=str(dist)),
+        name="panel-static-extensions",
+    )
 
 
 def bokeh_extension_urls(

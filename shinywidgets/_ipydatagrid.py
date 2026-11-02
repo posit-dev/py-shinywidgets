@@ -41,10 +41,14 @@ def attach_cell_edited(widget: DataGrid, emit: Emit) -> Callable[[], None]:
     return lambda: widget.on_cell_change(emit, remove=True)
 
 
+# Dragging a selection rectangle streams `selections` on every pointer move,
+# so (like the other selection streams: plotly, altair, bqplot, ...) the
+# accessor debounces by default
 SELECTIONS = AccessorSpec(
     name="selections",
     kind="state",
     attach=attach_selections,
+    rate_policy="debounce",
 )
 
 CELL_CLICKED = AccessorSpec(

@@ -90,22 +90,21 @@ plotnine = ["plotnine", "ipympl"]
 # validate_visitor_sql), not just transitively through pygwalker
 pygwalker = ["pygwalker>=0.4.9.13", "duckdb>=0.10.4", "sqlglot>=23.15.8"]
 pythreejs = ["pythreejs"]
-# vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
-# so pyvista can't be installed there
-# trame-pyvista 0.3.x (EmbeddableWidget backend) not yet supported;
-# see https://github.com/posit-dev/py-shinywidgets/issues/408
+# pyvista needs trame-pyvista 0.3.x, which requires Python 3.11+, and vtk
+# (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet
 pyvista = [
-  "pyvista[jupyter]; python_version < '3.15'",
-  "trame-pyvista<0.3; python_version < '3.15'",
+  "pyvista[jupyter]; python_version >= '3.11' and python_version < '3.15'",
+  "trame-pyvista>=0.3; python_version >= '3.11' and python_version < '3.15'",
 ]
 quak = ["quak"]
 # reactable 0.1.6 pins ipyreact<=0.4.1 (unnecessarily -- it works with the
-# ipyreact>=0.6 that the test/dev groups require, verified with 0.4.1 and 0.7.0).
-# The tool.uv override below relaxes the pin so the lock resolves, but reactable
-# still isn't in the shared test/dev groups: importing it constructs a
-# process-global ipyreact Module widget that order-sensitive unit tests
-# (FakeSession-based) don't expect. Run its tests with
-# `uv run --with reactable pytest tests/unit/test_reactable.py`
+# ipyreact>=0.6 that the test/dev groups require, verified with 0.4.1 and 0.7.0)
+# and imports great_tables without declaring it. The tool.uv override below
+# relaxes the pin so the lock resolves, but reactable still isn't in the shared
+# test/dev groups: importing it constructs a process-global ipyreact Module
+# widget that order-sensitive unit tests (FakeSession-based) don't expect.
+# Its tests run via an overlay instead: `make test-reactable` (unit) and
+# `make test-playwright-reactable` (see REACTABLE_OVERLAY in the Makefile).
 reactable = ["reactable>=0.1.6"]
 # vizarr pins zarr<3, so it is not in the shared test/dev groups
 vizarr = ["vizarr>=0.1.1"]
@@ -174,12 +173,10 @@ test = [
   "pytest-timeout>=2.2",
   "pytest-xdist>=3.5",
   "pythreejs",
-  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
-  # so pyvista can't be installed there
-  "pyvista[jupyter]; python_version < '3.15'",
-  # trame-pyvista 0.3.x (EmbeddableWidget backend) not yet supported;
-  # see https://github.com/posit-dev/py-shinywidgets/issues/408
-  "trame-pyvista<0.3; python_version < '3.15'",
+  # pyvista needs trame-pyvista 0.3.x, which requires Python 3.11+, and
+  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet
+  "pyvista[jupyter]; python_version >= '3.11' and python_version < '3.15'",
+  "trame-pyvista>=0.3; python_version >= '3.11' and python_version < '3.15'",
   "quak; python_version < '3.15'",
   "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "tox-uv>=1",
@@ -248,12 +245,10 @@ dev = [
   "pytest-timeout>=2.2",
   "pytest-xdist>=3.5",
   "pythreejs",
-  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
-  # so pyvista can't be installed there
-  "pyvista[jupyter]; python_version < '3.15'",
-  # trame-pyvista 0.3.x (EmbeddableWidget backend) not yet supported;
-  # see https://github.com/posit-dev/py-shinywidgets/issues/408
-  "trame-pyvista<0.3; python_version < '3.15'",
+  # pyvista needs trame-pyvista 0.3.x, which requires Python 3.11+, and
+  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet
+  "pyvista[jupyter]; python_version >= '3.11' and python_version < '3.15'",
+  "trame-pyvista>=0.3; python_version >= '3.11' and python_version < '3.15'",
   "quak; python_version < '3.15'",
   "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "ruff>=0.6.5",
@@ -328,12 +323,10 @@ test = [
   "pytest-timeout>=2.2",
   "pytest-xdist>=3.5",
   "pythreejs",
-  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet,
-  # so pyvista can't be installed there
-  "pyvista[jupyter]; python_version < '3.15'",
-  # trame-pyvista 0.3.x (EmbeddableWidget backend) not yet supported;
-  # see https://github.com/posit-dev/py-shinywidgets/issues/408
-  "trame-pyvista<0.3; python_version < '3.15'",
+  # pyvista needs trame-pyvista 0.3.x, which requires Python 3.11+, and
+  # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet
+  "pyvista[jupyter]; python_version >= '3.11' and python_version < '3.15'",
+  "trame-pyvista>=0.3; python_version >= '3.11' and python_version < '3.15'",
   "quak; python_version < '3.15'",
   "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
   "tox-uv>=1",

@@ -77,7 +77,14 @@ def attach_selected_index(widget: LonboardMap, emit: Emit) -> Callable[[], None]
     return detach
 
 
-VIEW_STATE = AccessorSpec(name="view_state", kind="state", attach=attach_view_state)
+# The browser syncs `view_state` on every deck.gl `onViewStateChange` (each
+# animation frame of a pan or zoom), so the accessor debounces by default
+VIEW_STATE = AccessorSpec(
+    name="view_state",
+    kind="state",
+    attach=attach_view_state,
+    rate_policy="debounce",
+)
 SELECTED_INDEX = AccessorSpec(
     name="selected_index", kind="event", attach=attach_selected_index
 )
