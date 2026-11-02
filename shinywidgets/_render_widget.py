@@ -2400,17 +2400,18 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     display (``SET enable_external_access = false``; ``SET lock_configuration =
     true``); pass ``allow_unrestricted_connection=True`` to opt out (e.g., a
     local, single-user app). A connection whose configuration is already locked
-    is left untouched (its owner took control of its settings). Unlike
-    `render_embedding_atlas`'s connection
-    (private to one widget), this lockdown can reach a connection the app is
-    still using elsewhere: DuckDB's lockdown is permanent (it can't be undone)
-    and database-wide (it also locks every other cursor on the same database,
-    not just the one it was set on). So for a shared connection as described
-    above (``con=``, or a relation in ``data=`` landing on
-    ``duckdb.default_connection()``), the *first* render locks it for every
-    other use in the process. Do any server-side file reads (``read_parquet()``,
-    etc.) on that connection before the first render, or pass
-    ``allow_unrestricted_connection=True`` for it.
+    is left untouched (its owner took control of its settings). This lockdown
+    can reach a connection the app is still using elsewhere: DuckDB's lockdown
+    is permanent (it can't be undone) and database-wide (it also locks every
+    other cursor on the same database, not just the one it was set on). So for
+    a shared connection as described above (``con=``, or a relation in
+    ``data=`` landing on ``duckdb.default_connection()``), the *first* render
+    locks it for every other use in the process. Do any server-side file reads
+    (``read_parquet()``, etc.) on that connection before the first render, or
+    pass ``allow_unrestricted_connection=True`` for it.
+
+    Even with the lockdown, a visitor can still send expensive queries, which
+    block the Python process while they run.
 
     Each re-render creates a new `MosaicWidget` and DuckDB connection, which
     anywidget currently keeps alive for the life of the server process, and loads
@@ -4197,7 +4198,15 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
     lock_configuration = true``); pass ``allow_unrestricted_connection=True`` to
     opt out (e.g., a local, single-user app). A connection whose configuration
     is already locked is left untouched (its owner took control of its
-    settings).
+    settings). If you build the `quak.Widget` yourself from a DuckDB connection
+    (``quak.Widget(con)``), the widget uses that connection directly, and
+    DuckDB's lockdown is permanent (it can't be undone) and database-wide, so
+    the first render locks it for every other use in the process: do any
+    server-side file reads on it before the first render, or pass
+    ``allow_unrestricted_connection=True`` for it.
+
+    Even with the lockdown, a visitor can still send expensive queries, which
+    block the Python process while they run.
 
     Parameters
     ----------

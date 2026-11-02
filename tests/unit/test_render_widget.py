@@ -59,9 +59,9 @@ def test_render_embedding_atlas_respects_widget_layout_height(widget_session) ->
     assert res["fill"] is False
 
 
-def _duckdb_settings(widget, *names: str) -> dict:  # noqa: ANN001, ANN202
+def _duckdb_settings(con, *names: str) -> dict:  # noqa: ANN001, ANN202
     quoted = ", ".join(f"'{name}'" for name in names)
-    rows = widget._connection.execute(
+    rows = con.execute(
         f"SELECT name, value FROM duckdb_settings() WHERE name IN ({quoted})"
     ).fetchall()
     return dict(rows)
@@ -90,7 +90,7 @@ def test_render_embedding_atlas_restricts_connection_by_default(widget_session) 
     def make_widget():  # noqa: ANN202
         df = pd.DataFrame({"x": [0.0, 1.0], "y": [1.0, 0.0]})
         widget = EmbeddingAtlasWidget(df, x="x", y="y")
-        assert _duckdb_settings(widget, "lock_configuration") == {
+        assert _duckdb_settings(widget._connection, "lock_configuration") == {
             "lock_configuration": "false"
         }
         return widget
@@ -101,7 +101,9 @@ def test_render_embedding_atlas_restricts_connection_by_default(widget_session) 
 
     # Without the lockdown, any visitor could send SQL that reads/writes server
     # files (or re-enables external access) through the widget's connection
-    assert _duckdb_settings(widget, "enable_external_access", "lock_configuration") == {
+    assert _duckdb_settings(
+        widget._connection, "enable_external_access", "lock_configuration"
+    ) == {
         "enable_external_access": "false",
         "lock_configuration": "true",
     }
@@ -124,7 +126,9 @@ def test_render_embedding_atlas_allow_unrestricted_connection(widget_session) ->
         widget_session,
     )
 
-    assert _duckdb_settings(widget, "enable_external_access", "lock_configuration") == {
+    assert _duckdb_settings(
+        widget._connection, "enable_external_access", "lock_configuration"
+    ) == {
         "enable_external_access": "true",
         "lock_configuration": "false",
     }
@@ -152,7 +156,9 @@ def test_render_embedding_atlas_respects_author_locked_connection(
         rw.render_embedding_atlas(), make_widget, widget_session
     )
 
-    assert _duckdb_settings(widget, "enable_external_access", "lock_configuration") == {
+    assert _duckdb_settings(
+        widget._connection, "enable_external_access", "lock_configuration"
+    ) == {
         "enable_external_access": "true",
         "lock_configuration": "true",
     }
@@ -502,14 +508,6 @@ def _sent_messages(widget, monkeypatch: pytest.MonkeyPatch) -> list:  # noqa: AN
     return sent
 
 
-def _quak_duckdb_settings(widget, *names: str) -> dict:  # noqa: ANN001, ANN202
-    quoted = ", ".join(f"'{name}'" for name in names)
-    rows = widget._conn.execute(
-        f"SELECT name, value FROM duckdb_settings() WHERE name IN ({quoted})"
-    ).fetchall()
-    return dict(rows)
-
-
 def test_render_quak_restricts_connection_by_default(
     widget_session, monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
@@ -606,8 +604,8 @@ def test_render_quak_respects_author_locked_connection(widget_session) -> None:
     with session_context(widget_session):
         assert asyncio.run(r._render()) is not None
 
-    assert _quak_duckdb_settings(
-        r.widget, "enable_external_access", "lock_configuration"
+    assert _duckdb_settings(
+        r.widget._conn, "enable_external_access", "lock_configuration"
     ) == {"enable_external_access": "true", "lock_configuration": "true"}
 
 
