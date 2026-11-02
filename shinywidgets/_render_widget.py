@@ -2593,8 +2593,8 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
       for it, or use ``req(plot.clicked())``), and resets to ``None`` on
       re-render.
     * ``limits(ax=0)``: an axes' x/y limits after a zoom or pan, seeded from
-      the rendered plot and updated at most once the user pauses for 250 ms
-      (see ``rate_policy`` and ``rate_delay``).
+      the rendered plot and updated once the user pauses for 250 ms
+      (debounced; see ``rate_policy`` and ``rate_delay``).
 
     They can't be read inside this output's own render function, which builds
     a new plot each time it runs.
