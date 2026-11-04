@@ -24,6 +24,19 @@ SELECTED_STATE_JS = """(id) => {
   );
 }"""
 
+DESELECTED_STATE_JS = SELECTED_STATE_JS.replace("return (", "return !(")
+
+
+def wait_for_sync(page: Page) -> None:
+    """Wait until a selection/deselection made in the browser has reached
+    the server, WITHOUT reading an accessor (an ungated accessor read would
+    attach it early, defeating the late-first-read scenario). plotly.js
+    emits plotly_selected a few hundred ms after mouseup (held back for
+    double-click disambiguation), and client->server messages are ordered,
+    so once the delay has passed, the next message (the button click) is
+    processed after the selection message."""
+    page.wait_for_timeout(700)
+
 
 def point(page: Page, x: float, y: float, id: str = "plot") -> tuple[float, float]:
     px, py = page.evaluate(POINT_JS, [id, x, y])
@@ -61,37 +74,33 @@ def box_select(page: Page, id: str = "plot") -> None:
 def goto_plot(page: Page, local_app) -> None:
     page.goto(local_app.url)
     expect(page.locator("#plot .js-plotly-plot")).to_be_visible(timeout=30000)
-    # Nothing consumer-facing reads the accessors until the button is
-    # clicked; the sentinel starts at no selection
+    # Nothing reads the accessors until the button is clicked (any ungated
+    # read would attach them early), so the gated outputs are still empty
     expect(page.locator("#selected")).to_have_text("")
     expect(page.locator("#selected_rows")).to_have_text("")
     expect(page.locator("#brushed")).to_have_text("")
-    expect(page.locator("#synced_selection")).to_have_text("None", timeout=30000)
 
 
 def test_selection_before_first_read_is_reported(page: Page, local_app) -> None:
     """A box selection made before the accessor's (gated) first read is
-    reflected in that read.
+    reflected in that read. Nothing in the app reads the accessors before
+    the button click, so the first read is genuinely late: pre-change
+    (kind="event", lazy attach on first read) the selection below fired
+    into a nonexistent listener and this read returned None.
 
     selected()/brushed() are kind="state" accessors: they attach at render,
     and the bridge seeds the plot's current selection when the bind reaches
-    the browser (js/src/plotly.ts). So the selection below is captured
-    whether or not the bind request has arrived yet -- forwarded live if the
-    plot is already bound, reconstructed from the graph div's selection state
-    on bind otherwise. Pre-change (kind="event", lazy attach on first read),
-    the selection before the first read was silently lost and this read
-    returned None.
+    the browser (js/src/plotly.ts), so the selection is captured whether it
+    preceded the bind (seed) or followed it (live forwarding).
     """
     errors, failed_requests = collect_errors(page)
     goto_plot(page, local_app)
 
     # Select BEFORE the gated first read of selected()/selected_rows()/
-    # brushed(), then wait for the selection to sync to the server (the
-    # sentinel reads the same accessor state ungated) before clicking
+    # brushed(), and wait for the selection to reach the server before
+    # clicking (see wait_for_sync)
     box_select(page)
-    expect(page.locator("#synced_selection")).to_have_text(
-        SELECTED_COUNT, timeout=30000
-    )
+    wait_for_sync(page)
 
     page.locator("#read_selection").click()
     expect(page.locator("#selected")).to_have_text(SELECTED_POINTS, timeout=30000)
@@ -108,17 +117,16 @@ def test_deselect_after_read_clears_selection(page: Page, local_app) -> None:
     goto_plot(page, local_app)
 
     box_select(page)
-    expect(page.locator("#synced_selection")).to_have_text(
-        SELECTED_COUNT, timeout=30000
-    )
+    wait_for_sync(page)
     page.locator("#read_selection").click()
     expect(page.locator("#selected")).to_have_text(SELECTED_POINTS, timeout=30000)
     expect(page.locator("#brushed")).to_have_text("range")
 
-    # Double-click the plot background (x=1, y=25 is no data point), wait for
-    # the deselect to sync, then re-read: selected()/brushed() are cleared
+    # Double-click the plot background (x=1, y=25 is no data point), wait
+    # for the deselect to reach the server, then re-read: cleared
     page.mouse.dblclick(*point(page, 1, 25))
-    expect(page.locator("#synced_selection")).to_have_text("None", timeout=30000)
+    page.wait_for_function(DESELECTED_STATE_JS, arg="plot", timeout=30000)
+    wait_for_sync(page)
 
     page.locator("#read_selection").click()
     expect(page.locator("#selected")).to_have_text("None", timeout=30000)

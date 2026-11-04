@@ -129,15 +129,24 @@ function selectionSeed(plotEl: HTMLElement): Record<string, unknown> {
         trace_index: curveNumber,
         point_index: i,
       };
+      // Coordinates the trace doesn't carry explicitly (implicit x, bar
+      // x0/dx) are still resolved on calcdata, which is where the live
+      // event's point objects get them
+      const calc = (plotEl as any).calcdata?.[curveNumber]?.[i];
       for (const key of ["x", "y", "z", "customdata"]) {
-        const value = trace[key]?.[i];
+        let value = trace[key]?.[i];
+        if (value === undefined && key !== "customdata") value = calc?.[key];
         if (value !== undefined) entry[key] = jsonable(value);
       }
       return entry;
     });
   });
-  if (points.length === 0) return {};
-  return { points, ...regionSeed(plotEl) };
+  // An empty drag selection is still a selection: plotly.js reports it as
+  // points: [] plus the region. No points and no region means nothing was
+  // ever selected (or a deselect), the no-data case.
+  const region = regionSeed(plotEl);
+  if (points.length === 0 && Object.keys(region).length === 0) return {};
+  return { points, ...region };
 }
 
 function regionSeed(plotEl: HTMLElement): Record<string, unknown> {
@@ -153,7 +162,7 @@ function regionSeed(plotEl: HTMLElement): Record<string, unknown> {
   if (typeof last.path === "string") {
     const x: number[] = [];
     const y: number[] = [];
-    const vertex = /[ML]\s*(-?[\d.eE+]+)\s*,\s*(-?[\d.eE+]+)/g;
+    const vertex = /[ML]\s*(-?[\d.]+(?:[eE][+-]?\d+)?)\s*,\s*(-?[\d.]+(?:[eE][+-]?\d+)?)/g;
     let m: RegExpExecArray | null;
     while ((m = vertex.exec(last.path)) !== null) {
       x.push(parseFloat(m[1]));

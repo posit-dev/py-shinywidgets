@@ -14,17 +14,16 @@ layers in place, and read clicks (`on_click()`) or the whole live project
 (`reactive_read(map.widget, "project")`, which invalidates on every pan/zoom)
 back in Python.
 
-One limitation to know about: geolibre's blocking command methods
-(`fly_to()`, `fit_bounds()`, `get_center()`, ...) can never run on Shiny's
-event-loop thread (a render function, `reactive.calc`, or any
-`reactive.effect`/observer) -- the wait would block the very loop that must
-deliver the reply. They do work from a worker thread, e.g. inside
-`reactive.extended_task` via `run_in_executor` (geolibre >= 3.5.2, which
-this example's requirements pull in, polls for the reply instead of pumping
-a Jupyter kernel event loop). Where a project-mutation alternative exists
-(`set_center()`, `fit_project_bounds()`, ...), it's the cheaper option.
-The app shows both patterns: `set_center()` on selection change, and
-`fly_to()` from an `extended_task` (the "Fly there" button).
+One limitation to know about: geolibre's command methods (`fly_to()`,
+`get_center()`, ...) wait for a reply from the app, and the reply is only
+delivered once the current `reactive.effect` finishes -- so they can't be
+called (or their `*_async()` variants awaited) inside a render function,
+`reactive.calc`, or `reactive.effect`. Instead, `await` the `*_async()`
+variants (`map.fly_to_async(...)`, ...) inside a `reactive.extended_task`,
+which runs outside that flush. Where a fire-and-forget alternative exists
+(`set_center()`, `fit_project_bounds()`, ...), it's the cheaper option. The
+app shows both patterns: `set_center()` on selection change, and
+`fly_to_async()` in an `extended_task` (the "Fly there" button).
 
 (Layers read from files on the server's disk, e.g. `add_raster()` of a local
 GeoTIFF, *do* work in deployed apps: shinywidgets proxies geolibre's
