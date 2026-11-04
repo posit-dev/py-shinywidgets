@@ -153,10 +153,17 @@ function selectionSeed(plotEl: HTMLElement): Record<string, unknown> {
     });
   });
   // An empty drag selection is still a selection: plotly.js reports it as
-  // points: [] plus the region. No points and no region means nothing was
+  // points: [] plus the region. So is a preconfigured selectedpoints: []
+  // (plotly dims every point with unselected styling). No points, no
+  // region, and no trace supplying a selection array means nothing was
   // ever selected (or a deselect), the no-data case.
   const region = regionSeed(plotEl);
-  if (points.length === 0 && Object.keys(region).length === 0) return {};
+  const anySelectionArray = data.some((trace: any) =>
+    Array.isArray(jsonable(trace?.selectedpoints)),
+  );
+  if (points.length === 0 && Object.keys(region).length === 0 && !anySelectionArray) {
+    return {};
+  }
   return { points, ...region };
 }
 
