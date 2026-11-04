@@ -173,7 +173,7 @@ function regionSeed(plotEl: HTMLElement): Record<string, unknown> {
   if (typeof last.path === "string") {
     const x: unknown[] = [];
     const y: unknown[] = [];
-    const vertex = /[ML]([^ML]+)/g;
+    const vertex = /[ML]([^MLZz]+)/g;
     let m: RegExpExecArray | null;
     while ((m = vertex.exec(last.path)) !== null) {
       const sep = m[1].lastIndexOf(",");
