@@ -348,20 +348,18 @@ class render_drawdata(render_widget_base[DrawdataWidgetT, DrawdataWidgetT]):
     Note
     ---
     **Drawn data syncs one batch behind** (upstream drawdata issue
-    [#40](https://github.com/koaning/drawdata/issues/40), any frontend):
-    `ScatterWidget`'s frontend mutates the model's ``data`` array in place, so
-    the change from the *first* drawing batch goes undetected and nothing
-    syncs until a second batch is drawn (from then on, every batch syncs in
-    full). The undo (pops one batch) and reset buttons sync immediately.
-    `BarWidget` is not affected.
+    [#40](https://github.com/koaning/drawdata/issues/40)): the *first*
+    drawing batch doesn't sync to Python; nothing is readable until a second
+    batch is drawn (from then on, every batch syncs in full). The undo (pops
+    one batch) and reset buttons sync immediately. `BarWidget` is not
+    affected.
 
     Also note a few `BarWidget` limitations (upstream drawdata issue
     [#42](https://github.com/koaning/drawdata/issues/42)): its frontend
     overwrites any ``data`` passed to the constructor when it initializes
     (all bins start at ``y_min``), so a `BarWidget` output always starts
     empty -- seeding initial data is impossible, even via a re-render --
-    and it ignores later Python-side trait updates until the next re-render
-    (it registers no ``change:`` handlers, unlike `ScatterWidget`).
+    and it ignores later Python-side trait updates until the next re-render.
     Re-rendering (returning a new `BarWidget` in response to a reactive
     change) is the way to change ``n_bins``, ``y_max``, etc. Finally, avoid
     putting two `BarWidget`s on the same page: clicking one widget's
@@ -772,7 +770,7 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
     ``.widget.add_table()``) until the viewer has loaded in the browser, but
     property assignments (e.g., ``.widget.fov = 5``) are not queued, so gate
     effects that set them on ``reactive_read(sky.widget, "_is_loaded")``. Don't
-    gate on the ``_ready`` trait instead: ipyaladin 0.8.1 never sets it.
+    gate on the ``_ready`` trait instead: ipyaladin does not reliably set it.
 
     **Interacting with catalogs**: ``clicked_object()`` and
     ``selected_objects()`` (above) cover the common cases; the trait-level
@@ -1086,15 +1084,10 @@ class render_itables(render_widget_base[ValueT, ITable]):
 
     In a filling layout, the table fills its container and scrolls its rows; give it
     roughly 350px or more of height, since smaller containers leave no room for rows
-    below DataTables' controls. Some itables defaults worth knowing about:
-
-    * Columns sort when their arrow icon is clicked (header text is selectable); pass
-      ``text_in_header_can_be_selected=False`` to sort on any header click.
-    * Data frames larger than itables' ``maxBytes`` (64KB by default) are downsampled;
-      pass ``maxBytes=0`` to send all rows.
-    * `selected_rows` holds row positions in the current data frame.
-      ``ITable.update(df)`` keeps those positions as-is, and drops options such as
-      ``columnDefs`` and ``buttons`` unless they are passed again.
+    below DataTables' controls. `selected_rows` holds row positions in the
+    current data frame; ``ITable.update(df)`` keeps those positions as-is,
+    and drops options such as ``columnDefs`` and ``buttons`` unless they are
+    passed again.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -1578,20 +1571,17 @@ class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
     ``set_center()``/``set_zoom()``/``fit_project_bounds()``, layer styling
     (``get_layer(id).set_style()``/``set_opacity()``), and
     ``set_identify()``/``show_control()``. Methods that send a command to the
-    app and block waiting for its reply can never work on Shiny's event-loop
-    thread -- not directly inside a render function, `reactive.calc`, or a
-    `reactive.effect`/observer (sync or async) -- because the wait would
-    block the very loop that must deliver the reply. These include
-    ``fly_to()``, ``fit_bounds()``, ``zoom_to_layer()``, ``identify()``,
+    app and wait for its reply -- ``fly_to()``, ``fit_bounds()``,
+    ``zoom_to_layer()``, ``identify()``,
     ``get_center()``/``get_view()``/``get_bounds()``,
     ``get_selected_features()``/``get_drawn_features()``, ``run_algorithm()``,
-    and ``to_image()``. They do work from a worker thread (where the event
-    loop stays free), e.g., inside `reactive.extended_task` via
-    ``asyncio.get_running_loop().run_in_executor(None, map.widget.fly_to, ...)``
-    -- geolibre >= 3.5.2 (enforced by the ``shinywidgets[geolibre]`` extra)
-    polls for the reply instead of pumping a Jupyter kernel event loop, so
-    these work in Shiny from a worker thread. Where a non-blocking
-    alternative exists -- ``set_center()`` for ``fly_to()``,
+    and ``to_image()`` -- can't run inside a render function,
+    `reactive.calc`, or `reactive.effect`/observer (sync or async): the
+    reply is only delivered once the effect finishes, so waiting for it
+    there deadlocks. Instead, ``await`` the ``*_async()`` variants
+    (``fly_to_async()``/``get_center_async()``/...) in a
+    `reactive.extended_task`, which runs outside that flush. Where a
+    non-blocking alternative exists -- ``set_center()`` for ``fly_to()``,
     ``fit_project_bounds()`` for ``fit_bounds()``, the synced ``project``
     trait for the query methods -- it remains the cheaper option.
 
@@ -1616,12 +1606,11 @@ class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
     its file routes are protected by unguessable per-process tokens. Basemap
     tiles and remote data URLs require internet access from the browser.
 
-    **The ``layout`` parameter**: `geolibre.Map(layout=...)` chooses the
-    app's chrome (``"embed"``, ``"full"``, or ``"maponly"``); it is *not*
-    an `ipywidgets.Layout`, so ipywidgets layout styling (e.g.,
-    ``Layout(border=...)``) isn't available on this widget. (geolibre
-    reuses the ``layout`` trait name, which also causes a harmless
-    "Cannot read properties of undefined" error in the browser console.)
+    **The ``app_layout`` parameter**: `geolibre.Map(app_layout=...)`
+    chooses the app's chrome (``"embed"``, ``"full"``, or ``"maponly"``).
+    (geolibre < 3.6.1 named this parameter ``layout``, shadowing
+    ipywidgets' ``Layout`` trait; geolibre >= 3.6.1 renamed it to
+    ``app_layout`` and deprecated passing a string as ``layout``.)
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -1798,7 +1787,10 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
         before the first render cancels silently (like ``req(False)``), as
         does reading while the figure has no camera (``fig.camera = None``).
         The returned object is the same mutable instance across reads -- copy
-        what you keep. Not rate-limited (the browser syncs once per orbit).
+        what you keep. Not rate-limited (the browser syncs once per orbit);
+        the renderer's ``rate_policy``/``rate_delay`` affect only
+        :func:`~shinywidgets.reactive_read` -- no accessor on this renderer
+        declares a default rate limit.
         """
         self._read_accessor("camera")
         camera = cast(IpyvolumeFigure, self._widget).camera
@@ -2000,8 +1992,7 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         The ``(lng, lat)`` of the most recent map click -- note the order;
         ipyleaflet reports ``[lat, lng]`` -- or ``None`` until the first
         click. Clicking the same spot twice doesn't re-fire. Reading this is
-        what enables click reporting in the browser (registering the handler
-        flips the map's ``_has_click_handlers`` trait).
+        what enables click reporting in the browser.
         """
         return cast(Optional[Tuple[float, float]], self._read_accessor("clicked"))
 
@@ -2163,9 +2154,8 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     available, as on a server; select it locally with ``matplotlib.use("agg")``
     before creating figures). A figure created under a GUI backend (Qt, Tk, macOS,
     ...) can still be rendered -- its window is destroyed and ipympl's canvas
-    replaces its own -- but that path depends on platform-specific behavior that
-    automated tests can't exercise, so it is supported on a best-effort basis and
-    warns at render time.
+    replaces its own -- but that path depends on platform-specific behavior,
+    so it is supported on a best-effort basis and warns at render time.
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
@@ -2277,8 +2267,7 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
         re-render, so use ``req(plot.clicked())`` to wait for a click.
         Presses that start a toolbar pan/zoom drag, or land outside any axes,
         don't count. Every press fires -- a double-click arrives as three
-        presses (MouseEvent defines no equality, so presses are never
-        deduplicated). Not rate-limited.
+        presses. Not rate-limited.
         """
         return cast(Optional["MouseEvent"], self._read_accessor("clicked"))
 
@@ -2290,8 +2279,7 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
         ``picker=`` (e.g., ``ax.plot(x, y, picker=5)``) are pickable.
 
         Returns ``None`` until the user picks, and resets to ``None`` on
-        re-render. Every pick fires (PickEvent defines no equality). Not
-        rate-limited.
+        re-render. Every pick fires. Not rate-limited.
         """
         return cast(Optional["PickEvent"], self._read_accessor("picked"))
 
@@ -2421,9 +2409,9 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     Even with the lockdown, a visitor can still send expensive queries, which
     block the Python process while they run.
 
-    Each re-render creates a new `MosaicWidget` and DuckDB connection, which
-    anywidget currently keeps alive for the life of the server process, and loads
-    another copy of the widget's JavaScript into the page. To restyle a dashboard,
+    Each re-render creates a new `MosaicWidget` and DuckDB connection and
+    loads another copy of the widget's JavaScript into the page. To restyle a
+    dashboard,
     prefer assigning a new spec to ``.widget.spec`` in place (this resets the
     current selections).
 
@@ -2580,9 +2568,9 @@ class render_obsplot(render_widget_base[ObsplotWidget, ObsplotWidget]):
     ----
     pandas and polars `DataFrame`s in the specification are serialized to
     Arrow IPC and sent to the browser with the widget state, so a chart over a
-    large dataset makes for a large message (and ``pyobsplot`` bundles about
-    1.4 MB of JavaScript, which anywidget sends to the browser again on each
-    render). For large data, aggregate before plotting.
+    large dataset makes for a large message (and ``pyobsplot``'s JavaScript
+    bundle is sent to the browser again on each render). For large data,
+    aggregate before plotting.
 
     Parameters
     ----------
@@ -2965,8 +2953,10 @@ class render_holoviews(render_widget_base[ValueT, BokehModel]):
 
     The decorated function may return either a holoviews/hvplot/geoviews object
     (which is rendered through panel; requires ``pip install 'shinywidgets[holoviews]'``)
-    or the underlying `jupyter_bokeh.BokehModel` widget. geoviews 1.15 requires
-    ``cartopy<0.26``. If you call ``.opts()`` without importing hvplot, call
+    or the underlying `jupyter_bokeh.BokehModel` widget. For geoviews objects,
+    also ``pip install geoviews 'cartopy<0.26'`` (geoviews 1.15/1.16 breaks
+    with cartopy 0.26, and cartopy 0.25 has no Python 3.14 wheels). If you
+    call ``.opts()`` without importing hvplot, call
     ``hv.extension("bokeh")`` first. Plots rasterized with
     [datashader](https://datashader.org) are supported too (e.g., hvPlot's
     ``rasterize=True`` or holoviews' ``rasterize()`` operation; requires
@@ -3077,8 +3067,7 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
     the data, prefer updating the existing viewer in place: `.widget.update(df)`
     appends rows (or upserts them, for a table with an ``index``), and
     `.widget.clear()` followed by `.widget.update(df)` swaps them out.
-    (`.widget.replace()` also swaps rows, but as of perspective-python 5.6 it only
-    accepts records, a dict of columns, or Arrow IPC bytes, not a DataFrame.)
+    (`.widget.replace()` also swaps rows, but doesn't accept a DataFrame.)
 
     A viewer's browser can list, read, and write every table on its widget's
     Perspective server. A DataFrame gets a server of its own, so other sessions
@@ -3269,12 +3258,8 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         space, so ``visible_data().iloc[r1:r2 + 1]`` maps a selection to rows.
 
         The whole frame until the user sorts, filters, or edits, and an
-        empty frame when the filter matches nothing. Backed by ipydatagrid's
-        private ``_visible_rows``, ``_transforms``, and ``_data`` traits plus
-        the grid's cell-change notification (the one public alternative,
-        ``get_visible_data()``, isn't reactive on its own, and returns the
-        whole frame for an empty filtered view); raises if ipydatagrid
-        removes the traits. May be briefly stale after a Python-side data
+        empty frame when the filter matches nothing. May be briefly stale
+        after a Python-side data
         replacement (``grid.data = df``) while a filter/sort is active,
         until the browser re-syncs the row map. Not rate-limited.
         """
@@ -3861,7 +3846,13 @@ class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
             "it can't render maps. Pass pydeck.Layer objects to a maplibre Map's "
             "add_deck_layers() and use @render_maplibre instead (see "
             "help(shinywidgets.render_pydeck) for other alternatives).",
-            DeprecationWarning,
+            # FutureWarning, not DeprecationWarning: the latter is hidden by
+            # Python's default warning filters outside __main__, and a Shiny
+            # app's module is never __main__, so users would never see it.
+            # stacklevel=2 points at the line that constructed the decorator
+            # (class construction adds no Python frame between here and the
+            # caller).
+            FutureWarning,
             stacklevel=2,
         )
         super().__init__(
@@ -3890,9 +3881,8 @@ class render_pygwalker(render_widget_base[ValueT, WalkerWidget]):
     a PyGWalker widget; requires ``pip install 'shinywidgets[pygwalker]'``) or a widget created by
     `pygwalker.api.anywidget.walk()` (use this to pass options like ``theme_key``).
     A polars `DataFrame` is coerced too, but only when the installed pygwalker can read
-    it: every release so far trips over dtype groups that polars 1.0 removed (the fix
-    is merged upstream and due in pygwalker 0.6), so it's rejected with a hint to
-    convert it (``df.to_pandas()``).
+    it (pygwalker releases prior to 0.6 can't read polars >= 1.0); unsupported
+    combinations are rejected with a hint to convert it (``df.to_pandas()``).
     Don't use the top-level `pygwalker.walk()`: outside of Jupyter, it starts a
     blocking web server instead of returning a widget.
 
@@ -3900,8 +3890,8 @@ class render_pygwalker(render_widget_base[ValueT, WalkerWidget]):
     most recently returned by the render function, and `.widget`, the rendered
     PyGWalker widget. The widget has no traits that track the explorer's state, so
     there's nothing to :func:`~shinywidgets.reactive_read`, and changing the explorer
-    means re-rendering it. Each render sends PyGWalker's JavaScript (about 10 MB) to
-    the browser, so avoid unnecessary re-renders.
+    means re-rendering it. Each render sends PyGWalker's large JavaScript bundle
+    to the browser, so avoid unnecessary re-renders.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output. Outside of
     filling layouts, give it a height (e.g., ``"800px"``) that fits PyGWalker's UI.
@@ -4069,12 +4059,10 @@ def polars_supported() -> bool:
     """
     Whether pygwalker can read polars data with the installed polars (and pygwalker).
 
-    Every pygwalker release so far builds its field specs from dtype groups that polars
-    1.0 removed (``pl.NUMERIC_DTYPES`` and friends). Upstream replaced them with
-    ``dtype.is_numeric()`` and friends (Kanaries/pygwalker@5055d702, merged in PR #734
-    and staged for 0.6 -- main is at 0.6.0rc0 -- but unpublished), so look for it
-    (``_is_numeric_dtype``) as well as for polars old enough to still have the groups.
-    Unknown answers are treated as supported: this is a hint for a broken combination,
+    pygwalker releases prior to 0.6 build their field specs from dtype groups that
+    polars 1.0 removed; the fixed pygwalker exposes ``_is_numeric_dtype`` instead.
+    Detect both, as well as polars old enough to still have the groups. Unknown
+    answers are treated as supported: this is a hint for a broken combination,
     not a guarantee.
     """
     import polars as pl
@@ -4553,16 +4541,17 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     * **Selection (browser -> Python):** ``grid.selection()`` gives the selected
       rows reactively, as a dict, e.g. ``{0: "CCO"}``. Row indices are
       positional against the rows *as rendered*. ``grid.grid.get_selection()``
-      returns the selected rows as a DataFrame. (The underlying
-      ``grid.grid.widget.selection`` trait is a repr string with unquoted keys,
-      not JSON; if you read it directly with `reactive_read()`, parse it with
-      `ast.literal_eval`, as mols2grid itself does.)
+      returns the selected rows as a DataFrame. (If you read the underlying
+      ``grid.grid.widget.selection`` trait directly with `reactive_read()`,
+      parse it with `ast.literal_eval` -- it's a repr string, not JSON.)
     * **Clicks (browser -> Python):** with ``clicks=True``, clicking a
       molecule's image (a distinct gesture from the selection checkbox)
       makes its row's data available reactively as ``grid.clicked()`` --
       every displayed column plus ``mols2grid-id`` -- for click-to-inspect
-      panels and drill-downs. A click is an event, not state: ``clicked()``
-      is `None` until the first click and resets on re-render.
+      panels and drill-downs. The payload can be wide (it includes the
+      cell's image markup), so pick the keys you display rather than
+      stringifying the whole dict. A click is an event, not state:
+      ``clicked()`` is `None` until the first click and resets on re-render.
     * **Filtering (Python -> browser):** ``grid.grid.filter(mask)`` (a boolean
       mask, Series, or list) hides non-matching molecules in the already
       rendered grid, without re-rendering. The mask is positional against the
@@ -4571,8 +4560,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       taken from a filtered or reordered frame hides the wrong molecules. Call
       it in response to user input: a filter issued while the grid is still
       loading is recorded on the widget's ``filter_mask`` trait but not applied
-      by mols2grid's frontend (upstream limitation -- it applies the mask only
-      when the trait *changes*, with no initial application and no retry), so a
+      by mols2grid's frontend (a mols2grid limitation), so a
       grid can't start out filtered: re-issue it once the grid is visible, and
       filter the DataFrame in the render function for a grid that is filtered
       from the start.
@@ -4607,7 +4595,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       its container, pass ``iframe_height`` (e.g.
       ``render_mols2grid(iframe_height="400px")``): it sets the iframe element's
       height, which switches off mols2grid's auto-fit so the grid scrolls
-      inside the iframe. (``iframe_width``, ``iframe_allow``, and
+      inside the iframe. ``iframe_height`` bounds the iframe, not the output,
+      so pair it with ``fill=False`` to actually shrink the output in a
+      filling container. (``iframe_width``, ``iframe_allow``, and
       ``iframe_sandbox`` are forwarded to the iframe the same way.)
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
@@ -4644,10 +4634,13 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         ``height`` is not specified.
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) leaves
-        ``reactive_read()`` unlimited.
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default, so ``rate_policy``/``rate_delay``
+        don't affect :meth:`selection` or :meth:`clicked` (each fires at
+        most once per gesture).
     rate_delay
-        The rate-limit window in milliseconds (default 250). ``0`` disables rate
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     kwargs
         Extra keyword arguments forwarded to mols2grid (split between
@@ -5272,15 +5265,15 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
     are left at their defaults (or set to ``"auto"``); an explicit integer
     ``width=``/``height=`` is respected instead. An explicit
     ``output_widget(height=...)`` also fits the default-sized viewer to the
-    output's height. The viewer's JavaScript/Wasm
-    bundle (~55MB) loads from rerun's CDN by default; set the
+    output's height. The viewer's large JavaScript/Wasm
+    bundle loads from rerun's CDN by default; set the
     ``RERUN_NOTEBOOK_ASSET`` environment variable to ``serve-local`` or
     ``inline`` to serve it from the Shiny process instead (see the
     [rerun-notebook docs](https://pypi.org/project/rerun-notebook/)).
-    Note that ``serve-local`` starts a loopback (``localhost``) server inside
-    the Shiny process, so the browser can only reach it when it runs on the
-    same host as the app (e.g., local development). For remote deployments,
-    use ``inline`` instead, unless the asset server is proxied to the client.
+    Note that ``serve-local`` only works when the browser runs on the same
+    host as the Shiny process (e.g., local development). For remote
+    deployments, use ``inline`` instead, unless the asset server is proxied
+    to the client.
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -5367,9 +5360,9 @@ class render_pyvista(render_widget_base[PyvistaValueT, PyvistaHtmlWidget]):
     interaction (rotate/zoom/pan) happens entirely in the browser, and no
     widget state is synced back to Python, so there is nothing to read with
     :func:`~shinywidgets.reactive_read`. The vtk.js runtime ships once per
-    session (~400 KB, shared by every pyvista output in the app); each render
-    then embeds only the exported scene in the widget state (tens of KB for
-    a typical mesh, growing with scene size), so input-driven re-renders are
+    session (shared by every pyvista output in the app); each render
+    then embeds only the exported scene in the widget state, so
+    input-driven re-renders are
     cheap. Still, very large scenes (millions of cells) produce multi-MB
     exports, so prefer fewer, larger re-renders for those.
     For fully server-driven interactivity (e.g., picking, server-side
@@ -5662,9 +5655,8 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
     matrices exist only in the browser); use the millimeter coordinates from
     the ``location()`` payload instead.
 
-    **Data size**: each render sends the viewer's JavaScript bundle (~5 MB)
-    plus every volume (base64-encoded) to the browser, and the browser
-    uploads the decoded voxels back to Python, so re-renders are expensive
+    **Data size**: each render sends the viewer's JavaScript bundle
+    plus every volume to the browser, so re-renders are expensive
     for large volumes. Prefer `Volume(url=...)` for remote data (the
     browser fetches it directly), and prefer in-place ``.widget.set_*``
     updates over re-rendering.
