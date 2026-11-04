@@ -123,8 +123,17 @@ function selectionSeed(plotEl: HTMLElement): Record<string, unknown> {
   const data = (plotEl as any).data;
   if (!Array.isArray(data)) return {};
   const points = data.flatMap((trace: any, curveNumber: number) => {
-    if (!Array.isArray(trace?.selectedpoints)) return [];
-    return (trace.selectedpoints as number[]).map((i) => {
+    // jsonable(): a selection preconfigured from plotly.py arrives as a
+    // typed array, which Array.isArray rejects (and whose .map can't hold
+    // point objects)
+    const selected = jsonable(trace?.selectedpoints);
+    if (!Array.isArray(selected)) return [];
+    // Aggregated traces (histograms) report sample indices, but their
+    // calcdata holds bins, which don't align -- and the live event reads
+    // only the original arrays for them, so the fallback would both corrupt
+    // values (bin counts as y) and diverge from live payloads
+    const aggregated = trace?.type === "histogram";
+    return (selected as number[]).map((i) => {
       const entry: Record<string, unknown> = {
         trace_index: curveNumber,
         point_index: i,
@@ -132,7 +141,7 @@ function selectionSeed(plotEl: HTMLElement): Record<string, unknown> {
       // Coordinates the trace doesn't carry explicitly (implicit x, bar
       // x0/dx) are still resolved on calcdata, which is where the live
       // event's point objects get them
-      const calc = (plotEl as any).calcdata?.[curveNumber]?.[i];
+      const calc = aggregated ? undefined : (plotEl as any).calcdata?.[curveNumber]?.[i];
       for (const key of ["x", "y", "z", "customdata"]) {
         let value = trace[key]?.[i];
         if (value === undefined && key !== "customdata") value = calc?.[key];
