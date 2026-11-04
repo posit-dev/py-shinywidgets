@@ -27,11 +27,16 @@ def test_explicit_output_height_sizes_the_plot(page: Page, local_app) -> None:
         plot = page.locator(f"#{output_id} .js-plotly-plot")
         expect(plot).to_have_count(1, timeout=30000)
         # plotly first draws at its 360px fallback; the binding resizes
-        # before revealing, so poll for the settled height
+        # before revealing, so poll for the settled height. Check
+        # _fullLayout.height (not just the div): the graph div is sized to
+        # the output by CSS, so it can be 300px while plotly's contents are
+        # still at the fallback
         page.wait_for_function(
             """(id) => {
                 const el = document.querySelector(`#${id} .js-plotly-plot`);
-                return el && Math.abs(el.getBoundingClientRect().height - 300) < 2;
+                return el && el._fullLayout &&
+                    Math.abs(el.getBoundingClientRect().height - 300) < 2 &&
+                    Math.abs(el._fullLayout.height - 300) < 2;
             }""",
             arg=output_id,
             timeout=30000,
@@ -47,26 +52,31 @@ def test_template_swap_keeps_compact_margins(page: Page, local_app) -> None:
     plot = page.locator("#fixed .js-plotly-plot")
     expect(plot).to_have_count(1, timeout=30000)
     expect(page.locator("#dark")).to_be_enabled(timeout=30000)
-    page.wait_for_timeout(1000)
+    page.wait_for_function(
+        """() => {
+            const el = document.querySelector('#fixed .js-plotly-plot');
+            return el && el._fullLayout && el._fullLayout.paper_bgcolor === 'white';
+        }""",
+        timeout=30000,
+    )
 
     compact = {"l": 16, "t": 32, "r": 16, "b": 16}
     assert margins(page, "fixed") == compact
 
     # An in-place template swap (e.g. a dark-mode toggle) used to revert the
-    # renderer's compact margins to plotly's 80px defaults
-    page.click("#dark")
-    page.wait_for_function(
-        """() => {
-            const el = document.querySelector('#fixed .js-plotly-plot');
-            return el && el._fullLayout.template &&
-                getComputedStyle(el.querySelector('.main-svg')).backgroundColor !== 'rgba(0, 0, 0, 0)';
-        }""",
-        timeout=30000,
-    )
-    assert margins(page, "fixed") == compact
-
-    page.click("#dark")
-    page.wait_for_timeout(2000)
-    assert margins(page, "fixed") == compact
+    # renderer's compact margins to plotly's 80px defaults. After each click,
+    # wait for the swap to actually arrive (paper_bgcolor is the plotly /
+    # plotly_dark paper color) before checking the margins
+    for bgcolor in ("rgb(17,17,17)", "white"):
+        page.click("#dark")
+        page.wait_for_function(
+            """(bg) => {
+                const el = document.querySelector('#fixed .js-plotly-plot');
+                return el && el._fullLayout && el._fullLayout.paper_bgcolor === bg;
+            }""",
+            arg=bgcolor,
+            timeout=30000,
+        )
+        assert margins(page, "fixed") == compact
 
     assert_no_unexpected_errors(errors, failed_requests)
