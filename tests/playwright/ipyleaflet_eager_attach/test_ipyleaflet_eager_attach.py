@@ -66,9 +66,10 @@ def test_event_accessor_misses_click_before_first_read(page: Page, local_app) ->
     page.locator("#map .leaflet-container").click(position={"x": 200, "y": 150})
 
     # The gated first read attaches the listener only now: the click above
-    # is missed
+    # is missed. "None" proves the server processed the read (an empty
+    # string couldn't), and fails if event accessors ever become eager
     page.locator("#read_clicked").click()
-    expect(page.locator("#clicked")).to_have_text("", timeout=10000)
+    expect(page.locator("#clicked")).to_have_text("None", timeout=10000)
 
     # ...but once attached, later clicks are captured
     page.locator("#map .leaflet-container").click(position={"x": 200, "y": 150})

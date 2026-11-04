@@ -38,8 +38,10 @@ def server(input, output, session):
     @render.text
     @reactive.event(input.read_clicked)
     def clicked():
+        # "None" (not "") for a completed read with no event, so a test
+        # waiting on it proves the server processed the read
         c = map.clicked()
-        return "" if c is None else str(c["coordinates"])
+        return "None" if c is None else str(c["coordinates"])
 
 
 app = App(app_ui, server)
