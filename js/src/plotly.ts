@@ -135,7 +135,12 @@ function selectionSeed(plotEl: HTMLElement): Record<string, unknown> {
       };
       for (const key of ["x", "y", "z", "customdata"]) {
         let value = trace[key]?.[i];
-        if (value === undefined && key !== "customdata") {
+        // A multicategory axis stores one array per category level, so
+        // trace[key][i] is the wrong level's whole array; the coordinate
+        // combines each level's value at i
+        if (key !== "customdata" && Array.isArray(value) && Array.isArray(trace[key]?.[0])) {
+          value = (trace[key] as any[]).map((level) => level?.[i]);
+        } else if (value === undefined && key !== "customdata") {
           // Coordinates the trace doesn't carry explicitly (implicit x,
           // bar x0/dx) are resolved on calcdata, matching the live event's
           // point objects
@@ -207,8 +212,9 @@ function calcCoord(
 }
 
 function lassoValue(token: string): unknown {
-  const n = Number(token);
-  return Number.isNaN(n) ? token.replace("_", " ") : n;
+  const t = token.trim();
+  const n = Number(t);
+  return Number.isNaN(n) ? t.replace("_", " ") : n;
 }
 
 // Shaped like R plotly's event_data(): one entry per point, with its trace
