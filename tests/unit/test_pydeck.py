@@ -52,7 +52,7 @@ def scatter_deck() -> pdk.Deck:
 
 def deprecated_render_pydeck() -> render_pydeck[object]:
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
+        warnings.simplefilter("ignore", FutureWarning)
         return render_pydeck()
 
 
@@ -84,8 +84,15 @@ def test_deck_widget_settings_still_apply() -> None:
 
 
 def test_render_pydeck_is_deprecated() -> None:
-    with pytest.warns(DeprecationWarning, match="render_pydeck.*render_maplibre"):
+    # FutureWarning, not DeprecationWarning: the latter is hidden by Python's
+    # default warning filters outside __main__, and a Shiny app's module is
+    # never __main__, so users would never see it
+    with pytest.warns(FutureWarning, match="render_pydeck.*render_maplibre") as record:
         render_pydeck()
+
+    # stacklevel points at the caller (user code), not shinywidgets internals
+    assert len(record) == 1
+    assert record[0].filename == __file__
 
 
 def test_as_widget_deck_explains_without_serializing(
