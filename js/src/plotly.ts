@@ -128,23 +128,19 @@ function selectionSeed(plotEl: HTMLElement): Record<string, unknown> {
     // point objects)
     const selected = jsonable(trace?.selectedpoints);
     if (!Array.isArray(selected)) return [];
-    // Aggregated traces (histograms) report sample indices, but their
-    // calcdata holds bins, which don't align -- and the live event reads
-    // only the original arrays for them, so the fallback would both corrupt
-    // values (bin counts as y) and diverge from live payloads
-    const aggregated = trace?.type === "histogram";
     return (selected as number[]).map((i) => {
       const entry: Record<string, unknown> = {
         trace_index: curveNumber,
         point_index: i,
       };
-      // Coordinates the trace doesn't carry explicitly (implicit x, bar
-      // x0/dx) are still resolved on calcdata, which is where the live
-      // event's point objects get them
-      const calc = aggregated ? undefined : (plotEl as any).calcdata?.[curveNumber]?.[i];
       for (const key of ["x", "y", "z", "customdata"]) {
         let value = trace[key]?.[i];
-        if (value === undefined && key !== "customdata") value = calc?.[key];
+        if (value === undefined && key !== "customdata") {
+          // Coordinates the trace doesn't carry explicitly (implicit x,
+          // bar x0/dx) are resolved on calcdata, matching the live event's
+          // point objects
+          value = calcCoord(plotEl, curveNumber, i, key, trace?.type);
+        }
         if (value !== undefined) entry[key] = jsonable(value);
       }
       return entry;
@@ -162,24 +158,57 @@ function regionSeed(plotEl: HTMLElement): Record<string, unknown> {
   const selections = (plotEl as any)._fullLayout?.selections;
   if (!Array.isArray(selections) || selections.length === 0) return {};
   const last = selections[selections.length - 1];
+  // Selections on later subplots reference their axes (x2, y2, ...), and
+  // live events key the region the same way
+  const xref = typeof last.xref === "string" ? last.xref : "x";
+  const yref = typeof last.yref === "string" ? last.yref : "y";
   // A box selection keeps its corners; the event reports each axis ascending
   if (last.x0 !== undefined) {
     const asc = (a: any, b: any) => (a <= b ? [a, b] : [b, a]);
-    return { range: { x: asc(last.x0, last.x1), y: asc(last.y0, last.y1) } };
+    return { range: { [xref]: asc(last.x0, last.x1), [yref]: asc(last.y0, last.y1) } };
   }
-  // A lasso keeps its vertices as an SVG path: "M x,y L x,y ..."
+  // A lasso keeps its vertices as an SVG path: "M x,y L x,y ...". On date
+  // axes the values are date strings with "_" for the date/time separator;
+  // live lassoPoints restore the space.
   if (typeof last.path === "string") {
-    const x: number[] = [];
-    const y: number[] = [];
-    const vertex = /[ML]\s*(-?[\d.]+(?:[eE][+-]?\d+)?)\s*,\s*(-?[\d.]+(?:[eE][+-]?\d+)?)/g;
+    const x: unknown[] = [];
+    const y: unknown[] = [];
+    const vertex = /[ML]([^ML]+)/g;
     let m: RegExpExecArray | null;
     while ((m = vertex.exec(last.path)) !== null) {
-      x.push(parseFloat(m[1]));
-      y.push(parseFloat(m[2]));
+      const sep = m[1].lastIndexOf(",");
+      if (sep < 0) continue;
+      x.push(lassoValue(m[1].slice(0, sep)));
+      y.push(lassoValue(m[1].slice(sep + 1)));
     }
-    if (x.length > 0) return { lassoPoints: { x, y } };
+    if (x.length > 0) return { lassoPoints: { [xref]: x, [yref]: y } };
   }
   return {};
+}
+
+// Resolved coordinates from calcdata, for the trace types where its layout
+// is verified: scatter and bar align one calc point per data index
+// (implicit x, x0/dx); scattergl keeps one calc entry whose .t holds typed
+// coordinate arrays. Others don't align by sample index (histograms bin
+// them) or are unverified, so their missing keys stay missing, as in live
+// payloads.
+function calcCoord(
+  plotEl: HTMLElement,
+  curveNumber: number,
+  i: number,
+  key: string,
+  type: string | undefined,
+): unknown {
+  const cd = (plotEl as any).calcdata?.[curveNumber];
+  if (!Array.isArray(cd)) return undefined;
+  if (type === "scattergl") return cd[0]?.t?.[key]?.[i];
+  if (type === "scatter" || type === "bar") return cd[i]?.[key];
+  return undefined;
+}
+
+function lassoValue(token: string): unknown {
+  const n = Number(token);
+  return Number.isNaN(n) ? token.replace("_", " ") : n;
 }
 
 // Shaped like R plotly's event_data(): one entry per point, with its trace
