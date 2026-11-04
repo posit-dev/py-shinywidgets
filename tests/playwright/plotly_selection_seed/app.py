@@ -6,9 +6,10 @@ from shiny import App, reactive, render, ui
 from shinywidgets import output_widget, render_plotly
 
 # The accessor reads the tests assert on are gated behind an action button,
-# so nothing consumer-facing reads them at startup. A selection made before
-# the button click exercises the eager state attach and the seed on bridge
-# bind (see the tests and REPORT.md).
+# and NOTHING reads them at startup (an ungated read would attach the
+# accessor early, defeating the scenario). A selection made before the
+# button click exercises the eager state attach and the seed on bridge bind
+# (see the tests).
 
 df = pd.DataFrame({"x": [1, 2, 3, 4, 5], "y": [1, 4, 9, 16, 25], "g": list("aabbb")})
 
@@ -17,7 +18,6 @@ app_ui = ui.page_fluid(
     ui.output_text("selected"),
     ui.output_text("selected_rows"),
     ui.output_text("brushed"),
-    ui.output_text("synced_selection"),
     ui.card(output_widget("plot"), height="450px"),
 )
 
@@ -48,16 +48,6 @@ def server(input, output, session):
     def brushed():
         b = plot.brushed()
         return "None" if b is None else ",".join(sorted(b))
-
-    # Sentinel: an ungated read of the same accessor state, so a test can
-    # wait until a gesture has synced from browser to server before
-    # triggering a gated read. plotly.js emits plotly_selected a few hundred
-    # ms after mouseup, so without this a button click right after the drag
-    # can overtake the selection message.
-    @render.text
-    def synced_selection():
-        pts = plot.selected()
-        return "None" if pts is None else str(len(pts))
 
 
 app = App(app_ui, server)
