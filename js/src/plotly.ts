@@ -135,10 +135,11 @@ function selectionSeed(plotEl: HTMLElement): Record<string, unknown> {
       };
       for (const key of ["x", "y", "z", "customdata"]) {
         let value = trace[key]?.[i];
-        // A multicategory axis stores one array per category level, so
-        // trace[key][i] is the wrong level's whole array; the coordinate
-        // combines each level's value at i
-        if (key !== "customdata" && Array.isArray(value) && Array.isArray(trace[key]?.[0])) {
+        // A multicategory axis stores one array per category level (so the
+        // trace array's length is the level count, not the point count, and
+        // indexing it by sample is wrong); the coordinate combines each
+        // level's value at i
+        if (key !== "customdata" && Array.isArray(trace[key]) && Array.isArray(trace[key][0])) {
           value = (trace[key] as any[]).map((level) => level?.[i]);
         } else if (value === undefined && key !== "customdata") {
           // Coordinates the trace doesn't carry explicitly (implicit x,
