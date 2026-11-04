@@ -19,7 +19,7 @@ from weakref import WeakSet
 from htmltools import Tag
 from ipywidgets.widgets import DOMWidget, Layout, Widget
 from shiny import req
-from shiny.reactive import Context
+from shiny.reactive import Context, isolate
 from shiny.reactive._core import (
     get_current_context,  # pyright: ignore[reportPrivateImportUsage]
 )
@@ -141,8 +141,13 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             self._accessors.on_render(None)
             return None
 
-        # Ensure we have a widget & smart layout defaults
-        widget = self._as_widget(value)
+        # Ensure we have a widget & smart layout defaults. Coercion runs third-party
+        # code that can synchronously invoke user callbacks (e.g. holoviews fires
+        # `Stream.trigger()` subscribers from `get_plot()`); a reactive read in such
+        # a callback must not register this render's Context as a dependent, or the
+        # callback's write invalidates the render in progress and loops forever.
+        with isolate():
+            widget = self._as_widget(value)
 
         session = get_current_session()
         # _shinywidgets imports WidgetRenderContext and is_closed_widget from
@@ -175,7 +180,10 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         # the ownership check, since drawing updates browser-synced state.
         refresh_stale_mpl_canvases(widget)
 
-        widget, fill = set_layout_defaults(widget)
+        # Same hazard as the coercion above: applying layout defaults sets
+        # traits, which can fire trait observers that read reactives.
+        with isolate():
+            widget, fill = set_layout_defaults(widget)
 
         self._widget = cast(WidgetT, widget)
         register_rate_policy(widget, self._rate_policy, self._rate_delay)
@@ -209,6 +217,15 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
     @property
     def value(self) -> ValueT | None:
+        if rendering_renderer.get() is self:
+            # Same hazard as `.widget` below
+            raise RuntimeError(
+                f"`{self.output_id}.value` can't be read inside "
+                f"`{self.output_id}`'s own render function, which builds a new "
+                "value each time it runs (it would return the previous "
+                "render's value, or nothing on the first render). Read it in "
+                "another output or a `reactive.effect` instead."
+            )
         return self._get_reactive_obj(self._value)
 
     @value.setter
@@ -219,6 +236,17 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
     @property
     def widget(self) -> WidgetT | None:
+        if rendering_renderer.get() is self:
+            # Like `_read_accessor`: a render builds a new widget, so `.widget`
+            # still points at the *previous* render's widget (or nothing on the
+            # first render) -- fail loudly instead of handing back a stale one.
+            raise RuntimeError(
+                f"`{self.output_id}.widget` can't be read inside "
+                f"`{self.output_id}`'s own render function, which builds a new "
+                "widget each time it runs (it would return the previous "
+                "render's widget, or nothing on the first render). Read it in "
+                "another output or a `reactive.effect` instead."
+            )
         return self._get_reactive_obj(self._widget)
 
     @widget.setter

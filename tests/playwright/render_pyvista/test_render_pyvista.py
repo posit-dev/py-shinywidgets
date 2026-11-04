@@ -121,11 +121,13 @@ def test_pyvista_rerender_lifecycle(page: Page, local_app) -> None:
         expect(canvas).to_be_visible(timeout=READY_TIMEOUT)
 
     # Re-rendering replaces the widget; the old view must be disposed, both
-    # in the DOM and in the manager's live-view registry (one HTMLModel view
-    # per output: #plot + #plot_fixed)
+    # in the DOM and in the manager's live-view registry. With trame-pyvista
+    # 0.3's anywidget backend the models are AnyModels: one view per output
+    # (#plot + #plot_fixed); the shared _ViewerPage model has no view (it is
+    # never displayed), so it doesn't add to the count
+    assert wait_for_stable_model_view_count(page, "AnyModel", expected=2) == 2
     expect(page.locator("#plot > .lm-Widget")).to_have_count(1)
     expect(iframe).to_have_count(1)
-    assert wait_for_stable_model_view_count(page, "HTMLModel", expected=2) == 2
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
