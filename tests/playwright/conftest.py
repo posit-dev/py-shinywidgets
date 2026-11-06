@@ -285,11 +285,11 @@ KEPLERGL_ALLOWED_ERRORS = (
 
 # anywidget <0.11.1 rejects a model's init after a hard-coded 2s and then
 # drops all subsequent state updates (manzt/anywidget#1030, fixed by
-# manzt/anywidget#1032). keplergl's ~13MB inline _esm trips that budget under
-# CI-grade CPU contention, permanently desyncing the widget. Non-strict so a
-# fast runner that happens to pass doesn't fail the suite; the mark lifts
-# itself once anywidget 0.11.1 is installed.
-KEPLERGL_INIT_XFAIL = pytest.mark.xfail(
+# manzt/anywidget#1032). Widgets with multi-MB inline _esm (keplergl ~13MB,
+# lonboard) trip that budget under CI-grade CPU contention, permanently
+# desyncing. Non-strict so a fast runner that happens to pass doesn't fail
+# the suite; the mark lifts itself once anywidget 0.11.1 is installed.
+ANYWIDGET_INIT_XFAIL = pytest.mark.xfail(
     Version(importlib.metadata.version("anywidget")) < Version("0.11.1"),
     reason="anywidget <0.11.1 can permanently desync keplergl's ~13MB _esm under CPU contention (manzt/anywidget#1032)",
     strict=False,
