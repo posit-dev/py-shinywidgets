@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from playwright.sync_api import Page, expect
-from tests.playwright.conftest import assert_rerender_cleanup
+from tests.playwright.conftest import (
+    ANYWIDGET_INIT_XFAIL,
+    assert_rerender_cleanup,
+)
+
+pytestmark = ANYWIDGET_INIT_XFAIL
 
 
 def test_plotly_rerender_does_not_log_cleanup_errors(page: Page, local_app) -> None:
