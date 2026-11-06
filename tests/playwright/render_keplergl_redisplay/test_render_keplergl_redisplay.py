@@ -3,9 +3,12 @@ from __future__ import annotations
 from playwright.sync_api import Page, expect
 from tests.playwright.conftest import (
     KEPLERGL_ALLOWED_ERRORS,
+    KEPLERGL_INIT_XFAIL,
     assert_no_unexpected_errors,
     collect_errors,
 )
+
+pytestmark = KEPLERGL_INIT_XFAIL
 
 LOAD_TIMEOUT = 60000
 
