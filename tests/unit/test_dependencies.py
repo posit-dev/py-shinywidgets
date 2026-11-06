@@ -16,7 +16,6 @@ from shinywidgets._dependencies import (
     output_binding_dependency,
     parse_version,
     parse_version_safely,
-    relax_anywidget_init_timeout,
     require_dependencies,
     widget_pkg,
 )
@@ -478,43 +477,3 @@ def test_amd_externals_ignores_prebundled_and_relative_modules(tmp_path) -> None
 def test_amd_externals_non_amd_bundle(tmp_path) -> None:
     module_dir = _nbextension(tmp_path, "some-widget", "export const x = 1;")
     assert amd_externals(module_dir) == []
-
-
-ANYWIDGET_INDEX_JS = """
-    AbortSignal.timeout(2e3).addEventListener("abort", () => {
-      resolvers.reject(new Error("[anywidget] Failed to initialize model."));
-    });
-"""
-
-
-def test_relax_anywidget_init_timeout_patches_copy(tmp_path) -> None:
-    module_dir = tmp_path / "anywidget"
-    module_dir.mkdir()
-    (module_dir / "index.js").write_text(ANYWIDGET_INDEX_JS, encoding="utf-8")
-    (module_dir / "extension.js").write_text("// ext", encoding="utf-8")
-
-    patched_dir = relax_anywidget_init_timeout(str(module_dir))
-    assert patched_dir != str(module_dir)
-
-    with open(os.path.join(patched_dir, "index.js"), encoding="utf-8") as f:
-        js = f.read()
-    assert "AbortSignal.timeout(60000)" in js
-    assert "2e3" not in js
-    # The original extension directory is left untouched
-    with open(module_dir / "index.js", encoding="utf-8") as f:
-        assert f.read() == ANYWIDGET_INDEX_JS
-    # Sibling files come along for the ride
-    assert os.path.exists(os.path.join(patched_dir, "extension.js"))
-
-    # Repeat calls are cached
-    assert relax_anywidget_init_timeout(str(module_dir)) == patched_dir
-
-
-def test_relax_anywidget_init_timeout_falls_back_when_pattern_missing(
-    tmp_path,
-) -> None:
-    module_dir = tmp_path / "anywidget"
-    module_dir.mkdir()
-    (module_dir / "index.js").write_text("// no timeout here", encoding="utf-8")
-
-    assert relax_anywidget_init_timeout(str(module_dir)) == str(module_dir)
