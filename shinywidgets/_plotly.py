@@ -7,6 +7,13 @@ or `plotly_doubleclick`) and drops `customdata`, so the bridge in
 browser to forward the events it needs (`{"shinywidgets": "bind"}`); the
 browser then sends each one as a custom message (`{"shinywidgets": "event"}`)
 with a payload shaped like R plotly's `event_data()`.
+
+A selection is state, not just an event: plotly.js keeps it on the graph div
+(trace `selectedpoints`, plus the region on the last layout selection), so on
+bind the bridge also rebuilds and sends the current selection (an empty
+selection goes as a no-data `plotly_selected`, the same message plotly.js
+sends for one). That lets `selected()`/`brushed()` be state accessors that
+attach at render, so a lasso drawn before their first read isn't lost.
 """
 
 from __future__ import annotations
@@ -145,7 +152,7 @@ CLICKED = AccessorSpec(
 )
 SELECTED = AccessorSpec(
     name="selected",
-    kind="event",
+    kind="state",
     attach=bridge_attach("plotly_selected", points_of, (DESELECT,)),
     payload=points_frame,
 )
@@ -158,7 +165,7 @@ SELECTING = AccessorSpec(
 )
 BRUSHED = AccessorSpec(
     name="brushed",
-    kind="event",
+    kind="state",
     attach=bridge_attach("plotly_selected", region_of, (DESELECT,)),
 )
 BRUSHING = AccessorSpec(

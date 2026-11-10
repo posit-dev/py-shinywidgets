@@ -93,13 +93,136 @@ export function bindPlotlyEvents(plotEl: HTMLElement, model: WidgetModel): void 
   if (!requested || !hasMethod<PlotlyEventEmitter, "on">(plotEl, "on")) return;
   const bound = boundEvents.get(plotEl) ?? new Set<string>();
   boundEvents.set(plotEl, bound);
+  let boundSelected = false;
   for (const event of requested) {
     if (bound.has(event)) continue;
     bound.add(event);
+    if (event === "plotly_selected") boundSelected = true;
     plotEl.on(event, (data?: any) => {
       model.send({ shinywidgets: "event", event, ...eventPayload(event, data) }, {});
     });
   }
+  // A selection is state on the graph div (trace `selectedpoints`), not just
+  // an event: a lasso drawn before this bind (e.g. before an accessor's first
+  // read asked for the event) is still recoverable, so report the current
+  // selection as if plotly.js had just fired it. An empty payload is a
+  // no-data `plotly_selected`, which plotly.js itself sends for an empty
+  // selection and Python reads as "nothing selected".
+  if (boundSelected) {
+    model.send(
+      { shinywidgets: "event", event: "plotly_selected", ...selectionSeed(plotEl) },
+      {},
+    );
+  }
+}
+
+// Rebuilds a plotly_selected payload from graph-div state: one entry per
+// selected point, plus the region (box range or lasso vertices) plotly.js
+// keeps on the last layout selection.
+function selectionSeed(plotEl: HTMLElement): Record<string, unknown> {
+  const data = (plotEl as any).data;
+  if (!Array.isArray(data)) return {};
+  const points = data.flatMap((trace: any, curveNumber: number) => {
+    // jsonable(): a selection preconfigured from plotly.py arrives as a
+    // typed array, which Array.isArray rejects (and whose .map can't hold
+    // point objects)
+    const selected = jsonable(trace?.selectedpoints);
+    if (!Array.isArray(selected)) return [];
+    return (selected as number[]).map((i) => {
+      const entry: Record<string, unknown> = {
+        trace_index: curveNumber,
+        point_index: i,
+      };
+      for (const key of ["x", "y", "z", "customdata"]) {
+        let value = trace[key]?.[i];
+        // A multicategory axis stores one array per category level (so the
+        // trace array's length is the level count, not the point count, and
+        // indexing it by sample is wrong); the coordinate combines each
+        // level's value at i
+        if (key !== "customdata" && Array.isArray(trace[key]) && Array.isArray(trace[key][0])) {
+          value = (trace[key] as any[]).map((level) => level?.[i]);
+        } else if (value === undefined && key !== "customdata") {
+          // Coordinates the trace doesn't carry explicitly (implicit x,
+          // bar x0/dx) are resolved on calcdata, matching the live event's
+          // point objects
+          value = calcCoord(plotEl, curveNumber, i, key, trace?.type);
+        }
+        if (value !== undefined) entry[key] = jsonable(value);
+      }
+      return entry;
+    });
+  });
+  // An empty drag selection is still a selection: plotly.js reports it as
+  // points: [] plus the region. So is a preconfigured selectedpoints: []
+  // (plotly dims every point with unselected styling). No points, no
+  // region, and no trace supplying a selection array means nothing was
+  // ever selected (or a deselect), the no-data case.
+  const region = regionSeed(plotEl);
+  const anySelectionArray = data.some((trace: any) =>
+    Array.isArray(jsonable(trace?.selectedpoints)),
+  );
+  if (points.length === 0 && Object.keys(region).length === 0 && !anySelectionArray) {
+    return {};
+  }
+  return { points, ...region };
+}
+
+function regionSeed(plotEl: HTMLElement): Record<string, unknown> {
+  const selections = (plotEl as any)._fullLayout?.selections;
+  if (!Array.isArray(selections) || selections.length === 0) return {};
+  const last = selections[selections.length - 1];
+  // Selections on later subplots reference their axes (x2, y2, ...), and
+  // live events key the region the same way
+  const xref = typeof last.xref === "string" ? last.xref : "x";
+  const yref = typeof last.yref === "string" ? last.yref : "y";
+  // A box selection keeps its corners; the event reports each axis ascending
+  if (last.x0 !== undefined) {
+    const asc = (a: any, b: any) => (a <= b ? [a, b] : [b, a]);
+    return { range: { [xref]: asc(last.x0, last.x1), [yref]: asc(last.y0, last.y1) } };
+  }
+  // A lasso keeps its vertices as an SVG path: "M x,y L x,y ...". On date
+  // axes the values are date strings with "_" for the date/time separator;
+  // live lassoPoints restore the space.
+  if (typeof last.path === "string") {
+    const x: unknown[] = [];
+    const y: unknown[] = [];
+    const vertex = /[ML]([^MLZz]+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = vertex.exec(last.path)) !== null) {
+      const sep = m[1].lastIndexOf(",");
+      if (sep < 0) continue;
+      x.push(lassoValue(m[1].slice(0, sep)));
+      y.push(lassoValue(m[1].slice(sep + 1)));
+    }
+    if (x.length > 0) return { lassoPoints: { [xref]: x, [yref]: y } };
+  }
+  return {};
+}
+
+// Resolved coordinates from calcdata, for the trace types where its layout
+// is verified: scatter and bar align one calc point per data index
+// (implicit x, x0/dx); scattergl keeps one calc entry whose .t holds typed
+// coordinate arrays. Others don't align by sample index (histograms bin
+// them) or are unverified, so their missing keys stay missing, as in live
+// payloads.
+function calcCoord(
+  plotEl: HTMLElement,
+  curveNumber: number,
+  i: number,
+  key: string,
+  type: string | undefined,
+): unknown {
+  const cd = (plotEl as any).calcdata?.[curveNumber];
+  if (!Array.isArray(cd)) return undefined;
+  if (type === "scattergl") return cd[0]?.t?.[key]?.[i];
+  if (type === "scatter" || type === "bar") return cd[i]?.[key];
+  return undefined;
+}
+
+function lassoValue(token: string): unknown {
+  const t = token.trim();
+  const n = Number(t);
+  return Number.isNaN(n) ? t.replace("_", " ") : n;
 }
 
 // Shaped like R plotly's event_data(): one entry per point, with its trace
