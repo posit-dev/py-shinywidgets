@@ -460,7 +460,12 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     re-sending its data. Prefer params
     (or a re-render) over replacing ``chart.widget.chart``, which re-sends the data,
     drops the container sizing described below, and replaces
-    ``chart.widget.selections`` and ``chart.widget.params``.
+    ``chart.widget.selections`` and ``chart.widget.params`` with new objects -- so
+    observers registered on the old ones (altair's documented
+    ``jchart.selections.observe(...)`` idiom) silently stop firing. Register
+    observers on the `JupyterChart` the render function returns (equivalently, on
+    ``chart.widget``), and re-register them if you do replace
+    ``chart.widget.chart``.
 
     **Sizing**: a chart without an explicit width or height is sized to fill its
     output (``"container"``). Concatenated, faceted, and repeated charts keep their
