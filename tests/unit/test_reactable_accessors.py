@@ -178,3 +178,11 @@ def test_element_id_user_value_wins(widget_session) -> None:  # noqa: ANN001
     w.props = {**w.props, "elementId": "my_table"}
     render_reactable()._as_widget(w)
     assert w.props["elementId"] == "my_table"
+
+
+def test_reactable_accessors_stay_demand_driven() -> None:
+    # The frontend can report full current truth on bind (getState), so
+    # binding on first read loses nothing, and display-only tables pay
+    # nothing. See design doc §5a.
+    for spec in sr.REACTABLE_ACCESSORS:
+        assert spec.eager is False, spec.name
