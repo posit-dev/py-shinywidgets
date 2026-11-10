@@ -222,6 +222,7 @@ def init_shiny_widget(w: Widget):
     # and Widget.__init__() includes a call to Widget.open() which opens an unnecessary
     # comm, we just set the comm to a dummy comm for now (to avoid unnecessary work)
     w.comm = OrphanedShinyComm(id)
+    queue_sends_until_comm_open(w)
 
     # Capture the render (if any) now, so the deferred open below can re-enter it:
     # widgets created lazily while serializing (e.g. default Layout/Style models)
@@ -1277,6 +1278,42 @@ def close_widget(w: Widget) -> None:
     # the widget instance, so remove it again
     if WIDGET_INSTANCE_MAP.get(model_id) is w:
         del WIDGET_INSTANCE_MAP[model_id]
+
+
+def queue_sends_until_comm_open(w: Widget) -> None:
+    """
+    Route custom `widget.send()` messages onto a pre-open OrphanedShinyComm's
+    queue (see OrphanedShinyComm).
+
+    ipywidgets' `Widget._send()` drops the message when `comm.kernel is None`
+    (the placeholder's marker, which ipyvue's template caching also relies
+    on), so widget methods that send custom messages while their output is
+    still rendering (e.g. k3d's `start_auto_play()`) would never reach the
+    queue. Forward them while the placeholder is pre-open; once the real comm
+    replaces it (or it's closed), defer to the original `_send()`. Other
+    message methods (e.g. state updates) keep their drop-on-placeholder
+    behavior: the comm open carries the widget's full current state, so
+    replaying a snapshot taken earlier would risk rolling it back.
+    """
+    original_send = getattr(w, "_send", None)
+    # A widget without _send() has no Widget.send() to route
+    if original_send is None:
+        return
+
+    def _send(msg: Dict[str, object], buffers: BufferType = None) -> None:
+        comm = w.comm
+        if (
+            isinstance(comm, OrphanedShinyComm)
+            and comm.pending_open
+            and msg.get("method") == "custom"
+        ):
+            comm.send(data=msg, buffers=buffers)
+        else:
+            original_send(msg, buffers=buffers)
+
+    # ipywidgets' kernel check lives on the class and can't be satisfied
+    # without breaking ipyvue's template caching, so patch the instance
+    w._send = _send  # type: ignore[method-assign]
 
 
 def close_comm_on_close(w: Widget) -> None:

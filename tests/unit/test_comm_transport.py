@@ -334,6 +334,77 @@ def test_sends_made_before_the_comm_opens_are_delivered_in_order(
     w.close()
 
 
+def test_widget_send_before_comm_open_is_queued(
+    widget_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Same repro as above, but through Widget.send() (how k3d's start_auto_play()
+    and friends actually send): Widget._send() drops messages whose comm has
+    `kernel = None`, so it must be routed onto the placeholder's queue.
+    """
+    import asyncio
+
+    from ipywidgets import IntSlider
+    from shiny import reactive
+    from shiny.session import session_context
+    from shinywidgets._comm import OrphanedShinyComm, ShinyComm
+
+    sent: list[Dict[str, Any]] = []
+
+    async def record(msg_type: str, msg_txt: str) -> None:
+        sent.append({"type": msg_type, **json.loads(msg_txt)})
+
+    monkeypatch.setattr(widget_session, "send_custom_message", record)
+    loop = asyncio.get_event_loop()
+
+    with session_context(widget_session):
+        w = IntSlider(value=1)
+        assert isinstance(w.comm, OrphanedShinyComm)
+        w.send({"msg_type": "start_auto_play"})
+        w.send({"msg_type": "stop_auto_play"})
+        loop.run_until_complete(reactive.flush())
+        assert isinstance(w.comm, ShinyComm)
+        loop.run_until_complete(widget_session._flushed_callbacks.invoke())
+
+    customs = [
+        m["content"]["data"]["content"]["msg_type"]
+        for m in sent
+        if m["type"] == "shinywidgets_comm_msg"
+    ]
+    assert customs == ["start_auto_play", "stop_auto_play"]
+    w.close()
+
+
+def test_queued_sends_snapshot_payloads_at_send_time() -> None:
+    """
+    Like ShinyComm._publish_msg() (which serializes at send time), the queue
+    must capture the payload as sent, not as mutated (or buffer-reused) by the
+    time the comm opens.
+    """
+    import shinywidgets._comm as comm
+
+    session = FakeSession()
+    mgr = comm.ShinyCommManager()
+    real = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
+    session._flush_handlers.clear()
+    session._flushed_handlers.clear()
+
+    orphan = comm.OrphanedShinyComm("c1")
+    payload: Dict[str, Any] = {"method": "custom", "n": 1}
+    buf = bytearray(b"first")
+    orphan.send(data=payload, buffers=[buf])
+    payload["n"] = 2
+    buf[:] = b"secnd"
+    orphan.send(data=payload, buffers=[buf])
+    comm.flush_queued_sends(orphan, real)
+
+    msgs = [json.loads(closure_map(fn)["msg_txt"]) for fn in session._flushed_handlers]
+    assert [m["content"]["data"]["n"] for m in msgs] == [1, 2]
+    assert [base64.b64decode(m["buffers"][0]) for m in msgs] == [b"first", b"secnd"]
+
+
 def test_comm_open_work_does_not_leak_for_never_opened_widgets(
     widget_session,
 ) -> None:

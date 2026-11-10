@@ -2,6 +2,7 @@ import logging
 import threading
 from base64 import b64encode
 from contextvars import ContextVar
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, cast
 
@@ -314,6 +315,22 @@ def run_comm_open_callbacks(model_id: str) -> None:
         fn()
 
 
+def freeze_payload(value: object) -> object:
+    """
+    Deep-copy a queued send payload, freezing buffer objects to `bytes`, so
+    later mutation (or buffer reuse) can't rewrite a message queued for replay.
+    """
+    if isinstance(value, (bytearray, memoryview)):
+        return bytes(value)
+    if isinstance(value, dict):
+        return {k: freeze_payload(v) for k, v in value.items()}
+    if isinstance(value, tuple):
+        return tuple(freeze_payload(v) for v in value)
+    if isinstance(value, list):
+        return [freeze_payload(v) for v in value]
+    return deepcopy(value)
+
+
 def flush_queued_sends(placeholder: object, comm: "ShinyComm") -> None:
     """
     Replay, in order, the sends queued on a pre-open placeholder through the
@@ -339,7 +356,9 @@ class OrphanedShinyComm:
       replay, in FIFO order, through the real comm when it opens (see
       `flush_queued_sends()`), so widget methods that send custom messages
       (e.g., k3d's `start_auto_play()`) work even when called while their
-      output is still rendering.
+      output is still rendering. `widget.send()` reaches the queue too (see
+      `queue_sends_until_comm_open()`), and payloads are snapshotted at send
+      time (see `freeze_payload()`), as a real send would serialize them.
     * Post-close (`pending_open=False`): the widget was closed (or was never
       meant to open); the placeholder only keeps `model_id` working, and
       sends are no-ops, as they've always been for a closed widget.
@@ -362,7 +381,15 @@ class OrphanedShinyComm:
         **kwargs: object,
     ) -> None:
         if self.pending_open:
-            self._queue.append((args, kwargs))
+            # Snapshot the payload now, as ShinyComm._publish_msg() would at
+            # send time: the caller may mutate the data or reuse the buffers
+            # before the queue flushes.
+            self._queue.append(
+                (
+                    cast(Tuple[object, ...], freeze_payload(args)),
+                    cast(Dict[str, object], freeze_payload(kwargs)),
+                )
+            )
 
     def close(
         self,
