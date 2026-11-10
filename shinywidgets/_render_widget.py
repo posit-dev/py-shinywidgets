@@ -495,6 +495,9 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("selected")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = ALTAIR_ACCESSORS
@@ -620,6 +623,9 @@ class render_embedding_atlas(
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+
+    Each accessor can also be read by name -- ``out.read("predicate")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     def __init__(
@@ -830,6 +836,9 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("clicked_object")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = IPYALADIN_ACCESSORS
@@ -895,7 +904,9 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
     @overload
     def read(self, name: Literal["selected_objects"]) -> List[Table]: ...
     @overload
-    def read(self, name: Literal["target"]) -> Union[SkyCoord, Tuple[Longitude, Latitude]]: ...
+    def read(
+        self, name: Literal["target"]
+    ) -> Union[SkyCoord, Tuple[Longitude, Latitude]]: ...
     @overload
     def read(self, name: Literal["fov"]) -> Angle: ...
     @overload
@@ -985,7 +996,9 @@ class _IpyleafletAccessors(_IpyleafletBase):
         return cast(List[Dict[str, Any]], raw)
 
     @overload
-    def read(self, name: Literal["bounds"]) -> Tuple[Tuple[float, float], Tuple[float, float]]: ...
+    def read(
+        self, name: Literal["bounds"]
+    ) -> Tuple[Tuple[float, float], Tuple[float, float]]: ...
     @overload
     def read(self, name: Literal["zoom"]) -> float: ...
     @overload
@@ -1060,6 +1073,9 @@ class render_ipyleaflet(_IpyleafletAccessors, render_widget_base[ValueT, Leaflet
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("clicked")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = IPYLEAFLET_ACCESSORS
@@ -1166,6 +1182,9 @@ class render_itables(render_widget_base[ValueT, ITable]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("selected_rows")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = ITABLES_ACCESSORS
@@ -1265,6 +1284,9 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("selection")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = JSCATTER_ACCESSORS
@@ -1347,6 +1369,9 @@ class render_k3d(render_widget_base[ValueT, K3dPlot]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("camera")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = (K3D_CAMERA,)
@@ -1463,6 +1488,9 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("node_clicked")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = CYTOSCAPE_ACCESSORS
@@ -1598,6 +1626,9 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("selection")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = BPLOT_ACCESSORS
@@ -1637,7 +1668,9 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
     @overload
     def read(self, name: Literal["selection"]) -> List[Optional["np.ndarray"]]: ...
     @overload
-    def read(self, name: Literal["brush"]) -> Optional[Union["np.ndarray", Dict[str, Any]]]: ...
+    def read(
+        self, name: Literal["brush"]
+    ) -> Optional[Union["np.ndarray", Dict[str, Any]]]: ...
     @overload
     def read(self, name: str) -> Any: ...
     def read(self, name: str) -> Any:
@@ -1870,6 +1903,9 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
 
     app = App(app_ui, server)
     ```
+
+    Each accessor can also be read by name -- ``out.read("camera")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = (PYTHREEJS_CAMERA,)
@@ -1978,6 +2014,9 @@ class render_leafmap(_IpyleafletAccessors, render_widget_base[ValueT, LeafletMap
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("clicked")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = IPYLEAFLET_ACCESSORS
@@ -2048,6 +2087,9 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         Accessor names to opt into: pass ``["clicked"]`` to enable
         :meth:`clicked` (which raises without it). Subscribing flips the map
         into click-handling mode, so it's opt-in rather than always on.
+
+    Each accessor can also be read by name -- ``out.read("selected_index")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = LONBOARD_ACCESSORS
@@ -2126,7 +2168,9 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
     @overload
     def read(self, name: Literal["selected_index"]) -> Optional[int]: ...
     @overload
-    def read(self, name: Literal["selected_bounds"]) -> Optional[Tuple[float, float, float, float]]: ...
+    def read(
+        self, name: Literal["selected_bounds"]
+    ) -> Optional[Tuple[float, float, float, float]]: ...
     @overload
     def read(self, name: Literal["clicked"]) -> Optional[Tuple[float, float]]: ...
     @overload
@@ -2391,6 +2435,9 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
 
     app = App(app_ui, server)
     ```
+
+    Each accessor can also be read by name -- ``out.read("clicked")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = MATPLOTLIB_ACCESSORS
@@ -2448,7 +2495,9 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
     @overload
     def read(self, name: Literal["picked"]) -> Optional[PickEvent]: ...
     @overload
-    def read(self, name: Literal["limits"]) -> Tuple[Tuple[float, float], Tuple[float, float]]: ...
+    def read(
+        self, name: Literal["limits"]
+    ) -> Tuple[Tuple[float, float], Tuple[float, float]]: ...
     @overload
     def read(self, name: str) -> Any: ...
     def read(self, name: str) -> Any:
@@ -2595,6 +2644,9 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("params")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     def __init__(
@@ -2854,6 +2906,9 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("clicked")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = (CLICKED, LIMITS)
@@ -2901,7 +2956,9 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
     @overload
     def read(self, name: Literal["clicked"]) -> Optional[MouseEvent]: ...
     @overload
-    def read(self, name: Literal["limits"]) -> Tuple[Tuple[float, float], Tuple[float, float]]: ...
+    def read(
+        self, name: Literal["limits"]
+    ) -> Tuple[Tuple[float, float], Tuple[float, float]]: ...
     @overload
     def read(self, name: str) -> Any: ...
     def read(self, name: str) -> Any:
@@ -3004,6 +3061,9 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("selected")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = BOKEH_ACCESSORS
@@ -3293,6 +3353,9 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("view_config")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = PERSPECTIVE_ACCESSORS
@@ -3406,6 +3469,9 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("selections")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = IPYDATAGRID_ACCESSORS
@@ -3748,6 +3814,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         req(pts is not None)
         plot.widget.layout.title.text = f"Clicked x={pts['x'].iloc[0]}"
     ```
+
+    Each accessor can also be read by name -- ``out.read("selected")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = PLOTLY_ACCESSORS
@@ -3955,6 +4024,9 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
       would leak 3 models per light (and log a transient console error).
     * Rotate objects via ``mesh.quaternion``; pythreejs's ``rotation`` (Euler)
       updates don't render (an upstream pythreejs bug).
+
+    Each accessor can also be read by name -- ``out.read("camera")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = (PYTHREEJS_CAMERA,)
@@ -4529,6 +4601,9 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("sql")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     def __init__(
@@ -4929,6 +5004,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
 
     app = App(app_ui, server)
     ```
+
+    Each accessor can also be read by name -- ``out.read("selection")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs: ClassVar[tuple[AccessorSpec, ...]] = (
@@ -5579,6 +5657,9 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
         rec.log("points", rr.Points3D(np.random.rand(100, 3)))
         return Viewer(width="auto", height="auto", recording=rec)
     ```
+
+    Each accessor can also be read by name -- ``out.read("selection")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = (SELECTION,)
@@ -5799,6 +5880,9 @@ class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
             searchable=True,
         )
     ```
+
+    Each accessor can also be read by name -- ``out.read("selected_rows")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = REACTABLE_ACCESSORS
@@ -6014,6 +6098,9 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
 
     app = App(app_ui, server)
     ```
+
+    Each accessor can also be read by name -- ``out.read("location")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = (LOCATION,)

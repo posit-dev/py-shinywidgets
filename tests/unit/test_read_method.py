@@ -3,9 +3,8 @@ from __future__ import annotations
 from typing import Any, Callable
 
 import pytest
-from shiny.types import SilentException
-
 import shinywidgets._accessors as acc
+from shiny.types import SilentException
 from shinywidgets._render_widget_base import render_widget_base
 
 REASON = "opt-in for the test. Add listen_to=['clicked'] to the decorator."
