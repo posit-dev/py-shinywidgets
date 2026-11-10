@@ -56,3 +56,13 @@ def test_read_falls_through_to_trait(widget_session: object) -> None:
     r = render_fake()
     r._widget = slider
     assert r.read("value") == 7
+
+
+def test_read_overloads_typecheck() -> None:
+    # Runtime smoke: the overloaded read() still dispatches correctly.
+    pytest.importorskip("plotly")
+    from shinywidgets._render_widget import render_plotly
+
+    r = render_plotly()
+    with pytest.raises(AttributeError, match="no accessor or synced trait"):
+        r.read("nope")

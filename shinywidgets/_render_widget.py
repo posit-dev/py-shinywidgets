@@ -16,11 +16,13 @@ from typing import (
     Dict,
     Iterable,
     List,
+    Literal,
     Optional,
     Tuple,
     TypeVar,
     Union,
     cast,
+    overload,
 )
 
 from htmltools import Tag
@@ -3675,6 +3677,23 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         """
         points = self._read_accessor("selected", raw=True)
         return select_rows(cast(Optional[List[Point]], points), df, key)
+
+    @overload
+    def read(self, name: Literal["clicked"]) -> Optional[pd.DataFrame]: ...
+    @overload
+    def read(self, name: Literal["selected"]) -> Optional[pd.DataFrame]: ...
+    @overload
+    def read(self, name: Literal["selecting"]) -> Optional[pd.DataFrame]: ...
+    @overload
+    def read(self, name: Literal["brushed"]) -> Optional[Dict[str, Any]]: ...
+    @overload
+    def read(self, name: Literal["brushing"]) -> Optional[Dict[str, Any]]: ...
+    @overload
+    def read(self, name: Literal["relayout"]) -> Optional[Dict[str, Any]]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
 
     def _as_widget(self, value: PlotlyValueT) -> FigureWidget:
         fig, config = _split_config(value)
