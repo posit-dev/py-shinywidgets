@@ -97,6 +97,22 @@ def primed(widget_session: Session) -> Session:
 
 
 @pytest.fixture
+def other_session() -> Any:
+    """A second session, for cross-session cleanup tests."""
+    from shiny import App, ui
+    from shiny._connection import MockConnection
+    from tests.unit.conftest import widget_test_server
+
+    session = App(ui.page_fluid(), widget_test_server)._create_session(
+        MockConnection()
+    )
+    try:
+        yield session
+    finally:
+        asyncio.get_event_loop().run_until_complete(session.close())
+
+
+@pytest.fixture
 def published(monkeypatch: pytest.MonkeyPatch) -> List[str]:
     """msg_type of every message ShinyComm would publish to the browser."""
     seen: List[str] = []
@@ -330,3 +346,142 @@ def test_live_reference_keeps_a_browser_created_widget(primed: Session) -> None:
         assert not is_closed_widget(target)
         assert "target-2" in WIDGET_INSTANCE_MAP
         assert "target-2" in sw.CLIENT_CREATED_IDS
+
+
+def test_invalidation_never_closes_another_sessions_browser_created_widget(
+    primed: Session, other_session: Session
+) -> None:
+    """
+    A render in session B holds a Python-side reference to session A's
+    browser-created widget (render serialization rejects the cross-session
+    reference, but the reference itself can exist). B's invalidation must not
+    close a widget A still owns.
+    """
+    from ipywidgets import VBox
+    from shiny.reactive._core import Context
+    from shinywidgets._render_widget_base import WidgetRenderContext
+
+    target = open_browser_model(primed, "target-x")
+
+    with session_context(other_session):
+        ctx = Context()
+        with ctx(), WidgetRenderContext():
+            parent = VBox(children=(target,))
+        flush()
+
+        ctx.invalidate()
+        flush()
+
+    assert is_closed_widget(parent)
+    assert not is_closed_widget(target)
+
+
+def test_invalidation_keeps_browser_created_models_of_a_shared_scene(
+    primed: Session, shared_state: None
+) -> None:
+    """
+    A process-global (shared) scene referencing a browser-created model (e.g.
+    a shared pythreejs scene's light target) survives its renderer's
+    invalidation; the browser-created model must survive with it, even though
+    the scene is absent from the session's keep roots.
+    """
+    from ipywidgets import VBox
+    from shiny.reactive._core import Context
+    from shinywidgets import shared_lifetime
+    from shinywidgets._render_widget_base import WidgetRenderContext
+
+    # Sessionless, like a module-level shared widget: registered in no
+    # session, so absent from the sweeping session's keep roots
+    with shared_lifetime():
+        scene = VBox()
+
+    with session_context(primed):
+        target = open_browser_model(primed, "target-shared")
+        scene.children = (target,)
+
+        ctx = Context()
+        with ctx(), WidgetRenderContext():
+            VBox(children=(scene,))  # render-owned renderer
+        flush()
+
+        ctx.invalidate()
+        flush()
+
+        assert not is_closed_widget(scene)
+        assert not is_closed_widget(target)
+
+
+def test_browser_created_widget_is_collected_after_its_keeper_drops_it(
+    primed: Session,
+) -> None:
+    """
+    A browser-created widget kept alive by a live referrer is deferred, not
+    forgotten: once the referrer drops it, a later sweep must collect it
+    (otherwise it leaks until the session ends).
+    """
+    from ipywidgets import VBox
+    from shiny.reactive._core import Context
+    from shinywidgets import session_lifetime
+    from shinywidgets._render_widget_base import WidgetRenderContext
+
+    with session_context(primed):
+        with session_lifetime():
+            keeper = VBox()
+
+        ctx1 = Context()
+        with ctx1(), WidgetRenderContext():
+            parent = VBox()
+        flush()
+
+        target = open_browser_model(primed, "target-3")
+        parent.children = (target,)
+        keeper.children = (target,)
+        flush()
+
+        ctx1.invalidate()
+        flush()
+        assert not is_closed_widget(target)
+
+        keeper.children = ()
+        ctx2 = Context()
+        with ctx2(), WidgetRenderContext():
+            VBox()  # an unrelated render to invalidate for another sweep
+        flush()
+
+        ctx2.invalidate()
+        flush()
+        assert is_closed_widget(target)
+        assert "target-3" not in sw.CLIENT_CREATED_IDS
+
+
+def test_directly_closed_browser_created_id_is_discarded_at_session_end() -> None:
+    """
+    A browser-created widget closed directly (widget.close(), bypassing
+    close_widget()'s discard) leaves its id in CLIENT_CREATED_IDS; session
+    teardown must discard it anyway, or the process-wide set grows with every
+    session and the sweep never turns back off.
+    """
+    from shiny import App, ui
+    from shiny._connection import MockConnection
+    from tests.unit.conftest import widget_test_server
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        session = App(ui.page_fluid(), widget_test_server)._create_session(
+            MockConnection()
+        )
+        with session_context(session):
+            ipywidgets.IntSlider()  # prime the session
+        flush()
+        target = open_browser_model(session, "target-4")
+        assert "target-4" in sw.CLIENT_CREATED_IDS
+
+        target.close()  # direct close removes it from WIDGET_INSTANCE_MAP
+        assert "target-4" in sw.CLIENT_CREATED_IDS  # stale until teardown
+
+        asyncio.run(session.close())
+        assert "target-4" not in sw.CLIENT_CREATED_IDS
+    finally:
+        asyncio.set_event_loop(None)
+        loop.close()

@@ -568,11 +568,16 @@ def init_session(session: Session) -> None:
         # this widget as a child) may still read it.
         # A session that only had shared widgets opened in it constructed none.
         for id in SESSION_WIDGET_ID_MAP.get(session.id, []):
+            # A browser-created widget closed directly (widget.close()) has no
+            # registry entry to find here, but its id lingers in
+            # CLIENT_CREATED_IDS; discard the session's ids regardless
+            CLIENT_CREATED_IDS.discard(id)
             widget = WIDGET_INSTANCE_MAP.get(id)
             if widget and not is_process_global(widget):
                 close_widget(widget)
         SESSION_WIDGET_ID_MAP.pop(session.id, None)
         KEPT_WIDGETS.pop(session.id, None)
+        DEFERRED_CLIENT_CREATED.pop(session.id, None)
 
     session.on_ended(_cleanup_session_state)
 
@@ -1222,6 +1227,11 @@ KEPT_WIDGETS: dict[str, list[Widget]] = {}
 # funnels through.
 CLIENT_CREATED_IDS: set[str] = set()
 
+# session.id -> model ids of browser-created widgets a sweep kept alive (a
+# live widget referenced them), re-checked on later sweeps and collected once
+# nothing live references them anymore (see close_render_widgets()).
+DEFERRED_CLIENT_CREATED: dict[str, set[str]] = {}
+
 
 def is_client_created(w: Widget) -> bool:
     """
@@ -1279,6 +1289,13 @@ def close_render_widgets(session: Session, widgets: list[Widget]) -> None:
     # widget is reachable from live roots, hence in `keep`, never garbage.
     client_garbage: dict[int, Widget] = {}
     if CLIENT_CREATED_IDS:
+        own_ids = set(SESSION_WIDGET_ID_MAP.get(session.id, ()))
+        # Process-global widgets survive (see the loop below), so what they
+        # reference survives too: a shared scene's browser-created light
+        # target is still needed after the render that carried it here is
+        # gone, even though the scene isn't a keep root (it isn't
+        # session-owned).
+        protected = keep | referenced_widgets(SHARED_WIDGETS.values())
         client_garbage = {
             id(r): r
             for r in walk_widget_tree(
@@ -1287,15 +1304,37 @@ def close_render_widgets(session: Session, widgets: list[Widget]) -> None:
                     for w in widgets
                     if not is_closed_widget(w)
                     and not is_process_global(w)
-                    and id(w) not in keep
+                    and id(w) not in protected
                 ),
-                prune=lambda w: id(w) in keep,
+                prune=lambda w: id(w) in protected or is_process_global(w),
             )
             if is_client_created(r)
             and not is_closed_widget(r)
             and not is_process_global(r)
-            and id(r) not in keep
+            and id(r) not in protected
+            # Only this session's own: a closing widget may hold a (transient)
+            # reference to another session's browser-created widget, which
+            # that session is still using
+            and r.model_id in own_ids
         }
+        # Browser-created widgets a live referrer kept alive on an earlier
+        # sweep are deferred, not forgotten: re-check them on every sweep and
+        # collect them once nothing live references them anymore (e.g. the
+        # referrer dropped the reference without closing). Ones never
+        # referenced at all never enter the set: the browser may simply not
+        # have attached them to a parent yet.
+        deferred = DEFERRED_CLIENT_CREATED.setdefault(session.id, set())
+        for wid in own_ids:
+            if wid not in CLIENT_CREATED_IDS:
+                continue  # not browser-created
+            w = WIDGET_INSTANCE_MAP.get(wid)
+            if w is None or is_closed_widget(w):
+                deferred.discard(wid)
+            elif id(w) in protected:
+                deferred.add(wid)
+            elif wid in deferred:
+                deferred.discard(wid)
+                client_garbage[id(w)] = w
     kept: list[Widget] = []
     for w in widgets:
         if is_closed_widget(w):  # already closed (e.g. by this session ending)
