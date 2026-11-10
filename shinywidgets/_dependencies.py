@@ -8,6 +8,7 @@ import json
 import os
 import re
 import secrets
+import sys
 import tempfile
 import threading
 import warnings
@@ -992,25 +993,39 @@ def widget_pkg(w: object) -> str:
 
 
 def installed_widget_pkg(w: object) -> str:
-    """Like ``widget_pkg()``, but resolved to an *installed* package.
+    """Like ``widget_pkg()``, but resolved to a package that can resolve the
+    widget's JavaScript.
 
     When a widget is subclassed outside of its own package (e.g.,
     ``class ConfettiButton(ipyreact.ValueWidget)`` in app.py), the class's
-    ``__module__`` points at the app module, not at the installed package that
-    ships the widget's JavaScript. Walk the MRO to the nearest ancestor class
-    defined in an installed package. (``widget_pkg()`` itself must stay purely
-    syntactic: callers like ``as_widget()`` routing and layout defaults match
-    per-class package names against packages that may not be installed.)
+    ``__module__`` points at the app module, not at the package that ships the
+    widget's JavaScript. Walk the MRO to the nearest ancestor class whose
+    package is either installed, or is importable from a source tree (no
+    distribution metadata, e.g. vendored on sys.path) and registers its
+    JavaScript via ``_jupyter_nbextension_paths()``.
+    (``widget_pkg()`` itself must stay purely syntactic: callers like
+    ``as_widget()`` routing and layout defaults match per-class package names
+    against packages that may not be installed.)
     """
     klass = w if isinstance(w, type) else type(w)
     installed = _installed_top_level_packages()
     for base in klass.__mro__:
         module = getattr(base, "__module__", None)
-        if module and module.split(".")[0] in installed:
-            return module.split(".")[0]
-    # No ancestor is defined in an installed package (e.g., a widget defined
+        if not module:
+            continue
+        top = module.split(".")[0]
+        if top in installed or has_nbextension_registration(top):
+            return top
+    # No ancestor is defined in a resolvable package (e.g., a widget defined
     # entirely in the app module); fall back to the syntactic answer
     return widget_pkg(w)
+
+
+def has_nbextension_registration(pkg: str) -> bool:
+    # The class's package is imported by definition, so checking sys.modules
+    # imports nothing
+    mod = sys.modules.get(pkg)
+    return mod is not None and hasattr(mod, "_jupyter_nbextension_paths")
 
 
 def parse_version(v: str) -> str:

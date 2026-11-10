@@ -170,6 +170,42 @@ def test_jupyter_extension_destination_unresolvable_package_error() -> None:
     assert "anywidget.AnyWidget" in str(excinfo.value)
 
 
+def test_source_tree_widget_pkg_keeps_its_nbextension_registration(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A widget package vendored on sys.path (no distribution metadata) still
+    # registers its JavaScript via _jupyter_nbextension_paths(). The MRO walk
+    # must not skip that registration for the installed ipywidgets ancestor
+    # (regression: the widget's _model_module, "srcpkg-npm", differs from its
+    # nbextension dest, so resolution depends on the destination lookup).
+    pkg = tmp_path / "srcpkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text(
+        "def _jupyter_nbextension_paths():\n"
+        "    return [{'dest': 'srcpkg-nbext'}]\n",
+        encoding="utf-8",
+    )
+    (pkg / "widget.py").write_text(
+        "from ipywidgets.widgets.domwidget import DOMWidget\n"
+        "from traitlets import Unicode\n"
+        "class SourceTreeWidget(DOMWidget):\n"
+        "    _model_module = Unicode('srcpkg-npm').tag(sync=True)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    try:
+        import srcpkg.widget
+
+        assert installed_widget_pkg(srcpkg.widget.SourceTreeWidget) == "srcpkg"
+        assert (
+            jupyter_extension_destination(srcpkg.widget.SourceTreeWidget)
+            == "srcpkg-nbext"
+        )
+    finally:
+        for name in (n for n in list(sys.modules) if n == "srcpkg" or n.startswith("srcpkg.")):
+            del sys.modules[name]
+
+
 def test_jupyter_extension_path_finds_index_js(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
