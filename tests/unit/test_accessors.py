@@ -448,6 +448,30 @@ def test_not_ready_cancels(monkeypatch: pytest.MonkeyPatch) -> None:
     assert a.read("bounds") == ((0, 0), (1, 1))
 
 
+def test_dynamic_specs_create_slots_on_demand() -> None:
+    cap = Capture()
+
+    def factory(name: str) -> Optional[acc.AccessorSpec]:
+        if not name.startswith("dyn:"):
+            return None
+        return acc.AccessorSpec(name=name, kind="state", attach=cap.attach)
+
+    a = acc.Accessors([], dynamic_specs=factory, schedule=FakeSchedule())
+    with pytest.raises(KeyError):
+        a.read("nope")
+    a.on_render(object())
+    assert cap.attached == 0
+    assert a.read("dyn:x") is None
+    assert cap.attached == 1
+    cap.send(4)
+    assert a.read("dyn:x") == 4
+    # Once created, the slot re-attaches on re-render like a declared one
+    a.on_render(object())
+    assert cap.detached == 1 and cap.attached == 2
+    a.close()
+    assert cap.detached == 2
+
+
 def test_close_detaches_and_cancels() -> None:
     a, cap, s = make(rate_policy="debounce")
     a.on_render(object())

@@ -115,7 +115,10 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._widget: WidgetT | None = None
         self._contexts: set[Context] = set()
         self._accessors = Accessors(
-            type(self)._accessor_specs, rate_policy=rate_policy, rate_delay=rate_delay
+            type(self)._accessor_specs,
+            dynamic_specs=self._dynamic_accessor_spec,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
         )
         self._closes_accessors_on_destroy = False
 
@@ -255,12 +258,22 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             "The `widget` attribute of a @render_widget function is read only."
         )
 
-    def _read_accessor(self, name: str, *, raw: bool = False) -> object:
+    def _dynamic_accessor_spec(self, name: str) -> Optional[AccessorSpec]:
+        """
+        The spec for an accessor named at read time (e.g., `render_panel`'s
+        `param(name)`, whose names aren't known until the user calls it), or
+        None when this renderer has no accessor by that name.
+        """
+        return None
+
+    def _read_accessor(
+        self, name: str, *, raw: bool = False, call: Optional[str] = None
+    ) -> object:
         if rendering_renderer.get() is self:
             # It would cancel (no widget yet) or reset (a new widget), so the
             # output would never render
             raise RuntimeError(
-                f"`{self.output_id}.{name}()` can't be read inside "
+                f"`{self.output_id}.{call or f'{name}()'}` can't be read inside "
                 f"`{self.output_id}`'s own render function, which builds a new "
                 "widget each time it runs. Read it in another output or an effect; "
                 f"to change the plot in response, update `{self.output_id}.widget` "
