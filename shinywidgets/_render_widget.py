@@ -5675,16 +5675,23 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
     position, much like ``input.my_slider()`` reads an input. Call it in a
     reactive function (a ``@render.*`` function, ``@reactive.calc``, or
     ``@reactive.effect``), which then re-runs whenever the crosshair moves.
-    It returns ``None`` until the first crosshair move (the position is not
-    sent on load), and resets to ``None`` on re-render. Debounced (250 ms)
-    by default; see ``rate_policy`` and ``rate_delay``. For every event
-    un-debounced, register a callback with ``@nv.on_location_change`` inside
-    the render function and have it set a session-scoped `reactive.Value`.
+    It attaches at render, seeded with the position the viewer has already
+    synced to Python, so a crosshair move made before its first read (e.g.,
+    behind a button or chat handler) is reflected in that read instead of
+    lost. A re-render keeps the last position until the new viewer reports
+    its own (a freshly rendered viewer starts at the volume center).
+    Debounced (250 ms) by default; see ``rate_policy`` and ``rate_delay``.
+    For every event un-debounced, register a callback with
+    ``@nv.on_location_change`` inside the render function and have it set a
+    session-scoped `reactive.Value`.
 
-    **Reading the crosshair**: the crosshair position does *not* sync back
-    as a trait (``reactive_read(nv.widget.scene, "crosshair_pos")`` never
-    updates); ``location()`` (above) and the `on_location_change` callback
-    are the ways to read it. (Beware: exceptions raised inside
+    **Reading the crosshair**: ``location()`` (above) and the
+    `on_location_change` callback are the ways to read the crosshair
+    reactively. The position does sync back to
+    ``nv.widget.scene.crosshair_pos`` (``location()``'s seed reads it), but
+    ipyniivue applies that sync silently, so
+    ``reactive_read(nv.widget.scene, "crosshair_pos")`` never re-runs.
+    (Beware: exceptions raised inside
     `on_location_change` callbacks are swallowed by ipywidgets, so a failing
     callback just looks like "no updates".) Similarly,
     ``nv.frac2mm()``/``nv.mm2frac()`` don't work on Shiny (the coordinate
@@ -5772,9 +5779,14 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
         per volume), ``string`` (a formatted summary), and ``xy`` (canvas
         coordinates).
 
-        Returns ``None`` until the first crosshair move (the position is not
-        sent on load), and resets to ``None`` on re-render, so use
-        ``req(nv.location())`` to wait for a report. Debounced (250 ms) by
+        The accessor attaches at render, seeded with the position the viewer
+        has already synced to Python (``nv.widget.scene.crosshair_pos``), so
+        a crosshair move made before its first read is reflected in that
+        read instead of lost, and a re-render keeps the last position until
+        the new viewer reports its own. Only ``frac`` syncs back, so a seeded
+        value carries just ``frac`` plus a ``"seeded": True`` marker; the
+        other keys (``mm``, ``vox``, ``values``, ...) appear with the next
+        crosshair move, which reports the full dict. Debounced (250 ms) by
         default; see the ``rate_policy`` and ``rate_delay`` parameters.
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("location"))

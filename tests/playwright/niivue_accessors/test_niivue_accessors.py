@@ -16,7 +16,9 @@ def test_location_reports_crosshair_and_debounces(page: Page, local_app) -> None
     page.goto(local_app.url)
     canvas = page.locator("#brain canvas").first
     expect(canvas).to_be_visible(timeout=60000)
-    expect(page.locator("#location")).to_have_text("None", timeout=30000)
+    # A state accessor: attaching at render seeds the synced crosshair
+    # position (the volume center before any interaction)
+    expect(page.locator("#location")).to_have_text("seed:0.50,0.50,0.50", timeout=30000)
     # Await the volume load on a real signal (the widget's image_loaded
     # event), not a fixed timeout
     expect(page.locator("#loaded")).to_have_text("yes", timeout=120000)
