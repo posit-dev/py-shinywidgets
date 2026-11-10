@@ -4552,7 +4552,8 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       every displayed column plus ``mols2grid-id`` -- for click-to-inspect
       panels and drill-downs. The payload can be wide (it includes the
       cell's image markup), so pick the keys you display rather than
-      stringifying the whole dict. A click is an event, not state:
+      stringifying the whole dict -- and ``clicked()`` raises without
+      ``clicks=True``. A click is an event, not state:
       ``clicked()`` is `None` until the first click and resets on re-render.
     * **Filtering (Python -> browser):** ``grid.grid.filter(mask)`` (a boolean
       mask, Series, or list) hides non-matching molecules in the already
@@ -4698,6 +4699,10 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             # is None until it happens), a click that lands before the first
             # read would otherwise never be emitted
             eager=True,
+            requires_registration=(
+                "clicks are opt-in because the grid only posts clicks when "
+                "asked. Add clicks=True to the @render_mols2grid decorator."
+            ),
         ),
     )
 
@@ -4724,6 +4729,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             fillable=fillable,
             rate_policy=rate_policy,
             rate_delay=rate_delay,
+            listen_to=("clicked",) if clicks else (),
         )
         self.smiles_col = smiles_col
         self.mol_col = mol_col

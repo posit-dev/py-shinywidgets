@@ -82,3 +82,19 @@ def test_lonboard_clicked_requires_registration() -> None:
 
     assert CLICKED.requires_registration is not None
     assert "listen_to=['clicked']" in CLICKED.requires_registration
+
+
+def test_mols2grid_clicks_kwarg_registers() -> None:
+    pytest.importorskip("mols2grid")
+    from shinywidgets._render_widget import render_mols2grid
+
+    spec = next(s for s in render_mols2grid._accessor_specs if s.name == "clicked")
+    assert spec.requires_registration is not None
+    assert "clicks=True" in spec.requires_registration
+
+    r = render_mols2grid(clicks=True)
+    assert "clicked" in r._accessors._listening
+
+    r2 = render_mols2grid()
+    with pytest.raises(acc.AccessorRegistrationError, match="clicks=True"):
+        r2._accessors.read("clicked")
