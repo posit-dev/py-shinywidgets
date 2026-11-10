@@ -2,6 +2,12 @@
 Accessors for `render_lonboard`, backed by the map's traits (`view_state`,
 `selected_bounds`), its click handler registry, and each layer's
 `selected_index` trait.
+
+A pick is state, not just an event: lonboard retains it on the layer's
+`selected_index` trait (the frontend sets it on click and pushes it with
+`save_changes()`), so `attach_selected_index` seeds the accessor from the
+layers' retained picks. That lets `selected_index()` be a state accessor
+that attaches at render, so a pick made before its first read isn't lost.
 """
 
 from __future__ import annotations
@@ -68,6 +74,18 @@ def attach_selected_index(widget: LonboardMap, emit: Emit) -> Callable[[], None]
         attach_layer(layer)
     widget.observe(on_layers, "layers")
 
+    # Seed from the pick each layer retains on its `selected_index` trait.
+    # With picks on several layers there is no timestamp to order them, so
+    # the seed is a pick only when exactly one layer holds one; otherwise
+    # it's None (a fresh map has no pick, and an ambiguous one can't be
+    # attributed).
+    picks = [
+        layer.selected_index
+        for layer in widget.layers
+        if layer.has_trait("selected_index") and layer.selected_index is not None
+    ]
+    emit(picks[0] if len(picks) == 1 else None)
+
     def detach() -> None:
         widget.unobserve(on_layers, "layers")
         for d in detaches.values():
@@ -86,7 +104,7 @@ VIEW_STATE = AccessorSpec(
     rate_policy="debounce",
 )
 SELECTED_INDEX = AccessorSpec(
-    name="selected_index", kind="event", attach=attach_selected_index
+    name="selected_index", kind="state", attach=attach_selected_index
 )
 SELECTED_BOUNDS = AccessorSpec(
     name="selected_bounds", kind="state", attach=attach_selected_bounds

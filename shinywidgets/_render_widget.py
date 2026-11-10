@@ -1965,14 +1965,28 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         The positional index of the most recently picked row, as
         ``gdf.iloc[map.selected_index()]``, or ``None`` until the first pick.
 
+        This is a state accessor: it attaches at render, and lonboard
+        retains the pick on each layer's ``selected_index`` trait, so a pick
+        made before this accessor's first read -- for example, before a chat
+        handler or LLM tool first reads it -- is reflected in that first
+        read instead of being lost. Since state accessors don't reset on
+        re-render the way event accessors do, the value follows the
+        displayed map's retained pick: a re-render keeps it only until the
+        new map reports its own (a freshly built map has no pick, so it
+        becomes ``None``).
+
         With several pickable layers this is the most recent pick across all
         of them; it doesn't say which layer, and picking the same index on two
         different layers in a row doesn't re-fire -- with several pickable
         layers, observe each layer yourself instead:
-        ``reactive_read(layer, "selected_index")``. A layer only reports when
-        ``pickable=True`` (the default). Picking the same row of the same
-        layer twice doesn't re-fire (the trait only changes when the value
-        does), and clicking empty space doesn't clear it.
+        ``reactive_read(layer, "selected_index")``. When the accessor attaches
+        and more than one layer already holds a pick (possible only for a map
+        that outlives its render, e.g. a :func:`~shinywidgets.shared_lifetime`
+        map), there is no timestamp to say which was most recent, so the seed
+        is ``None`` rather than an arbitrary layer's pick. A layer only
+        reports when ``pickable=True`` (the default). Picking the same row of
+        the same layer twice doesn't re-fire (the trait only changes when the
+        value does), and clicking empty space doesn't clear it.
         """
         return cast(Optional[int], self._read_accessor("selected_index"))
 
