@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* `@render_bokeh`'s `selected()` (and therefore `selected_rows()`) is now a state accessor: it attaches at render, seeded with the plot's current selection, which jupyter_bokeh keeps synced from the browser onto the Python-side document (`source.selected.indices`). A tap/box/lasso selection made before the accessor's first read is now reported instead of silently lost. Two consequences: `selected()` now returns `[]` (rather than `None`) while nothing is selected, so a reader can no longer distinguish "nothing selected yet" from a selection that caught nothing; and, since state accessors don't reset on re-render, `selected()` keeps its value after a re-render until the new plot reports its own (initially empty) selection.
 * shinywidgets now requires ipywidgets 8.1 or newer, and the bundled JavaScript widget manager (`@jupyter-widgets/html-manager`) was upgraded from 0.20 to 1.0. Together these fix a wide range of long-standing issues with ipywidgets 8 (see the bug fixes below). (#237, #259)
 * shinywidgets now requires plotly >= 5.12 (the first release whose `FigureWidget` frontend supports ipywidgets 8). Constructing a plotly widget with an older plotly raises an error explaining how to upgrade, instead of rendering a blank output with no error. (#332)
 * shinywidgets now requires shiny 1.9.0 or newer, which sends widget updates made outside the reactive graph (e.g., from a background thread) to the browser right away. (#377)

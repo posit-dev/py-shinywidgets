@@ -28,16 +28,29 @@ def widget(session: Session, model: Any) -> BokehModel:
         return BokehModel(model)
 
 
-def test_selected_emits_indices_once_per_change(widget_session: Session) -> None:
+def test_selected_seeds_an_empty_selection_at_attach(
+    widget_session: Session,
+) -> None:
     p, src = plot()
     w = widget(widget_session, p)
     emitted: List[object] = []
     detach = sb.SELECTED.attach(w, emitted.append)
-    assert emitted == []  # event-kind: nothing until a gesture
+    assert emitted == [[]]  # state-kind: seeded with the current selection
     src.selected.indices = [1, 2]
-    assert emitted == [[1, 2]]
+    assert emitted == [[], [1, 2]]
     detach()
     src.selected.indices = [0]
+    assert emitted == [[], [1, 2]]
+
+
+def test_selected_seeds_a_selection_made_before_attach(
+    widget_session: Session,
+) -> None:
+    p, src = plot()
+    src.selected.indices = [1, 2]
+    w = widget(widget_session, p)
+    emitted: List[object] = []
+    sb.SELECTED.attach(w, emitted.append)
     assert emitted == [[1, 2]]
 
 
@@ -84,10 +97,26 @@ def test_selected_rows(widget_session: Session) -> None:
     r = render_bokeh(rate_delay=0)
     r._widget = w  # stands in for _render()
     r._accessors.on_render(w)
-    assert r.selected() is None
+    assert r.selected() == []  # seeded at render
     out = r.selected_rows()
     assert isinstance(out, pd.DataFrame) and len(out) == 0
     src.selected.indices = [2, 0]
+    assert r.selected() == [2, 0]
+    assert r.selected_rows()["x"].tolist() == [3, 1]
+
+
+def test_selected_rows_reflects_a_selection_made_before_the_first_read(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_bokeh
+
+    p, src = plot()
+    w = widget(widget_session, p)
+    r = render_bokeh(rate_delay=0)
+    r._widget = w  # stands in for _render()
+    # The user selects before anything reads the accessor
+    src.selected.indices = [2, 0]
+    r._accessors.on_render(w)
     assert r.selected() == [2, 0]
     assert r.selected_rows()["x"].tolist() == [3, 1]
 
@@ -102,7 +131,7 @@ def test_selected_rows_readers_rerun_when_the_data_is_replaced(
     r = render_bokeh(rate_delay=0)
     r._widget = w  # stands in for _render()
     r._accessors.on_render(w)
-    r.selected_rows()  # attaches
+    r.selected_rows()  # already attached (and seeded) at render
     src.selected.indices = [0]
     reader = Context()
     with reader():
