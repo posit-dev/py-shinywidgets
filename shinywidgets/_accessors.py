@@ -28,6 +28,10 @@ def identity(x: object) -> object:
     return x
 
 
+class AccessorRegistrationError(RuntimeError):
+    """An opt-in accessor was read without a matching `listen_to=[...]`."""
+
+
 def never_ready_check(raw: object) -> bool:
     return False
 
@@ -67,6 +71,14 @@ class AccessorSpec:
         in, so an app whose first reader is gated (a chat handler, an LLM
         tool) should warm it up with a ``@reactive.effect`` that reads the
         accessor once, unconditionally, at startup.
+    requires_registration
+        ``None`` for accessors that are always subscribed. Otherwise the
+        accessor only attaches when the renderer was decorated with the
+        name in ``listen_to=[...]``; reading it unregistered raises
+        `AccessorRegistrationError` with this string as the explanation,
+        so it must say why it's opt-in and name the exact fix (e.g.
+        "Add ``listen_to=['clicked']`` to the ``@render_lonboard``
+        decorator.").
     not_ready
         True for raw values that mean "the widget hasn't reported yet"; reads
         then cancel (`req(False)`) instead of returning a value.
@@ -82,6 +94,7 @@ class AccessorSpec:
     # None resolves to kind == "state" in __post_init__ (a frozen dataclass
     # can't default one field from another)
     eager: Optional[bool] = None
+    requires_registration: Optional[str] = None
     not_ready: Callable[[Any], bool] = never_ready_check
 
     def __post_init__(self) -> None:
@@ -192,8 +205,10 @@ class Accessors:
         rate_policy: Optional[RatePolicy] = None,
         rate_delay: Optional[float] = None,
         schedule: Optional[Schedule] = None,
+        listen_to: Sequence[str] = (),
     ) -> None:
         self._widget: object = None
+        self._listening = frozenset(listen_to)
         # Bumped on each render, so emits from an old widget's handlers are
         # dropped even if its detach failed to remove them.
         self._generation = 0
@@ -236,6 +251,9 @@ class Accessors:
 
     def read(self, name: str, *, raw: bool = False) -> object:
         slot = self._slots[name]
+        reason = slot.spec.requires_registration
+        if reason is not None and name not in self._listening:
+            raise AccessorRegistrationError(f"{name}() isn't subscribed — {reason}")
         if self._widget is not None and slot.detach is None:
             # Attach before taking the dependency, so a value the attach
             # emits right away doesn't invalidate this reader.
