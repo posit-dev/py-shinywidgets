@@ -46,9 +46,11 @@ class AccessorSpec:
     name
         The renderer method's name.
     kind
-        "state" mirrors something the widget always has (it is never reset);
-        "event" reports something that happened, and resets to `None` on
-        re-render.
+        "state" retains the last reported value (it is never reset on
+        re-render) and attaches at render by default -- the user-facing
+        norm. "event" resets to `None` on re-render and attaches lazily;
+        it is internal plumbing for triggers that must not carry state
+        across renders (bokeh's `source_data`), not a user-facing kind.
     attach
         Registers the library hook on a freshly rendered widget, calling `emit`
         with each raw value, and returns a function that removes the hook.
