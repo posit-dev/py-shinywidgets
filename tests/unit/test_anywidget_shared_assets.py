@@ -118,9 +118,7 @@ def test_anywidget_scope_normalizes_module_sessions(
             return self._root
 
     root = widget_session.root_scope()
-    monkeypatch.setattr(
-        sw, "get_current_session", lambda: ModuleSession(root)
-    )
+    monkeypatch.setattr(sw, "get_current_session", lambda: ModuleSession(root))
     assert anywidget_asset_scope() is root
 
 

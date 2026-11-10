@@ -365,6 +365,7 @@ def init_shiny_widget(w: Widget):
 # TODO: can we restore the widget constructor in a sensible way?
 Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
 
+
 def anywidget_asset_scope() -> Optional[Session]:
     """
     The scope anywidget caches shared `_esm`/`_css` asset models under (see
