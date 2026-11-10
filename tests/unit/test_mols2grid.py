@@ -755,7 +755,7 @@ def test_clicked_accessor_reads_clicked_row(widget_session: Session) -> None:
     r = rw.render_mols2grid(clicks=True)
     render(r, lambda: DF, widget_session)
 
-    # An event accessor is None until the first click
+    # No click has happened yet
     assert r.clicked() is None
 
     assert isinstance(r.grid, MolGrid)

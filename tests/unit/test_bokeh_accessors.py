@@ -86,9 +86,7 @@ def test_zoomed_reports_ranges_update(widget_session: Session) -> None:
     run_comm_open_callbacks(w.model_id)
     ev = RangesUpdate(model=p, x0=0, x1=1, y0=2, y1=3)
     p.document.callbacks.trigger_event(ev)
-    # A synthesized seed (the current ranges) precedes live events
-    assert isinstance(emitted[0], RangesUpdate)
-    assert emitted[1:] == [ev]
+    assert emitted == [ev]
 
 
 def test_selected_rows(widget_session: Session) -> None:
@@ -168,3 +166,21 @@ def test_zoomed_seeds_current_ranges(widget_session: Session) -> None:
     sb.attach_zoomed(w, emitted.append)
     seed = next(e for e in emitted if isinstance(e, RangesUpdate))
     assert (seed.x0, seed.x1, seed.y0, seed.y1) == (2, 10, -1, 5)
+
+
+def test_zoomed_skips_the_seed_when_ranges_are_unknown(
+    widget_session: Session,
+) -> None:
+    # A default figure auto-fits browser-side: its ranges are NaN (numeric)
+    # or browser-computed (categorical) at attach, so no seed is emitted
+    p, _ = plot()
+    w = widget(widget_session, p)
+    emitted: List[object] = []
+    sb.attach_zoomed(w, emitted.append)
+    assert emitted == []
+
+    q = figure(x_range=["a", "b"])
+    wq = widget(widget_session, q)
+    emitted_q: List[object] = []
+    sb.attach_zoomed(wq, emitted_q.append)
+    assert emitted_q == []

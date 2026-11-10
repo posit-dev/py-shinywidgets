@@ -971,7 +971,8 @@ class _IpyleafletAccessors(_IpyleafletBase):
         """
         The most recent map click as ipyleaflet reports it: a dict with
         ``coordinates: [lat, lng]`` (note the order; lonboard reports
-        ``(lng, lat)``), or ``None`` until the first click. A double-click
+        ``(lng, lat)``), or ``None`` until the first click. Kept across
+        re-renders until the user clicks the new map. A double-click
         publishes once: the second click has the same coordinates, so it
         isn't a change (the ``dblclick`` itself is ignored). Marker clicks
         don't bubble up to the map -- use a layer's own ``on_click`` for
@@ -3098,7 +3099,8 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         """
         The most recent tap on a plot, as a `bokeh.events.Tap` (``.x`` and
         ``.y`` in data units, ``.model`` the plot). Returns ``None`` until the
-        user taps. Not rate-limited.
+        user taps, and keeps its value across re-renders (the payload then
+        refers to the previous render's plot). Not rate-limited.
         """
         return cast(Optional["Tap"], self._read_accessor("tapped"))
 
@@ -3107,9 +3109,10 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         The plot ranges after the most recent zoom or pan, as a
         `bokeh.events.RangesUpdate` (``.x0``, ``.x1``, ``.y0``, ``.y1``,
         ``.model``). Seeded with the plot's current (default) ranges at
-        attach, so a zoom made before the first read is reported; extra
-        ranges aren't included. Not rate-limited (bokeh reports once per
-        gesture).
+        attach, so a zoom made before the first read is reported; an
+        auto-fitting or categorical range reports ``None`` until the first
+        gesture, and extra ranges aren't included. Not rate-limited (bokeh
+        reports once per gesture).
         """
         return cast(Optional["RangesUpdate"], self._read_accessor("zoomed"))
 
@@ -4820,7 +4823,7 @@ def _attach_clicked(widget: Widget, emit: Emit) -> Callable[[], None]:
         emit(change["new"])
 
     grid_widget.observe(_on, names=["callback_kwargs"])
-    # No seeding: an event is None until it happens
+    # No seeding: nothing to report until the first click
     return lambda: grid_widget.unobserve(_on, names=["callback_kwargs"])
 
 
@@ -4876,8 +4879,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       panels and drill-downs. The payload can be wide (it includes the
       cell's image markup), so pick the keys you display rather than
       stringifying the whole dict -- and ``clicked()`` raises without
-      ``clicks=True``. A click is an event, not state:
-      ``clicked()`` is `None` until the first click and resets on re-render.
+      ``clicks=True``. ``clicked()`` is `None` until the first click and
+      keeps its value across re-renders (the last click still happened,
+      though its row data refers to the previous render's grid).
     * **Filtering (Python -> browser):** ``grid.grid.filter(mask)`` (a boolean
       mask, Series, or list) hides non-matching molecules in the already
       rendered grid, without re-rendering. The mask is positional against the

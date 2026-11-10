@@ -40,9 +40,8 @@ def attach_selected_bounds(widget: LonboardMap, emit: Emit) -> Callable[[], None
 
 def attach_clicked(widget: LonboardMap, emit: Emit) -> Callable[[], None]:
     # Registering flips _has_click_handlers, which is what makes the browser
-    # send click messages at all. This is why the spec must attach lazily
-    # (on first read), never eagerly: users who never read clicked() must
-    # see no change.
+    # send click messages at all. This is why clicked() requires registration
+    # (listen_to=["clicked"]): users who never opt in must see no change.
     widget.on_click(emit)  # the callback receives the (lng, lat) tuple
     return lambda: widget.on_click(emit, remove=True)
 

@@ -77,28 +77,33 @@ def attach_zoomed(widget: BokehModel, emit: Emit) -> Callable[[], None]:
 
     # Ranges are retained, browser-synced document properties, so a zoom made
     # before this attach is recoverable. Seed one event per Plot in document
-    # order: the reader sees the last, as with live events in sequence.
-    # FactorRange start/end are numeric synthetic coords, matching live
-    # payloads; DatetimeRange values are ms-since-epoch floats in both.
+    # order: the reader sees the last, as with live events in sequence. Only
+    # seed ranges with real values at attach: a DataRange1d defaults to NaN
+    # (its span is computed browser-side), and a FactorRange's synthetic
+    # coords are likewise only known after the browser computes them.
     from bokeh.events import RangesUpdate
     from bokeh.models import Plot
-    from bokeh.models.ranges import DataRange1d, FactorRange, Range1d
+    from bokeh.models.ranges import DataRange1d, Range1d
 
-    numeric = (Range1d, DataRange1d, FactorRange)
+    numeric = (Range1d, DataRange1d)
     for model in widget._model.select({"type": Plot}):
         if not isinstance(model, Plot):
             continue
         x, y = model.x_range, model.y_range
-        if isinstance(x, numeric) and isinstance(y, numeric):
-            # bokeh's stubs type range start/end as the `Value` descriptor;
-            # at runtime they're floats (or None before the first compute)
+        if not (isinstance(x, numeric) and isinstance(y, numeric)):
+            continue
+        # bokeh's stubs type range start/end as the `Value` descriptor; at
+        # runtime they're floats (or None/NaN before the first compute)
+        values = (
+            cast("Optional[float]", x.start),
+            cast("Optional[float]", x.end),
+            cast("Optional[float]", y.start),
+            cast("Optional[float]", y.end),
+        )
+        if all(v is not None and v == v for v in values):
             emit(
                 RangesUpdate(
-                    model,
-                    x0=cast("Optional[float]", x.start),
-                    x1=cast("Optional[float]", x.end),
-                    y0=cast("Optional[float]", y.start),
-                    y1=cast("Optional[float]", y.end),
+                    model, x0=values[0], x1=values[1], y0=values[2], y1=values[3]
                 )
             )
     return detach

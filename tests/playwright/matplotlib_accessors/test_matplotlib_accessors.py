@@ -94,9 +94,9 @@ def test_rerender_does_not_stack_click_handlers(page: Page, local_app) -> None:
     # Exactly one evaluation happens at load
     expect(page.locator("#click_count")).to_have_text("1", timeout=10000)
     page.click("#rerender")
-    # The re-render's reset forces one more evaluation, which is also the read
-    # that re-attaches the click handler to the new canvas; only then is it
-    # safe to click
+    # The re-render forces one more evaluation (readers depend on the
+    # widget), which is also the read that re-attaches the click handler to
+    # the new canvas; only then is it safe to click
     expect(page.locator("#click_count")).to_have_text("2", timeout=10000)
     expect(page.locator("#clicked")).to_have_text("None", timeout=10000)
     expect(page.locator("#limits")).to_have_text(LIMITS, timeout=10000)
