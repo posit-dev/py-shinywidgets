@@ -2788,11 +2788,18 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
 
     How they behave:
 
-    * Each returns ``None`` until the interaction happens (``selected_rows()``
-      an empty frame). That's a normal state, not an error, so check for it, or
-      use ``req(plot.tapped())`` to wait for it.
+    * ``tapped()`` and ``zoomed()`` return ``None`` until the interaction
+      happens. That's a normal state, not an error, so check for it, or use
+      ``req(plot.tapped())`` to wait for it. ``selected()`` starts at ``[]``
+      instead: it's seeded with the plot's current selection at render, so a
+      selection made before its first read isn't lost -- but a reader can't
+      distinguish "nothing selected yet" from a selection that caught nothing
+      (``selected_rows()`` is an empty frame either way).
     * A re-render (e.g. when the render function reads an input) gives the user
-      a new plot, so they all start over.
+      a new plot. ``tapped()`` and ``zoomed()`` start over at ``None``;
+      ``selected()`` follows the displayed plot's selection instead, keeping
+      its value until the new plot reports its own (initially empty, so it
+      becomes ``[]`` once it does).
     * Selecting the same points again isn't a change, so readers of
       ``selected()`` don't re-run. Every tap, zoom, or pan re-runs readers of
       ``tapped()`` and ``zoomed()``.
@@ -2832,18 +2839,20 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
 
     _accessor_specs = BOKEH_ACCESSORS
 
-    def selected(self) -> Optional[List[int]]:
+    def selected(self) -> List[int]:
         """
-        The row indices (into the plot's `ColumnDataSource`) of the most recent
+        The row indices (into the plot's `ColumnDataSource`) of the current
         selection, from a tap, box, or lasso select tool.
 
-        Returns ``None`` until the user selects, and ``[]`` after a selection
-        that caught nothing.
+        Returns ``[]`` while nothing is selected. Seeded with the plot's
+        current selection at render, so a selection made before the first read
+        is kept; as a result, "nothing selected yet" and a selection that
+        caught nothing both read as ``[]``.
         Requires a plot (or layout) with exactly one `ColumnDataSource`.
         Debounced (250 ms) by default; see the ``rate_policy`` and
         ``rate_delay`` parameters.
         """
-        return cast(Optional[List[int]], self._read_accessor("selected"))
+        return cast(List[int], self._read_accessor("selected"))
 
     def selected_rows(self) -> pd.DataFrame:
         """

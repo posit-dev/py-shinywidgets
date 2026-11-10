@@ -1,6 +1,14 @@
 """
 Accessors for `render_bokeh`, attached to the bokeh models the user returned
 (`BokehModel._model`), since `BokehModel` itself has no useful traits.
+
+A selection is state, not just an event: jupyter_bokeh mirrors every
+browser-side model change onto the Python-side document, so
+`source.selected.indices` holds the current selection at any moment.
+`attach_selected` therefore seeds it at attach (no comm wait needed, unlike
+`event_attach`, whose `on_event` registration patches the browser document),
+which lets `selected()` be a state accessor that attaches at render -- a
+selection made before the first read isn't lost.
 """
 
 from __future__ import annotations
@@ -25,6 +33,11 @@ def attach_selected(widget: BokehModel, emit: Emit) -> Callable[[], None]:
         emit(list(new))
 
     source.selected.on_change("indices", on_change)
+    # A selection is retained on the Python-side document (see the module
+    # docstring), so seed the accessor with the current one: a selection made
+    # before this attach -- e.g. before the first read -- is not lost. An
+    # empty selection seeds as [] (there is no "nothing selected yet" value).
+    emit(list(source.selected.indices))
     return lambda: source.selected.remove_on_change("indices", on_change)
 
 
@@ -98,7 +111,7 @@ def selected_frame(widget: BokehModel, indices: Optional[List[int]]) -> Any:
 
 SELECTED = AccessorSpec(
     name="selected",
-    kind="event",
+    kind="state",
     attach=attach_selected,
     rate_policy="debounce",
 )

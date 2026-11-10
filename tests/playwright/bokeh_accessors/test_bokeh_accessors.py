@@ -20,7 +20,8 @@ def point(page: Page, x: float, y: float) -> tuple[float, float]:
 def test_bokeh_accessors_follow_real_gestures(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
-    expect(page.locator("#selected")).to_have_text("None", timeout=30000)
+    # selected() is a state accessor seeded at render: empty selection is []
+    expect(page.locator("#selected")).to_have_text("[]", timeout=30000)
     page.wait_for_function("() => window.Bokeh && window.Bokeh.index", timeout=30000)
     page.wait_for_timeout(500)
 
