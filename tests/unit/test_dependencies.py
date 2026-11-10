@@ -181,8 +181,7 @@ def test_source_tree_widget_pkg_keeps_its_nbextension_registration(
     pkg = tmp_path / "srcpkg"
     pkg.mkdir()
     (pkg / "__init__.py").write_text(
-        "def _jupyter_nbextension_paths():\n"
-        "    return [{'dest': 'srcpkg-nbext'}]\n",
+        "def _jupyter_nbextension_paths():\n    return [{'dest': 'srcpkg-nbext'}]\n",
         encoding="utf-8",
     )
     (pkg / "widget.py").write_text(
@@ -202,7 +201,9 @@ def test_source_tree_widget_pkg_keeps_its_nbextension_registration(
             == "srcpkg-nbext"
         )
     finally:
-        for name in (n for n in list(sys.modules) if n == "srcpkg" or n.startswith("srcpkg.")):
+        for name in (
+            n for n in list(sys.modules) if n == "srcpkg" or n.startswith("srcpkg.")
+        ):
             del sys.modules[name]
 
 
