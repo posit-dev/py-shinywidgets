@@ -3,9 +3,8 @@ from __future__ import annotations
 from typing import Callable
 
 import pytest
-from shiny.types import SilentException
-
 import shinywidgets._accessors as acc
+from shiny.types import SilentException
 
 REASON = (
     "click events are opt-in because subscribing flips the map into "
@@ -20,7 +19,9 @@ def noop_attach(widget: object, emit: acc.Emit) -> Callable[[], None]:
 
 def registered_spec() -> acc.AccessorSpec:
     return acc.AccessorSpec(
-        name="clicked", kind="event", attach=noop_attach,
+        name="clicked",
+        kind="event",
+        attach=noop_attach,
         requires_registration=REASON,
     )
 
@@ -55,7 +56,9 @@ from shinywidgets._render_widget_base import render_widget_base
 class render_fake(render_widget_base[Any, Any]):
     _accessor_specs = (
         acc.AccessorSpec(
-            name="clicked", kind="event", attach=noop_attach,
+            name="clicked",
+            kind="event",
+            attach=noop_attach,
             requires_registration=REASON,
         ),
         acc.AccessorSpec(name="selected", kind="state", attach=noop_attach),
