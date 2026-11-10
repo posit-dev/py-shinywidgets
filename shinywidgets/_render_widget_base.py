@@ -19,7 +19,7 @@ from weakref import WeakSet
 from htmltools import Tag
 from ipywidgets.widgets import DOMWidget, Layout, Widget
 from shiny import req
-from shiny.reactive import Context
+from shiny.reactive import Context, isolate
 from shiny.reactive._core import (
     get_current_context,  # pyright: ignore[reportPrivateImportUsage]
 )
@@ -141,8 +141,13 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             self._accessors.on_render(None)
             return None
 
-        # Ensure we have a widget & smart layout defaults
-        widget = self._as_widget(value)
+        # Ensure we have a widget & smart layout defaults. Coercion runs third-party
+        # code that can synchronously invoke user callbacks (e.g. holoviews fires
+        # `Stream.trigger()` subscribers from `get_plot()`); a reactive read in such
+        # a callback must not register this render's Context as a dependent, or the
+        # callback's write invalidates the render in progress and loops forever.
+        with isolate():
+            widget = self._as_widget(value)
 
         session = get_current_session()
         # _shinywidgets imports WidgetRenderContext and is_closed_widget from
@@ -175,7 +180,10 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         # the ownership check, since drawing updates browser-synced state.
         refresh_stale_mpl_canvases(widget)
 
-        widget, fill = set_layout_defaults(widget)
+        # Same hazard as the coercion above: applying layout defaults sets
+        # traits, which can fire trait observers that read reactives.
+        with isolate():
+            widget, fill = set_layout_defaults(widget)
 
         self._widget = cast(WidgetT, widget)
         for w in self._rate_policy_widgets(self._widget):
@@ -360,14 +368,16 @@ def _plotly_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     if isinstance(layout, PlotlyLayout):
         if layout.height is not None:
             fill = False
-        # Default margins are also way too big
-        layout.template.layout.margin = dict(  # pyright: ignore
-            l=16, t=32, r=16, b=16
-        )
-        # Unfortunately, plotly doesn't want to respect the top margin template,
-        # so change that 60px default to 32px
-        if layout.margin["t"] == 60:  # pyright: ignore
-            layout.margin["t"] = 32  # pyright: ignore
+        # Default margins are also way too big, so give the figure compact
+        # ones. Set them explicitly (not on the template) so an in-place
+        # template swap (e.g. a dark-mode toggle) keeps them: plotly.py
+        # replaces `layout.template` wholesale, dropping template-level
+        # margins, but explicit margins survive. Sides the user set win.
+        margin = layout.margin
+        for side, px in (("l", 16), ("t", 32), ("r", 16), ("b", 16)):
+            # plotly <6 materialized a 60px default top margin
+            if margin[side] is None or (side == "t" and margin[side] == 60):  # pyright: ignore
+                margin[side] = px  # pyright: ignore
         # In plotly >=v6.0, the plot won't actually fill unless it's responsive
         if fill:
             widget._config = {"responsive": True, **widget._config}  # type: ignore

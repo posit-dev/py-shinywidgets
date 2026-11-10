@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 from playwright.sync_api import Page, expect
-from tests.playwright.conftest import assert_no_unexpected_errors, collect_errors
+from tests.playwright.conftest import (
+    ANYWIDGET_INIT_XFAIL,
+    assert_no_unexpected_errors,
+    collect_errors,
+)
+
+pytestmark = ANYWIDGET_INIT_XFAIL
 
 
 def test_plotly_config_tuple_hides_modebar(page: Page, local_app) -> None:

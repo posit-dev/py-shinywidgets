@@ -13,7 +13,7 @@ from jupyter_bokeh import BokehModel
 from shiny import Session, reactive
 from shiny.reactive._core import Context
 from shiny.session import session_context
-from shinywidgets import session_lifetime
+from shinywidgets import render_holoviews, session_lifetime
 from shinywidgets._as_widget import as_widget_holoviews, as_widget_panel
 from shinywidgets._render_widget_base import WidgetRenderContext
 from shinywidgets._shinywidgets import COMM_MANAGERS
@@ -201,3 +201,39 @@ def panel_views() -> Iterator[set[str]]:
         view, root, document, _ = pn.state._views.pop(ref)
         view._cleanup(root)
         document.remove_root(root)
+
+
+def test_rangexy_subscriber_does_not_invalidate_its_render(
+    widget_session: Session,
+) -> None:
+    # holoviews get_plot() synchronously fires Stream.trigger() subscribers
+    # during coercion, inside the render's live Context. If the subscriber's
+    # reactive read registers that Context, its write invalidates the render
+    # in progress (closing the widget it just built) and loops forever.
+    # Regression test for the isolate() around coercion in
+    # render_widget_base._render.
+    hv.extension("bokeh")
+    with session_context(widget_session):
+        counter = reactive.value(0)
+
+        @render_holoviews
+        def plot():
+            el = hv.Curve([1, 2, 3])
+            stream = hv.streams.RangeXY(source=el)
+            # A counter subscriber is the classic loop trigger: the read is
+            # what would register the render's Context as a dependent.
+            stream.add_subscriber(lambda x_range, y_range: counter.set(counter() + 1))
+            return el
+
+        context = Context()
+        invalidated: list[None] = []
+        context.on_invalidate(lambda: invalidated.append(None))
+        with context():
+            with WidgetRenderContext():
+                out = asyncio.run(plot._render())
+
+        assert out is not None
+        # The mount-time trigger fired the subscriber exactly once ...
+        assert counter._value == 1
+        # ... without invalidating the render that fired it.
+        assert not invalidated

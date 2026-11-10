@@ -5,11 +5,11 @@ The click accessors are backed by the widget's interaction handlers
 (`CytoscapeWidget.on()`); the selection accessors observe the `selected`
 trait on the graph's child Node/Edge widgets.
 
-The click specs are eager: ipycytoscape's frontend wires up only the event
-types it knows when the view is created, so a handler registered on first
-read (after the view exists) would be silently dropped. The selection specs
-don't need to be: their attach seeds from the children's current `selected`
-traits, whenever it runs.
+All specs are eager. The click specs must be: ipycytoscape's frontend wires
+up only the event types it knows when the view is created, so a handler
+registered on first read (after the view exists) would be silently dropped.
+The selection specs are eager by the state-kind default, which their attach
+satisfies by seeding from the children's current `selected` traits.
 """
 
 from __future__ import annotations

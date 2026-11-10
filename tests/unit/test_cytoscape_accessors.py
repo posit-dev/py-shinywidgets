@@ -66,10 +66,9 @@ def test_renderer_node_clicked_round_trips_and_resets(widget_session: Session) -
 def test_selected_specs_are_debounced_state() -> None:
     # Selection is state the widget always has (unlike clicks), and a
     # box-select changes many children's `selected` at once, so the default
-    # is debounced. Lazy attach is fine for state: the attach seeds from the
-    # children's current `selected` traits whenever it runs
+    # is debounced
     for spec in (sc.SELECTED_NODES, sc.SELECTED_EDGES):
-        assert spec.kind == "state"
+        assert spec.kind == "state" and spec.eager
         assert spec.rate_policy == "debounce"
 
 

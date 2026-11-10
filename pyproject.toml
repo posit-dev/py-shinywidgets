@@ -42,9 +42,8 @@ bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 embedding_atlas = ["embedding-atlas>=0.26; python_version >= '3.11'"]
 bqplot = ["bqplot"]
 drawdata = ["drawdata>=0.5"]
-# geolibre requires Python 3.11+; >=3.5.2 for blocking command methods
-# (fly_to(), get_center(), ...) from a worker thread outside Jupyter
-geolibre = ["geolibre>=3.5.2; python_version >= '3.11'"]
+# geolibre requires Python 3.11+
+geolibre = ["geolibre>=3.6.0; python_version >= '3.11'"]
 holoviews = ["holoviews", "panel", "jupyter_bokeh>=4.1"]
 ipyaladin = ["ipyaladin"]
 ipycanvas = ["ipycanvas"]
@@ -81,7 +80,11 @@ obsplot = ["pyobsplot>=0.5.0"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
 # pyarrow is required for pandas DataFrame conversion (perspective-python
 # doesn't depend on it)
-perspective = ["perspective-python>=3.0", "pyarrow"]
+# >=5.7 excluded: the "Better WASM init" change (perspective-dev/perspective#3269)
+# breaks second-viewer init and re-rendering (viewers never display data), seen in
+# tests/playwright/render_perspective. Verified still broken on 5.8.0 and 5.9.0;
+# fix proposed upstream in perspective-dev/perspective#3287.
+perspective = ["perspective-python>=3.0,<5.7", "pyarrow"]
 plotly = ["plotly>=5.12.0", "narwhals", "pandas"]
 plotnine = ["plotnine", "ipympl"]
 # duckdb is listed because the security model requires apps to `import duckdb`
@@ -157,7 +160,7 @@ test = [
   "networkx",
   "mosaic-widget; python_version < '3.15'",
   "panel",
-  "perspective-python>=3.0",
+  "perspective-python>=3.0,<5.7",
   "playwright>=1.40.0",
   "pyobsplot>=0.5.0",
   "plotly>=5.12.0",
@@ -229,7 +232,7 @@ dev = [
   "networkx",
   "mosaic-widget; python_version < '3.15'",
   "panel",
-  "perspective-python>=3.0",
+  "perspective-python>=3.0,<5.7",
   "playwright>=1.40.0",
   "pyobsplot>=0.5.0",
   "plotly>=5.12.0",
@@ -307,7 +310,7 @@ test = [
   "networkx",
   "mosaic-widget; python_version < '3.15'",
   "panel",
-  "perspective-python>=3.0",
+  "perspective-python>=3.0,<5.7",
   "playwright>=1.40.0",
   "pyobsplot>=0.5.0",
   "plotly>=5.12.0",
