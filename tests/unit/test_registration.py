@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Callable
+from typing import Any, Callable
 
 import pytest
 import shinywidgets._accessors as acc
 from shiny.types import SilentException
+from shinywidgets._render_widget_base import render_widget_base
 
 REASON = (
     "click events are opt-in because subscribing flips the map into "
@@ -48,9 +49,20 @@ def test_plain_accessor_needs_no_registration() -> None:
         a.read("clicked")
 
 
-from typing import Any
+def test_unregistered_eager_accessor_never_attaches() -> None:
+    spec = acc.AccessorSpec(
+        name="clicked",
+        kind="state",  # state resolves eager=True
+        attach=noop_attach,
+        requires_registration=REASON,
+    )
+    a = acc.Accessors([spec])
+    a.on_render(object())
+    assert a._slots["clicked"].detach is None
 
-from shinywidgets._render_widget_base import render_widget_base
+    registered = acc.Accessors([spec], listen_to=["clicked"])
+    registered.on_render(object())
+    assert registered._slots["clicked"].detach is not None
 
 
 class render_fake(render_widget_base[Any, Any]):
@@ -73,6 +85,11 @@ def test_listen_to_unknown_name_rejected() -> None:
 def test_listen_to_unneeded_name_rejected() -> None:
     with pytest.raises(ValueError, match="'selected' doesn't need listen_to"):
         render_fake(listen_to=["selected"])
+
+
+def test_listen_to_bare_string_rejected() -> None:
+    with pytest.raises(TypeError, match=r"listen_to=\['clicked'\]"):
+        render_fake(listen_to="clicked")  # type: ignore[arg-type]  # the guard targets exactly this mistake
 
 
 def test_listen_to_valid_name_accepted() -> None:

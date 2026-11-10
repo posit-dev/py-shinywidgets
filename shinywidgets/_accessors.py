@@ -241,7 +241,11 @@ class Accessors:
                 # Drop a value the limiter was holding: the new widget reports
                 # its own state, which must not be deduped against it.
                 slot.latest = self._published(slot)
-            if widget is not None and (slot.spec.eager or slot.activated):
+            if (
+                widget is not None
+                and self._registered(slot.spec)
+                and (slot.spec.eager or slot.activated)
+            ):
                 try:
                     self._attach(slot)
                 except Exception:
@@ -249,11 +253,15 @@ class Accessors:
                     # anyway, and let the next read retry the attach and raise
                     slot.activated = False
 
+    def _registered(self, spec: AccessorSpec) -> bool:
+        return spec.requires_registration is None or spec.name in self._listening
+
     def read(self, name: str, *, raw: bool = False) -> object:
         slot = self._slots[name]
-        reason = slot.spec.requires_registration
-        if reason is not None and name not in self._listening:
-            raise AccessorRegistrationError(f"{name}() isn't subscribed — {reason}")
+        if not self._registered(slot.spec):
+            raise AccessorRegistrationError(
+                f"{name}() isn't subscribed — {slot.spec.requires_registration}"
+            )
         if self._widget is not None and slot.detach is None:
             # Attach before taking the dependency, so a value the attach
             # emits right away doesn't invalidate this reader.

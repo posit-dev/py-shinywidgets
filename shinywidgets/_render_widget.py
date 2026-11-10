@@ -1945,6 +1945,10 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+    listen_to
+        Accessor names to opt into: pass ``["clicked"]`` to enable
+        :meth:`clicked` (which raises without it). Subscribing flips the map
+        into click-handling mode, so it's opt-in rather than always on.
     """
 
     _accessor_specs = LONBOARD_ACCESSORS

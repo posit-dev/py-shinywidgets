@@ -102,13 +102,19 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         listen_to: Optional[Sequence[str]] = None,
     ):
         super().__init__(_fn)
+        if isinstance(listen_to, str):
+            raise TypeError(
+                f"listen_to takes a list of accessor names, e.g. "
+                f"listen_to=[{listen_to!r}], not a bare string."
+            )
         specs = {s.name: s for s in type(self)._accessor_specs}
+        registrable = sorted(n for n, s in specs.items() if s.requires_registration)
         for name in listen_to or ():
             spec = specs.get(name)
             if spec is None:
                 raise ValueError(
                     f"{type(self).__name__} has no accessor named {name!r} to "
-                    f"listen to. listen_to accepts: {sorted(specs)}"
+                    f"listen to. listen_to accepts: {registrable}"
                 )
             if spec.requires_registration is None:
                 raise ValueError(
