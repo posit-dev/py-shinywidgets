@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import difflib
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     ClassVar,
     Generic,
@@ -294,6 +296,37 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         # before the new widget reports anything.
         self._register_current_context()
         return self._accessors.read(name, raw=raw)
+
+    def read(self, name: str) -> Any:
+        """
+        Read an accessor by name (``output.read("selected")``), or a bare
+        synced trait of the rendered widget (``output.read("value")`` falls
+        through to `reactive_read()`). Prefer this over `reactive_read()`
+        wherever a renderer output exists. Registration-required accessors
+        raise here when the decorator didn't opt in.
+        """
+        if rendering_renderer.get() is self:
+            raise RuntimeError(
+                f"`{self.output_id}.read()` can't be read inside "
+                f"`{self.output_id}`'s own render function, which builds a new "
+                "widget each time it runs. Read it in another output or an effect."
+            )
+        if name in self._accessors.names():
+            return self._read_accessor(name)
+        widget = self.widget  # reactive; cancels (req(False)) before first render
+        if widget is not None and widget.has_trait(name):
+            if has_current_context():
+                from ._shinywidgets import reactive_read
+
+                return reactive_read(widget, name)
+            return getattr(widget, name)
+        guess = difflib.get_close_matches(name, self._accessors.names(), n=1)
+        hint = f" Did you mean {guess[0]!r}?" if guess else ""
+        raise AttributeError(
+            f"{type(self).__name__} has no accessor or synced trait named "
+            f"{name!r}.{hint} Accessors: {sorted(self._accessors.names())}; "
+            "bare synced-trait names also work."
+        )
 
     def _get_reactive_obj(self, x: T) -> T | None:
         self._register_current_context()
