@@ -256,6 +256,37 @@ interface SigmaView {
   remove(): void;
 }
 
+// jupyter_bokeh's BokehView renders its bokehjs document with
+// add_document_standalone(), which registers each root view in the
+// page-global Bokeh.index, but it never overrides remove() -- the inherited
+// DOMWidgetView.remove() only detaches the element, so every removed view
+// leaves its bokehjs root views (and everything they retain) in Bokeh.index
+// forever. Wrap remove() to tear down the document's views first:
+// ViewManager.clear() removes each root view, and bokehjs's own View.remove()
+// deregisters it from Bokeh.index (bokeh >= 3.6's `document.views_manager`;
+// older layouts no-op via optional chaining, matching today's behavior).
+// The types are loose because bokehjs isn't a dependency of this bundle.
+interface BokehViewLike {
+  _document: { views_manager?: { clear(): void } } | null;
+  remove(): void;
+}
+
+export function patchBokehView(widgetModule: { BokehView?: { prototype: BokehViewLike } }): void {
+  const proto = widgetModule.BokehView?.prototype;
+  if (!proto) {
+    return;
+  }
+  const nativeRemove = proto.remove;
+  proto.remove = function (this: BokehViewLike) {
+    try {
+      this._document?.views_manager?.clear();
+    } finally {
+      // BokehView has no own remove(); this wraps the one it inherits
+      return nativeRemove.call(this);
+    }
+  };
+}
+
 const SIGMA_DEFAULT_HEIGHT = '500px';
 
 export function patchSigmaView(widgetModule: { SigmaView?: { prototype: SigmaView } }): void {
