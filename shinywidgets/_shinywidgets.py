@@ -365,16 +365,34 @@ def init_shiny_widget(w: Widget):
 # TODO: can we restore the widget constructor in a sensible way?
 Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
 
+def anywidget_asset_scope() -> Optional[Session]:
+    """
+    The scope anywidget caches shared `_esm`/`_css` asset models under (see
+    the configure() call below): the root Shiny session, so one browser gets
+    one asset cache (a module-scoped session shares its root's browser);
+    or None (the whole process) during shared construction, since a
+    process-global widget's asset scoped to the constructing session couldn't
+    be resolved by other sessions and would close when that session ends.
+    """
+    if constructing_shared.get():
+        return None
+    session = get_current_session()
+    if session is None:
+        return None
+    return session.root_scope()
+
+
 # anywidget (0.12+, PR #1037) can send each class's `_esm`/`_css` as one shared
 # asset model per front end instead of inlining the source in every widget. It
 # refuses to when a host hooks Widget.on_widget_constructed (as we do above)
 # without naming a scope, since such a host binds each comm to one session --
-# so name ours: one asset cache per Shiny session, dropped when the session is
-# collected. Whether the sharing is on stays with the user
+# so name ours (see anywidget_asset_scope): one asset cache per root session,
+# dropped when the session is collected, and a process-wide one for shared
+# widgets. Whether the sharing is on stays with the user
 # (ANYWIDGET_SHARED_ASSETS / their own configure() call); upstream ships it off.
 _anywidget_configure = getattr(getattr(anywidget, "hosts", None), "configure", None)
 if _anywidget_configure is not None:
-    _anywidget_configure(scope=get_current_session)
+    _anywidget_configure(scope=anywidget_asset_scope)
 
 
 def open_shared_in(w: Widget, session: Session) -> None:

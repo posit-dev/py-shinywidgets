@@ -88,6 +88,56 @@ def test_asset_scope_is_the_current_shiny_session(widget_session: Session) -> No
         assert hosts._scope() is widget_session
 
 
+def test_anywidget_scope_outside_session_is_none() -> None:
+    from shinywidgets._shinywidgets import anywidget_asset_scope
+
+    assert anywidget_asset_scope() is None
+
+
+def test_anywidget_scope_is_the_root_session(widget_session: Session) -> None:
+    from shinywidgets._shinywidgets import anywidget_asset_scope
+
+    with session_context(widget_session):
+        assert anywidget_asset_scope() is widget_session.root_scope()
+
+
+def test_anywidget_scope_normalizes_module_sessions(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A module-scoped session shares its browser with the root session, so the
+    # asset cache must key on the root (else the same _esm ships once per
+    # module that constructs the class).
+    import shinywidgets._shinywidgets as sw
+    from shinywidgets._shinywidgets import anywidget_asset_scope
+
+    class ModuleSession:
+        def __init__(self, root: object) -> None:
+            self._root = root
+
+        def root_scope(self) -> object:
+            return self._root
+
+    root = widget_session.root_scope()
+    monkeypatch.setattr(
+        sw, "get_current_session", lambda: ModuleSession(root)
+    )
+    assert anywidget_asset_scope() is root
+
+
+def test_anywidget_scope_is_process_wide_during_shared_construction(
+    widget_session: Session, shared_state: None
+) -> None:
+    # A shared widget's asset scoped to the constructing session couldn't be
+    # resolved by other sessions (a browser never receives a reference to an
+    # asset opened for another scope) and would close when that session ends.
+    from shinywidgets import shared_lifetime
+    from shinywidgets._shinywidgets import anywidget_asset_scope
+
+    with session_context(widget_session):
+        with shared_lifetime():
+            assert anywidget_asset_scope() is None
+
+
 def test_shared_asset_survives_render_invalidation(
     widget_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
