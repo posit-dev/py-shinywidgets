@@ -159,10 +159,13 @@ def test_prerender_inlines_svg_in_the_widget_options(widget_session: Session) ->
     assert "<?xml" in data[0]["data-img"]
 
 
-def test_static_template_is_rejected(widget_session: Session) -> None:
+@pytest.mark.parametrize("prerender", [True, False])
+def test_static_template_is_rejected(widget_session: Session, prerender: bool) -> None:
     # The static template renders an HTML document (for printing), not a
-    # widget, so it can't be a Shiny output
-    r = rw.render_mols2grid(prerender=True, template="static")
+    # widget, so it can't be a Shiny output. It must be rejected before
+    # display() runs: with prerender=False, display() would otherwise raise
+    # its own ValueError about enabling prerender first.
+    r = rw.render_mols2grid(prerender=prerender, template="static")
     with pytest.raises(TypeError, match="static"):
         render(r, lambda: DF, widget_session)
 
@@ -426,6 +429,32 @@ def test_cached_selection_cleared_when_rows_change(
     assert json.loads(r.grid.widget.selection) == {}
 
 
+def test_stale_cached_selection_does_not_return_when_rows_stay_changed(
+    widget_session: Session,
+) -> None:
+    # Changed rows disable the cache for that render, but upstream leaves the
+    # previous rows' registry entry intact; a later cacheable render of the
+    # changed rows must not restore those row positions onto different
+    # molecules, and get_selection() must not expose the stale entry in the
+    # meantime
+    r = rw.render_mols2grid()
+    render(r, lambda: DF, widget_session)
+    assert isinstance(r.grid, MolGrid)
+    r.grid.widget.selection = str({0: "CCO"})
+
+    changed = DF.iloc[::-1].reset_index(drop=True)
+    render(r, lambda: changed, widget_session)
+    assert isinstance(r.grid, MolGrid)
+    assert json.loads(r.grid.widget.selection) == {}
+    assert r.grid.get_selection().empty
+
+    # Same changed rows again: caching re-enables, but there is nothing
+    # (valid) to restore
+    render(r, lambda: changed.copy(), widget_session)
+    assert isinstance(r.grid, MolGrid)
+    assert json.loads(r.grid.widget.selection) == {}
+
+
 def test_selection_accessor_reads_parsed_selection(
     widget_session: Session,
 ) -> None:
@@ -649,6 +678,29 @@ def test_session_end_prunes_selection_registry_for_supplied_grid(
     asyncio.run(widget_session.close())
 
     assert "supplied-cleanup-grid" not in register.SELECTIONS
+
+
+def test_session_scoped_grid_renders_again_after_invalidation(
+    widget_session: Session,
+) -> None:
+    # A MolGrid held in session state (e.g. via session_lifetime()) and
+    # returned from a re-rendering output: invalidation closes the widget
+    # display() created, and the next render must replace it, not fail the
+    # ownership check (foreign or user-closed widgets are still rejected)
+    import shinywidgets._shinywidgets as sw
+
+    with session_context(widget_session):
+        grid = mols2grid.MolGrid(DF, name="reused-grid")
+
+    r = rw.render_mols2grid()
+    render(r, lambda: grid, widget_session)
+    w1 = grid.widget
+    with session_context(widget_session):
+        sw.close_widget(w1)
+
+    render(r, lambda: grid, widget_session)
+    assert isinstance(grid.widget, MolGridWidget)
+    assert grid.widget is not w1
 
 
 def test_session_end_prunes_selection_registry_for_explicit_name(

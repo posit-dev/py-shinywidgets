@@ -4800,6 +4800,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
                 )
             # local imports: _shinywidgets imports this module
             from ._shinywidgets import (
+                SESSION_WIDGET_ID_MAP,
                 foreign_or_closed_widget,
                 is_process_global,
                 ownership_error,
@@ -4820,7 +4821,17 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
                 and widget is not None
             ):
                 bad = foreign_or_closed_widget(widget, session.root_scope())
-                if bad is not None:
+                # Except the grid's own widget when this session's render
+                # invalidation retired it: display() (called after this) builds
+                # the replacement. A foreign or user-closed widget (no comm)
+                # is still rejected.
+                render_retired = (
+                    bad is widget
+                    and widget.comm is not None
+                    and widget.model_id
+                    in SESSION_WIDGET_ID_MAP.get(session.id, ())
+                )
+                if bad is not None and not render_retired:
                     raise ownership_error(bad)
             # A supplied grid's selection entry lives in the same process-global
             # registry, so prune it at session end too -- unless the grid is
@@ -4892,6 +4903,14 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
                 and fingerprint != self._row_fingerprint
             ):
                 grid_kwargs["cache_selection"] = False
+                # Upstream seeds the uncached widget "{}" but keeps the
+                # previous rows' registry entry, so a later cacheable render
+                # of these rows would restore row positions onto different
+                # molecules (and get_selection() would expose the stale rows
+                # in the meantime). Reset the entry with the cache.
+                from mols2grid.select import register
+
+                register.SELECTIONS[grid_kwargs["name"]] = {}
             self._row_fingerprint = fingerprint
         return MolGrid(
             value,
@@ -4945,6 +4964,16 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
                 stacklevel=3,
             )
 
+        # Reject the static template before display() routes to to_static(),
+        # which would otherwise raise its own ValueError about prerender when
+        # prerender=False
+        if render_kwargs.get("template") == "static":
+            raise TypeError(
+                "@render_mols2grid can only render mols2grid's interactive "
+                "grid; the 'static' template produces a static HTML document "
+                "(e.g. for printing), which can't be rendered as a Shiny "
+                "output. Save it to a file with grid.save() instead."
+            )
         # The widget's frontend renders the grid itself: display() serializes
         # the rendering options into the widget's `options` trait and returns
         # the MolGridWidget (the same widget mols2grid's marimo integration
