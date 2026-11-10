@@ -360,6 +360,21 @@ override-dependencies = [
   "litellm; python_version < '0'",
 ]
 
+# anywidget 0.11.0's front end aborts a model's init after a hard-coded 2s
+# (manzt/anywidget#1030), which flaky-fails the playwright tests'
+# no-console-errors check under CI CPU contention. The fix
+# (manzt/anywidget#1032) is on main but unreleased, so track main here.
+# Scoped to python>=3.11: a git source pins anywidget to a single version,
+# and the lonboard releases compatible with python 3.10 pin anywidget<0.10.
+# TODO: when the next anywidget release (>0.11.0) is on PyPI, update this pin
+# back to the release (i.e., drop this override); the ANYWIDGET_INIT_XFAIL
+# test marks lift themselves at 0.11.1.
+# uv-only: the published package metadata is unaffected.
+[tool.uv.sources]
+anywidget = [
+  { git = "https://github.com/manzt/anywidget", branch = "main", marker = "python_version >= '3.11'" },
+]
+
 [build-system]
 requires = ["hatchling>=1.26.0", "hatch-vcs>=0.4.0"]
 build-backend = "hatchling.build"
