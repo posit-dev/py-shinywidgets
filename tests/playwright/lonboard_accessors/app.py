@@ -23,7 +23,7 @@ app_ui = ui.page_fillable(
 
 
 def server(input, output, session):
-    @render_lonboard
+    @render_lonboard(listen_to=["clicked"])
     def map():
         return Map(
             ScatterplotLayer(table=table, radius_min_pixels=15),

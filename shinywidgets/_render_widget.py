@@ -1991,8 +1991,10 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         """
         The ``(lng, lat)`` of the most recent map click -- note the order;
         ipyleaflet reports ``[lat, lng]`` -- or ``None`` until the first
-        click. Clicking the same spot twice doesn't re-fire. Reading this is
-        what enables click reporting in the browser.
+        click. Clicking the same spot twice doesn't re-fire. Requires
+        ``listen_to=["clicked"]`` on the ``@render_lonboard`` decorator --
+        that's what enables click reporting in the browser -- and raises
+        without it.
         """
         return cast(Optional[Tuple[float, float]], self._read_accessor("clicked"))
 

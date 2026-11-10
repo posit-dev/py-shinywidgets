@@ -138,7 +138,7 @@ def test_clicked_registers_and_unregisters_the_browser_channel(
 
 def test_renderer_reads_and_event_reset(widget_session: Session) -> None:
     m = lon_map(widget_session)
-    r = render_lonboard()
+    r = render_lonboard(listen_to=["clicked"])
     r._widget = m  # stands in for _render()
     r._accessors.on_render(m)
     assert r.clicked() is None and r.selected_index() is None

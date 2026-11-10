@@ -91,6 +91,15 @@ SELECTED_INDEX = AccessorSpec(
 SELECTED_BOUNDS = AccessorSpec(
     name="selected_bounds", kind="state", attach=attach_selected_bounds
 )
-CLICKED = AccessorSpec(name="clicked", kind="event", attach=attach_clicked)
+CLICKED = AccessorSpec(
+    name="clicked",
+    kind="event",
+    attach=attach_clicked,
+    requires_registration=(
+        "click events are opt-in because subscribing flips the map into "
+        "click-handling mode (lonboard's `_has_click_handlers`). Add "
+        "listen_to=['clicked'] to the @render_lonboard decorator."
+    ),
+)
 
 LONBOARD_ACCESSORS = (VIEW_STATE, SELECTED_INDEX, SELECTED_BOUNDS, CLICKED)

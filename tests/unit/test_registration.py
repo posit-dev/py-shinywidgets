@@ -75,3 +75,10 @@ def test_listen_to_unneeded_name_rejected() -> None:
 def test_listen_to_valid_name_accepted() -> None:
     r = render_fake(listen_to=["clicked"])
     assert "clicked" in r._accessors._listening
+
+
+def test_lonboard_clicked_requires_registration() -> None:
+    from shinywidgets._lonboard import CLICKED
+
+    assert CLICKED.requires_registration is not None
+    assert "listen_to=['clicked']" in CLICKED.requires_registration
