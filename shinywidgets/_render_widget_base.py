@@ -300,10 +300,12 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     def read(self, name: str) -> Any:
         """
         Read an accessor by name (``output.read("selected")``), or a bare
-        synced trait of the rendered widget (``output.read("value")`` falls
-        through to `reactive_read()`). Prefer this over `reactive_read()`
-        wherever a renderer output exists. Registration-required accessors
-        raise here when the decorator didn't opt in.
+        trait of the rendered widget (``output.read("value")`` falls through
+        to `reactive_read()`). Prefer this over `reactive_read()` wherever a
+        renderer output exists. Registration-required accessors raise here
+        when the decorator didn't opt in. When a name is both an accessor
+        and a widget trait, the accessor wins; read the trait with
+        `reactive_read()` on ``output.widget`` instead.
         """
         if rendering_renderer.get() is self:
             raise RuntimeError(
@@ -314,7 +316,15 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         if name in self._accessors.names():
             return self._read_accessor(name)
         widget = self.widget  # reactive; cancels (req(False)) before first render
-        if widget is not None and widget.has_trait(name):
+        if widget is None:
+            guess = difflib.get_close_matches(name, self._accessors.names(), n=1)
+            hint = f" Did you mean {guess[0]!r}?" if guess else ""
+            raise AttributeError(
+                f"{type(self).__name__} has no accessor named {name!r}.{hint} "
+                "(The output hasn't rendered yet, so widget traits can't be "
+                "checked either.)"
+            )
+        if widget.has_trait(name):
             if has_current_context():
                 from ._shinywidgets import reactive_read
 

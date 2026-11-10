@@ -149,12 +149,7 @@ from ._dependencies import widget_pkg
 from ._embedding_atlas import EMBEDDING_ATLAS_ACCESSORS, rows_for_predicate
 from ._ipyaladin import IPYALADIN_ACCESSORS
 from ._ipydatagrid import IPYDATAGRID_ACCESSORS
-from ._ipyleaflet import (
-    IPYLEAFLET_ACCESSORS,
-    NO_DRAW_CONTROL,
-    NO_DRAW_CONTROL_MESSAGE,
-    NotIpyleaflet,
-)
+from ._ipyleaflet import IPYLEAFLET_ACCESSORS
 from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
 from ._k3d import CAMERA as K3D_CAMERA
@@ -277,7 +272,8 @@ class render_widget(render_widget_base[WidgetT, WidgetT]):
     most recently returned by the render function, and `.widget`, the rendered
     `ipywidgets.Widget` instance. Use `.widget` to programmatically update the
     rendered widget in place (trait changes on the widget are synced to the browser),
-    or to reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    and `.read("some_trait")` to reactively read widget state (a shortcut for
+    :func:`~shinywidgets.reactive_read` on `.widget`).
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -902,14 +898,6 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
     @overload
     def read(self, name: Literal["clicked_object"]) -> Optional[Dict[str, Any]]: ...
     @overload
-    def read(self, name: Literal["selected_objects"]) -> List[Table]: ...
-    @overload
-    def read(
-        self, name: Literal["target"]
-    ) -> Union[SkyCoord, Tuple[Longitude, Latitude]]: ...
-    @overload
-    def read(self, name: Literal["fov"]) -> Angle: ...
-    @overload
     def read(self, name: str) -> Any: ...
     def read(self, name: str) -> Any:
         return super().read(name)
@@ -928,14 +916,9 @@ class _IpyleafletAccessors(_IpyleafletBase):
     ipyleaflet backend is an ipyleaflet.Map)."""
 
     def _read_ipyleaflet(self, name: str) -> object:
-        # A non-ipyleaflet backend (render_leafmap) is reported by the attach
-        # as a sentinel rather than a raise (attach runs during render, where
-        # a raise would break the output), so it's reported here, at read
-        # time.
-        raw = self._read_accessor(name, raw=True)
-        if isinstance(raw, NotIpyleaflet):
-            raise TypeError(raw.message)
-        return raw
+        # A non-ipyleaflet backend (render_leafmap) raises a TypeError via
+        # the specs' sentinel-reporting payloads
+        return self._read_accessor(name)
 
     def bounds(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
         """
@@ -991,10 +974,7 @@ class _IpyleafletAccessors(_IpyleafletBase):
         # The attach emits sentinels rather than raising (it runs during
         # render, where a raise would break the output): a non-ipyleaflet
         # backend or a missing DrawControl is reported here, at read time.
-        raw = self._read_ipyleaflet("drawn_features")
-        if raw is NO_DRAW_CONTROL:
-            raise TypeError(NO_DRAW_CONTROL_MESSAGE)
-        return cast(List[Dict[str, Any]], raw)
+        return cast(List[Dict[str, Any]], self._read_ipyleaflet("drawn_features"))
 
     @overload
     def read(
