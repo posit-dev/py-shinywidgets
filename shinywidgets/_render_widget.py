@@ -536,6 +536,13 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         frame = chart_frame(widget) if df is None else df
         return filter_selection(selection, frame, widget.local_tz)
 
+    @overload
+    def read(self, name: Literal["selected"]) -> Selection: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
+
 
 class render_embedding_atlas(
     render_widget_base[EmbeddingAtlasWidget, EmbeddingAtlasWidget]
@@ -669,6 +676,13 @@ class render_embedding_atlas(
         """
         predicate = cast(Optional[str], self._read_accessor("predicate", raw=True))
         return rows_for_predicate(cast("EmbeddingAtlasWidget", self._widget), predicate)
+
+    @overload
+    def read(self, name: Literal["predicate"]) -> Optional[str]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
 
     def _as_widget(self, value: EmbeddingAtlasWidget) -> EmbeddingAtlasWidget:
         widget = super()._as_widget(value)
@@ -876,14 +890,31 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
         self._read_accessor("fov")
         return cast(Aladin, self._widget).fov
 
+    @overload
+    def read(self, name: Literal["clicked_object"]) -> Optional[Dict[str, Any]]: ...
+    @overload
+    def read(self, name: Literal["selected_objects"]) -> List[Table]: ...
+    @overload
+    def read(self, name: Literal["target"]) -> Union[SkyCoord, Tuple[Longitude, Latitude]]: ...
+    @overload
+    def read(self, name: Literal["fov"]) -> Angle: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
 
-class _IpyleafletAccessors:
+
+if TYPE_CHECKING:
+    # So the mixin type-checks against the base it's always combined with
+    # (at runtime it contributes nothing to the MRO beyond object).
+    _IpyleafletBase = render_widget_base[Any, Any]
+else:
+    _IpyleafletBase = object
+
+
+class _IpyleafletAccessors(_IpyleafletBase):
     """Accessor methods shared by render_ipyleaflet and render_leafmap (whose
     ipyleaflet backend is an ipyleaflet.Map)."""
-
-    if TYPE_CHECKING:
-        # Defined by render_widget_base; declared so the mixin type-checks
-        def _read_accessor(self, name: str, *, raw: bool = False) -> object: ...
 
     def _read_ipyleaflet(self, name: str) -> object:
         # A non-ipyleaflet backend (render_leafmap) is reported by the attach
@@ -952,6 +983,21 @@ class _IpyleafletAccessors:
         if raw is NO_DRAW_CONTROL:
             raise TypeError(NO_DRAW_CONTROL_MESSAGE)
         return cast(List[Dict[str, Any]], raw)
+
+    @overload
+    def read(self, name: Literal["bounds"]) -> Tuple[Tuple[float, float], Tuple[float, float]]: ...
+    @overload
+    def read(self, name: Literal["zoom"]) -> float: ...
+    @overload
+    def read(self, name: Literal["center"]) -> List[float]: ...
+    @overload
+    def read(self, name: Literal["clicked"]) -> Optional[Dict[str, Any]]: ...
+    @overload
+    def read(self, name: Literal["drawn_features"]) -> List[Dict[str, Any]]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
 
 
 class render_ipyleaflet(_IpyleafletAccessors, render_widget_base[ValueT, LeafletMap]):
@@ -1138,6 +1184,13 @@ class render_itables(render_widget_base[ValueT, ITable]):
         """
         return cast(List[int], self._read_accessor("selected_rows"))
 
+    @overload
+    def read(self, name: Literal["selected_rows"]) -> List[int]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
+
     def _as_widget(self, value: ValueT) -> ITable:
         if isinstance(value, Widget):
             return super()._as_widget(value)
@@ -1231,6 +1284,13 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
         """
         return cast("np.ndarray", self._read_accessor("selection"))
 
+    @overload
+    def read(self, name: Literal["selection"]) -> "np.ndarray": ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
+
 
 class render_k3d(render_widget_base[ValueT, K3dPlot]):
     """
@@ -1306,6 +1366,13 @@ class render_k3d(render_widget_base[ValueT, K3dPlot]):
         # The camera trait (ListOrArray) accepts numpy arrays, so normalize
         # to the documented plain list
         return list(cast(Iterable[float], self._read_accessor("camera")))
+
+    @overload
+    def read(self, name: Literal["camera"]) -> List[float]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
 
     def _as_widget(self, value: ValueT) -> K3dPlot:
         try:
@@ -1428,6 +1495,15 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
         rate-limited.
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("edge_clicked"))
+
+    @overload
+    def read(self, name: Literal["node_clicked"]) -> Optional[Dict[str, Any]]: ...
+    @overload
+    def read(self, name: Literal["edge_clicked"]) -> Optional[Dict[str, Any]]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
 
     def _as_widget(self, value: ValueT) -> CytoscapeWidget:
         # A networkx graph is a generic type (render_ipysigma accepts one too), so
@@ -1557,6 +1633,15 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
             Optional[Union["np.ndarray", Dict[str, Any]]],
             self._read_accessor("brush"),
         )
+
+    @overload
+    def read(self, name: Literal["selection"]) -> List[Optional["np.ndarray"]]: ...
+    @overload
+    def read(self, name: Literal["brush"]) -> Optional[Union["np.ndarray", Dict[str, Any]]]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
 
 
 class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
@@ -1811,6 +1896,13 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
         assert camera is not None
         return cast("Camera", camera)
 
+    @overload
+    def read(self, name: Literal["camera"]) -> Camera: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
+
 
 class render_leafmap(_IpyleafletAccessors, render_widget_base[ValueT, LeafletMap]):
     """
@@ -2028,6 +2120,19 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         without it.
         """
         return cast(Optional[Tuple[float, float]], self._read_accessor("clicked"))
+
+    @overload
+    def read(self, name: Literal["view_state"]) -> "BaseViewState": ...
+    @overload
+    def read(self, name: Literal["selected_index"]) -> Optional[int]: ...
+    @overload
+    def read(self, name: Literal["selected_bounds"]) -> Optional[Tuple[float, float, float, float]]: ...
+    @overload
+    def read(self, name: Literal["clicked"]) -> Optional[Tuple[float, float]]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
 
     def _as_widget(self, value: ValueT) -> LonboardMap:
         if isinstance(value, Widget):
@@ -2338,6 +2443,17 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
             )
         return all_limits[ax]
 
+    @overload
+    def read(self, name: Literal["clicked"]) -> Optional[MouseEvent]: ...
+    @overload
+    def read(self, name: Literal["picked"]) -> Optional[PickEvent]: ...
+    @overload
+    def read(self, name: Literal["limits"]) -> Tuple[Tuple[float, float], Tuple[float, float]]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
+
 
 class render_nglview(render_widget_base[ValueT, NGLWidget]):
     """
@@ -2546,6 +2662,13 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         """
         self.params()  # take the dependency
         return cast(MosaicWidget, self._widget).data(table, filter_by=filter_by)
+
+    @overload
+    def read(self, name: Literal["params"]) -> Dict[str, Any]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
 
     def _as_widget(self, value: MosaicWidget) -> MosaicWidget:
         widget = super()._as_widget(value)
@@ -2775,6 +2898,15 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
             )
         return all_limits[ax]
 
+    @overload
+    def read(self, name: Literal["clicked"]) -> Optional[MouseEvent]: ...
+    @overload
+    def read(self, name: Literal["limits"]) -> Tuple[Tuple[float, float], Tuple[float, float]]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
+
 
 class render_bokeh(render_widget_base[ValueT, BokehModel]):
     """
@@ -2925,6 +3057,17 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         res = super().auto_output_ui()
         res.children.append(_bokeh_dependency())
         return res
+
+    @overload
+    def read(self, name: Literal["selected"]) -> List[int]: ...
+    @overload
+    def read(self, name: Literal["tapped"]) -> Optional[Tap]: ...
+    @overload
+    def read(self, name: Literal["zoomed"]) -> Optional[RangesUpdate]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
 
 
 class render_panel(render_widget_base[ValueT, BokehModel]):
@@ -3182,6 +3325,15 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
         """
         return cast(Dict[str, Any], self._read_accessor("view_config"))
 
+    @overload
+    def read(self, name: Literal["filter"]) -> List[list]: ...
+    @overload
+    def read(self, name: Literal["view_config"]) -> Dict[str, Any]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
+
     def _as_widget(self, value: ValueT) -> PerspectiveWidget:
         # DataFrames are generic types that other renderers accept too, so
         # they can't be registered in AS_WIDGET_MAP. Checked by name (pandas and
@@ -3325,6 +3477,19 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
 
     # A DataFrame is a generic type (several renderers accept one), so it isn't
     # registered with as_widget()
+    @overload
+    def read(self, name: Literal["selections"]) -> List[Dict[str, int]]: ...
+    @overload
+    def read(self, name: Literal["cell_clicked"]) -> Optional[Dict[str, Any]]: ...
+    @overload
+    def read(self, name: Literal["cell_edited"]) -> Optional[Dict[str, Any]]: ...
+    @overload
+    def read(self, name: Literal["visible_data"]) -> "pd.DataFrame": ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
+
     def _as_widget(self, value: ValueT) -> DataGrid:
         if is_pandas_dataframe(value):
             return dataframe_to_datagrid(cast("pd.DataFrame", value))
@@ -3809,6 +3974,13 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
         """
         self._read_accessor("camera")
         return cast(PythreejsRenderer, self._widget).camera
+
+    @overload
+    def read(self, name: Literal["camera"]) -> Camera: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
 
 
 class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
@@ -4418,6 +4590,15 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
 
     # DataFrames are a generic type that several renderers accept, so rather than
     # registering them in AS_WIDGET_MAP, coerce them here
+    @overload
+    def read(self, name: Literal["sql"]) -> str: ...
+    @overload
+    def read(self, name: Literal["data"]) -> "duckdb.DuckDBPyRelation": ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
+
     def _as_widget(self, value: ValueT) -> QuakWidget:
         if isinstance(value, Widget):
             widget = cast(QuakWidget, super()._as_widget(value))
@@ -5044,6 +5225,15 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
 
         session.on_ended(partial(register.SELECTIONS.pop, name, None))
 
+    @overload
+    def read(self, name: Literal["selection"]) -> Optional[Dict[int, str]]: ...
+    @overload
+    def read(self, name: Literal["clicked"]) -> Optional[Dict[str, Any]]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
+
     def _as_widget(self, value: Mols2GridValueT) -> Widget:
         grid = self.as_grid(value)
         self._grid = grid
@@ -5409,6 +5599,13 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
         """
         return cast(Optional["SelectionChangeEvent"], self._read_accessor("selection"))
 
+    @overload
+    def read(self, name: Literal["selection"]) -> Optional[SelectionChangeEvent]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
+
 
 class render_pyvista(render_widget_base[PyvistaValueT, PyvistaHtmlWidget]):
     """
@@ -5663,6 +5860,21 @@ class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
         """
         return cast("str", self._read_accessor("search"))
 
+    @overload
+    def read(self, name: Literal["selected_rows"]) -> List[int]: ...
+    @overload
+    def read(self, name: Literal["page"]) -> int: ...
+    @overload
+    def read(self, name: Literal["sorted"]) -> List[Dict[str, Any]]: ...
+    @overload
+    def read(self, name: Literal["filtered"]) -> List[Dict[str, Any]]: ...
+    @overload
+    def read(self, name: Literal["search"]) -> str: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
+
     def _as_widget(self, value: ReactableValueT) -> ReactableWidget:
         # Both accepted value types route through as_widget() (a ReactableWidget
         # is returned as-is; a Reactable goes to as_widget_reactable()). The
@@ -5826,3 +6038,10 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
         default; see the ``rate_policy`` and ``rate_delay`` parameters.
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("location"))
+
+    @overload
+    def read(self, name: Literal["location"]) -> Optional[Dict[str, Any]]: ...
+    @overload
+    def read(self, name: str) -> Any: ...
+    def read(self, name: str) -> Any:
+        return super().read(name)
