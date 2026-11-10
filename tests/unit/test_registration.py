@@ -118,3 +118,11 @@ def test_mols2grid_clicks_kwarg_registers() -> None:
     r2 = render_mols2grid()
     with pytest.raises(acc.AccessorRegistrationError, match="clicks=True"):
         r2._accessors.read("clicked")
+
+
+def test_mols2grid_clicked_is_retained() -> None:
+    pytest.importorskip("mols2grid")
+    from shinywidgets._render_widget import render_mols2grid
+
+    spec = next(s for s in render_mols2grid._accessor_specs if s.name == "clicked")
+    assert spec.kind == "state"

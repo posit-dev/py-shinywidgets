@@ -764,8 +764,9 @@ def test_clicked_accessor_reads_clicked_row(widget_session: Session) -> None:
     assert r.clicked() == row
 
 
-def test_clicked_accessor_resets_on_rerender(widget_session: Session) -> None:
-    # Events don't survive a re-render (a click refers to the grid as it was)
+def test_clicked_accessor_is_retained_on_rerender(widget_session: Session) -> None:
+    # A re-render keeps the last click (it still happened) until the user
+    # clicks the new grid
     r = rw.render_mols2grid(clicks=True)
     render(r, lambda: DF, widget_session)
     assert isinstance(r.grid, MolGrid)
@@ -773,7 +774,7 @@ def test_clicked_accessor_resets_on_rerender(widget_session: Session) -> None:
     assert r.clicked() is not None
 
     render(r, lambda: DF, widget_session)
-    assert r.clicked() is None
+    assert r.clicked()["ID"] == "ethanol"
 
 
 def test_clicked_accessor_reactively_invalidates(widget_session: Session) -> None:

@@ -146,7 +146,7 @@ ZOOM = AccessorSpec(name="zoom", kind="state", attach=attach_trait("zoom", "zoom
 CENTER = AccessorSpec(
     name="center", kind="state", attach=attach_trait("center", "center")
 )
-CLICKED = AccessorSpec(name="clicked", kind="event", attach=attach_clicked)
+CLICKED = AccessorSpec(name="clicked", kind="state", attach=attach_clicked)
 DRAWN_FEATURES = AccessorSpec(
     name="drawn_features", kind="state", attach=attach_drawn_features
 )

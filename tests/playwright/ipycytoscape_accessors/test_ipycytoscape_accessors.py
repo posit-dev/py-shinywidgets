@@ -47,8 +47,9 @@ def test_clicks_still_fire_after_rerender(page: Page, local_app) -> None:
     click_at(page, 100, 175)  # node "a"
     expect(page.locator("#node")).to_have_text("a", timeout=10000)
 
+    # The last click is retained across the re-render (it still happened)
     page.click("#rerender")
-    expect(page.locator("#node")).to_have_text("None", timeout=10000)
+    expect(page.locator("#node")).to_have_text("a", timeout=10000)
     page.wait_for_function(CANVAS_HAS_PIXELS_JS, arg="#graph", timeout=30000)
     page.wait_for_timeout(1000)  # let the new view's layout settle
 

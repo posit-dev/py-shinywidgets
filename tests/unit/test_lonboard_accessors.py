@@ -170,7 +170,7 @@ def test_clicked_registers_and_unregisters_the_browser_channel(
     assert not m._has_click_handlers
 
 
-def test_renderer_reads_and_event_reset(widget_session: Session) -> None:
+def test_renderer_reads_and_retention(widget_session: Session) -> None:
     m = lon_map(widget_session)
     r = render_lonboard(listen_to=["clicked"])
     r._widget = m  # stands in for _render()
@@ -184,11 +184,18 @@ def test_renderer_reads_and_event_reset(widget_session: Session) -> None:
     m.layers[0].selected_index = 3
     assert r.selected_index() == 3
 
-    # A re-render resets the events (they referred to the old map) but not the
-    # state accessors, which re-seed from the new widget -- a fresh map has no
+    # A re-render retains the last click (it still happened), while the
+    # state accessors re-seed from the new widget -- a fresh map has no
     # pick, so selected_index() re-seeds to None. The old map's click channel
-    # closes again (its handler was registered on first read).
+    # closes again.
     r._accessors.on_render(lon_map(widget_session))
     assert not m._has_click_handlers
-    assert r.clicked() is None and r.selected_index() is None
+    assert r.clicked() == (1.0, 2.0) and r.selected_index() is None
     assert isinstance(r.view_state(), MapViewState)
+
+
+def test_clicked_is_retained_but_registered() -> None:
+    from shinywidgets._lonboard import CLICKED
+
+    assert CLICKED.kind == "state"
+    assert CLICKED.requires_registration is not None

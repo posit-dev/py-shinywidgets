@@ -111,7 +111,7 @@ SELECTED_BOUNDS = AccessorSpec(
 )
 CLICKED = AccessorSpec(
     name="clicked",
-    kind="event",
+    kind="state",
     attach=attach_clicked,
     requires_registration=(
         "click events are opt-in because subscribing flips the map into "

@@ -54,9 +54,9 @@ def attach_selection(widget: RerunNotebookViewer, emit: Emit) -> Callable[[], No
     return detach
 
 
-# Eager: the viewer sends an empty (items: []) selection at load, which only
-# an attach before the view exists catches -- so selection() reflects "nothing
+# The viewer sends an empty (items: []) selection at load, which only an
+# attach before the view exists catches -- so selection() reflects "nothing
 # selected" soon after mount rather than staying None
 SELECTION = AccessorSpec(
-    name="selection", kind="event", attach=attach_selection, eager=True
+    name="selection", kind="state", attach=attach_selection
 )

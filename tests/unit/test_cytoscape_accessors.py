@@ -47,7 +47,9 @@ def test_node_clicked_detach_unregisters(widget_session: Session) -> None:
     assert not widget._interaction_handlers["node"]["click"].callbacks
 
 
-def test_renderer_node_clicked_round_trips_and_resets(widget_session: Session) -> None:
+def test_renderer_node_clicked_round_trips_and_is_retained(
+    widget_session: Session,
+) -> None:
     widget = make_widget(widget_session)
     r = rw.render_ipycytoscape()
     r._widget = widget  # stands in for _render()
@@ -55,9 +57,16 @@ def test_renderer_node_clicked_round_trips_and_resets(widget_session: Session) -
     assert r.node_clicked() is None
     widget._interaction_handlers["node"]["click"]({"data": {"id": "a"}})
     assert r.node_clicked() == {"data": {"id": "a"}}
-    # Event semantics: a re-render resets the accessor to None
+    # Retained semantics: a re-render keeps the last click (it still happened)
     r._accessors.on_render(widget)
-    assert r.node_clicked() is None
-    # ...and the eager re-attach still reports clicks
+    assert r.node_clicked() == {"data": {"id": "a"}}
+    # ...and the re-attach still reports clicks
     widget._interaction_handlers["node"]["click"]({"data": {"id": "b"}})
     assert r.node_clicked() == {"data": {"id": "b"}}
+
+
+def test_click_accessors_are_retained() -> None:
+    from shinywidgets._cytoscape import EDGE_CLICKED, NODE_CLICKED
+
+    assert NODE_CLICKED.kind == "state"
+    assert EDGE_CLICKED.kind == "state"

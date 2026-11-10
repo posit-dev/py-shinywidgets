@@ -1357,7 +1357,9 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
 
     Each returns ``None`` until the interaction happens (a normal state, not
     an error, so check for it, or use ``req(graph.node_clicked())``), and
-    resets to ``None`` on re-render. For other event types, register
+    keeps its value across re-renders (the last interaction still happened,
+    though its payload refers to the previous render's graph). For other
+    event types, register
     callbacks with `CytoscapeWidget.on()` inside the render function, before
     returning the widget, and have them set a :class:`~shiny.reactive.value`
     (ipycytoscape drops callbacks registered after the graph is displayed,
@@ -1401,9 +1403,11 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
         The most recently clicked node, as its cytoscape ``ele.json()`` dict
         (its ``"data"`` key holds the node's data, including ``"id"``).
 
-        Returns ``None`` until the user clicks a node, and resets to ``None``
-        on re-render, so use ``req(graph.node_clicked())`` to wait for a
-        click. Node ids are strings, even for integer networkx nodes.
+        Returns ``None`` until the user clicks a node, and keeps its value
+        across re-renders (the payload then refers to the previous render's
+        graph -- node ids may not exist in the new one), so use
+        ``req(graph.node_clicked())`` to wait for a click. Node ids are
+        strings, even for integer networkx nodes.
         Clicking the same node twice doesn't fire twice. Not rate-limited.
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("node_clicked"))
@@ -1414,10 +1418,11 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
         (its ``"data"`` key holds the edge's data, including ``"id"``,
         ``"source"``, and ``"target"``).
 
-        Returns ``None`` until the user clicks an edge, and resets to
-        ``None`` on re-render, so use ``req(graph.edge_clicked())`` to wait
+        Returns ``None`` until the user clicks an edge, and keeps its value
+        across re-renders, so use ``req(graph.edge_clicked())`` to wait
         for a click. Edge ids generated from networkx graphs are fresh UUIDs
-        each render. Clicking the same edge twice doesn't fire twice. Not
+        each render, so a retained payload's id won't exist in the new
+        graph. Clicking the same edge twice doesn't fire twice. Not
         rate-limited.
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("edge_clicked"))
@@ -2014,7 +2019,8 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         """
         The ``(lng, lat)`` of the most recent map click -- note the order;
         ipyleaflet reports ``[lat, lng]`` -- or ``None`` until the first
-        click. Clicking the same spot twice doesn't re-fire. Requires
+        click. Clicking the same spot twice doesn't re-fire. Kept across
+        re-renders until the user clicks the new map. Requires
         ``listen_to=["clicked"]`` on the ``@render_lonboard`` decorator --
         that's what enables click reporting in the browser -- and raises
         without it.
@@ -2288,8 +2294,9 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
         `matplotlib.backend_bases.MouseEvent` (``.xdata``/``.ydata`` in the
         data coordinates of the axes under the press, ``.inaxes`` that axes).
 
-        Returns ``None`` until the user clicks, and resets to ``None`` on
-        re-render, so use ``req(plot.clicked())`` to wait for a click.
+        Returns ``None`` until the user clicks, and keeps its value across
+        re-renders (the payload then refers to the previous render's
+        figure), so use ``req(plot.clicked())`` to wait for a click.
         Presses that start a toolbar pan/zoom drag, or land outside any axes,
         don't count. Every press fires -- a double-click arrives as three
         presses. Not rate-limited.
@@ -2303,8 +2310,9 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
         ``.ind`` the picked point indices). Only artists created with
         ``picker=`` (e.g., ``ax.plot(x, y, picker=5)``) are pickable.
 
-        Returns ``None`` until the user picks, and resets to ``None`` on
-        re-render. Every pick fires. Not rate-limited.
+        Returns ``None`` until the user picks, and keeps its value across
+        re-renders (the payload then refers to the previous render's
+        figure). Every pick fires. Not rate-limited.
         """
         return cast(Optional["PickEvent"], self._read_accessor("picked"))
 
@@ -2689,8 +2697,8 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
 
     * ``clicked()``: the most recent mouse press on the plot. It returns
       ``None`` until the user clicks (a normal state, not an error, so check
-      for it, or use ``req(plot.clicked())``), and resets to ``None`` on
-      re-render.
+      for it, or use ``req(plot.clicked())``), and keeps its value across
+      re-renders.
     * ``limits(ax=0)``: an axes' x/y limits after a zoom or pan, seeded from
       the rendered plot and updated once the user pauses for 250 ms
       (debounced; see ``rate_policy`` and ``rate_delay``).
@@ -2735,7 +2743,8 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
         the data, and discrete (categorical) scales use integer positions --
         and with ``facet_wrap()``/``facet_grid()``, ``.inaxes`` names the
         panel's axes, but nothing in the event names its facet. Returns
-        ``None`` until the user clicks, and resets to ``None`` on re-render,
+        ``None`` until the user clicks, and keeps its value across re-renders
+        (the payload then refers to the previous render's figure),
         so use ``req(plot.clicked())`` to wait for a click. Presses that
         start a toolbar pan/zoom drag, or land outside any axes, don't count.
         Every press fires -- a double-click arrives as three presses. Not
@@ -3267,23 +3276,23 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
 
     def cell_clicked(self) -> Optional[Dict[str, Any]]:
         """
-        The most recently clicked cell, or ``None`` if no click has happened
-        since the last render: ``{"region", "column", "column_index", "row",
+        The most recently clicked cell, or ``None`` until the first click:
+        ``{"region", "column", "column_index", "row",
         "primary_key_row", "cell_value"}``, where ``row`` is the *visible*
-        row and ``primary_key_row`` the *data* row (they differ after a sort).
+        row and ``primary_key_row`` the *data* row (they differ after a
+        sort). Kept across re-renders until the user clicks the new grid.
 
-        Fires in any ``selection_mode``, including ``"none"``; fires for
-        column-header clicks (``region="column-header"``) and twice per
-        double-click. Not rate-limited.
+        Fires in any ``selection_mode``, including ``"none"``, and for
+        column-header clicks (``region="column-header"``). Not rate-limited.
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("cell_clicked"))
 
     def cell_edited(self) -> Optional[Dict[str, Any]]:
         """
-        The most recent cell edit, or ``None`` if no edit has happened since
-        the last render: ``{"row", "column", "column_index", "value"}``,
+        The most recent cell edit, or ``None`` until the first edit:
+        ``{"row", "column", "column_index", "value"}``,
         where ``row`` is the *data* row. The widget's data is already updated
-        when this fires.
+        when this fires. Kept across re-renders until the next edit.
 
         Requires ``editable=True``. Also fires for Python-side
         ``set_cell_value*()`` calls. Not rate-limited.
@@ -4731,13 +4740,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         ),
         AccessorSpec(
             name="clicked",
-            kind="event",
+            kind="state",
             attach=_attach_clicked,
             payload=_parse_trait_dict,
-            # Attach at render, not on first read: with no seeding (an event
-            # is None until it happens), a click that lands before the first
-            # read would otherwise never be emitted
-            eager=True,
             requires_registration=(
                 "clicks are opt-in because the grid only posts clicks when "
                 "asked. Add clicks=True to the @render_mols2grid decorator."
@@ -4859,9 +4864,10 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         last render, or `None` if no click has happened yet (requires
         ``clicks=True`` or a Python ``callback``).
 
-        Unlike `.selection()` (the checkbox set), a click is an event: it
-        carries the clicked row's data (every displayed column, plus
-        ``mols2grid-id``) and resets to `None` on re-render. All values are
+        Unlike `.selection()` (the checkbox set), a click is retained
+        last-click state: it carries the clicked row's data (every displayed
+        column, plus ``mols2grid-id``) and keeps its value across re-renders
+        until the user clicks the new grid. All values are
         strings except ``mols2grid-id`` (an int), and clicking the same
         molecule twice in a row does not re-fire (a mols2grid limitation:
         the trait only changes when the payload does).
@@ -5281,8 +5287,8 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
     input. Call it in a reactive function (a ``@render.*`` function,
     ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
     the selection changes. It returns ``None`` until the viewer first reports
-    (typically its empty load-time selection), and resets to ``None`` on
-    re-render.
+    (typically its empty load-time selection), and keeps its value across
+    re-renders.
 
     For play/pause, timeline scrubbing, and other interactions (which have no
     accessor), register a callback with `rerun.notebook.Viewer.on_event()`
@@ -5378,8 +5384,8 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
 
         Returns ``None`` until the viewer first reports -- typically its
         empty selection at load, so ``selection()`` soon reflects "nothing
-        selected" rather than staying ``None`` -- and resets to ``None`` on
-        re-render, so use ``req(viewer.selection())`` to wait for a report.
+        selected" rather than staying ``None`` -- and keeps its value across
+        re-renders, so use ``req(viewer.selection())`` to wait for a report.
         Selecting the same thing twice doesn't fire twice. Not rate-limited.
         """
         return cast(Optional["SelectionChangeEvent"], self._read_accessor("selection"))

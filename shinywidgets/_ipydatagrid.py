@@ -53,13 +53,13 @@ SELECTIONS = AccessorSpec(
 
 CELL_CLICKED = AccessorSpec(
     name="cell_clicked",
-    kind="event",
+    kind="state",
     attach=attach_cell_clicked,
 )
 
 CELL_EDITED = AccessorSpec(
     name="cell_edited",
-    kind="event",
+    kind="state",
     attach=attach_cell_edited,
 )
 

@@ -49,30 +49,16 @@ def test_state_accessor_captures_gesture_before_first_read(
     assert_no_unexpected_errors(errors, failed_requests)
 
 
-def test_event_accessor_misses_click_before_first_read(page: Page, local_app) -> None:
-    """CHARACTERIZATION of current (documented) behavior, not the desired
-    end state: kind="event" accessors still attach lazily, on first read, so
-    an event that fires before the first read is missed.
-
-    clicked() is read for the first time only after #read_clicked, so the
-    map click made before the button click is lost. (To capture early
-    events, an app warms the accessor up by reading it once, unconditionally,
-    at startup -- see the AccessorSpec.eager docstring.)
-    """
+def test_click_before_first_read_is_captured(page: Page, local_app) -> None:
+    """clicked() is retained state that attaches at render: a map click made
+    before the accessor's (gated) first read is reflected in that read."""
     errors, failed_requests = collect_errors(page)
     goto_map(page, local_app)
 
     # Click the map BEFORE anything reads clicked()
     page.locator("#map .leaflet-container").click(position={"x": 200, "y": 150})
 
-    # The gated first read attaches the listener only now: the click above
-    # is missed. "None" proves the server processed the read (an empty
-    # string couldn't), and fails if event accessors ever become eager
-    page.locator("#read_clicked").click()
-    expect(page.locator("#clicked")).to_have_text("None", timeout=10000)
-
-    # ...but once attached, later clicks are captured
-    page.locator("#map .leaflet-container").click(position={"x": 200, "y": 150})
+    # The accessor attached at render, so the click was captured
     page.locator("#read_clicked").click()
     expect(page.locator("#clicked")).to_have_text(CLICK_COORDS, timeout=10000)
 

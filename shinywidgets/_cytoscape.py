@@ -28,10 +28,10 @@ def attach_clicked(element: str) -> Attach:
 
 
 NODE_CLICKED = AccessorSpec(
-    name="node_clicked", kind="event", attach=attach_clicked("node"), eager=True
+    name="node_clicked", kind="state", attach=attach_clicked("node")
 )
 EDGE_CLICKED = AccessorSpec(
-    name="edge_clicked", kind="event", attach=attach_clicked("edge"), eager=True
+    name="edge_clicked", kind="state", attach=attach_clicked("edge")
 )
 
 CYTOSCAPE_ACCESSORS = (NODE_CLICKED, EDGE_CLICKED)

@@ -120,9 +120,11 @@ def test_ipydatagrid_accessors(widget_session: Session) -> None:
     assert r.cell_clicked()["cell_value"] == 1
     g._cell_change_handlers({"row": 0, "column": "a", "column_index": 0, "value": 9})
     assert r.cell_edited()["value"] == 9
-    # Events reset on re-render; state re-seeds
+    # Clicks/edits are retained across a re-render (they still happened);
+    # selections re-seed from the new grid
     r._accessors.on_render(grid(widget_session))
-    assert r.cell_clicked() is None and r.cell_edited() is None
+    assert r.cell_clicked()["cell_value"] == 1
+    assert r.cell_edited()["value"] == 9
     assert r.selections() == []
 
 
@@ -231,3 +233,10 @@ def test_visible_data_accessor(widget_session: Session) -> None:
     assert r.visible_data()["a"].tolist() == [1, 2, 3]
     g._visible_rows = [2, 1, 0]
     assert r.visible_data()["a"].tolist() == [3, 2, 1]
+
+
+def test_click_accessors_are_retained() -> None:
+    from shinywidgets._ipydatagrid import CELL_CLICKED, CELL_EDITED
+
+    assert CELL_CLICKED.kind == "state"
+    assert CELL_EDITED.kind == "state"
