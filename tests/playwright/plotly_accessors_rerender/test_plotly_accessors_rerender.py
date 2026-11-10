@@ -1,13 +1,7 @@
 from __future__ import annotations
 
 from playwright.sync_api import Page, expect
-from tests.playwright.conftest import (
-    ANYWIDGET_INIT_XFAIL,
-    assert_no_unexpected_errors,
-    collect_errors,
-)
-
-pytestmark = ANYWIDGET_INIT_XFAIL
+from tests.playwright.conftest import assert_no_unexpected_errors, collect_errors
 
 POINT_JS = """([x, y]) => {
   const gd = document.querySelector("#plot .js-plotly-plot");

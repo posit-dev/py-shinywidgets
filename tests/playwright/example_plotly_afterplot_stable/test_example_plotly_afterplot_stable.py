@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 from playwright.sync_api import Page
-from tests.playwright.conftest import ANYWIDGET_INIT_XFAIL
-
-pytestmark = ANYWIDGET_INIT_XFAIL
 
 
 def test_example_plotly_first_visible_afterplot_is_already_resized(

@@ -367,8 +367,7 @@ override-dependencies = [
 # Scoped to python>=3.11: a git source pins anywidget to a single version,
 # and the lonboard releases compatible with python 3.10 pin anywidget<0.10.
 # TODO: when the next anywidget release (>0.11.0) is on PyPI, update this pin
-# back to the release (i.e., drop this override); the ANYWIDGET_INIT_XFAIL
-# test marks lift themselves at 0.11.1.
+# back to the release (i.e., drop this override).
 # uv-only: the published package metadata is unaffected.
 [tool.uv.sources]
 anywidget = [
