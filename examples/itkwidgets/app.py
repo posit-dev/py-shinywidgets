@@ -71,7 +71,9 @@ app_ui = ui.page_sidebar(
     sw_itk.imjoy_head(),
     ui.card(
         ui.card_header("itkwidgets Viewer (imjoy-rpc over Shiny)"),
-        ui.output_ui("viewer"),
+        # fill=True so the output constrains the viewer's height:100% inside
+        # this fixed-height card (see report F10)
+        ui.output_ui("viewer", fill=True),
         height="600px",
         full_screen=True,
     ),

@@ -93,23 +93,29 @@ def server(input, output, session):
         session._v = v
         return sw_itk.render_viewer(session, v)
 
+    # Read each input before the readiness guard: on the initial run the
+    # viewer isn't ready, so reading inside the guard would register no
+    # reactive dependency and the controls would never re-fire.
     @reactive.effect
     def _cmap():
+        cmap = input.cmap()
         v = getattr(session, "_v", None)
         if v is not None and v.has_viewer:
-            v.set_image_color_map(input.cmap())
+            v.set_image_color_map(cmap)
 
     @reactive.effect
     def _blend():
+        blend = input.blend()
         v = getattr(session, "_v", None)
         if v is not None and v.has_viewer:
-            v.set_label_image_blend(input.blend())
+            v.set_label_image_blend(blend)
 
     @reactive.effect
     def _rot():
+        rotate = input.rotate()
         v = getattr(session, "_v", None)
         if v is not None and v.has_viewer:
-            v.set_rotate(input.rotate())
+            v.set_rotate(rotate)
 
 
 app = App(app_ui, server)
