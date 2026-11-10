@@ -43,10 +43,11 @@ def test_bokeh_accessors_follow_real_gestures(page: Page, local_app) -> None:
     page.mouse.wheel(0, -200)
     expect(page.locator("#zoomed")).to_have_text("zoomed", timeout=5000)
 
-    # After a re-render, taps still reach the accessor
+    # After a re-render, the last tap is retained (it still happened), and
+    # new taps still reach the accessor
     page.click("#rerender")
-    expect(page.locator("#tapped")).to_have_text("None", timeout=10000)
     page.wait_for_timeout(1000)
+    expect(page.locator("#tapped")).to_have_text("5,5", timeout=10000)
     page.mouse.click(*point(page, 8, 8))
     expect(page.locator("#tapped")).to_have_text("8,8", timeout=5000)
 

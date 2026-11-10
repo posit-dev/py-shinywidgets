@@ -86,7 +86,9 @@ def test_zoomed_reports_ranges_update(widget_session: Session) -> None:
     run_comm_open_callbacks(w.model_id)
     ev = RangesUpdate(model=p, x0=0, x1=1, y0=2, y1=3)
     p.document.callbacks.trigger_event(ev)
-    assert emitted == [ev]
+    # A synthesized seed (the current ranges) precedes live events
+    assert isinstance(emitted[0], RangesUpdate)
+    assert emitted[1:] == [ev]
 
 
 def test_selected_rows(widget_session: Session) -> None:
@@ -147,3 +149,22 @@ def test_selected_frame_drops_indices_past_the_end(widget_session: Session) -> N
     w = widget(widget_session, p)
     src.data = {"x": [1], "y": [4]}  # shrunk in place; the selection lags
     assert sb.selected_frame(w, [0, 2])["x"].tolist() == [1]
+
+
+def test_tapped_and_zoomed_are_retained() -> None:
+    assert sb.TAPPED.kind == "state"
+    assert sb.ZOOMED.kind == "state"
+    # The carve-out: source_data must keep event mechanics (and its
+    # re-render reset) forever -- design doc S5c.
+    assert sb.SOURCE_DATA.kind == "event"
+
+
+def test_zoomed_seeds_current_ranges(widget_session: Session) -> None:
+    p, _ = plot()
+    p.x_range.start, p.x_range.end = 2, 10
+    p.y_range.start, p.y_range.end = -1, 5
+    w = widget(widget_session, p)
+    emitted: List[object] = []
+    sb.attach_zoomed(w, emitted.append)
+    seed = next(e for e in emitted if isinstance(e, RangesUpdate))
+    assert (seed.x0, seed.x1, seed.y0, seed.y1) == (2, 10, -1, 5)

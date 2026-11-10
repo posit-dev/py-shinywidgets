@@ -13,7 +13,7 @@ selection made before the first read isn't lost.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, cast
 
 from ._accessors import AccessorSpec, Emit
 from ._comm import when_comm_open
@@ -72,6 +72,38 @@ def event_attach(event: str) -> Callable[[BokehModel, Emit], Callable[[], None]]
     return attach
 
 
+def attach_zoomed(widget: BokehModel, emit: Emit) -> Callable[[], None]:
+    detach = event_attach("rangesupdate")(widget, emit)
+
+    # Ranges are retained, browser-synced document properties, so a zoom made
+    # before this attach is recoverable. Seed one event per Plot in document
+    # order: the reader sees the last, as with live events in sequence.
+    # FactorRange start/end are numeric synthetic coords, matching live
+    # payloads; DatetimeRange values are ms-since-epoch floats in both.
+    from bokeh.events import RangesUpdate
+    from bokeh.models import Plot
+    from bokeh.models.ranges import DataRange1d, FactorRange, Range1d
+
+    numeric = (Range1d, DataRange1d, FactorRange)
+    for model in widget._model.select({"type": Plot}):
+        if not isinstance(model, Plot):
+            continue
+        x, y = model.x_range, model.y_range
+        if isinstance(x, numeric) and isinstance(y, numeric):
+            # bokeh's stubs type range start/end as the `Value` descriptor;
+            # at runtime they're floats (or None before the first compute)
+            emit(
+                RangesUpdate(
+                    model,
+                    x0=cast("Optional[float]", x.start),
+                    x1=cast("Optional[float]", x.end),
+                    y0=cast("Optional[float]", y.start),
+                    y1=cast("Optional[float]", y.end),
+                )
+            )
+    return detach
+
+
 def single_source(model: Any) -> ColumnDataSource:
     from bokeh.models import ColumnDataSource, GlyphRenderer
 
@@ -118,7 +150,7 @@ SELECTED = AccessorSpec(
 # Changes whenever `source.data` does. selected_rows() reads it, since data
 # replaced in place (at the same length) keeps the selected indices.
 SOURCE_DATA = AccessorSpec(name="source_data", kind="event", attach=attach_source_data)
-TAPPED = AccessorSpec(name="tapped", kind="event", attach=event_attach("tap"))
-ZOOMED = AccessorSpec(name="zoomed", kind="event", attach=event_attach("rangesupdate"))
+TAPPED = AccessorSpec(name="tapped", kind="state", attach=event_attach("tap"))
+ZOOMED = AccessorSpec(name="zoomed", kind="state", attach=attach_zoomed)
 
 BOKEH_ACCESSORS = (SELECTED, SOURCE_DATA, TAPPED, ZOOMED)

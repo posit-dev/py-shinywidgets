@@ -2819,10 +2819,13 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
       distinguish "nothing selected yet" from a selection that caught nothing
       (``selected_rows()`` is an empty frame either way).
     * A re-render (e.g. when the render function reads an input) gives the user
-      a new plot. ``tapped()`` and ``zoomed()`` start over at ``None``;
-      ``selected()`` follows the displayed plot's selection instead, keeping
-      its value until the new plot reports its own (initially empty, so it
-      becomes ``[]`` once it does).
+      a new plot, but every accessor keeps its value -- the last interaction
+      still *happened*. ``tapped()`` holds the old plot's last tap until a
+      new one happens; ``zoomed()`` seeds from the plot's current ranges at
+      attach, so it tracks the displayed viewport (initially the unzoomed
+      one). ``selected()`` follows the displayed plot's selection instead,
+      keeping its value until the new plot reports its own (initially empty,
+      so it becomes ``[]`` once it does).
     * Selecting the same points again isn't a change, so readers of
       ``selected()`` don't re-run. Every tap, zoom, or pan re-runs readers of
       ``tapped()`` and ``zoomed()``.
@@ -2900,8 +2903,10 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         """
         The plot ranges after the most recent zoom or pan, as a
         `bokeh.events.RangesUpdate` (``.x0``, ``.x1``, ``.y0``, ``.y1``,
-        ``.model``). Returns ``None`` until the user zooms or pans. Not
-        rate-limited (bokeh reports once per gesture).
+        ``.model``). Seeded with the plot's current (default) ranges at
+        attach, so a zoom made before the first read is reported; extra
+        ranges aren't included. Not rate-limited (bokeh reports once per
+        gesture).
         """
         return cast(Optional["RangesUpdate"], self._read_accessor("zoomed"))
 
