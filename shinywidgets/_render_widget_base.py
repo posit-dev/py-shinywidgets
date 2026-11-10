@@ -10,6 +10,7 @@ from typing import (
     Generic,
     Iterator,
     Optional,
+    Sequence,
     Tuple,
     TypeVar,
     cast,
@@ -98,8 +99,22 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         fillable: Optional[bool] = None,
         rate_policy: Optional[RatePolicy] = None,
         rate_delay: Optional[float] = None,
+        listen_to: Optional[Sequence[str]] = None,
     ):
         super().__init__(_fn)
+        specs = {s.name: s for s in type(self)._accessor_specs}
+        for name in listen_to or ():
+            spec = specs.get(name)
+            if spec is None:
+                raise ValueError(
+                    f"{type(self).__name__} has no accessor named {name!r} to "
+                    f"listen to. listen_to accepts: {sorted(specs)}"
+                )
+            if spec.requires_registration is None:
+                raise ValueError(
+                    f"{name!r} doesn't need listen_to — "
+                    f"{type(self).__name__} always subscribes it."
+                )
         self.width = width
         self.height = height
         self.fill = fill
@@ -115,7 +130,10 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._widget: WidgetT | None = None
         self._contexts: set[Context] = set()
         self._accessors = Accessors(
-            type(self)._accessor_specs, rate_policy=rate_policy, rate_delay=rate_delay
+            type(self)._accessor_specs,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+            listen_to=listen_to or (),
         )
         self._closes_accessors_on_destroy = False
 
