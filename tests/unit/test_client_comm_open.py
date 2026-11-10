@@ -101,11 +101,10 @@ def other_session() -> Any:
     """A second session, for cross-session cleanup tests."""
     from shiny import App, ui
     from shiny._connection import MockConnection
+
     from tests.unit.conftest import widget_test_server
 
-    session = App(ui.page_fluid(), widget_test_server)._create_session(
-        MockConnection()
-    )
+    session = App(ui.page_fluid(), widget_test_server)._create_session(MockConnection())
     try:
         yield session
     finally:
@@ -463,6 +462,7 @@ def test_directly_closed_browser_created_id_is_discarded_at_session_end() -> Non
     """
     from shiny import App, ui
     from shiny._connection import MockConnection
+
     from tests.unit.conftest import widget_test_server
 
     loop = asyncio.new_event_loop()
