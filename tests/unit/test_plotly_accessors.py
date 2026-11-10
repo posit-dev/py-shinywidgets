@@ -221,18 +221,21 @@ def test_render_plotly_brushed_and_relayout() -> None:
     assert r.relayout() == {"xaxis.autorange": True}
 
 
-def test_selected_and_brushed_are_state_attached_at_render() -> None:
-    # A selection is state on the graph div, so these attach at render (and
-    # the browser seeds the current selection on bind): a lasso drawn before
-    # the first read is not lost. Clicked/streaming accessors stay events.
+def test_all_accessors_are_retained_and_bind_at_render() -> None:
+    # Every accessor is retained last-interaction state and binds at render:
+    # the browser only reports an event with a listener, and an interaction
+    # made before the first read is not lost.
     r, w = rendered()
-    assert sp.SELECTED.kind == "state" and sp.BRUSHED.kind == "state"
-    assert sp.CLICKED.kind == "event" and sp.RELAYOUT.kind == "event"
-    assert (
-        w.sent
-        == [{"shinywidgets": "bind", "events": ["plotly_selected", "plotly_deselect"]}]
-        * 2
-    )  # selected and brushed
+    for spec in sp.PLOTLY_ACCESSORS:
+        assert spec.kind == "state", spec.name
+    assert w.sent == [
+        {"shinywidgets": "bind", "events": ["plotly_click", "plotly_doubleclick", "plotly_deselect"]},
+        {"shinywidgets": "bind", "events": ["plotly_selected", "plotly_deselect"]},
+        {"shinywidgets": "bind", "events": ["plotly_selecting", "plotly_deselect"]},
+        {"shinywidgets": "bind", "events": ["plotly_selected", "plotly_deselect"]},
+        {"shinywidgets": "bind", "events": ["plotly_selecting", "plotly_deselect"]},
+        {"shinywidgets": "bind", "events": ["plotly_relayout"]},
+    ]
 
 
 def test_selection_reported_before_first_read_survives() -> None:
@@ -284,3 +287,10 @@ def test_selected_rows_matches_pandas_index_labels() -> None:
     labelled = pd.DataFrame({"a": [1, 2]}, index=["p", "q"])
     pts = [{"trace_index": 0, "point_index": 0, "x": 0, "y": 0, "customdata": ["q"]}]
     assert sp.select_rows(pts, labelled, key=None)["a"].tolist() == [2]
+
+
+def test_event_origin_accessors_are_retained() -> None:
+    from shinywidgets._plotly import BRUSHING, CLICKED, RELAYOUT, SELECTING
+
+    for spec in (CLICKED, SELECTING, BRUSHING, RELAYOUT):
+        assert spec.kind == "state", spec.name
