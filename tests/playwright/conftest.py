@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import importlib.metadata
 import io
 from typing import Any
 
 import numpy as np
+import pytest
+from packaging.version import Version
 from PIL import Image
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, Route, expect
@@ -278,6 +281,18 @@ def wait_for_red_pixels(page: Page, selector: str, timeout_ms: int = 30000) -> N
 # in their module namespace and break when views share one.
 KEPLERGL_ALLOWED_ERRORS = (
     "luma.gl: This version of luma.gl has already been initialized",
+)
+
+# anywidget <0.11.1 rejects a model's init after a hard-coded 2s and then
+# drops all subsequent state updates (manzt/anywidget#1030, fixed by
+# manzt/anywidget#1032). Widgets with multi-MB inline _esm (keplergl ~13MB,
+# lonboard) trip that budget under CI-grade CPU contention, permanently
+# desyncing. Non-strict so a fast runner that happens to pass doesn't fail
+# the suite; the mark lifts itself once anywidget 0.11.1 is installed.
+ANYWIDGET_INIT_XFAIL = pytest.mark.xfail(
+    Version(importlib.metadata.version("anywidget")) < Version("0.11.1"),
+    reason="anywidget <0.11.1 can permanently desync keplergl's ~13MB _esm under CPU contention (manzt/anywidget#1032)",
+    strict=False,
 )
 
 
