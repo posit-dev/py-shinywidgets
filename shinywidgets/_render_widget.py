@@ -5853,8 +5853,11 @@ class render_vitessce(render_widget_base[VitessceValueT, VitessceWidget]):
         def vit():
             vc = VitessceConfig(schema_version="1.0.15", name="My data")
             dataset = vc.add_dataset(name="d").add_file(
-                url="https://data-1.vitessce.io/0.0.33/main/human_lymph_node_10x_visium/human_lymph_node_10x_visium.h5ad.zarr",
+                url="https://data-1.vitessce.io/0.0.33/main/human-lymph-node-10x-visium/human_lymph_node_10x_visium.h5ad.zarr",
                 file_type="anndata.zarr",
+                # Where the spatial view finds its spot coordinates (as in the
+                # official human_lymph_node_10x_visium demo config)
+                options={"obsLocations": {"path": "obsm/spatial"}},
             )
             vc.add_view("spatial", dataset=dataset)
             return vc

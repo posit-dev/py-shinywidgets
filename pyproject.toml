@@ -116,12 +116,14 @@ vizarr = ["vizarr>=0.1.1"]
 # optional-dependencies test/dev extras (its tests importorskip without it).
 # The pieces of vitessce[all] the widget + its three data modes need, without
 # [all]'s heavy/fragile deps (scanpy; oxc-py, which doesn't build on Python 3.15).
-# starlette/uvicorn power its local-data server, anndata
+# starlette/uvicorn power its local-data server, ujson/generate-tiff-offsets
+# back its local OME-TIFF responses (imported by vitessce's wrappers but not
+# installed by its base dependencies), anndata
 # reads local AnnData files (3.12-3.14 only: 0.13 is the pandas-3-compatible
 # line, and h5py has no cp315 wheels yet), and jupyter-server-proxy is needed
 # for proxy mode
 # (deployed local data)
-vitessce = ["vitessce>=3.5.0", "starlette>=0.14.0", "uvicorn>=0.17.0", "anndata>=0.13; python_version >= '3.12' and python_version < '3.15'", "jupyter-server-proxy>=1.5.2"]
+vitessce = ["vitessce>=3.5.0", "starlette>=0.14.0", "uvicorn>=0.17.0", "ujson>=4.0.1", "generate-tiff-offsets>=0.1.9", "anndata>=0.13; python_version >= '3.12' and python_version < '3.15'", "jupyter-server-proxy>=1.5.2"]
 rerun = ["rerun-sdk[notebook]>=0.40; python_version >= '3.11'"]
 test = [
   "altair",
