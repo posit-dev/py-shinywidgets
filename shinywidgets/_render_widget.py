@@ -5753,6 +5753,7 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("location"))
 
+
 class render_vitessce(render_widget_base[VitessceValueT, VitessceWidget]):
     """
     Reactively render a [Vitessce](https://vitessce.io) viewer -- coordinated
