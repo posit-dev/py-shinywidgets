@@ -29,9 +29,7 @@ def wait_for_cell_handlers(page: Page) -> None:
     # which runs on list.js's "updated" event (a beat after the cells first
     # paint) and appends phantom filler cells last -- so a phantom cell means
     # the handlers are bound
-    page.locator("#grid .m2g-phantom").first.wait_for(
-        state="attached", timeout=TIMEOUT
-    )
+    page.locator("#grid .m2g-phantom").first.wait_for(state="attached", timeout=TIMEOUT)
 
 
 def test_selection_and_clicks_reach_python(page: Page, local_app) -> None:

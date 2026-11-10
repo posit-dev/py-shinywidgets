@@ -4828,8 +4828,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
                 render_retired = (
                     bad is widget
                     and widget.comm is not None
-                    and widget.model_id
-                    in SESSION_WIDGET_ID_MAP.get(session.id, ())
+                    and widget.model_id in SESSION_WIDGET_ID_MAP.get(session.id, ())
                 )
                 if bad is not None and not render_retired:
                     raise ownership_error(bad)
