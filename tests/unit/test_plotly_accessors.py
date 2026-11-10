@@ -229,7 +229,10 @@ def test_all_accessors_are_retained_and_bind_at_render() -> None:
     for spec in sp.PLOTLY_ACCESSORS:
         assert spec.kind == "state", spec.name
     assert w.sent == [
-        {"shinywidgets": "bind", "events": ["plotly_click", "plotly_doubleclick", "plotly_deselect"]},
+        {
+            "shinywidgets": "bind",
+            "events": ["plotly_click", "plotly_doubleclick", "plotly_deselect"],
+        },
         {"shinywidgets": "bind", "events": ["plotly_selected", "plotly_deselect"]},
         {"shinywidgets": "bind", "events": ["plotly_selecting", "plotly_deselect"]},
         {"shinywidgets": "bind", "events": ["plotly_selected", "plotly_deselect"]},

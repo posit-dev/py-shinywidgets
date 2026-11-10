@@ -57,6 +57,4 @@ def attach_selection(widget: RerunNotebookViewer, emit: Emit) -> Callable[[], No
 # The viewer sends an empty (items: []) selection at load, which only an
 # attach before the view exists catches -- so selection() reflects "nothing
 # selected" soon after mount rather than staying None
-SELECTION = AccessorSpec(
-    name="selection", kind="state", attach=attach_selection
-)
+SELECTION = AccessorSpec(name="selection", kind="state", attach=attach_selection)
