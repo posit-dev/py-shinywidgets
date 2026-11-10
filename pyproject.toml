@@ -80,11 +80,13 @@ obsplot = ["pyobsplot>=0.5.0"]
 panel = ["panel", "jupyter_bokeh>=4.1"]
 # pyarrow is required for pandas DataFrame conversion (perspective-python
 # doesn't depend on it)
-# >=5.7 excluded: the "Better WASM init" change (perspective-dev/perspective#3269)
-# breaks second-viewer init and re-rendering (viewers never display data), seen in
-# tests/playwright/render_perspective. Verified still broken on 5.8.0 and 5.9.0;
-# fix proposed upstream in perspective-dev/perspective#3287.
-perspective = ["perspective-python>=3.0,<5.7", "pyarrow"]
+# 5.7-5.9 excluded: the "Better WASM init" change
+# (perspective-dev/perspective#3269) breaks second-viewer init and re-rendering
+# (viewers never display data), seen in tests/playwright/render_perspective.
+# Verified broken on 5.7.0, 5.8.0 and 5.9.0. The upstream fix
+# (perspective-dev/perspective#3287) should land in the next release; the
+# !=-exclusions let CI pick it up automatically and re-validate.
+perspective = ["perspective-python>=3.0,!=5.7.0,!=5.8.0,!=5.9.0", "pyarrow"]
 plotly = ["plotly>=5.12.0", "narwhals", "pandas"]
 plotnine = ["plotnine", "ipympl"]
 # duckdb is listed because the security model requires apps to `import duckdb`
@@ -160,7 +162,7 @@ test = [
   "networkx",
   "mosaic-widget; python_version < '3.15'",
   "panel",
-  "perspective-python>=3.0,<5.7",
+  "perspective-python>=3.0,!=5.7.0,!=5.8.0,!=5.9.0",
   "playwright>=1.40.0",
   "pyobsplot>=0.5.0",
   "plotly>=5.12.0",
@@ -232,7 +234,7 @@ dev = [
   "networkx",
   "mosaic-widget; python_version < '3.15'",
   "panel",
-  "perspective-python>=3.0,<5.7",
+  "perspective-python>=3.0,!=5.7.0,!=5.8.0,!=5.9.0",
   "playwright>=1.40.0",
   "pyobsplot>=0.5.0",
   "plotly>=5.12.0",
@@ -310,7 +312,7 @@ test = [
   "networkx",
   "mosaic-widget; python_version < '3.15'",
   "panel",
-  "perspective-python>=3.0,<5.7",
+  "perspective-python>=3.0,!=5.7.0,!=5.8.0,!=5.9.0",
   "playwright>=1.40.0",
   "pyobsplot>=0.5.0",
   "plotly>=5.12.0",
