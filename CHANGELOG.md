@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* `@render_ipyaladin`'s `clicked_object()` is now a state accessor: ipyaladin's frontend retains the last clicked catalog source in the synced `clicked_object` trait (it sets and saves it on every click, per model), so the accessor observes that trait -- seeded at render -- instead of listening for the parallel custom message. A click made before the accessor's first read (e.g., before a chat handler or LLM tool first reads it) is now reflected in that read instead of being lost. The trait defaults to `{}`, which the accessor still reports as `None`; clicking the same source twice still doesn't fire twice; and a re-render still starts it over at `None` (the new viewer has no click yet).
 * shinywidgets now requires ipywidgets 8.1 or newer, and the bundled JavaScript widget manager (`@jupyter-widgets/html-manager`) was upgraded from 0.20 to 1.0. Together these fix a wide range of long-standing issues with ipywidgets 8 (see the bug fixes below). (#237, #259)
 * shinywidgets now requires plotly >= 5.12 (the first release whose `FigureWidget` frontend supports ipywidgets 8). Constructing a plotly widget with an older plotly raises an error explaining how to upgrade, instead of rendering a blank output with no error. (#332)
 * shinywidgets now requires shiny 1.9.0 or newer, which sends widget updates made outside the reactive graph (e.g., from a background thread) to the browser right away. (#377)
