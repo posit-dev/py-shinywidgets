@@ -761,10 +761,13 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
     * ``target()``: the sky position at the center of the view.
     * ``fov()``: the view's field of view.
 
-    ``clicked_object()`` returns ``None`` until a source is clicked, and
-    resets to ``None`` on re-render. The others are seeded from the viewer's
-    state at render (they never return ``None``) and follow every pan, zoom,
-    or selection -- and Python-side ``.widget.target = ...`` assignments too.
+    ``clicked_object()`` returns ``None`` until a source is clicked. All four
+    are seeded from the viewer's state at render (so an interaction made
+    before the accessor's first read is reflected in that read) and follow
+    every click, pan, zoom, or selection -- and Python-side
+    ``.widget.target = ...`` assignments too. A re-render builds a new
+    viewer, so ``clicked_object()`` starts over at ``None`` and the others
+    follow the new viewer's state.
 
     **Updating in place**: ipyaladin queues method calls (e.g.,
     ``.widget.add_table()``) until the viewer has loaded in the browser, but
@@ -820,10 +823,12 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
         The catalog source the user most recently clicked, as a dict with
         ``ra``, ``dec``, and ``data`` (the source's catalog row).
 
-        Returns ``None`` until the user clicks a source, and resets to
-        ``None`` on re-render, so use ``req(sky.clicked_object())`` to wait
-        for a click. (Unlike the ``clicked_object`` trait, this is
-        message-backed, so it works per instance.) Clicking the same source
+        Returns ``None`` until the user clicks a source (the synced
+        ``clicked_object`` trait defaults to ``{}``, which reads as
+        ``None``), so use ``req(sky.clicked_object())`` to wait for a click.
+        Seeded at render and per instance, so a click made before the first
+        read is reflected in it; a re-render builds a new viewer with no
+        click yet, so it starts over at ``None``. Clicking the same source
         twice doesn't fire twice. Not rate-limited.
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("clicked_object"))
