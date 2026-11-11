@@ -194,8 +194,7 @@ def test_renderer_reads_and_retention(widget_session: Session) -> None:
     assert isinstance(r.view_state(), MapViewState)
 
 
-def test_clicked_is_retained_and_needs_no_registration() -> None:
+def test_clicked_is_plain_state() -> None:
     from shinywidgets._lonboard import CLICKED
 
     assert CLICKED.kind == "state"
-    assert CLICKED.requires_registration is None

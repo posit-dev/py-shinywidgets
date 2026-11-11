@@ -12,7 +12,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    ClassVar,
     Dict,
     Iterable,
     List,
@@ -874,7 +873,10 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
 
         Seeded at render and follows every zoom (and Python-side
         ``.widget.fov = ...`` assignments); reading before the first render
-        cancels silently (like ``req(False)``). Not rate-limited.
+        cancels silently (like ``req(False)``). Not rate-limited. With two
+        or more ipyaladin viewers on the same page, this follows only the
+        last-rendered one (an ipyaladin limitation: its frontend syncs the
+        field of view from one viewer per page).
         """
         self._read_accessor("fov")
         return cast(Aladin, self._widget).fov
@@ -930,8 +932,9 @@ class _IpyleafletAccessors(_IpyleafletBase):
     def clicked(self) -> Optional[Dict[str, Any]]:
         """
         The most recent map click as ipyleaflet reports it: a dict with
-        ``coordinates: [lat, lng]`` (note the order; lonboard reports
-        ``(lng, lat)``), or ``None`` until the first click. Kept across
+        ``type`` (``"click"``), ``coordinates`` (``[lat, lng]`` -- note the
+        order; lonboard reports ``(lng, lat)``), and ``location``, or ``None``
+        until the first click. Kept across
         re-renders until the user clicks the new map. A double-click
         publishes once: the second click has the same coordinates, so it
         isn't a change (the ``dblclick`` itself is ignored). Marker clicks
@@ -3657,6 +3660,10 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         The points of the most recent box or lasso selection, once the gesture
         ends, with the same columns as :meth:`clicked`.
 
+        Selection must be enabled on the plot: set ``dragmode="select"`` or
+        ``"lasso"`` on the figure's layout, or leave the modebar visible so
+        the user can pick the Box/Lasso Select tool.
+
         Returns ``None`` until the user selects, and again after a deselect
         (double-click); an empty frame for a selection that caught no points.
         With ``dragmode="select"`` or ``"lasso"``, a plain click also resets
@@ -4794,7 +4801,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     which also accepts the widget's bare synced-trait names.
     """
 
-    _accessor_specs: ClassVar[tuple[AccessorSpec, ...]] = (
+    _accessor_specs = (
         AccessorSpec(
             name="selection",
             kind="state",
@@ -4806,10 +4813,6 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             kind="state",
             attach=_attach_clicked,
             payload=_parse_trait_dict,
-            requires_registration=(
-                "clicks are opt-in because the grid only posts clicks when "
-                "asked. Add clicks=True to the @render_mols2grid decorator."
-            ),
         ),
     )
 
@@ -4828,6 +4831,15 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         rate_delay: Optional[int] = None,
         **kwargs: Any,
     ):
+        # The click channel only exists when the grid document is rendered
+        # with a Python callback (clicks=True injects a no-op one; a
+        # JavaScript callback runs in the browser and posts nothing), so the
+        # clicked() accessor exists only then -- must be set before
+        # super().__init__() builds the accessors from it
+        if not (clicks or callable(kwargs.get("callback"))):
+            self._accessor_specs = tuple(
+                s for s in self._accessor_specs if s.name != "clicked"
+            )
         super().__init__(
             _fn,
             width=width,
@@ -4836,12 +4848,6 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             fillable=fillable,
             rate_policy=rate_policy,
             rate_delay=rate_delay,
-            # A Python callback enables the same click channel as clicks=True,
-            # so it registers clicked() too (a JavaScript callback isn't
-            # callable, and posts nothing to Python)
-            listen_to=("clicked",)
-            if clicks or callable(kwargs.get("callback"))
-            else (),
         )
         self.smiles_col = smiles_col
         self.mol_col = mol_col
@@ -4938,8 +4944,15 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         until the user clicks the new grid. All values are
         strings except ``mols2grid-id`` (an int), and clicking the same
         molecule twice in a row does not re-fire (a mols2grid limitation:
-        the trait only changes when the payload does).
+        the trait only changes when the payload does). Raises without
+        ``clicks=True`` or a Python ``callback``.
         """
+        if "clicked" not in self._accessors.names():
+            raise RuntimeError(
+                "clicked() needs the grid's click channel, which the document "
+                "only renders when asked: add clicks=True (or a Python "
+                "callback=) to the @render_mols2grid decorator."
+            )
         return cast(Optional[Dict[str, Any]], self._read_accessor("clicked"))
 
     async def _render(self) -> Jsonifiable | None:

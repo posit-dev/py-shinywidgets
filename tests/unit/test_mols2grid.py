@@ -749,6 +749,25 @@ def test_grid_name_stable_within_and_unique_across_sessions(
     assert rw.grid_name() == "shiny"
 
 
+def test_clicked_needs_the_click_channel_enabled() -> None:
+    # The clicked() accessor only exists when the grid document was rendered
+    # with the click channel (clicks=True or a Python callback -- a JS
+    # callback runs in the browser and posts nothing to Python)
+    r = rw.render_mols2grid()
+    assert "clicked" not in r._accessors.names()
+    with pytest.raises(RuntimeError, match="clicks=True"):
+        r.clicked()
+
+    assert "clicked" in rw.render_mols2grid(clicks=True)._accessors.names()
+    assert (
+        "clicked" in rw.render_mols2grid(callback=lambda *args: None)._accessors.names()
+    )
+    assert (
+        "clicked"
+        not in rw.render_mols2grid(callback="console.log('clicked')")._accessors.names()
+    )
+
+
 def test_clicked_accessor_reads_clicked_row(widget_session: Session) -> None:
     # Clicking a molecule's image (not its checkbox) posts the whole row to
     # the callback_kwargs trait; .clicked() parses it reactively

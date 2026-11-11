@@ -8,11 +8,9 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    ClassVar,
     Generic,
     Iterator,
     Optional,
-    Sequence,
     Tuple,
     TypeVar,
     cast,
@@ -80,7 +78,10 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     `self._read_accessor(name)`.
     """
 
-    _accessor_specs: ClassVar[Tuple[AccessorSpec, ...]] = ()
+    # Subclasses normally set this at class level; render_mols2grid also
+    # narrows it per instance (in __init__, before super().__init__()) to
+    # make its clicked() accessor conditional on the click channel existing
+    _accessor_specs: Tuple[AccessorSpec, ...] = ()
 
     def auto_output_ui(self) -> Tag:
         return output_widget(
@@ -101,28 +102,8 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         fillable: Optional[bool] = None,
         rate_policy: Optional[RatePolicy] = None,
         rate_delay: Optional[float] = None,
-        listen_to: Optional[Sequence[str]] = None,
     ):
         super().__init__(_fn)
-        if isinstance(listen_to, str):
-            raise TypeError(
-                f"listen_to takes a list of accessor names, e.g. "
-                f"listen_to=[{listen_to!r}], not a bare string."
-            )
-        specs = {s.name: s for s in type(self)._accessor_specs}
-        registrable = sorted(n for n, s in specs.items() if s.requires_registration)
-        for name in listen_to or ():
-            spec = specs.get(name)
-            if spec is None:
-                raise ValueError(
-                    f"{type(self).__name__} has no accessor named {name!r} to "
-                    f"listen to. listen_to accepts: {registrable}"
-                )
-            if spec.requires_registration is None:
-                raise ValueError(
-                    f"{name!r} doesn't need listen_to — "
-                    f"{type(self).__name__} always subscribes it."
-                )
         self.width = width
         self.height = height
         self.fill = fill
@@ -137,11 +118,13 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._value: ValueT | None = None
         self._widget: WidgetT | None = None
         self._contexts: set[Context] = set()
+        # Instance attribute, so a renderer can make its set of accessors
+        # conditional on its own kwargs (render_mols2grid drops clicked()
+        # unless the click channel is enabled)
         self._accessors = Accessors(
-            type(self)._accessor_specs,
+            self._accessor_specs,
             rate_policy=rate_policy,
             rate_delay=rate_delay,
-            listen_to=listen_to or (),
         )
         self._closes_accessors_on_destroy = False
 
@@ -302,8 +285,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         Read an accessor by name (``output.read("selected")``), or a bare
         trait of the rendered widget (``output.read("value")`` falls through
         to `reactive_read()`). Prefer this over `reactive_read()` wherever a
-        renderer output exists. Registration-required accessors raise here
-        when the decorator didn't opt in. When a name is both an accessor
+        renderer output exists. When a name is both an accessor
         and a widget trait, the accessor wins; read the trait with
         `reactive_read()` on ``output.widget`` instead.
 
