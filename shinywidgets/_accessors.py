@@ -69,10 +69,7 @@ class AccessorSpec:
         The default is True for ``kind="state"`` (attaching seeds the current
         value, so a change made before the first read -- e.g. a lasso drawn
         before a chat handler's first read -- is not lost) and False for
-        ``kind="event"``. An event-kind accessor stays lazy unless it opts
-        in, so an app whose first reader is gated (a chat handler, an LLM
-        tool) should warm it up with a ``@reactive.effect`` that reads the
-        accessor once, unconditionally, at startup.
+        ``kind="event"``.
     requires_registration
         ``None`` for accessors that are always subscribed. Otherwise the
         accessor only attaches when the renderer was decorated with the

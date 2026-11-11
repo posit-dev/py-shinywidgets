@@ -306,6 +306,11 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         when the decorator didn't opt in. When a name is both an accessor
         and a widget trait, the accessor wins; read the trait with
         `reactive_read()` on ``output.widget`` instead.
+
+        Accessor methods that post-process what they read (e.g.
+        ``visible_data()`` builds a frame, ``limits(ax)`` selects an axes)
+        post-process only in the method: ``read()`` returns the accessor's
+        underlying value, so prefer the method for those.
         """
         if rendering_renderer.get() is self:
             raise RuntimeError(
