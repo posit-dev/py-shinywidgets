@@ -189,6 +189,14 @@ def test_hover_cleared_by_unhover_and_debounced() -> None:
     w.message(event("plotly_unhover"))
     assert emitted == [None]
 
+def test_double_clicked_is_a_republishing_pulse() -> None:
+    assert sp.DOUBLE_CLICKED.priority == "event"
+    w, emitted, _ = attach(sp.DOUBLE_CLICKED)
+    assert w.sent == [{"shinywidgets": "bind", "events": ["plotly_doubleclick"]}]
+    w.message(event("plotly_doubleclick"))
+    w.message(event("plotly_doubleclick"))
+    assert emitted == [True, True]
+
 
 def test_specs_have_expected_names() -> None:
     names: List[str] = [s.name for s in sp.PLOTLY_ACCESSORS]
@@ -200,6 +208,7 @@ def test_specs_have_expected_names() -> None:
         "brushing",
         "relayout",
         "hover",
+        "double_clicked",
     ]
 
 
@@ -246,6 +255,13 @@ def test_render_plotly_hover_returns_points_frame() -> None:
     assert r.hover() is None
 
 
+def test_render_plotly_double_clicked_pulses() -> None:
+    r, w = rendered()
+    assert r.double_clicked() is None
+    w.message(event("plotly_doubleclick"))
+    assert r.double_clicked() is True
+
+
 def test_render_plotly_brushed_and_relayout() -> None:
     r, w = rendered()
     assert r.brushed() is None and r.relayout() is None
@@ -273,6 +289,7 @@ def test_all_accessors_are_retained_and_bind_at_render() -> None:
         {"shinywidgets": "bind", "events": ["plotly_selecting", "plotly_deselect"]},
         {"shinywidgets": "bind", "events": ["plotly_relayout"]},
         {"shinywidgets": "bind", "events": ["plotly_hover", "plotly_unhover"]},
+        {"shinywidgets": "bind", "events": ["plotly_doubleclick"]},
     ]
 
 

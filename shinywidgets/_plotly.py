@@ -133,6 +133,11 @@ def region_of(content: Dict[str, Any]) -> object:
     return None
 
 
+def pulse_of(content: Dict[str, Any]) -> object:
+    # plotly_doubleclick carries no data; the pulse's value is that it fired
+    return True
+
+
 def relayout_of(content: Dict[str, Any]) -> object:
     relayout = content.get("relayout")
     if not isinstance(relayout, dict):
@@ -183,5 +188,21 @@ HOVER = AccessorSpec(
     payload=points_frame,
     rate_policy="debounce",
 )
+DOUBLE_CLICKED = AccessorSpec(
+    name="double_clicked",
+    kind="state",
+    attach=bridge_attach("plotly_doubleclick", pulse_of, ()),
+    # Identical raws re-publish, so every double-click fires
+    priority="event",
+)
 
-PLOTLY_ACCESSORS = (CLICKED, SELECTED, SELECTING, BRUSHED, BRUSHING, RELAYOUT, HOVER)
+PLOTLY_ACCESSORS = (
+    CLICKED,
+    SELECTED,
+    SELECTING,
+    BRUSHED,
+    BRUSHING,
+    RELAYOUT,
+    HOVER,
+    DOUBLE_CLICKED,
+)

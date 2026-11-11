@@ -3813,6 +3813,23 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         """
         return cast(Optional["pd.DataFrame"], self._read_accessor("hover"))
 
+    def double_clicked(self) -> Optional[bool]:
+        """
+        A pulse that fires on every double-click: ``None`` until the first
+        one, then ``True``, re-firing readers on each subsequent one even
+        though the value stays ``True``.
+
+        This is how "the user reset the view" becomes observable on every
+        subplot type: a cartesian double-click reset also reports axis ranges
+        to :meth:`relayout`, but mapbox, 3D, and smith subplots don't.
+
+        Note that a double-click on the plot background also clears
+        :meth:`clicked` (and a deselect clears the selection accessors), so
+        ``clicked()`` becoming ``None`` conflates double-click and deselect
+        by design -- read this accessor to tell them apart. Not rate-limited.
+        """
+        return cast(Optional[bool], self._read_accessor("double_clicked"))
+
     def selected_rows(
         self, df: IntoDataFrameT, *, key: Optional[str] = None
     ) -> IntoDataFrameT:
