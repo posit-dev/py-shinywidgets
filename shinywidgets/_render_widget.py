@@ -151,6 +151,7 @@ from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
 from ._k3d import CAMERA as K3D_CAMERA
 from ._lonboard import LONBOARD_ACCESSORS
+from ._maplibre import MAPLIBRE_ACCESSORS
 from ._matplotlib import CLICKED, LIMITS, MATPLOTLIB_ACCESSORS, AxesLimits
 from ._mosaic_widget import MOSAIC_ACCESSORS
 from ._niivue import LOCATION
@@ -2673,11 +2674,15 @@ class render_maplibre(render_widget_base[MaplibreValueT, MapWidget]):
     read-only attributes: `.value`, the value it most recently returned, and
     `.widget`, the rendered `MapWidget` instance.
 
-    **Responding to user interaction**: read map state with
-    :func:`~shinywidgets.reactive_read` on `.widget`: `view_state` (center,
-    zoom, bounds, bearing, and pitch), `clicked` (the longitude and latitude
-    of the last click), or the MapboxDraw ``draw_*`` traits. Feature-level
-    click and hover events aren't synced.
+    **Responding to user interaction**: read ``map.view_state()`` (the
+    camera: center, zoom, bounds, bearing, and pitch), ``map.clicked()``
+    (the longitude and latitude of the last click), or
+    ``map.drawn_features()`` (the shapes drawn with a MapboxDraw control) in
+    a reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which re-runs whenever the user gestures, much
+    like ``input.my_slider()`` reads an input. Feature-level click and hover
+    events aren't synced. For other traits (e.g. the MapboxDraw
+    ``draw_features_selected`` trait), use ``map.read()``.
 
     **Mutating the widget**: to update the rendered map in place, call
     methods on `.widget` (e.g., `set_paint_property()`, `set_filter()`,
@@ -2700,6 +2705,21 @@ class render_maplibre(render_widget_base[MaplibreValueT, MapWidget]):
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+    rate_policy
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
+        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
+        this renderer declares a default.
+    rate_delay
+        The rate-limit window in seconds (default 0.25). ``0`` disables rate
+        limiting.
+
+    Each accessor can also be read by name -- ``out.read("view_state")`` --
+    which also accepts the widget's bare synced-trait names. Accessor reads
+    (including by name) ignore ``rate_policy``/``rate_delay``, which apply to
+    :func:`~shinywidgets.reactive_read` only; to rate-limit a view-state read
+    (e.g. bursts of programmatic ``fly_to()``s), use
+    ``reactive_read(map.widget, "view_state")`` instead.
 
     See also
     --------
@@ -2707,6 +2727,42 @@ class render_maplibre(render_widget_base[MaplibreValueT, MapWidget]):
     hold the output (Shiny Express displays it where the render function is
     defined).
     """
+
+    _accessor_specs = MAPLIBRE_ACCESSORS
+
+    def view_state(self) -> Dict[str, Any]:
+        """
+        The map's current view state: a dict with ``center`` (``{lng, lat}``),
+        ``zoom``, ``bounds`` (``{_sw, _ne}``, MapLibre GL JS's own field
+        naming), ``bearing``, and ``pitch``.
+
+        The browser reports when a pan or zoom *finishes* (on the map's
+        ``load``, ``zoomend``, and ``moveend`` events), not per animation
+        frame, so this accessor isn't rate-limited. Readers cancel
+        (``req(False)``) until the browser's first report. A re-render keeps
+        the old value until the new map's browser reports, then re-seeds
+        from the new map.
+        """
+        return cast(Dict[str, Any], self._read_accessor("view_state"))
+
+    def clicked(self) -> Optional[Dict[str, float]]:
+        """
+        The most recent map click as ``{lng, lat}``, or ``None`` until the
+        first click. Kept across re-renders until the user clicks the new
+        map. MapLibre reports where the click landed, not which feature was
+        hit. Not rate-limited.
+        """
+        return cast(Optional[Dict[str, float]], self._read_accessor("clicked"))
+
+    def drawn_features(self) -> List[Dict[str, Any]]:
+        """
+        The shapes drawn with the map's MapboxDraw control, as a list of
+        GeoJSON Feature dicts -- ``[]`` until something is drawn, updated on
+        every draw create/update/delete. Drawn shapes live on the map, so a
+        re-render starts from the new map's own (empty) set. Not
+        rate-limited.
+        """
+        return cast(List[Dict[str, Any]], self._read_accessor("drawn_features"))
 
 
 class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
