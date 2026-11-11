@@ -1104,6 +1104,13 @@ def shared_lifetime() -> Iterator[None]:
     Widgets a shared widget references (e.g., a container's children) must be
     constructed inside `shared_lifetime()` too, or other sessions can't show them.
 
+    Share widgets whose appearance is fully described by their state (their
+    synced traits). A session that opens a shared widget receives its current
+    state, not the messages it was sent before that session joined, so a widget
+    that is drawn or changed by messages (e.g., an ipycanvas canvas's drawing
+    commands, or changes made to a Bokeh figure after its widget was created)
+    looks incomplete to sessions that join later.
+
     Don't rely on models a shared widget's JavaScript creates in the browser when
     a trait is left at its default (e.g., pythreejs's light `target` and `shadow`):
     they belong to that one browser, and other sessions don't have them. A session
