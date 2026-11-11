@@ -81,9 +81,12 @@ panel = ["panel", "jupyter_bokeh>=4.1"]
 # pyarrow is required for pandas DataFrame conversion (perspective-python
 # doesn't depend on it)
 # >=5.7 excluded: the "Better WASM init" change (perspective-dev/perspective#3269)
-# breaks second-viewer init and re-rendering (viewers never display data), seen in
-# tests/playwright/render_perspective. Verified still broken on 5.8.0 and 5.9.0;
-# fix proposed upstream in perspective-dev/perspective#3287.
+# keeps the WASM init registry on globalThis, so when anywidget evaluates the
+# widget's ESM a second time in the same page (a second viewer, or a re-render),
+# the module-scope init() throws "viewer wasm is already initialized" -- seen as
+# flaky console-error failures in tests/playwright/render_perspective. Verified
+# broken on 5.7.0-5.9.0. The fix (perspective-dev/perspective#3287) is merged
+# upstream; relax this pin once a release containing it (>5.9.0) ships.
 perspective = ["perspective-python>=3.0,<5.7", "pyarrow"]
 plotly = ["plotly>=5.12.0", "narwhals", "pandas"]
 plotnine = ["plotnine", "ipympl"]
