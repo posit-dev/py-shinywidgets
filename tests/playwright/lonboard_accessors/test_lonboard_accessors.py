@@ -39,13 +39,49 @@ def test_lonboard_accessors_follow_gestures(page: Page, local_app) -> None:
     expect(page.locator("#view_state")).not_to_have_text(before, timeout=5000)
 
     # Select BBox: the bbox button, then click the two corners (lonboard's
-    # bbox selection is click-click, not a drag)
+    # bbox selection is click-click, not a drag). Wait for the button to
+    # relabel to "Cancel drawing": that proves lonboard committed the
+    # drawing-mode state change, so the first corner click can't land before
+    # the map's click handler is in drawing mode.
     page.locator('#map button[aria-label="Select BBox"]').click()
+    expect(page.locator('#map button[aria-label="Cancel drawing"]')).to_be_visible()
     page.mouse.click(cx - 100, cy - 60)
     page.mouse.click(cx + 100, cy + 60)
     expect(page.locator("#bbox")).not_to_have_text("None", timeout=5000)
     # (minx, miny, maxx, maxy), i.e. (west, south, east, north)
     minx, miny, maxx, maxy = ast.literal_eval(page.locator("#bbox").inner_text())
     assert minx < maxx and miny < maxy, (minx, miny, maxx, maxy)
+
+    assert_no_unexpected_errors(errors, failed_requests, allowed_errors=(LUMA_REINIT,))
+
+
+def test_toolbar_tooltip_does_not_collapse_layout(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    canvas = page.locator("#map .lonboard canvas").first
+    expect(canvas).to_be_visible(timeout=30000)
+
+    map_box = page.locator("#map").bounding_box()
+    assert map_box is not None
+    cx = map_box["x"] + map_box["width"] / 2
+    cy = map_box["y"] + map_box["height"] / 2
+
+    # lonboard's toolbar tooltips only arm once the user has interacted with
+    # the map, so click it first.
+    page.mouse.click(cx, cy)
+    expect(page.locator("#picked")).to_have_text(re.compile(r"^[0-4]$"), timeout=5000)
+
+    # Hovering a toolbar button opens a react-aria tooltip whose portal is
+    # appended to <body>. lonboard's stylesheet styles [data-overlay-container]
+    # (its map root) with height: 100%, which must not apply to the body-level
+    # portal: there it becomes an in-flow flex item as tall as the page,
+    # collapsing the map's fill height to 0 (and making the button
+    # unclickable).
+    page.locator('#map button[aria-label="Select BBox"]').hover()
+    expect(page.locator("[role=tooltip]")).to_be_visible(timeout=10000)
+
+    box = page.locator("#map").bounding_box()
+    assert box is not None
+    assert box["height"] > map_box["height"] - 40, (map_box, box)
 
     assert_no_unexpected_errors(errors, failed_requests, allowed_errors=(LUMA_REINIT,))

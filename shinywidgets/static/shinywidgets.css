@@ -350,6 +350,21 @@
 }
 
 /*
+* lonboard's stylesheet styles its map root with the unscoped rule
+* `[data-overlay-container] { height: 100%; width: 100%; margin-top: -5px; }`,
+* but react-aria (used by lonboard's toolbar) marks the portal containers it
+* appends directly to <body> (e.g., for tooltip overlays) with the same
+* attribute. As a body-level child of a fillable page, height: 100% makes the
+* portal an in-flow flex item as tall as the page, collapsing the map's fill
+* height to 0 as soon as a toolbar tooltip opens. A body-level portal holds
+* only absolutely-positioned overlays, so keep it from generating a box (and
+* from disturbing the page's flex layout) altogether.
+*/
+body > [data-overlay-container] {
+  display: contents;
+}
+
+/*
 * A stretching bokeh root (e.g., a figure with sizing_mode="stretch_both", or a
 * HoloViews plot with responsive=True) sizes itself to its container's height,
 * so in an output that isn't filling (e.g., output_widget(height="300px")) it
