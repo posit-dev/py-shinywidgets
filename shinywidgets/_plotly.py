@@ -142,7 +142,7 @@ def relayout_of(content: Dict[str, Any]) -> object:
 
 CLICKED = AccessorSpec(
     name="clicked",
-    kind="event",
+    kind="state",
     attach=bridge_attach("plotly_click", points_of, (DOUBLECLICK, DESELECT)),
     payload=points_frame,
 )
@@ -154,7 +154,7 @@ SELECTED = AccessorSpec(
 )
 SELECTING = AccessorSpec(
     name="selecting",
-    kind="event",
+    kind="state",
     attach=bridge_attach("plotly_selecting", points_of, (DESELECT,)),
     payload=points_frame,
     rate_policy="debounce",
@@ -166,13 +166,13 @@ BRUSHED = AccessorSpec(
 )
 BRUSHING = AccessorSpec(
     name="brushing",
-    kind="event",
+    kind="state",
     attach=bridge_attach("plotly_selecting", region_of, (DESELECT,)),
     rate_policy="debounce",
 )
 RELAYOUT = AccessorSpec(
     name="relayout",
-    kind="event",
+    kind="state",
     attach=bridge_attach("plotly_relayout", relayout_of, ()),
 )
 

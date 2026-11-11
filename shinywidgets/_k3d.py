@@ -4,7 +4,7 @@ Accessors for `render_k3d`, backed by the plot's synced `camera` trait.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Dict, Sized, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Sized, cast
 
 from ._accessors import AccessorSpec, Emit
 
@@ -28,9 +28,15 @@ def camera_not_ready(raw: object) -> bool:
     return len(cast(Sized, raw)) == 0
 
 
+def camera_list(raw: object) -> List[float]:
+    # The trait is ListOrArray; normalize so reads always get a list
+    return list(cast(Iterable[float], raw))
+
+
 CAMERA = AccessorSpec(
     name="camera",
     kind="state",
     attach=attach_camera,
+    payload=camera_list,
     not_ready=camera_not_ready,
 )

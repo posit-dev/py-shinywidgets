@@ -71,9 +71,10 @@ def test_selection_emits_parsed_event(widget_session: Session) -> None:
     assert evt.items[0].entity_path == "points"
 
 
-def test_selection_spec_is_eager() -> None:
-    # The viewer sends an empty selection at load; only eager attach catches it
-    assert sr.SELECTION.eager
+def test_selection_spec_is_state() -> None:
+    # The viewer sends an empty selection at load; only a render-time attach
+    # catches it
+    assert sr.SELECTION.kind == "state"
 
 
 def test_selection_detach_is_a_safe_noop(widget_session: Session) -> None:
@@ -89,7 +90,9 @@ def test_selection_detach_is_a_safe_noop(widget_session: Session) -> None:
     assert len(widget._raw_event_callbacks) == before + 1
 
 
-def test_renderer_selection_round_trips_and_resets(widget_session: Session) -> None:
+def test_renderer_selection_round_trips_and_is_retained(
+    widget_session: Session,
+) -> None:
     widget = inner_viewer(widget_session)
     r = rw.render_rerun()
     r._widget = widget  # stands in for _render()
@@ -98,10 +101,10 @@ def test_renderer_selection_round_trips_and_resets(widget_session: Session) -> N
     widget._raw_event_callbacks[-1](SELECTION_JSON)
     evt = r.selection()
     assert isinstance(evt, SelectionChangeEvent)
-    # Event semantics: a re-render resets the accessor to None
+    # Retained semantics: a re-render keeps the last selection
     r._accessors.on_render(widget)
-    assert r.selection() is None
-    # ...and the eager re-attach still reports selections
+    assert isinstance(r.selection(), SelectionChangeEvent)
+    # ...and the re-attach still reports selections
     widget._raw_event_callbacks[-1](SELECTION_JSON)
     assert isinstance(r.selection(), SelectionChangeEvent)
 
@@ -127,3 +130,9 @@ def test_selection_ignores_events_named_like_the_type_tag(
         )
     )
     assert emitted == []
+
+
+def test_selection_is_retained() -> None:
+    from shinywidgets._rerun import SELECTION
+
+    assert SELECTION.kind == "state"

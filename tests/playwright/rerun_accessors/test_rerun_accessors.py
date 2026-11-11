@@ -7,7 +7,7 @@ from tests.playwright.conftest import assert_no_unexpected_errors, collect_error
 
 def test_selection_reports_empty_load_time_selection(page: Page, local_app) -> None:
     # The viewer sends an empty (items: []) selection when it loads; only the
-    # accessor's eager attach catches it, so the output settles on "[]" rather
+    # accessor's render-time attach catches it, so the output settles on "[]" rather
     # than staying at the "(waiting)" placeholder
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
@@ -23,7 +23,7 @@ def test_selection_reports_empty_load_time_selection(page: Page, local_app) -> N
     reason=(
         "the viewer's streams tree and viewport are egui-drawn canvas pixels, "
         "not DOM, and hit-testing the 'points' entity by coordinates proved "
-        "flaky; the eager-attach regression is covered by the load-time test"
+        "flaky; the attach-at-render regression is covered by the load-time test"
     )
 )
 def test_selection_follows_stream_tree_clicks(page: Page, local_app) -> None:

@@ -1672,6 +1672,11 @@ def reactive_read(widget: Widget, names: Union[str, Sequence[str]]) -> Any:
     invalidated whenever the trait's value changes (e.g., in response to user
     interaction with the widget in the browser).
 
+    For outputs of ``@render_*`` decorators, prefer the output's ``.read(name)``
+    method -- it reads accessors and falls through to this function for bare
+    traits. ``reactive_read()`` remains the tool for widgets outside renderer
+    contexts (e.g. a widget you constructed yourself).
+
     Parameters
     ----------
     widget
