@@ -41,6 +41,67 @@ describe("eventPayload plotly_legendclick", () => {
     });
   });
 
+  it("ships only the clicked trace when the legend's groupclick is toggleitem", () => {
+    const payload = eventPayload("plotly_legendclick", {
+      curveNumber: 2,
+      data: legendData.data,
+      fullData: legendData.data.map((t, i) => ({ ...t, index: i })),
+      fullLayout: { legend: { groupclick: "toggleitem" } },
+    });
+    expect(payload).toEqual({
+      legend: { traces: [{ trace_index: 2, name: "c", legendgroup: "g1" }] },
+    });
+  });
+
+  it("expands the group when the clicked trace's legend has groupclick togglegroup", () => {
+    const grouped = eventPayload("plotly_legendclick", {
+      curveNumber: 2,
+      data: legendData.data,
+      fullData: legendData.data.map((t, i) => ({ ...t, index: i })),
+      fullLayout: { legend: { groupclick: "togglegroup" } },
+    });
+    expect(grouped).toEqual({
+      legend: {
+        traces: [
+          { trace_index: 2, name: "c", legendgroup: "g1" },
+          { trace_index: 0, name: "a", legendgroup: "g1" },
+        ],
+      },
+    });
+    // The applicable legend is the clicked trace's own (legend2 here): its
+    // toggleitem wins even though the default legend toggles groups
+    const secondLegend = eventPayload("plotly_legendclick", {
+      curveNumber: 2,
+      data: legendData.data,
+      fullData: legendData.data.map((t, i) => ({
+        ...t,
+        index: i,
+        legend: i === 2 ? "legend2" : "legend",
+      })),
+      fullLayout: {
+        legend: { groupclick: "togglegroup" },
+        legend2: { groupclick: "toggleitem" },
+      },
+    });
+    expect(secondLegend).toEqual({
+      legend: { traces: [{ trace_index: 2, name: "c", legendgroup: "g1" }] },
+    });
+  });
+
+  it("leaves out group mates hidden with visible false (plotly doesn't toggle them)", () => {
+    const payload = eventPayload("plotly_legendclick", {
+      curveNumber: 2,
+      data: [
+        { name: "a", legendgroup: "g1", visible: false },
+        { name: "b", legendgroup: "g2" },
+        { name: "c", legendgroup: "g1" },
+      ],
+    });
+    expect(payload).toEqual({
+      legend: { traces: [{ trace_index: 2, name: "c", legendgroup: "g1" }] },
+    });
+  });
+
   it("resolves auto-generated names from fullData when indices align", () => {
     const payload = eventPayload("plotly_legendclick", {
       curveNumber: 0,
@@ -96,5 +157,7 @@ describe("visibilitySeed", () => {
     expect(eventPayload("plotly_restyle", [["visible", "legendonly"], [0]], plotEl)).toEqual(expected);
     // Plotly.update (e.g. plotly.py's batch_update) emits plotly_update, not plotly_restyle
     expect(eventPayload("plotly_update", {}, plotEl)).toEqual(expected);
+    // Plotly.addTraces/deleteTraces/moveTraces redraw, emitting plotly_redraw
+    expect(eventPayload("plotly_redraw", undefined, plotEl)).toEqual(expected);
   });
 });

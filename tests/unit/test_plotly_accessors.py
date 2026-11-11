@@ -226,19 +226,25 @@ def test_legend_clicked_skips_messages_without_legend_data() -> None:
     assert emitted == []
 
 
-def test_visible_traces_binds_restyle_and_update() -> None:
+def test_visible_traces_binds_restyle_update_and_redraw() -> None:
     w, emitted, _ = attach(sp.VISIBLE_TRACES)
     assert w.sent == [
-        {"shinywidgets": "bind", "events": ["plotly_restyle", "plotly_update"]}
+        {
+            "shinywidgets": "bind",
+            "events": ["plotly_restyle", "plotly_update", "plotly_redraw"],
+        }
     ]
     w.message(event("plotly_restyle", traces=VISIBLE_TRACES))
     assert emitted == [VISIBLE_TRACES]
     # Plotly.update (plotly.py's batch_update) emits plotly_update instead
     w.message(event("plotly_update", traces=VISIBLE_TRACES))
     assert emitted == [VISIBLE_TRACES, VISIBLE_TRACES]
+    # add/delete/moveTraces redraw, emitting plotly_redraw
+    w.message(event("plotly_redraw", traces=VISIBLE_TRACES))
+    assert emitted == [VISIBLE_TRACES] * 3
     # A restyle message without trace visibility (shouldn't happen) is skipped
     w.message(event("plotly_restyle"))
-    assert emitted == [VISIBLE_TRACES, VISIBLE_TRACES]
+    assert emitted == [VISIBLE_TRACES] * 3
 
 
 def test_specs_have_expected_names() -> None:
@@ -355,7 +361,10 @@ def test_all_accessors_are_retained_and_bind_at_render() -> None:
         {"shinywidgets": "bind", "events": ["plotly_hover", "plotly_unhover"]},
         {"shinywidgets": "bind", "events": ["plotly_doubleclick"]},
         {"shinywidgets": "bind", "events": ["plotly_legendclick"]},
-        {"shinywidgets": "bind", "events": ["plotly_restyle", "plotly_update"]},
+        {
+            "shinywidgets": "bind",
+            "events": ["plotly_restyle", "plotly_update", "plotly_redraw"],
+        },
     ]
 
 

@@ -94,12 +94,12 @@ export function bindPlotlyEvents(plotEl: HTMLElement, model: WidgetModel): void 
   const bound = boundEvents.get(plotEl) ?? new Set<string>();
   boundEvents.set(plotEl, bound);
   let boundSelected = false;
-  let boundRestyle = false;
+  let boundVisibility = false;
   for (const event of requested) {
     if (bound.has(event)) continue;
     bound.add(event);
     if (event === "plotly_selected") boundSelected = true;
-    if (event === "plotly_restyle" || event === "plotly_update") boundRestyle = true;
+    if (VISIBILITY_EVENTS.has(event)) boundVisibility = true;
     plotEl.on(event, (data?: any) => {
       model.send({ shinywidgets: "event", event, ...eventPayload(event, data, plotEl) }, {});
     });
@@ -107,7 +107,7 @@ export function bindPlotlyEvents(plotEl: HTMLElement, model: WidgetModel): void 
   // Like the selection seed below: trace visibility is state on the graph
   // div, so report it at bind (as a synthetic restyle, which is how later
   // visibility changes arrive).
-  if (boundRestyle) {
+  if (boundVisibility) {
     model.send(
       { shinywidgets: "event", event: "plotly_restyle", traces: visibilitySeed(plotEl) },
       {},
@@ -244,12 +244,13 @@ export function eventPayload(
   plotEl?: HTMLElement,
 ): Record<string, unknown> {
   if (event === "plotly_relayout") return { relayout: data };
-  // The restyle args themselves aren't useful; what matters is the
+  // The event args themselves aren't useful; what matters is the
   // visibility they left behind, which the graph div holds post-restyle
   // (Plots.restyle emits plotly_restyle after applying the update).
   // plotly_update covers Plotly.update (e.g. plotly.py's batch_update),
-  // which emits it instead of plotly_restyle
-  if (event === "plotly_restyle" || event === "plotly_update") {
+  // which emits it instead of plotly_restyle; plotly_redraw covers
+  // Plotly.addTraces/deleteTraces/moveTraces, which redraw without either
+  if (VISIBILITY_EVENTS.has(event)) {
     return plotEl ? { traces: visibilitySeed(plotEl) } : {};
   }
   if (event === "plotly_legendclick") return legendPayload(data);
@@ -260,6 +261,10 @@ export function eventPayload(
   if (data.lassoPoints) out.lassoPoints = data.lassoPoints;
   return out;
 }
+
+// Events that leave trace visibility (or the trace list itself) changed:
+// the visibility snapshot is recomputed from the graph div when one fires
+const VISIBILITY_EVENTS = new Set(["plotly_restyle", "plotly_update", "plotly_redraw"]);
 
 // A minimal answer to R plotly's legendEventData, which ships whole trace
 // objects (data arrays included): the clicked trace first, then the other
@@ -272,9 +277,13 @@ function legendPayload(data: any): Record<string, unknown> {
   // An empty-string legendgroup is plotly's default, not a group
   const group = clicked.legendgroup || null;
   const ordered: number[] = [data.curveNumber];
-  if (group) {
+  if (group && groupClickTogglesGroup(data)) {
     traces.forEach((t: any, i: number) => {
-      if (i !== data.curveNumber && t?.legendgroup === group) ordered.push(i);
+      // plotly.js toggles the group mates too, except ones already at
+      // visible: false (a click can't make them more hidden)
+      if (i !== data.curveNumber && t?.legendgroup === group && t?.visible !== false) {
+        ordered.push(i);
+      }
     });
   }
   return {
@@ -286,6 +295,21 @@ function legendPayload(data: any): Record<string, unknown> {
       })),
     },
   };
+}
+
+// plotly.js's handleItemClick expands a legend click to the whole
+// legendgroup only when the clicked trace's own legend has
+// groupclick="togglegroup" (the default); "toggleitem" toggles just the
+// clicked trace. Full traces carry their legend's id ("legend", "legend2",
+// ...) in .legend, and the legend objects live on fullLayout under it.
+function groupClickTogglesGroup(data: any): boolean {
+  const fullData = data.fullData;
+  const fullTrace = Array.isArray(fullData) ? fullData[data.curveNumber] : undefined;
+  const legendId = typeof fullTrace?.legend === "string" ? fullTrace.legend : "legend";
+  const groupclick = data.fullLayout?.[legendId]?.groupclick;
+  // supplyDefaults fills groupclick, so a missing one means the payload
+  // came without fullLayout (keep the default behavior)
+  return groupclick === undefined || groupclick === "togglegroup";
 }
 
 // One entry per trace with its current visibility, seeded at bind and

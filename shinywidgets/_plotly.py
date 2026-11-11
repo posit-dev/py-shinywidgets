@@ -257,10 +257,13 @@ VISIBLE_TRACES = AccessorSpec(
     # Legend visibility toggles apply through Plots.restyle, which emits
     # plotly_restyle after the new visibility is in place; batched updates
     # (plotly.py's batch_update -> Plotly.update) emit plotly_update instead.
-    # The bridge recomputes and sends the visibility of every trace then (and
-    # seeds it at bind), so this is the traces' current truth, not a stream
-    # of edits.
-    attach=bridge_attach(("plotly_restyle", "plotly_update"), traces_of, ()),
+    # Trace-structure changes (add_trace/delete_traces/reorder -> Plotly's
+    # add/delete/moveTraces) redraw, emitting plotly_redraw. The bridge
+    # recomputes and sends the visibility of every trace then (and seeds it
+    # at bind), so this is the traces' current truth, not a stream of edits.
+    attach=bridge_attach(
+        ("plotly_restyle", "plotly_update", "plotly_redraw"), traces_of, ()
+    ),
     payload=visibility_frame,
 )
 

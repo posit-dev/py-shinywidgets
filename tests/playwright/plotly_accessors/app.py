@@ -27,6 +27,24 @@ def _():
 
 ui.input_action_button("hide_b", "hide b")
 ui.input_action_button("show_b", "show b")
+ui.input_action_button("add_trace", "add trace")
+ui.input_action_button("drop_trace", "drop trace")
+
+
+# add_trace and trace removal go through Plotly.addTraces/deleteTraces,
+# which redraw without a restyle or update: visible_traces() must follow
+# them too
+@reactive.effect
+@reactive.event(input.add_trace)
+def _():
+    plot.widget.add_trace(go.Scatter(x=[3], y=[5], name="added"))
+
+
+@reactive.effect
+@reactive.event(input.drop_trace)
+def _():
+    # Assigning data diffs against the widget's traces and removes the rest
+    plot.widget.data = [t for t in plot.widget.data if t.name != "added"]
 
 
 # A batched update goes through Plotly.update (plotly_update), which

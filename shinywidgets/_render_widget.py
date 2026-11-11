@@ -3845,8 +3845,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         trace: ``trace_index``, ``name``, and ``legendgroup``. The clicked
         trace is the first row; when it belongs to a ``legendgroup``, the
         group's other traces follow (plotly.js toggles the whole group by
-        default), unlike R plotly's ``plotly_legendclick``, which ships the
-        traces' full data.
+        default, but only the clicked trace when the legend's
+        ``groupclick="toggleitem"``), unlike R plotly's
+        ``plotly_legendclick``, which ships the traces' full data.
 
         Returns ``None`` until the user clicks a legend item, and re-fires
         on every click, even of the same item (a second click toggles
@@ -3865,8 +3866,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         Seeded from the displayed figure at render, so it reflects the
         initial figure before any interaction, and updated after every
         restyle that changes visibility (legend clicks and double-clicks, or
-        ``.widget.update_traces(visible=...)``, batched or not). Visibility
-        here is each
+        ``.widget.update_traces(visible=...)``, batched or not) and after
+        trace-structure changes (``.widget.add_trace(...)``,
+        ``delete_traces``, reordering). Visibility here is each
         trace's ``visible`` attribute; traces expanded by a groupby
         transform report their own, not each group's. Not rate-limited.
         Requires pandas.

@@ -139,6 +139,13 @@ def test_plotly_hover_doubleclick_and_legend_gestures(page: Page, local_app) -> 
     page.click("#show_b")
     expect(page.locator("#visible_traces")).to_have_text("True,True", timeout=5000)
 
+    # Trace-structure changes from Python redraw (Plotly.addTraces/
+    # deleteTraces emit plotly_redraw, not restyle/update) are followed too
+    page.click("#add_trace")
+    expect(page.locator("#visible_traces")).to_have_text("True,True,True", timeout=5000)
+    page.click("#drop_trace")
+    expect(page.locator("#visible_traces")).to_have_text("True,True", timeout=5000)
+
     # A legend double-click isolates the trace
     page.locator("#plot .legend .traces", has_text="b").dblclick()
     expect(page.locator("#visible_traces")).to_have_text("False,True", timeout=5000)
