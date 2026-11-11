@@ -68,7 +68,7 @@ def test_selections_follows_clicks_and_sort(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
-def test_cell_clicked_reports_both_coordinate_spaces(page: Page, local_app) -> None:
+def test_clicked_cell_reports_both_coordinate_spaces(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
     expect(page.locator("#sels")).to_have_text("[]", timeout=30000)
@@ -81,7 +81,7 @@ def test_cell_clicked_reports_both_coordinate_spaces(page: Page, local_app) -> N
         ",".join(str(i) for i in range(19, -1, -1)), timeout=30000
     )
     click_cell(page, box, COL_A_X, ROW_Y[0])
-    # The sort gesture's own header click fires cell_clicked too, so wait for
+    # The sort gesture's own header click fires clicked_cell too, so wait for
     # the body click specifically (the text round-trips through Python)
     page.wait_for_function(
         """() => document.querySelector('#click').textContent.includes("'region': 'body'")"""
@@ -95,7 +95,7 @@ def test_cell_clicked_reports_both_coordinate_spaces(page: Page, local_app) -> N
     assert_no_unexpected_errors(errors, failed_requests)
 
 
-def test_cell_edited_reports_the_edit(page: Page, local_app) -> None:
+def test_edited_cell_reports_the_edit(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
     expect(page.locator("#sels")).to_have_text("[]", timeout=30000)

@@ -15,7 +15,6 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from ._accessors import AccessorSpec, Attach, Emit
-from ._comm import when_comm_open
 
 # Sent when an accessor attaches; the JS bridge binds once per model.
 BIND_MESSAGE = {"shinywidgets": "bind-reactable"}
@@ -57,11 +56,7 @@ def state_attach(key: str, none_as: object = _USE_NATIVE) -> Attach:
 
         widget.on_msg(on_msg)
         # Idempotent on the JS side, so several accessors may each send it.
-        # The send must wait for the widget's comm: a widget built during a
-        # render only gets its real comm after the render's flush, and until
-        # then sends are silently dropped (e.g. on every re-render, where the
-        # helper re-attaches during _render()).
-        when_comm_open(widget, lambda: widget.send(dict(BIND_MESSAGE)))
+        widget.send(dict(BIND_MESSAGE))
         return lambda: widget.on_msg(on_msg, remove=True)
 
     return attach
