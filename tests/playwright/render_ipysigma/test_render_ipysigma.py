@@ -192,8 +192,15 @@ def test_ipysigma_view_class_patched_once(page: Page, local_app) -> None:
         + ")(); window.__sigmaPatched = { render: proto.render, remove: proto.remove }; }"
     )
 
+    # The render count is a separate output and wait_for_graph() only counts
+    # canvases, so both could pass while the original graph is still mounted
+    # and the replacement's module resolution (the thing that re-wraps the
+    # class without the guard) hasn't happened yet. Wait for the old widget
+    # to disconnect and the replacement to mount before comparing.
+    old = page.locator("#fills .ipysigma-widget").element_handle()
     page.click("#rerender")
     expect(page.locator("#render_count")).to_have_text("1")
+    page.wait_for_function("(el) => !el.isConnected", arg=old)
     wait_for_graph(page, "#fills")
 
     assert page.evaluate(
