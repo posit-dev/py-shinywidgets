@@ -382,9 +382,8 @@ class render_drawdata(render_widget_base[DrawdataWidgetT, DrawdataWidgetT]):
     **Accessing the rendered widget**: the render function gains two
     read-only attributes: `.value` and `.widget`, both the rendered widget.
 
-    **Responding to user interaction**: read the drawn points reactively with
-    :func:`~shinywidgets.reactive_read` (e.g., ``reactive_read(
-    canvas.widget, "data")``).
+    **Responding to user interaction**: read the drawn points reactively
+    with ``canvas.read("data")``.
 
     **Mutating the widget**: use `.widget` to update the widget in place. For
     `BarWidget`, re-render instead: it ignores Python-side trait updates
@@ -429,7 +428,7 @@ class render_drawdata(render_widget_base[DrawdataWidgetT, DrawdataWidgetT]):
     ```python
     from drawdata import ScatterWidget
     from shiny import App, render, ui
-    from shinywidgets import output_widget, reactive_read, render_drawdata
+    from shinywidgets import output_widget, render_drawdata
 
     app_ui = ui.page_fluid(
         output_widget("canvas"),
@@ -444,7 +443,7 @@ class render_drawdata(render_widget_base[DrawdataWidgetT, DrawdataWidgetT]):
 
         @render.text
         def n_points():
-            return len(reactive_read(canvas.widget, "data"))
+            return len(canvas.read("data"))
 
 
     app = App(app_ui, server)
@@ -504,7 +503,8 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     **Accessing the rendered widget**: the render function gains two
     read-only attributes: `.value`, the value it most recently returned, and
     `.widget`, the rendered `JupyterChart` instance. Widget state can also be
-    read reactively with :func:`~shinywidgets.reactive_read`.
+    read reactively with ``.read("some_trait")`` (a shortcut for
+    :func:`~shinywidgets.reactive_read` on `.widget`).
 
     **Responding to user interaction**: as in the example, read a selection
     from a reactive function (a ``@render.*`` function, ``@reactive.calc``,
@@ -682,8 +682,7 @@ class render_embedding_atlas(
     browser is synced to the widget's (upstream-internal) `_predicate`
     trait: read ``atlas.selection()`` for the filtered rows, or
     ``atlas.predicate()`` for the filter as a SQL expression, reactively
-    (``reactive_read(my_atlas.widget, "_predicate")`` remains available for
-    the raw trait).
+    (``my_atlas.read("_predicate")`` remains available for the raw trait).
 
     **Mutating the widget**: the explorer doesn't respond to trait changes
     made from Python; to change it, re-render.
@@ -917,13 +916,13 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
     changes on the widget are synced to the browser. ipyaladin queues method calls (e.g.,
     ``.widget.add_table()``) until the viewer has loaded in the browser, but
     property assignments (e.g., ``.widget.fov = 5``) are not queued, so gate
-    effects that set them on ``reactive_read(sky.widget, "_is_loaded")``. Don't
+    effects that set them on ``sky.read("_is_loaded")``. Don't
     gate on the ``_ready`` trait instead: ipyaladin does not reliably set it.
 
     **Interacting with catalogs**: ``clicked_object()`` and
     ``selected_objects()`` (above) cover the common cases; the trait-level
     equivalents (``clicked_object`` and ``_selected_objects``) also work with
-    :func:`~shinywidgets.reactive_read`. Prefer any of these over
+    ``sky.read()``. Prefer any of these over
     ``.widget.set_listener()``: in ipyaladin 0.8.x listener callbacks are
     shared across all `Aladin` instances, so they are not session-safe in a
     multi-user Shiny app. When setting ``.widget.target`` in place, use a
@@ -1136,7 +1135,8 @@ class render_ipyleaflet(_IpyleafletAccessors, render_widget_base[ValueT, Leaflet
     **Accessing the rendered widget**: the render function gains two
     read-only attributes: `.value`, the value it most recently returned, and
     `.widget`, the rendered `Map` instance. Map state can also be read
-    reactively with :func:`~shinywidgets.reactive_read`.
+    reactively with ``.read("some_trait")`` (a shortcut for
+    :func:`~shinywidgets.reactive_read` on `.widget`).
 
     **Responding to user interaction**: read the map's accessors in a reactive
     function (a ``@render.*`` function, ``@reactive.calc``, or
@@ -1151,7 +1151,8 @@ class render_ipyleaflet(_IpyleafletAccessors, render_widget_base[ValueT, Leaflet
     Coordinates are ``[lat, lng]``, as ipyleaflet reports them (lonboard is
     ``(lng, lat)``). The accessors can't be read inside this output's own
     render function, which builds a new map each time it runs. For anything
-    beyond them, use :func:`~shinywidgets.reactive_read` on ``map.widget``.
+    beyond them, use ``map.read()`` (a shortcut for
+    :func:`~shinywidgets.reactive_read` on ``map.widget``).
 
     **Mutating the widget**: use `.widget` to update the rendered map in place
     (e.g., change its `zoom` or `center`, or add layers); trait changes on the
@@ -1232,9 +1233,8 @@ class render_ipysigma(render_widget_base[ValueT, Sigma]):
     `.widget`, the rendered `Sigma` instance.
 
     **Responding to user interaction**: read the user's interactions
-    reactively with :func:`~shinywidgets.reactive_read` on `.widget` (e.g.,
-    ``reactive_read(sigma.widget, "selected_node")``; also
-    ``"selected_edge"``, ``"camera_state"`` and ``"layout"``).
+    reactively with ``sigma.read()`` (e.g., ``sigma.read("selected_node")``;
+    also ``"selected_edge"``, ``"camera_state"`` and ``"layout"``).
 
     **Mutating the widget**: ipysigma only reads its options when the graph
     is first drawn, so setting traits on `.widget` afterwards does not update
@@ -1310,8 +1310,8 @@ class render_itables(render_widget_base[ValueT, ITable]):
     **Accessing the rendered widget**: the render function gains two
     read-only attributes: `.value`, the value it most recently returned, and
     `.widget`, the rendered `ITable` instance. Widget state (e.g.,
-    `selected_rows`) can also be read reactively with
-    :func:`~shinywidgets.reactive_read`.
+    `selected_rows`) can also be read reactively with ``.read("some_trait")``
+    (a shortcut for :func:`~shinywidgets.reactive_read` on `.widget`).
 
     **Responding to user interaction**: read the selected rows reactively
     with ``.selected_rows()``.
@@ -1415,7 +1415,8 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
     **Accessing the rendered widget**: the render function gains two
     read-only attributes: `.value`, the value it most recently returned, and
     `.widget`, the rendered `JupyterScatter` instance. Widget state can also
-    be read reactively with :func:`~shinywidgets.reactive_read`.
+    be read reactively with ``plot.read("some_trait")`` (a shortcut for
+    :func:`~shinywidgets.reactive_read` on `.widget`).
 
     **Responding to user interaction**: read ``plot.selection()`` in a reactive function (a
     ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``), which
@@ -1425,8 +1426,8 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
     (e.g. when the render function reads an input) gives the user a new plot,
     whose selection starts out empty. It can't be read inside this output's
     own render function, which builds a new plot each time it runs. Other
-    traits worth reading with :func:`~shinywidgets.reactive_read` are
-    ``"hovering"`` (the hovered point's row position), ``"zoom_level"``, and
+    traits worth reading with ``plot.read()`` are ``"hovering"`` (the
+    hovered point's row position), ``"zoom_level"``, and
     ``"lasso_selection_polygon"`` (the lasso path in data coordinates).
 
     **Large selections**: selecting more than about 3 million points sends the
@@ -1857,7 +1858,7 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
 
     The figure's built-in toolbar (``display_toolbar=True``) and a standalone
     ``bqplot.Toolbar`` work, and the active ``PanZoom`` is readable with
-    ``reactive_read(fig.widget, "interaction")``.
+    ``fig.read("interaction")``.
 
     Parameters
     ----------
@@ -1968,7 +1969,7 @@ class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
 
     **Responding to user interaction**: user edits in the app (panning,
     zooming, adding or restyling layers) sync back to the ``project`` trait,
-    so ``reactive_read(map.widget, "project")`` gives you the live project --
+    so ``map.read("project")`` gives you the live project --
     but note it invalidates on every pan and zoom, and carries the whole
     project (including inlined layer data), so prefer the event callbacks for
     high-frequency interactions: register ``map.widget.on_click()``,
@@ -2076,11 +2077,11 @@ class render_keplergl(render_widget_base[ValueT, KeplerGl]):
     **Accessing the rendered widget**: the render function gains two
     read-only attributes: `.value`, the value it most recently returned, and
     `.widget`, the rendered `KeplerGl` instance. Map configuration can also
-    be read reactively with :func:`~shinywidgets.reactive_read`.
+    be read reactively with ``.read("some_trait")`` (a shortcut for
+    :func:`~shinywidgets.reactive_read` on `.widget`).
 
     **Responding to user interaction**: there are no accessors on this
-    renderer; read the map's configuration traits with
-    :func:`~shinywidgets.reactive_read` on `.widget`.
+    renderer; read the map's configuration traits with ``.read()``.
 
     **Mutating the widget**: use `.widget` to update the rendered map in
     place; trait changes on the widget are synced to the browser. The output
@@ -2306,17 +2307,18 @@ class render_leafmap(_IpyleafletAccessors, render_widget_base[ValueT, LeafletMap
     **Accessing the rendered widget**: the render function gains two
     read-only attributes: `.value`, the value it most recently returned, and
     `.widget`, the rendered widget. Map state can also be read reactively
-    with :func:`~shinywidgets.reactive_read`. The Plotly backend is already a
-    `FigureWidget`, so it is rendered directly; `.value` retains the original
+    with ``.read("some_trait")`` (a shortcut for
+    :func:`~shinywidgets.reactive_read` on `.widget`). The Plotly backend is
+    already a `FigureWidget`, so it is rendered directly; `.value` retains
+    the original
     map and its leafmap methods.
 
     **Responding to user interaction**: on the ipyleaflet backend (the
     default), the map has the same accessors as :class:`render_ipyleaflet` --
     ``bounds()``, ``zoom()``, ``center()``, ``clicked()``, and
     ``drawn_features()``. On the maplibre, plotly, and kepler backends they
-    raise a `TypeError`; read those backends' state with
-    :func:`~shinywidgets.reactive_read` instead (e.g., ``view_state`` for the
-    maplibre one).
+    raise a `TypeError`; read those backends' state with ``.read()`` instead
+    (e.g., ``.read("view_state")`` for the maplibre one).
 
     **Mutating the widget**: use `.widget` to update the rendered map in
     place (e.g., change its `zoom` or `center`, or add layers); trait
@@ -2402,7 +2404,8 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
     **Accessing the rendered widget**: the render function gains two
     read-only attributes: `.value`, the value it most recently returned, and
     `.widget`, the rendered `Map` instance. Map state can also be read
-    reactively with :func:`~shinywidgets.reactive_read`.
+    reactively with ``.read("some_trait")`` (a shortcut for
+    :func:`~shinywidgets.reactive_read` on `.widget`).
 
     **Responding to user interaction**: read the map's accessors in a reactive function
     (a ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``),
@@ -2417,7 +2420,8 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
 
     They can't be read inside this output's own render function, which builds
     a new map each time it runs. For anything beyond them, use
-    :func:`~shinywidgets.reactive_read` on ``map.widget``.
+    ``map.read()`` (a shortcut for :func:`~shinywidgets.reactive_read` on
+    ``map.widget``).
 
     **Mutating the widget**: use `.widget` to update the rendered map in
     place; trait changes on the widget are synced to the browser.
@@ -3035,7 +3039,8 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     **Accessing the rendered widget**: the render function gains two
     read-only attributes: `.value` and `.widget`, which are both the rendered
     `MosaicWidget` instance. Widget state can also be read reactively with
-    :func:`~shinywidgets.reactive_read`.
+    ``.read("some_trait")`` (a shortcut for
+    :func:`~shinywidgets.reactive_read` on `.widget`).
 
     **Responding to user interaction**: read the dashboard's accessors in a reactive
     function (a ``@render.*`` function, ``@reactive.calc``, or
@@ -3047,7 +3052,8 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
 
     They can't be read inside this output's own render function, which builds
     a new dashboard each time it runs. For anything beyond them, use
-    :func:`~shinywidgets.reactive_read` on ``dashboard.widget``.
+    ``dashboard.read()`` (a shortcut for :func:`~shinywidgets.reactive_read`
+    on ``dashboard.widget``).
 
     **Mutating the widget**: use `.widget` to update the rendered dashboard
     in place; trait changes on the widget are synced to the browser. Each
@@ -3943,7 +3949,8 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
     **Accessing the rendered widget**: the render function gains two
     read-only attributes: `.value`, the value it most recently returned, and
     `.widget`, the rendered `PerspectiveWidget` instance. Widget state can
-    also be read reactively with :func:`~shinywidgets.reactive_read`.
+    also be read reactively with ``.read("some_trait")`` (a shortcut for
+    :func:`~shinywidgets.reactive_read` on `.widget`).
 
     **Responding to user interaction**: read the viewer's accessors in a
     reactive function (a ``@render.*`` function, ``@reactive.calc``, or
@@ -3956,8 +3963,8 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
 
     They can't be read inside this output's own render function, which builds
     a new viewer each time it runs. For anything beyond them (e.g.,
-    ``theme`` or ``title``), use :func:`~shinywidgets.reactive_read` on
-    ``grid.widget`` -- but unlike the accessors (which are seeded at render),
+    ``theme`` or ``title``), use ``grid.read()`` -- but unlike the
+    accessors (which are seeded at render),
     a cosmetic trait read this way can be ``None`` until the first browser
     sync, so guard with ``req()``.
 
@@ -4088,8 +4095,8 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
     **Accessing the rendered widget**: the render function gains two
     read-only attributes: `.value`, the value it most recently returned, and
     `.widget`, the rendered `DataGrid` instance. Widget state (e.g.,
-    `selections`) can also be read reactively with
-    :func:`~shinywidgets.reactive_read`.
+    `selections`) can also be read reactively with ``.read("some_trait")``
+    (a shortcut for :func:`~shinywidgets.reactive_read` on `.widget`).
 
     **Responding to user interaction**: read what the user does in the grid
     with ``.selections()``, ``.clicked_cell()``, and ``.edited_cell()``.
@@ -4650,9 +4657,12 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         one, then ``True``, re-firing readers on each subsequent one even
         though the value stays ``True``.
 
-        This is how "the user reset the view" becomes observable on every
-        subplot type: a cartesian double-click reset also reports axis ranges
-        to :meth:`relayout`, but mapbox, 3D, and smith subplots don't.
+        This is how "the user reset the view" becomes observable on
+        non-cartesian subplots: a cartesian double-click reset also reports
+        axis ranges to :meth:`relayout`, but mapbox, ternary, and smith
+        subplots don't. The exception is 3D: plotly.js's gl3d subplot never
+        emits ``plotly_doubleclick``, so a double-click on a ``scatter_3d``
+        scene doesn't fire this pulse.
 
         Note that a double-click on the plot background also clears
         :meth:`clicked` (and a deselect clears the selection accessors), so
@@ -4786,7 +4796,8 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
     **Accessing the rendered widget**: the render function gains two
     read-only attributes: `.value`, the value it most recently returned, and
     `.widget`, the rendered `Renderer` instance. Widget state can also be
-    read reactively with :func:`~shinywidgets.reactive_read`.
+    read reactively with ``.read("some_trait")`` (a shortcut for
+    :func:`~shinywidgets.reactive_read` on `.widget`).
 
     **Responding to user interaction**: ``scene.camera()`` reads the live
     camera after every orbit, much like ``input.my_slider()`` reads an input.
@@ -5395,7 +5406,8 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
     **Accessing the rendered widget**: the render function gains two
     read-only attributes: `.value`, the value it most recently returned, and
     `.widget`, the rendered `quak.Widget` instance. Widget state can also be
-    read reactively with :func:`~shinywidgets.reactive_read`.
+    read reactively with ``.read("some_trait")`` (a shortcut for
+    :func:`~shinywidgets.reactive_read` on `.widget`).
 
     **Responding to user interaction**: read the table's accessors in a
     reactive function (a ``@render.*`` function, ``@reactive.calc``, or
@@ -5408,7 +5420,8 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
 
     They can't be read inside this output's own render function, which builds
     a new table each time it runs. For anything beyond them, use
-    :func:`~shinywidgets.reactive_read` on ``table.widget``.
+    ``table.read()`` (a shortcut for :func:`~shinywidgets.reactive_read` on
+    ``table.widget``).
 
     **Mutating the widget**: use `.widget` to update the rendered table in
     place; trait changes on the widget are synced to the browser.
@@ -5601,7 +5614,7 @@ class render_vizarr(render_widget_base[ValueT, VizarrViewer]):
     **Responding to user interaction**: panning and zooming syncs the camera
     to the ``view_state`` trait (a dict with ``target`` and ``zoom``,
     debounced ~200ms), so it can drive reactive calculations (e.g.,
-    ``reactive_read(vz.widget, "view_state")``). Note that the layer
+    ``vz.read("view_state")``). Note that the layer
     controls in the viewer's side panel (channel colors, contrast limits,
     visibility) do *not* sync back to Python.
 

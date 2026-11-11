@@ -27,8 +27,8 @@ class NotIpyleaflet:
             f"`.{accessor}()` requires an ipyleaflet map, but the rendered "
             f"widget is a {type(widget).__name__} (leafmap's "
             f"{type(widget).__module__} backend). Read its state with "
-            "`reactive_read()` instead (see the renderer for that backend, "
-            "e.g. `render_maplibre`)."
+            "`.read()` on the output instead (see the renderer for that "
+            "backend, e.g. `render_maplibre`)."
         )
 
 
