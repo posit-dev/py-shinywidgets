@@ -1425,7 +1425,8 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
     ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``), which
     re-runs whenever the user selects points (with the lasso, or by clicking one),
     much like ``input.my_slider()`` reads an input. The selection is an array
-    of row *positions* (use ``df.iloc[...]``), not index labels. A re-render
+    of row *positions*, not index labels; ``plot.selected_rows()`` returns the
+    selected rows of the plot's data frame instead. A re-render
     (e.g. when the render function reads an input) gives the user a new plot,
     whose selection starts out empty. It can't be read inside this output's
     own render function, which builds a new plot each time it runs. Other
