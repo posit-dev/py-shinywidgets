@@ -1976,10 +1976,6 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
-    listen_to
-        Accessor names to opt into: pass ``["clicked"]`` to enable
-        :meth:`clicked` (which raises without it). Subscribing flips the map
-        into click-handling mode, so it's opt-in rather than always on.
 
     Each accessor can also be read by name -- ``out.read("selected_index")`` --
     which also accepts the widget's bare synced-trait names.
@@ -2049,10 +2045,7 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         The ``(lng, lat)`` of the most recent map click -- note the order;
         ipyleaflet reports ``[lat, lng]`` -- or ``None`` until the first
         click. Clicking the same spot twice doesn't re-fire. Kept across
-        re-renders until the user clicks the new map. Requires
-        ``listen_to=["clicked"]`` on the ``@render_lonboard`` decorator --
-        that's what enables click reporting in the browser -- and raises
-        without it.
+        re-renders until the user clicks the new map.
         """
         return cast(Optional[Tuple[float, float]], self._read_accessor("clicked"))
 

@@ -172,7 +172,7 @@ def test_clicked_registers_and_unregisters_the_browser_channel(
 
 def test_renderer_reads_and_retention(widget_session: Session) -> None:
     m = lon_map(widget_session)
-    r = render_lonboard(listen_to=["clicked"])
+    r = render_lonboard()
     r._widget = m  # stands in for _render()
     r._accessors.on_render(m)
     assert r.clicked() is None and r.selected_index() is None
@@ -194,8 +194,8 @@ def test_renderer_reads_and_retention(widget_session: Session) -> None:
     assert isinstance(r.view_state(), MapViewState)
 
 
-def test_clicked_is_retained_but_registered() -> None:
+def test_clicked_is_retained_and_needs_no_registration() -> None:
     from shinywidgets._lonboard import CLICKED
 
     assert CLICKED.kind == "state"
-    assert CLICKED.requires_registration is not None
+    assert CLICKED.requires_registration is None

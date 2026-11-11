@@ -97,13 +97,6 @@ def test_listen_to_valid_name_accepted() -> None:
     assert "clicked" in r._accessors._listening
 
 
-def test_lonboard_clicked_requires_registration() -> None:
-    from shinywidgets._lonboard import CLICKED
-
-    assert CLICKED.requires_registration is not None
-    assert "listen_to=['clicked']" in CLICKED.requires_registration
-
-
 def test_mols2grid_clicks_kwarg_registers() -> None:
     pytest.importorskip("mols2grid")
     from shinywidgets._render_widget import render_mols2grid

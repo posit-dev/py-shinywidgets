@@ -40,8 +40,10 @@ def attach_selected_bounds(widget: LonboardMap, emit: Emit) -> Callable[[], None
 
 def attach_clicked(widget: LonboardMap, emit: Emit) -> Callable[[], None]:
     # Registering flips _has_click_handlers, which is what makes the browser
-    # send click messages at all. This is why clicked() requires registration
-    # (listen_to=["clicked"]): users who never opt in must see no change.
+    # send click messages at all. That's the only effect: the map's picking,
+    # selection, and cursor are driven by an onClick deck.gl always gets, so
+    # subscribing changes nothing the user can see, and the per-click payload
+    # is just a (lng, lat) pair -- no reason to gate it behind an opt-in.
     widget.on_click(emit)  # the callback receives the (lng, lat) tuple
     return lambda: widget.on_click(emit, remove=True)
 
@@ -108,15 +110,6 @@ SELECTED_INDEX = AccessorSpec(
 SELECTED_BOUNDS = AccessorSpec(
     name="selected_bounds", kind="state", attach=attach_selected_bounds
 )
-CLICKED = AccessorSpec(
-    name="clicked",
-    kind="state",
-    attach=attach_clicked,
-    requires_registration=(
-        "click events are opt-in because subscribing flips the map into "
-        "click-handling mode (lonboard's `_has_click_handlers`). Add "
-        "listen_to=['clicked'] to the @render_lonboard decorator."
-    ),
-)
+CLICKED = AccessorSpec(name="clicked", kind="state", attach=attach_clicked)
 
 LONBOARD_ACCESSORS = (VIEW_STATE, SELECTED_INDEX, SELECTED_BOUNDS, CLICKED)
