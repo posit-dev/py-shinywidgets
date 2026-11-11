@@ -39,11 +39,11 @@ def attach_clicked(element: str) -> Attach:
     return attach
 
 
-NODE_CLICKED = AccessorSpec(
-    name="node_clicked", kind="event", attach=attach_clicked("node"), eager=True
+CLICKED_NODE = AccessorSpec(
+    name="clicked_node", kind="event", attach=attach_clicked("node"), eager=True
 )
-EDGE_CLICKED = AccessorSpec(
-    name="edge_clicked", kind="event", attach=attach_clicked("edge"), eager=True
+CLICKED_EDGE = AccessorSpec(
+    name="clicked_edge", kind="event", attach=attach_clicked("edge"), eager=True
 )
 
 
@@ -118,4 +118,4 @@ SELECTED_EDGES = AccessorSpec(
     rate_policy="debounce",
 )
 
-CYTOSCAPE_ACCESSORS = (NODE_CLICKED, EDGE_CLICKED, SELECTED_NODES, SELECTED_EDGES)
+CYTOSCAPE_ACCESSORS = (CLICKED_NODE, CLICKED_EDGE, SELECTED_NODES, SELECTED_EDGES)

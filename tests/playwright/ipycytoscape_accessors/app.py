@@ -38,12 +38,12 @@ def server(input, output, session):
 
     @render.text
     def node():
-        d = graph.node_clicked()
+        d = graph.clicked_node()
         return "None" if d is None else d["data"]["id"]
 
     @render.text
     def edge():
-        d = graph.edge_clicked()
+        d = graph.clicked_edge()
         return "None" if d is None else f"{d['data']['source']}->{d['data']['target']}"
 
     @render.text
