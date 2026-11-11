@@ -533,6 +533,138 @@ def test_unrender_does_not_rerun_kept_accessor_readers(monkeypatch) -> None:
     asyncio.run(main())
 
 
+def test_reader_that_ran_before_the_first_render_is_woken_by_it(monkeypatch) -> None:
+    # A reader that runs before the output's first render cancels. The render
+    # must wake it even though the accessor publishes nothing at attach (a
+    # click accessor has no seed), or the reader stays blank until an
+    # interaction
+    att = RecordingAttach()
+    r = renderer_with_clicked(att, kind="state")
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
+
+    reads: list = []
+
+    # Created (and so first run) before the effect that renders
+    @shiny_reactive.Effect
+    def _watch() -> None:
+        reads.append(r.clicked())
+
+    @shiny_reactive.Effect
+    async def _drive() -> None:
+        await r.render()
+
+    async def main() -> None:
+        await shiny_reactive.flush()
+        assert reads == [None]
+
+    asyncio.run(main())
+
+
+class PickyWidget:
+    """A widget an accessor may or may not support."""
+
+    comm = object()
+
+    def __init__(self, supported: bool) -> None:
+        self.supported = supported
+
+
+def picky_renderer_and_reads(  # type: ignore[no-untyped-def]
+    monkeypatch, widgets: list[PickyWidget]
+):
+    """
+    A renderer whose `clicked()` attach raises for an unsupported widget, the
+    value that picks which of `widgets` it renders, what a reactive reader of
+    `clicked()` saw on each run, and the attach.
+    """
+    att = RecordingAttach()
+
+    def attach(widget, emit):  # type: ignore[no-untyped-def]
+        if not widget.supported:
+            raise TypeError("unsupported layout")
+        return att(widget, emit)
+
+    class R(rwb.render_widget_base):
+        _accessor_specs = (
+            acc.AccessorSpec(name="clicked", kind="state", attach=attach),
+        )
+
+        def clicked(self):  # type: ignore[no-untyped-def]
+            return self._read_accessor("clicked")
+
+    r = R()
+    which = shiny_reactive.Value(0)
+
+    @r
+    async def _():  # noqa: ANN202
+        return which()
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: widgets[value])
+
+    reads: list = []
+
+    @shiny_reactive.Effect
+    async def _drive() -> None:
+        await r.render()
+
+    @shiny_reactive.Effect
+    def _watch() -> None:
+        try:
+            reads.append(r.clicked())
+        except TypeError as e:
+            reads.append(str(e))
+
+    return which, reads, att
+
+
+def test_rerender_whose_attach_fails_reruns_readers_into_the_error(
+    monkeypatch,
+) -> None:
+    # on_render() swallows an attach failure so the output still renders, and
+    # leaves raising to the next read: existing readers must be woken into
+    # that read, or they keep showing the previous widget's value
+    which, reads, att = picky_renderer_and_reads(
+        monkeypatch, [PickyWidget(True), PickyWidget(False)]
+    )
+
+    async def main() -> None:
+        await shiny_reactive.flush()
+        att.emit({"x": 1})
+        await shiny_reactive.flush()
+        assert reads == [None, {"x": 1}]
+
+        which.set(1)  # re-render with a widget the accessor doesn't support
+        await shiny_reactive.flush()
+        assert reads == [None, {"x": 1}, "unsupported layout"]
+
+    asyncio.run(main())
+
+
+def test_reader_that_raised_on_a_failed_attach_recovers_on_rerender(
+    monkeypatch,
+) -> None:
+    # A reader holding an attach error must re-run once a re-render attaches
+    # fine, even though that attach publishes nothing
+    which, reads, att = picky_renderer_and_reads(
+        monkeypatch, [PickyWidget(False), PickyWidget(True)]
+    )
+
+    async def main() -> None:
+        await shiny_reactive.flush()
+        assert reads == ["unsupported layout"]
+
+        which.set(1)  # re-render with a widget the accessor supports
+        await shiny_reactive.flush()
+        assert reads == ["unsupported layout", None]
+
+    asyncio.run(main())
+
+
 def test_render_returning_none_cancels_accessor_reads(monkeypatch) -> None:
     att = RecordingAttach()
     r = renderer_with_clicked(att)

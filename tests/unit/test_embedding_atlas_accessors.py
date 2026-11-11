@@ -6,6 +6,8 @@ import shinywidgets._embedding_atlas as se
 from shiny import Session
 from shiny.session import session_context
 
+from tests.unit.conftest import reads_across_rerender
+
 # embedding-atlas requires Python 3.11+, so it's absent from 3.10 environments
 pytest.importorskip("embedding_atlas")
 
@@ -93,3 +95,23 @@ def test_selection_matches_predicate_through_the_debounce_window(
 def test_rows_for_predicate_fails_loudly_without_widget_internals() -> None:
     with pytest.raises(TypeError, match="_connection"):
         se.rows_for_predicate(object(), None)
+
+
+def test_selection_follows_a_rerender_with_new_data(widget_session: Session) -> None:
+    # A new widget starts unfiltered like the previous one, so the accessor
+    # publishes nothing: readers have to follow the widget itself
+    from embedding_atlas.widget import EmbeddingAtlasWidget
+    from shinywidgets import render_embedding_atlas
+
+    with session_context(widget_session):
+        smaller = EmbeddingAtlasWidget(
+            pd.DataFrame({"x": [0.0, 1.0], "y": [0.0, 1.0], "text": ["a", "b"]}),
+            x="x",
+            y="y",
+            text="text",
+        )
+    r = render_embedding_atlas(rate_delay=0)
+    seen = reads_across_rerender(
+        r, atlas_widget(widget_session), smaller, lambda: len(r.selection())
+    )
+    assert seen == [4, 2]

@@ -14,6 +14,8 @@ from shiny import Session
 from shiny.reactive._core import Context
 from shiny.session import session_context
 
+from tests.unit.conftest import reads_across_rerender
+
 
 def plot() -> Tuple[Any, ColumnDataSource]:
     src = ColumnDataSource({"x": [1, 2, 3], "y": [4, 5, 6]})
@@ -199,3 +201,27 @@ def test_zoomed_skips_the_seed_when_ranges_are_unknown(
     emitted_q: List[object] = []
     sb.attach_zoomed(wq, emitted_q.append)
     assert emitted_q == []
+
+
+def test_selected_rows_follows_a_rerender_with_an_equal_selection(
+    widget_session: Session,
+) -> None:
+    # The new plot's source seeds the same selection as the previous one, so
+    # the accessor publishes nothing: readers have to follow the widget itself
+    from shinywidgets import render_bokeh
+
+    def first_point_selected(xs: List[int]) -> BokehModel:
+        src = ColumnDataSource({"x": xs, "y": xs})
+        src.selected.indices = [0]
+        p = figure()
+        p.scatter("x", "y", source=src)
+        return widget(widget_session, p)
+
+    r = render_bokeh(rate_delay=0)
+    seen = reads_across_rerender(
+        r,
+        first_point_selected([1, 2]),
+        first_point_selected([7, 8]),
+        lambda: r.selected_rows()["x"].tolist(),
+    )
+    assert seen == [[1], [7]]

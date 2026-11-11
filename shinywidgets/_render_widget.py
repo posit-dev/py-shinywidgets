@@ -625,7 +625,7 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         time-zone-naive columns in the browser's time zone, as Vega-Lite does.
         """
         selection = self.selected(name)
-        widget = cast(JupyterChart, self._widget)
+        widget = cast(JupyterChart, self.widget)
         frame = chart_frame(widget) if df is None else df
         return filter_selection(selection, frame, widget.local_tz)
 
@@ -796,7 +796,7 @@ class render_embedding_atlas(
         several outputs need it. Debounced (250 ms) by default.
         """
         predicate = cast(Optional[str], self._read_accessor("predicate", raw=True))
-        return rows_for_predicate(cast("EmbeddingAtlasWidget", self._widget), predicate)
+        return rows_for_predicate(cast("EmbeddingAtlasWidget", self.widget), predicate)
 
     def _as_widget(self, value: EmbeddingAtlasWidget) -> EmbeddingAtlasWidget:
         widget = super()._as_widget(value)
@@ -2252,7 +2252,7 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
         declares a default rate limit.
         """
         self._read_accessor("camera")
-        camera = cast(IpyvolumeFigure, self._widget).camera
+        camera = cast(IpyvolumeFigure, self.widget).camera
         # The trait allows None, but a rendered figure always has its
         # (possibly default-constructed) camera
         assert camera is not None
@@ -3192,7 +3192,7 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         value can't be substituted.)
         """
         self.params()  # take the dependency
-        return cast(MosaicWidget, self._widget).data(table, filter_by=filter_by)
+        return cast(MosaicWidget, self.widget).data(table, filter_by=filter_by)
 
     def _as_widget(self, value: MosaicWidget) -> MosaicWidget:
         widget = super()._as_widget(value)
@@ -3637,7 +3637,7 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         """
         indices = self.selected()
         self._read_accessor("source_data")
-        return selected_frame(cast("BokehModel", self._widget), indices)
+        return selected_frame(cast("BokehModel", self.widget), indices)
 
     def tapped(self) -> Optional[Tap]:
         """
@@ -4216,7 +4216,7 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         until the browser re-syncs the row map. Not rate-limited.
         """
         self._read_accessor("visible_data", raw=True)
-        widget = cast("DataGrid", self._widget)
+        widget = cast("DataGrid", self.widget)
         if not widget._visible_rows and widget._transforms:
             # An empty row map with transforms applied is a filter that
             # matched nothing; get_visible_data() would return the whole
@@ -4864,7 +4864,7 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
         (the browser syncs once per orbit).
         """
         self._read_accessor("camera")
-        return cast(PythreejsRenderer, self._widget).camera
+        return cast(PythreejsRenderer, self.widget).camera
 
 
 class render_pydeck(render_widget_base[ValueT, DeckGLWidget]):
@@ -5526,7 +5526,7 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
         # same query path with the published sql (`_conn` is
         # upstream-internal).
         sql = self.sql()  # take the dependency (and cancel until the query is ready)
-        return cast(QuakWidget, self._widget)._conn.query(sql)
+        return cast(QuakWidget, self.widget)._conn.query(sql)
 
     # DataFrames are a generic type that several renderers accept, so rather than
     # registering them in AS_WIDGET_MAP, coerce them here

@@ -241,8 +241,10 @@ class Accessors:
                     self._attach(slot)
                 except Exception:
                     # e.g. a layout this accessor doesn't support: render it
-                    # anyway, and let the next read retry the attach and raise
-                    pass
+                    # anyway, and let the next read retry the attach and raise.
+                    # Re-publish so existing readers make that read, rather
+                    # than keep the previous widget's value.
+                    self._publish(slot)
 
     def read(self, name: str, *, raw: bool = False) -> object:
         slot = self._slots.get(name)

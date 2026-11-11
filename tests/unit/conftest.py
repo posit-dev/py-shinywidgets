@@ -79,3 +79,33 @@ def shared_state() -> Iterator[None]:
                 w.close()
         sw.SHARED_WIDGETS.clear()
         sw.SHARED_WIDGETS.update(before)
+
+
+def reads_across_rerender(
+    r: Any, first: object, second: object, read: Callable[[], Any]
+) -> list[Any]:
+    """
+    What a reactive reader of `read()` sees on each of its runs when the output
+    `r` renders `first` and then re-renders with `second`.
+    """
+    seen: list[Any] = []
+
+    def render(widget: object) -> None:  # stands in for _render()
+        r._widget = widget
+        r._invalidate_contexts()
+        r._accessors.on_render(widget)
+
+    render(first)
+
+    @reactive.effect(session=None)
+    def reader() -> None:
+        seen.append(read())
+
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(reactive.flush())
+        render(second)
+        loop.run_until_complete(reactive.flush())
+    finally:
+        reader.destroy()
+    return seen

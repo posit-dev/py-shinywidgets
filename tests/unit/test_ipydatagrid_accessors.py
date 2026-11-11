@@ -6,6 +6,7 @@ from shiny import Session
 from shiny.session import session_context
 from shinywidgets._accessors import Accessors
 
+from tests.unit.conftest import reads_across_rerender
 from tests.unit.test_accessors import FakeSchedule
 
 
@@ -240,3 +241,20 @@ def test_click_accessors_are_retained() -> None:
 
     assert CLICKED_CELL.kind == "state"
     assert EDITED_CELL.kind == "state"
+
+
+def test_visible_data_follows_a_rerender_with_new_data(
+    widget_session: Session,
+) -> None:
+    # A new grid starts with the same (empty) row map as the previous one, so
+    # the accessor publishes nothing: readers have to follow the widget itself
+    from ipydatagrid import DataGrid
+    from shinywidgets import render_ipydatagrid
+
+    with session_context(widget_session):
+        bigger = DataGrid(pd.DataFrame({"a": [1, 2, 3, 4, 5]}))
+    r = render_ipydatagrid()
+    seen = reads_across_rerender(
+        r, grid(widget_session), bigger, lambda: len(r.visible_data())
+    )
+    assert seen == [3, 5]
