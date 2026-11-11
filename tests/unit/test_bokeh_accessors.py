@@ -147,8 +147,9 @@ def test_selected_frame_drops_indices_past_the_end(widget_session: Session) -> N
 def test_tapped_and_zoomed_are_retained() -> None:
     assert sb.TAPPED.kind == "state"
     assert sb.ZOOMED.kind == "state"
-    # The carve-out: source_data must keep event mechanics (and its
-    # re-render reset) forever -- design doc S5c.
+    # The carve-out: source_data is an internal trigger whose reader
+    # (selected_rows()) recomputes from the live document, so it keeps
+    # event mechanics -- a stale value must not carry across re-renders.
     assert sb.SOURCE_DATA.kind == "event"
 
 

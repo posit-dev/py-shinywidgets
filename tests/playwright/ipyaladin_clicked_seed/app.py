@@ -6,8 +6,8 @@ from shiny import App, reactive, render, ui
 from shinywidgets import output_widget, reactive_read, render_ipyaladin
 
 # clicked_object() is read only behind an action button, so nothing reads the
-# accessor before the test clicks a catalog source. That exercises the state
-# accessor's eager attach: ipyaladin's frontend retains the last clicked
+# accessor before the test clicks a catalog source. That exercises the
+# render-time attach: ipyaladin's frontend retains the last clicked
 # source in the synced `clicked_object` trait, so a click made before the
 # first read must be reflected in that read (see test_ipyaladin_clicked_seed).
 

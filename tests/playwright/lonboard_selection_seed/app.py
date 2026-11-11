@@ -9,9 +9,9 @@ from shiny import App, reactive, render, ui
 from shinywidgets import output_widget, render_lonboard
 
 # The accessor read the test asserts on is gated behind an action button, and
-# NOTHING reads it at startup (an ungated read would attach the accessor
-# early, defeating the scenario). A pick made before the button click
-# exercises the eager state attach (see the test).
+# NOTHING reads it at startup, so the pick below lands before the accessor's
+# first read. The accessor attaches at render, so the pick must be reflected
+# in that late first read (see the test).
 
 # Five points in a tight cluster around (20, 40), so a center click picks one.
 coords = (20 + np.linspace(-0.02, 0.02, 5), 40 + np.linspace(-0.02, 0.02, 5))

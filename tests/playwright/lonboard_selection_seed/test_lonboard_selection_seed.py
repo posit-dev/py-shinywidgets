@@ -55,9 +55,9 @@ def click_pick(page: Page, cx: float, cy: float) -> None:
 def test_pick_before_first_read_is_reported(page: Page, local_app) -> None:
     """A pick made before the accessor's (gated) first read is reflected in
     that read. Nothing in the app reads selected_index() before the button
-    click, so the first read is genuinely late: pre-change (kind="event",
-    lazy attach on first read) the pick below fired into a nonexistent
-    listener and this read returned None.
+    click, so the first read is genuinely late: before accessors attached
+    at render, the pick below fired into a nonexistent listener and this
+    read returned None.
 
     selected_index() is a kind="state" accessor: it attaches at render, so
     its observer on each layer's selected_index trait is in place before

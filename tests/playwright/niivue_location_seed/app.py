@@ -5,11 +5,11 @@ from shiny import App, reactive, render, ui
 from shinywidgets import output_widget, render_niivue
 
 # The accessor reads the tests assert on are gated behind an action button,
-# and NOTHING reads the accessor at startup (an ungated read would attach it
-# early, defeating the scenario). A crosshair drag made before the button
-# click exercises the eager state attach: the drag's stream updates must be
-# reflected in the gated first read, and the frontend's 30 ms scene poll must
-# sync the drag to the Python-side trait the seed reads from (see the tests).
+# and NOTHING reads the accessor at startup, so the drag below lands before
+# the accessor's first read. The accessor attaches at render: the drag's
+# stream updates must be reflected in the gated first read, and the
+# frontend's 30 ms scene poll must sync the drag to the Python-side trait the
+# seed reads from (see the tests).
 
 app_ui = ui.page_fluid(
     ui.input_action_button("read_location", "Read location"),

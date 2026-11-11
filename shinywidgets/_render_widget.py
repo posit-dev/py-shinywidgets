@@ -4752,7 +4752,8 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       panels and drill-downs. The payload can be wide (it includes the
       cell's image markup), so pick the keys you display rather than
       stringifying the whole dict -- and ``clicked()`` raises without
-      ``clicks=True``. ``clicked()`` is `None` until the first click and
+      ``clicks=True`` or a Python ``callback``. ``clicked()`` is `None`
+      until the first click and
       keeps its value across re-renders (the last click still happened,
       though its row data refers to the previous render's grid).
     * **Filtering (Python -> browser):** ``grid.grid.filter(mask)`` (a boolean

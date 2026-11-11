@@ -21,18 +21,17 @@ def goto_map(page: Page, local_app) -> None:
 def test_state_accessor_captures_gesture_before_first_read(
     page: Page, local_app
 ) -> None:
-    """Scenario-contract guard for state-kind accessors: a gesture made
-    before the accessor's (gated) first read is reflected in that read.
+    """Scenario-contract guard: a gesture made before the accessor's
+    (gated) first read is reflected in that read.
 
-    NOTE: this passes both pre- and post-#412 (verified by flipping
-    AccessorSpec.eager's default back to False). ipyleaflet pushes its
-    synced traits (zoom, bounds, ...) to Python unconditionally, and the
-    pre-#412 lazy attach-on-first-read seeded the current -- already
-    post-gesture -- value, so the read self-healed. Post-#412 the guarantee
-    comes from the eager attach at render time instead of trait-sync luck:
-    if a frontend ever gates its state sync on a Python-side listener, this
-    test catches it. The eager/lazy attach timing itself is covered by unit
-    tests (tests/unit/test_accessors.py).
+    NOTE: on its own this can't distinguish attach-at-render from
+    trait-sync luck: ipyleaflet pushes its synced traits (zoom, bounds,
+    ...) to Python unconditionally, so even an attach deferred to first
+    read would seed the current -- already post-gesture -- value and
+    self-heal. The guarantee comes from attaching at render: if a frontend
+    ever gates its state sync on a Python-side listener, this test catches
+    it. The attach-at-render timing itself is covered by unit tests
+    (tests/unit/test_accessors.py).
     """
     errors, failed_requests = collect_errors(page)
     goto_map(page, local_app)
