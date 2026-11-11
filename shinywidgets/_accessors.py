@@ -85,6 +85,11 @@ class AccessorSpec:
             )
 
 
+# (accessor name) -> spec, for accessors named at read time (e.g.,
+# render_panel's `param(name)`); returns None when the name isn't supported
+DynamicSpecs = Callable[[str], Optional[AccessorSpec]]
+
+
 def register_rate_policy(
     widget: object, policy: Optional[RatePolicy], delay: Optional[float]
 ) -> None:
@@ -171,12 +176,19 @@ class Accessors:
     """
     The runtime behind one renderer's accessors: one `reactive.Value` per
     accessor, attached to each newly rendered widget.
+
+    `dynamic_specs` builds a spec the first time an undeclared accessor name
+    is read (for accessors whose names aren't known ahead of time, like
+    `render_panel`'s `param(name)`); the resulting slot then behaves exactly
+    like a declared one. It returns None for names it doesn't support, and
+    the spec it returns must keep the requested name.
     """
 
     def __init__(
         self,
         specs: Sequence[AccessorSpec],
         *,
+        dynamic_specs: Optional[DynamicSpecs] = None,
         rate_policy: Optional[RatePolicy] = None,
         rate_delay: Optional[float] = None,
         schedule: Optional[Schedule] = None,
@@ -185,20 +197,30 @@ class Accessors:
         # Bumped on each render, so emits from an old widget's handlers are
         # dropped even if its detach failed to remove them.
         self._generation = 0
+        self._dynamic_specs = dynamic_specs
         self._slots: Dict[str, Slot] = {}
         self.values: Dict[str, reactive.Value[Box]] = {}
+        # Declared (not inferred) so `self._rate_policy or policy` in
+        # _add_slot keeps the Literal type instead of widening to str
+        self._rate_policy: Optional[RatePolicy] = rate_policy
+        self._rate_delay = rate_delay
+        self._schedule = schedule
         for spec in specs:
-            slot = Slot(spec)
-            policy = spec.rate_policy
-            if policy is not None:
-                slot.limiter = RateLimiter(
-                    lambda slot=slot: self._publish(slot),
-                    policy=rate_policy or policy,
-                    delay=spec.rate_delay if rate_delay is None else rate_delay,
-                    schedule=schedule,
-                )
-            self._slots[spec.name] = slot
-            self.values[spec.name] = reactive.Value(Box(None))
+            self._add_slot(spec)
+
+    def _add_slot(self, spec: AccessorSpec) -> Slot:
+        slot = Slot(spec)
+        policy = spec.rate_policy
+        if policy is not None:
+            slot.limiter = RateLimiter(
+                lambda slot=slot: self._publish(slot),
+                policy=self._rate_policy or policy,
+                delay=spec.rate_delay if self._rate_delay is None else self._rate_delay,
+                schedule=self._schedule,
+            )
+        self._slots[spec.name] = slot
+        self.values[spec.name] = reactive.Value(Box(None))
+        return slot
 
     def names(self) -> Tuple[str, ...]:
         return tuple(self._slots)
@@ -223,7 +245,9 @@ class Accessors:
                     pass
 
     def read(self, name: str, *, raw: bool = False) -> object:
-        slot = self._slots[name]
+        slot = self._slots.get(name)
+        if slot is None:
+            slot = self._resolve_dynamic(name)
         if self._widget is not None and slot.detach is None:
             # Attach before taking the dependency, so a value the attach
             # emits right away doesn't invalidate this reader.
@@ -242,6 +266,12 @@ class Accessors:
             slot.memo = slot.spec.payload(box.raw)
             slot.memo_box = box
         return slot.memo
+
+    def _resolve_dynamic(self, name: str) -> Slot:
+        spec = self._dynamic_specs(name) if self._dynamic_specs is not None else None
+        if spec is None:
+            raise KeyError(name)
+        return self._add_slot(spec)
 
     def close(self) -> None:
         self._generation += 1

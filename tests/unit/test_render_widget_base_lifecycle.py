@@ -272,11 +272,16 @@ class RecordingAttach:
     def __init__(self) -> None:
         self.widgets: list[object] = []
         self.emit = None
+        self.detached = 0
 
     def __call__(self, widget, emit):  # type: ignore[no-untyped-def]
         self.widgets.append(widget)
         self.emit = emit
-        return lambda: None
+
+        def detach() -> None:
+            self.detached += 1
+
+        return detach
 
 
 def renderer_with_clicked(att: RecordingAttach):  # type: ignore[no-untyped-def]
@@ -390,6 +395,53 @@ def test_render_returning_none_cancels_accessor_reads(monkeypatch) -> None:
         raise Cancel()
 
     monkeypatch.setattr(acc, "req", cancel)
+    with pytest.raises(Cancel):
+        r.clicked()
+
+
+def test_failed_rerender_detaches_accessors_from_the_previous_widget(
+    monkeypatch,
+) -> None:
+    # _render() replaces _value/_widget before coercion; if coercion then
+    # fails, accessors must not keep watching (and reporting) the previous
+    # widget's state
+    att = RecordingAttach()
+    r = renderer_with_clicked(att)
+
+    @r
+    async def _():  # noqa: ANN202
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
+    asyncio.run(r._render())
+    att.emit({"x": 1})
+    assert r.clicked() == {"x": 1}
+    assert att.detached == 0
+
+    class _Boom(Exception):
+        pass
+
+    def fail(value):  # type: ignore[no-untyped-def]
+        raise _Boom()
+
+    monkeypatch.setattr(rwb, "as_widget", fail)
+    with pytest.raises(_Boom):
+        asyncio.run(r._render())
+
+    assert att.detached == 1
+
+    # Reads cancel while the output has no rendered widget...
+    class Cancel(Exception):
+        pass
+
+    def cancel(*args):  # type: ignore[no-untyped-def]
+        raise Cancel()
+
+    monkeypatch.setattr(acc, "req", cancel)
+    with pytest.raises(Cancel):
+        r.clicked()
+    # ...and the old widget's events no longer reach the accessor
+    att.emit({"x": 2})
     with pytest.raises(Cancel):
         r.clicked()
 

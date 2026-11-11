@@ -154,6 +154,7 @@ from ._lonboard import LONBOARD_ACCESSORS
 from ._matplotlib import CLICKED, LIMITS, MATPLOTLIB_ACCESSORS, AxesLimits
 from ._mosaic_widget import MOSAIC_ACCESSORS
 from ._niivue import LOCATION
+from ._panel import PARAM_PREFIX, dynamic_accessor_spec
 from ._perspective import PERSPECTIVE_ACCESSORS
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
 from ._pythreejs import CAMERA as PYTHREEJS_CAMERA
@@ -3047,10 +3048,41 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
     a Panel object with a parameter interface, return a pane or widget explicitly
     rather than a raw value like a DataFrame. To update the output without
     re-rendering, modify `.value` in place (e.g., ``table.value.value = df``).
-    Panel parameters are not
-    widget traits, so instead of :func:`~shinywidgets.reactive_read`, use
-    ``.param.watch()`` to react to them (e.g., ``slider.param.watch(lambda e:
-    val.set(e.new), "value")``, where ``val`` is a `reactive.value`).
+
+    Note
+    ---
+    **Reacting to user interaction**: Panel parameters aren't widget traits, so
+    :func:`~shinywidgets.reactive_read` can't see them. Instead, the output has
+    a ``param(name)`` method that reads the rendered object's ``name``
+    parameter reactively, much like ``input.my_slider()`` reads an input. Call
+    it in a reactive function (a ``@render.*`` function, ``@reactive.calc``, or
+    ``@reactive.effect``), which then re-runs whenever the parameter changes --
+    from browser interaction or from Python::
+
+        @render_panel
+        def slider():
+            return pn.widgets.IntSlider(value=5, start=0, end=10)
+
+
+        @render.text
+        def value():
+            return str(slider.param("value"))
+
+    How it behaves:
+
+    * It's seeded with the parameter's value at render, and after a re-render
+      it follows the new ``.value`` object.
+    * It raises if ``.value`` isn't a `param.Parameterized` (e.g., the render
+      function returned a raw DataFrame or string) or has no ``name``
+      parameter.
+    * It can't be read inside this output's own render function, which builds
+      a new object each time it runs.
+    * To limit how often a dragged slider (or another continuously changing
+      parameter) re-runs readers, read Panel's throttled variant of the
+      parameter instead (e.g., ``slider.param("value_throttled")``).
+
+    For anything more involved, ``.param.watch()`` on the object works too,
+    and may set `reactive.value`s.
 
     Some other things to know:
 
@@ -3088,6 +3120,21 @@ class render_panel(render_widget_base[ValueT, BokehModel]):
         res = super().auto_output_ui()
         res.children.append(_bokeh_dependency())
         return res
+
+    def param(self, name: str) -> Any:
+        """
+        The current value of the rendered object's ``name`` parameter (e.g.,
+        ``slider.param("value")`` for a ``pn.widgets.IntSlider``), read
+        reactively: a reactive function that reads it re-runs whenever the
+        parameter changes, from browser interaction or from Python. Seeded
+        with the parameter's value at render; follows the new ``.value``
+        object on re-render. Raises if ``.value`` isn't a
+        `param.Parameterized` or has no ``name`` parameter.
+        """
+        return self._read_accessor(f"{PARAM_PREFIX}{name}", call=f"param({name!r})")
+
+    def _dynamic_accessor_spec(self, name: str) -> Optional[AccessorSpec]:
+        return dynamic_accessor_spec(self, name)
 
     def _as_widget(self, value: ValueT) -> BokehModel:
         if isinstance(value, Widget):
