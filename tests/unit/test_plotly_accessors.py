@@ -189,6 +189,7 @@ def test_hover_cleared_by_unhover_and_debounced() -> None:
     w.message(event("plotly_unhover"))
     assert emitted == [None]
 
+
 def test_double_clicked_is_a_republishing_pulse() -> None:
     assert sp.DOUBLE_CLICKED.priority == "event"
     w, emitted, _ = attach(sp.DOUBLE_CLICKED)

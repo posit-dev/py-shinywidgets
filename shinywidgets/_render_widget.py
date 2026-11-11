@@ -3575,10 +3575,15 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     ``@reactive.effect``), which then re-runs whenever the interaction changes:
 
     * ``clicked()``: the clicked points.
+    * ``hover()``: the points under the mouse.
     * ``selected()``: the points of a box or lasso selection, once the drag ends
       (``selecting()``: the same, while the user drags).
     * ``brushed()``: the selected region itself (``brushing()``: while dragging).
     * ``relayout()``: the axis ranges after a zoom, pan, or autoscale.
+    * ``double_clicked()``: a pulse on every double-click (e.g. a view reset).
+    * ``legend_clicked()``: the traces of the most recent legend click.
+    * ``visible_traces()``: the current visibility of every trace, seeded from
+      the displayed figure.
     * ``selected_rows(df)``: the rows of your data the user selected. This needs
       each point to carry its row as ``customdata``, e.g.
       ``px.scatter(df, ..., custom_data=[df.index])``; see the method for
@@ -3591,12 +3596,13 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
       ``req(pts)``, since a data frame has no truth value).
     * A re-render (e.g. when the render function reads an input) gives the user
       a new plot, but every accessor keeps its value -- the last interaction
-      still *happened*. ``selected()`` and ``brushed()`` also follow the
-      displayed plot's selection: the new plot re-seeds them at attach, so
-      they track what the user sees (initially nothing, so they become
-      ``None`` once it reports). ``clicked()``, ``selecting()``,
-      ``brushing()``, and ``relayout()`` hold the old plot's last interaction
-      until a new one happens on the new plot.
+      still *happened*. ``selected()``, ``brushed()``, and
+      ``visible_traces()`` also follow the displayed plot: the new plot
+      re-seeds them at attach, so they track what the user sees (initially
+      nothing selected, so the selection accessors become ``None`` once it
+      reports). ``clicked()``, ``hover()``, ``selecting()``, ``brushing()``,
+      ``relayout()``, ``double_clicked()``, and ``legend_clicked()`` hold the
+      old plot's last interaction until a new one happens on the new plot.
     * Repeating an interaction (clicking the same point twice) isn't a change,
       so readers don't re-run.
     * A double-click on the plot background clears ``clicked()``, and a
@@ -3605,8 +3611,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
       clear, so it leaves ``clicked()`` unchanged. With ``dragmode="select"``
       or ``"lasso"``, a plain click also resets ``selected()`` and
       ``brushed()`` (plotly.js reports it as a zero-area selection).
-    * The streaming ones, ``selecting()`` and ``brushing()``, update at most
-      once the user pauses for 250 ms (see ``rate_policy`` and ``rate_delay``).
+    * The streaming ones, ``hover()``, ``selecting()``, and ``brushing()``,
+      update at most once the user pauses for 250 ms (see ``rate_policy`` and
+      ``rate_delay``).
     * They can't be read inside this output's own render function, which builds
       a new plot each time it runs. To change the plot in response to a click,
       modify ``.widget`` from a ``@reactive.effect`` instead (see the example).
@@ -3648,11 +3655,12 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     rate_policy
-        How to rate-limit :meth:`selecting` and :meth:`brushing` (debounced by
-        default) and :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps each
-        accessor's own default, and debounces ``reactive_read()`` only if
-        ``rate_delay`` is given.
+        How to rate-limit :meth:`hover`, :meth:`selecting`, and
+        :meth:`brushing` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps each accessor's own
+        default, and debounces ``reactive_read()`` only if ``rate_delay`` is
+        given.
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
