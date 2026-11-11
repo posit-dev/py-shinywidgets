@@ -1080,6 +1080,10 @@ def shared_lifetime() -> Iterator[None]:
     """
     Construct one widget that every Shiny session displays.
 
+    Experimental: not every widget package behaves well when one widget is
+    mirrored into several browsers (see the caveats below), and this function's
+    behavior may change in a future release.
+
     Widgets constructed inside this block exist once per Python process and are
     mirrored into every session's browser: any user's interaction with one changes
     it for everyone, and it is never freed. Use it for static content or state that
