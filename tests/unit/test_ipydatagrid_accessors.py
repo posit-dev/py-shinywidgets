@@ -64,10 +64,10 @@ def test_selections_attach_seeds_and_emits(widget_session: Session) -> None:
     assert emitted[-1] == [{"r1": 1, "r2": 2, "c1": 0, "c2": 1}]
 
 
-def test_cell_clicked_is_an_event_with_detach(widget_session: Session) -> None:
+def test_clicked_cell_is_an_event_with_detach(widget_session: Session) -> None:
     g = grid(widget_session)
     emitted: list[object] = []
-    detach = sd.CELL_CLICKED.attach(g, emitted.append)
+    detach = sd.CLICKED_CELL.attach(g, emitted.append)
     assert emitted == []  # no seed: None until the first click
     click = {
         "region": "body",
@@ -84,10 +84,10 @@ def test_cell_clicked_is_an_event_with_detach(widget_session: Session) -> None:
     assert emitted == [click]
 
 
-def test_cell_edited_is_an_event_with_detach(widget_session: Session) -> None:
+def test_edited_cell_is_an_event_with_detach(widget_session: Session) -> None:
     g = grid(widget_session)
     emitted: list[object] = []
-    detach = sd.CELL_EDITED.attach(g, emitted.append)
+    detach = sd.EDITED_CELL.attach(g, emitted.append)
     assert emitted == []
     edit = {"row": 2, "column": "a", "column_index": 0, "value": 555}
     g._cell_change_handlers(edit)  # what the browser's cell-changed message does
@@ -105,8 +105,8 @@ def test_ipydatagrid_accessors(widget_session: Session) -> None:
     r._widget = g  # stands in for _render()
     r._accessors.on_render(g)
     assert r.selections() == []
-    assert r.cell_clicked() is None
-    assert r.cell_edited() is None
+    assert r.clicked_cell() is None
+    assert r.edited_cell() is None
     g._cell_click_handlers(
         {
             "region": "body",
@@ -117,12 +117,12 @@ def test_ipydatagrid_accessors(widget_session: Session) -> None:
             "cell_value": 1,
         }
     )
-    assert r.cell_clicked()["cell_value"] == 1
+    assert r.clicked_cell()["cell_value"] == 1
     g._cell_change_handlers({"row": 0, "column": "a", "column_index": 0, "value": 9})
-    assert r.cell_edited()["value"] == 9
+    assert r.edited_cell()["value"] == 9
     # Events reset on re-render; state re-seeds
     r._accessors.on_render(grid(widget_session))
-    assert r.cell_clicked() is None and r.cell_edited() is None
+    assert r.clicked_cell() is None and r.edited_cell() is None
     assert r.selections() == []
 
 
