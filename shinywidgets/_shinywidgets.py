@@ -754,6 +754,11 @@ def close_client_comm(session: Session, msg: Dict[str, Any]) -> None:
     w = WIDGET_INSTANCE_MAP.get(comm_id)
     if w is not None and w.comm is comm:
         close_widget(w)
+        # It may be a sweep candidate (see claim_browser_created()): drop it
+        # rather than hold the closed widget until the session's next sweep
+        kept = KEPT_WIDGETS.get(session.id)
+        if kept:
+            kept[:] = [k for k in kept if k is not w]
 
 
 def claim_browser_created(session: Session, msg: Dict[str, Any]) -> None:

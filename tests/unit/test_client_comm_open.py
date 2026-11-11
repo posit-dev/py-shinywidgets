@@ -446,6 +446,25 @@ def test_naming_a_browser_created_model_again_registers_it_once(
     assert [w for w in kept if w is target] == [target]
 
 
+def test_model_the_browser_closes_is_not_held_until_the_next_sweep(
+    primed: Session,
+) -> None:
+    """
+    bqplot's PanZoom is created each time it's switched on and closed by the
+    browser on reset; without a re-render in between, every closed one would
+    stay referenced here until the session ended.
+    """
+    _, parent = render_owned_box(primed)
+    target = open_browser_model(primed, "target-reset")
+    name_from_browser(primed, parent.model_id, "target-reset")
+
+    with session_context(primed):
+        sw.handle_client_comm_msg(primed, close_msg("target-reset"))
+
+    assert is_closed_widget(target)
+    assert not any(w is target for w in sw.KEPT_WIDGETS.get(primed.id, []))
+
+
 def test_python_created_widget_the_browser_names_keeps_its_own_lifetime(
     primed: Session,
 ) -> None:
