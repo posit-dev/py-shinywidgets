@@ -5,6 +5,7 @@ import { isJQuery, jsonParse, lendDataTables, protectPageJQuery } from './utils'
 import { NGLVIEW_COLORMAKER_REGISTRY_MODEL, renderHiddenColormakerRegistry } from './nglview';
 import { isPlotlyBindRequest, requestPlotlyEvents } from './plotly';
 import { isReactableBindRequest, requestReactableState } from './reactable';
+import { installJpThemeLightShim } from './jp-theme';
 import { disposeMols2GridGlobalsOnRemove, disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
 import { uuid } from '@jupyter-widgets/base';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
@@ -693,6 +694,11 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
     console.error("Error during model cleanup:", err);
   }
 });
+
+// Emulate JupyterLab's `data-jp-theme-light` body attribute for widgets that
+// sniff it (e.g. ipydatagrid); see jp-theme.ts. Must run before any widget JS
+// loads, which is guaranteed since widget JS loads lazily via require.js.
+installJpThemeLightShim();
 
 $(document).on("shiny:connected", () => {
   setConnected(true);

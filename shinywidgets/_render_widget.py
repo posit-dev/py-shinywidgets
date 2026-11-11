@@ -3172,6 +3172,10 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
     * `selections` index the grid as displayed (after any sort or filter), so map
       them through ``.widget.get_visible_data()``; ``.visible_data()`` returns
       those displayed rows as a data frame, reactively.
+    * The grid's light/dark palette follows the app's bslib color mode (e.g.,
+      `ui.input_dark_mode`). ipydatagrid freezes the palette when a grid view is
+      created, so toggling dark mode re-themes only grids rendered after the
+      toggle (re-render the output to re-theme an existing grid).
     * ``DataGrid.select()``, ``DataGrid.clear_selection()`` and cell edits modify the
       widget's state in place, which doesn't trigger
       :func:`~shinywidgets.reactive_read`. Assign a new list to ``.widget.selections``
