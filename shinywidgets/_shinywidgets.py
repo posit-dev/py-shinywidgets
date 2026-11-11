@@ -685,6 +685,7 @@ def handle_client_comm_msg(session: Session, msg: Dict[str, Any]) -> None:
             comm = COMM_MANAGERS[session.id].comms.get(msg["content"]["comm_id"])
             if comm is not None:
                 comm.handle_msg(msg)
+        claim_browser_created(session, msg)
     finally:
         msg_id = header.get("msg_id") if isinstance(header, dict) else None
         if isinstance(msg_id, str):
@@ -753,6 +754,60 @@ def close_client_comm(session: Session, msg: Dict[str, Any]) -> None:
     w = WIDGET_INSTANCE_MAP.get(comm_id)
     if w is not None and w.comm is comm:
         close_widget(w)
+        # It may be a sweep candidate (see claim_browser_created()): drop it
+        # rather than hold the closed widget until the session's next sweep
+        kept = KEPT_WIDGETS.get(session.id)
+        if kept:
+            kept[:] = [k for k in kept if k is not w]
+
+
+def claim_browser_created(session: Session, msg: Dict[str, Any]) -> None:
+    """
+    Give the browser-created widgets (see open_client_comm()) that `msg` names
+    the lifetime of what references them, instead of the session's.
+
+    A widget's JS creates such a model for another widget's state (pythreejs's
+    default light target/shadow, bqplot's toolbar PanZoom), then names it in
+    the state it sends for that widget. From then on it's an ordinary
+    KEPT_WIDGETS entry: close_render_widgets() closes it once nothing live in
+    the session references it. Until it's named it stays session-owned, since
+    the message attaching it may still be on its way.
+    """
+    content = msg["content"]
+    data = content.get("data")
+    state = data.get("state") if isinstance(data, dict) else None
+    referrer = WIDGET_INSTANCE_MAP.get(content["comm_id"])
+    # Never closed, and not one of this session's own widgets, so the sweep
+    # can't see what it references: leave those session-owned
+    if referrer is not None and is_process_global(referrer):
+        return
+    comms = COMM_MANAGERS[session.id].comms
+    named = [
+        comm
+        for model_id in ipy_model_references(state)
+        if (comm := comms.get(model_id)) is not None and comm.awaiting_owner
+    ]
+    if not named:
+        return
+    # The sweep only follows widget-valued traits, so only hand it what it can
+    # see `referrer` holding (the state may have been rejected, or held as a
+    # plain string); anything else it would close while still in use
+    held = (
+        None
+        if referrer is None
+        else {id(r) for r in direct_widget_references(referrer)}
+    )
+    for comm in named:
+        w = WIDGET_INSTANCE_MAP.get(comm.comm_id)
+        if w is None or (held is not None and id(w) not in held):
+            continue
+        comm.awaiting_owner = False
+        KEPT_WIDGETS.setdefault(session.id, []).append(w)
+    # Named by a widget that already closed (the browser was still creating a
+    # render's models when the server retired it): no later render
+    # invalidation is tied to these, so collect them now
+    if referrer is None:
+        close_render_widgets(session, [])
 
 
 def importing_lonboard() -> bool:
