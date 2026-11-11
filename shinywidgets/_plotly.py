@@ -19,7 +19,17 @@ attach at render, so a lasso drawn before their first read isn't lost.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Union,
+    cast,
+)
 
 from ._accessors import AccessorSpec, Emit
 
@@ -28,10 +38,12 @@ if TYPE_CHECKING:
     from narwhals.typing import IntoDataFrameT
 
 Point = Dict[str, Any]
+Trace = Dict[str, Any]
 
 # Events that clear an accessor (as in R plotly's eventClearMap).
 DESELECT = "plotly_deselect"
 DOUBLECLICK = "plotly_doubleclick"
+UNHOVER = "plotly_unhover"
 
 # Returned by a shape function for messages that shouldn't reach the accessor.
 SKIP = object()
@@ -56,6 +68,25 @@ def points_frame(points: List[Point]) -> "pd.DataFrame":
         if any(optional in p for p in points):
             columns.append(optional)
     return pd.DataFrame(points, columns=columns)
+
+
+def traces_frame(traces: List[Trace], columns: List[str]) -> "pd.DataFrame":
+    try:
+        import pandas as pd
+    except ImportError as e:  # plotly itself doesn't need pandas
+        raise ImportError(
+            "Reading plotly trace info as a DataFrame requires pandas "
+            "(`pip install 'shinywidgets[plotly]'`)."
+        ) from e
+    return pd.DataFrame(traces, columns=columns)
+
+
+def legend_frame(traces: List[Trace]) -> "pd.DataFrame":
+    return traces_frame(traces, ["trace_index", "name", "legendgroup"])
+
+
+def visibility_frame(traces: List[Trace]) -> "pd.DataFrame":
+    return traces_frame(traces, ["trace_index", "name", "visible"])
 
 
 def select_rows(
@@ -97,15 +128,19 @@ def customdata_value(point: Point) -> object:
 
 
 def bridge_attach(
-    fires: str, shape: Callable[[Dict[str, Any]], object], clears: Sequence[str]
+    fires: Union[str, Sequence[str]],
+    shape: Callable[[Dict[str, Any]], object],
+    clears: Sequence[str],
 ) -> Callable[[Any, Emit], Callable[[], None]]:
+    names = (fires,) if isinstance(fires, str) else tuple(fires)
+
     def attach(widget: Any, emit: Emit) -> Callable[[], None]:
         # ipywidgets swallows exceptions raised here, so this must not raise.
         def on_msg(_widget: object, content: object, _buffers: object) -> None:
             if not isinstance(content, dict) or content.get("shinywidgets") != "event":
                 return
             name = content.get("event")
-            if name == fires:
+            if name in names:
                 value = shape(content)
                 if value is not SKIP:
                     emit(value)
@@ -113,7 +148,7 @@ def bridge_attach(
                 emit(None)
 
         widget.on_msg(on_msg)
-        widget.send({"shinywidgets": "bind", "events": [fires, *clears]})
+        widget.send({"shinywidgets": "bind", "events": [*names, *clears]})
         return lambda: widget.on_msg(on_msg, remove=True)
 
     return attach
@@ -130,6 +165,25 @@ def region_of(content: Dict[str, Any]) -> object:
         if key in content:
             return {key: content[key]}
     return None
+
+
+def pulse_of(content: Dict[str, Any]) -> object:
+    # plotly_doubleclick carries no data; the pulse's value is that it fired
+    return True
+
+
+def legend_of(content: Dict[str, Any]) -> object:
+    legend = content.get("legend")
+    if not isinstance(legend, dict):
+        return SKIP
+    return legend.get("traces")
+
+
+def traces_of(content: Dict[str, Any]) -> object:
+    traces = content.get("traces")
+    if not isinstance(traces, list):
+        return SKIP
+    return traces
 
 
 def relayout_of(content: Dict[str, Any]) -> object:
@@ -175,5 +229,53 @@ RELAYOUT = AccessorSpec(
     kind="state",
     attach=bridge_attach("plotly_relayout", relayout_of, ()),
 )
+HOVER = AccessorSpec(
+    name="hover",
+    kind="state",
+    attach=bridge_attach("plotly_hover", points_of, (UNHOVER,)),
+    payload=points_frame,
+    rate_policy="debounce",
+)
+DOUBLE_CLICKED = AccessorSpec(
+    name="double_clicked",
+    kind="state",
+    attach=bridge_attach("plotly_doubleclick", pulse_of, ()),
+    # Identical raws re-publish, so every double-click fires
+    priority="event",
+)
+LEGEND_CLICKED = AccessorSpec(
+    name="legend_clicked",
+    kind="state",
+    attach=bridge_attach("plotly_legendclick", legend_of, ()),
+    payload=legend_frame,
+    # Toggling the same legend item twice re-fires
+    priority="event",
+)
+VISIBLE_TRACES = AccessorSpec(
+    name="visible_traces",
+    kind="state",
+    # Legend visibility toggles apply through Plots.restyle, which emits
+    # plotly_restyle after the new visibility is in place; batched updates
+    # (plotly.py's batch_update -> Plotly.update) emit plotly_update instead.
+    # Trace-structure changes (add_trace/delete_traces/reorder -> Plotly's
+    # add/delete/moveTraces) redraw, emitting plotly_redraw. The bridge
+    # recomputes and sends the visibility of every trace then (and seeds it
+    # at bind), so this is the traces' current truth, not a stream of edits.
+    attach=bridge_attach(
+        ("plotly_restyle", "plotly_update", "plotly_redraw"), traces_of, ()
+    ),
+    payload=visibility_frame,
+)
 
-PLOTLY_ACCESSORS = (CLICKED, SELECTED, SELECTING, BRUSHED, BRUSHING, RELAYOUT)
+PLOTLY_ACCESSORS = (
+    CLICKED,
+    SELECTED,
+    SELECTING,
+    BRUSHED,
+    BRUSHING,
+    RELAYOUT,
+    HOVER,
+    DOUBLE_CLICKED,
+    LEGEND_CLICKED,
+    VISIBLE_TRACES,
+)

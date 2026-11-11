@@ -3575,10 +3575,15 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     ``@reactive.effect``), which then re-runs whenever the interaction changes:
 
     * ``clicked()``: the clicked points.
+    * ``hover()``: the points under the mouse.
     * ``selected()``: the points of a box or lasso selection, once the drag ends
       (``selecting()``: the same, while the user drags).
     * ``brushed()``: the selected region itself (``brushing()``: while dragging).
     * ``relayout()``: the axis ranges after a zoom, pan, or autoscale.
+    * ``double_clicked()``: a pulse on every double-click (e.g. a view reset).
+    * ``legend_clicked()``: the traces of the most recent legend click.
+    * ``visible_traces()``: the current visibility of every trace, seeded from
+      the displayed figure.
     * ``selected_rows(df)``: the rows of your data the user selected. This needs
       each point to carry its row as ``customdata``, e.g.
       ``px.scatter(df, ..., custom_data=[df.index])``; see the method for
@@ -3591,12 +3596,13 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
       ``req(pts)``, since a data frame has no truth value).
     * A re-render (e.g. when the render function reads an input) gives the user
       a new plot, but every accessor keeps its value -- the last interaction
-      still *happened*. ``selected()`` and ``brushed()`` also follow the
-      displayed plot's selection: the new plot re-seeds them at attach, so
-      they track what the user sees (initially nothing, so they become
-      ``None`` once it reports). ``clicked()``, ``selecting()``,
-      ``brushing()``, and ``relayout()`` hold the old plot's last interaction
-      until a new one happens on the new plot.
+      still *happened*. ``selected()``, ``brushed()``, and
+      ``visible_traces()`` also follow the displayed plot: the new plot
+      re-seeds them at attach, so they track what the user sees (initially
+      nothing selected, so the selection accessors become ``None`` once it
+      reports). ``clicked()``, ``hover()``, ``selecting()``, ``brushing()``,
+      ``relayout()``, ``double_clicked()``, and ``legend_clicked()`` hold the
+      old plot's last interaction until a new one happens on the new plot.
     * Repeating an interaction (clicking the same point twice) isn't a change,
       so readers don't re-run.
     * A double-click on the plot background clears ``clicked()``, and a
@@ -3605,8 +3611,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
       clear, so it leaves ``clicked()`` unchanged. With ``dragmode="select"``
       or ``"lasso"``, a plain click also resets ``selected()`` and
       ``brushed()`` (plotly.js reports it as a zero-area selection).
-    * The streaming ones, ``selecting()`` and ``brushing()``, update at most
-      once the user pauses for 250 ms (see ``rate_policy`` and ``rate_delay``).
+    * The streaming ones, ``hover()``, ``selecting()``, and ``brushing()``,
+      update at most once the user pauses for 250 ms (see ``rate_policy`` and
+      ``rate_delay``).
     * They can't be read inside this output's own render function, which builds
       a new plot each time it runs. To change the plot in response to a click,
       modify ``.widget`` from a ``@reactive.effect`` instead (see the example).
@@ -3648,11 +3655,12 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     rate_policy
-        How to rate-limit :meth:`selecting` and :meth:`brushing` (debounced by
-        default) and :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps each
-        accessor's own default, and debounces ``reactive_read()`` only if
-        ``rate_delay`` is given.
+        How to rate-limit :meth:`hover`, :meth:`selecting`, and
+        :meth:`brushing` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps each accessor's own
+        default, and debounces ``reactive_read()`` only if ``rate_delay`` is
+        given.
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
@@ -3797,6 +3805,75 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         axis. Not rate-limited (plotly.js reports once per gesture).
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("relayout"))
+
+    def hover(self) -> Optional[pd.DataFrame]:
+        """
+        The points under the mouse, with the same columns as :meth:`clicked`.
+
+        Returns ``None`` until the mouse first crosses a point, and again when
+        it leaves the points (plotly.js's ``plotly_unhover``), so check for
+        ``None`` (e.g. ``req(pts is not None)``). Debounced (250 ms) by
+        default, so readers update once the mouse rests; see the
+        ``rate_policy`` and ``rate_delay`` parameters. Requires pandas.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("hover"))
+
+    def double_clicked(self) -> Optional[bool]:
+        """
+        A pulse that fires on every double-click: ``None`` until the first
+        one, then ``True``, re-firing readers on each subsequent one even
+        though the value stays ``True``.
+
+        This is how "the user reset the view" becomes observable on every
+        subplot type: a cartesian double-click reset also reports axis ranges
+        to :meth:`relayout`, but mapbox, 3D, and smith subplots don't.
+
+        Note that a double-click on the plot background also clears
+        :meth:`clicked` (and a deselect clears the selection accessors), so
+        ``clicked()`` becoming ``None`` conflates double-click and deselect
+        by design -- read this accessor to tell them apart. In the
+        ``"select"``/``"lasso"`` dragmodes a background double-click
+        deselects *without* firing this pulse (plotly.js emits
+        ``plotly_doubleclick`` only where it means resetting the view,
+        matching R plotly). Not rate-limited.
+        """
+        return cast(Optional[bool], self._read_accessor("double_clicked"))
+
+    def legend_clicked(self) -> Optional[pd.DataFrame]:
+        """
+        The traces affected by the most recent legend click, one row per
+        trace: ``trace_index``, ``name``, and ``legendgroup``. The clicked
+        trace is the first row; when it belongs to a ``legendgroup``, the
+        group's other traces follow (plotly.js toggles the whole group by
+        default, but only the clicked trace when the legend's
+        ``groupclick="toggleitem"``), unlike R plotly's
+        ``plotly_legendclick``, which ships the traces' full data.
+
+        Returns ``None`` until the user clicks a legend item, and re-fires
+        on every click, even of the same item (a second click toggles
+        visibility back). A legend double-click (isolate traces) also fires
+        it, once per click. Read :meth:`visible_traces` for the visibility
+        state the click produces. Not rate-limited. Requires pandas.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("legend_clicked"))
+
+    def visible_traces(self) -> Optional[pd.DataFrame]:
+        """
+        The current visibility of every trace: ``trace_index``, ``name``,
+        and ``visible`` (``False`` once a legend click hides the trace, or
+        the figure set ``visible=False``/``"legendonly"``).
+
+        Seeded from the displayed figure at render, so it reflects the
+        initial figure before any interaction, and updated after every
+        restyle that changes visibility (legend clicks and double-clicks, or
+        ``.widget.update_traces(visible=...)``, batched or not) and after
+        trace-structure changes (``.widget.add_trace(...)``,
+        ``delete_traces``, reordering). Visibility here is each
+        trace's ``visible`` attribute; traces expanded by a groupby
+        transform report their own, not each group's. Not rate-limited.
+        Requires pandas.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("visible_traces"))
 
     def selected_rows(
         self, df: IntoDataFrameT, *, key: Optional[str] = None
