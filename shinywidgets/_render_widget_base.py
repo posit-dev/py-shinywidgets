@@ -304,10 +304,23 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
                 f"to change the plot in response, update `{self.output_id}.widget` "
                 "in place from a `reactive.effect`."
             )
-        # Depend on the widget too, so a re-render invalidates readers even
-        # before the new widget reports anything.
-        self._register_current_context()
-        return self._accessors.read(name, raw=raw)
+        # Readers depend only on the accessor's own reactive.Value (attached
+        # and seeded on each render by `_accessors.on_render()`), NOT on the
+        # render itself: otherwise every re-render would re-run every reader,
+        # and an effect feeding a derived value back into this output's render
+        # would loop forever. An accessor method that computes its result from
+        # the widget itself (e.g. `visible_data()`) reads it through `.widget`,
+        # which does take the render dependency: a new widget can report the
+        # same accessor value as the previous one.
+        try:
+            return self._accessors.read(name, raw=raw)
+        except Exception:
+            # A read that cancelled (nothing rendered yet) or raised (the
+            # attach failed) does depend on the render: the next one can make
+            # it succeed without publishing anything (a click accessor has no
+            # seed)
+            self._register_current_context()
+            raise
 
     def read(self, name: str) -> Any:
         """

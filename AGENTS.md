@@ -86,6 +86,7 @@ When adding a `@render_*` decorator for a third-party widget package, add a matc
 - Add a row to the README's extras table
 - Point the decorator's docstring and install-error messages at `pip install 'shinywidgets[<extra>]'`
 - Keep example-specific data packages in the example's own `requirements.txt` (which should use `shinywidgets[<extra>]`, not the raw widget package)
+- Accessor reads (`_read_accessor()`) don't depend on the render, so a re-render that reports an unchanged value doesn't re-run readers. An accessor method that computes its result from the widget itself (e.g. `visible_data()`, `camera()`) must read `self.widget`, not `self._widget`, so its readers follow a re-render
 
 ## Key Files
 

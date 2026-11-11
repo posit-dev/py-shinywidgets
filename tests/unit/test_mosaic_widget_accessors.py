@@ -9,6 +9,8 @@ from shiny import Session
 from shiny.session import session_context
 from shinywidgets import render_mosaic_widget
 
+from tests.unit.conftest import reads_across_rerender
+
 pytest.importorskip("mosaic_widget")
 from mosaic_widget import MosaicWidget  # noqa: E402
 
@@ -70,3 +72,17 @@ def test_data_filter_by_selects_one_selection(widget_session: Session) -> None:
     assert len(r.data(filter_by=["brush", "brush2"]).df()) == 1
     with pytest.raises(ValueError, match="Unknown selection"):
         r.data(filter_by="nope")
+
+
+def test_data_follows_a_rerender_with_new_data(widget_session: Session) -> None:
+    # A new widget starts with the same (empty) params as the previous one, so
+    # the accessor publishes nothing: readers have to follow the widget itself
+    with session_context(widget_session):
+        bigger = MosaicWidget(
+            SPEC, data={"t": pd.DataFrame({"x": [1, 2, 3, 4, 5], "y": list("abcde")})}
+        )
+    r = render_mosaic_widget(rate_delay=0)
+    seen = reads_across_rerender(
+        r, widget(widget_session), bigger, lambda: len(r.data().df())
+    )
+    assert seen == [3, 5]
