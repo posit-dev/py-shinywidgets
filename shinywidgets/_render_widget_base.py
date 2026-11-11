@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import difflib
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
-    ClassVar,
     Generic,
     Iterator,
     Optional,
@@ -77,7 +78,10 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     `self._read_accessor(name)`.
     """
 
-    _accessor_specs: ClassVar[Tuple[AccessorSpec, ...]] = ()
+    # Subclasses normally set this at class level; render_mols2grid also
+    # narrows it per instance (in __init__, before super().__init__()) to
+    # make its clicked() accessor conditional on the click channel existing
+    _accessor_specs: Tuple[AccessorSpec, ...] = ()
 
     def auto_output_ui(self) -> Tag:
         return output_widget(
@@ -114,8 +118,13 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._value: ValueT | None = None
         self._widget: WidgetT | None = None
         self._contexts: set[Context] = set()
+        # Instance attribute, so a renderer can make its set of accessors
+        # conditional on its own kwargs (render_mols2grid drops clicked()
+        # unless the click channel is enabled)
         self._accessors = Accessors(
-            type(self)._accessor_specs, rate_policy=rate_policy, rate_delay=rate_delay
+            self._accessor_specs,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
         )
         self._closes_accessors_on_destroy = False
 
@@ -186,7 +195,8 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             widget, fill = set_layout_defaults(widget)
 
         self._widget = cast(WidgetT, widget)
-        register_rate_policy(widget, self._rate_policy, self._rate_delay)
+        for w in self._rate_policy_widgets(self._widget):
+            register_rate_policy(w, self._rate_policy, self._rate_delay)
         self._accessors.on_render(widget)
         if (
             session is not None
@@ -214,6 +224,15 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         to support additional return shapes (e.g., a (value, options) tuple).
         """
         return cast(WidgetT, as_widget(value))
+
+    def _rate_policy_widgets(self, widget: WidgetT) -> Tuple[Widget, ...]:
+        """
+        The widgets the renderer's `rate_policy`/`rate_delay` apply to for
+        :func:`~shinywidgets.reactive_read`. Subclasses may override to
+        include child widgets whose traits are the interesting ones to read
+        (e.g., ipycytoscape's Node/Edge widgets).
+        """
+        return (widget,)
 
     @property
     def value(self) -> ValueT | None:
@@ -270,6 +289,51 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         # before the new widget reports anything.
         self._register_current_context()
         return self._accessors.read(name, raw=raw)
+
+    def read(self, name: str) -> Any:
+        """
+        Read an accessor by name (``output.read("selected")``), or a bare
+        trait of the rendered widget (``output.read("value")`` falls through
+        to `reactive_read()`). Prefer this over `reactive_read()` wherever a
+        renderer output exists. When a name is both an accessor
+        and a widget trait, the accessor wins; read the trait with
+        `reactive_read()` on ``output.widget`` instead.
+
+        Accessor methods that post-process what they read (e.g.
+        ``visible_data()`` builds a frame, ``limits(ax)`` selects an axes)
+        post-process only in the method: ``read()`` returns the accessor's
+        underlying value, so prefer the method for those.
+        """
+        if rendering_renderer.get() is self:
+            raise RuntimeError(
+                f"`{self.output_id}.read()` can't be read inside "
+                f"`{self.output_id}`'s own render function, which builds a new "
+                "widget each time it runs. Read it in another output or an effect."
+            )
+        if name in self._accessors.names():
+            return self._read_accessor(name)
+        widget = self.widget  # reactive; cancels (req(False)) before first render
+        if widget is None:
+            guess = difflib.get_close_matches(name, self._accessors.names(), n=1)
+            hint = f" Did you mean {guess[0]!r}?" if guess else ""
+            raise AttributeError(
+                f"{type(self).__name__} has no accessor named {name!r}.{hint} "
+                "(The output hasn't rendered yet, so widget traits can't be "
+                "checked either.)"
+            )
+        if widget.has_trait(name):
+            if has_current_context():
+                from ._shinywidgets import reactive_read
+
+                return reactive_read(widget, name)
+            return getattr(widget, name)
+        guess = difflib.get_close_matches(name, self._accessors.names(), n=1)
+        hint = f" Did you mean {guess[0]!r}?" if guess else ""
+        raise AttributeError(
+            f"{type(self).__name__} has no accessor or synced trait named "
+            f"{name!r}.{hint} Accessors: {sorted(self._accessors.names())}; "
+            "bare synced-trait names also work."
+        )
 
     def _get_reactive_obj(self, x: T) -> T | None:
         self._register_current_context()

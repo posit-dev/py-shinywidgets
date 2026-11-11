@@ -12,7 +12,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    ClassVar,
     Dict,
     Iterable,
     List,
@@ -147,12 +146,7 @@ from ._dependencies import widget_pkg
 from ._embedding_atlas import EMBEDDING_ATLAS_ACCESSORS, rows_for_predicate
 from ._ipyaladin import IPYALADIN_ACCESSORS
 from ._ipydatagrid import IPYDATAGRID_ACCESSORS
-from ._ipyleaflet import (
-    IPYLEAFLET_ACCESSORS,
-    NO_DRAW_CONTROL,
-    NO_DRAW_CONTROL_MESSAGE,
-    NotIpyleaflet,
-)
+from ._ipyleaflet import IPYLEAFLET_ACCESSORS
 from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS
 from ._k3d import CAMERA as K3D_CAMERA
@@ -275,7 +269,8 @@ class render_widget(render_widget_base[WidgetT, WidgetT]):
     most recently returned by the render function, and `.widget`, the rendered
     `ipywidgets.Widget` instance. Use `.widget` to programmatically update the
     rendered widget in place (trait changes on the widget are synced to the browser),
-    or to reactively read widget state with :func:`~shinywidgets.reactive_read`.
+    and `.read("some_trait")` to reactively read widget state (a shortcut for
+    :func:`~shinywidgets.reactive_read` on `.widget`).
 
     Use :func:`~shinywidgets.output_widget` in the UI to hold the output.
 
@@ -493,6 +488,9 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("selected")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = ALTAIR_ACCESSORS
@@ -509,7 +507,11 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         ``alt.selection_interval(name="brush")``), and may be omitted when the
         chart has only one. Always name selections: altair's generated names
         change between renders. Debounced (250 ms) by default; see the
-        ``rate_policy`` and ``rate_delay`` parameters.
+        ``rate_policy`` and ``rate_delay`` parameters. Prefer declaring
+        selections with ``fields=`` or ``encodings=``: a bare
+        ``alt.selection_point()`` selects positional row indices, which are
+        only meaningful for non-aggregated charts and can silently point at
+        different rows after a re-render with new data.
         """
         selections = cast(Dict[str, "Selection"], self._read_accessor("selected"))
         return pick_selection(selections, name)
@@ -611,6 +613,9 @@ class render_embedding_atlas(
         Whether the output container should fill available space (scrolling its
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
+
+    Each accessor can also be read by name -- ``out.read("predicate")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     def __init__(
@@ -761,10 +766,13 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
     * ``target()``: the sky position at the center of the view.
     * ``fov()``: the view's field of view.
 
-    ``clicked_object()`` returns ``None`` until a source is clicked, and
-    resets to ``None`` on re-render. The others are seeded from the viewer's
-    state at render (they never return ``None``) and follow every pan, zoom,
-    or selection -- and Python-side ``.widget.target = ...`` assignments too.
+    ``clicked_object()`` returns ``None`` until a source is clicked. All four
+    are seeded from the viewer's state at render (so an interaction made
+    before the accessor's first read is reflected in that read) and follow
+    every click, pan, zoom, or selection -- and Python-side
+    ``.widget.target = ...`` assignments too. A re-render builds a new
+    viewer, so ``clicked_object()`` starts over at ``None`` and the others
+    follow the new viewer's state.
 
     **Updating in place**: ipyaladin queues method calls (e.g.,
     ``.widget.add_table()``) until the viewer has loaded in the browser, but
@@ -811,6 +819,9 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("clicked_object")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = IPYALADIN_ACCESSORS
@@ -820,10 +831,12 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
         The catalog source the user most recently clicked, as a dict with
         ``ra``, ``dec``, and ``data`` (the source's catalog row).
 
-        Returns ``None`` until the user clicks a source, and resets to
-        ``None`` on re-render, so use ``req(sky.clicked_object())`` to wait
-        for a click. (Unlike the ``clicked_object`` trait, this is
-        message-backed, so it works per instance.) Clicking the same source
+        Returns ``None`` until the user clicks a source (the synced
+        ``clicked_object`` trait defaults to ``{}``, which reads as
+        ``None``), so use ``req(sky.clicked_object())`` to wait for a click.
+        Seeded at render and per instance, so a click made before the first
+        read is reflected in it; a re-render builds a new viewer with no
+        click yet, so it starts over at ``None``. Clicking the same source
         twice doesn't fire twice. Not rate-limited.
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("clicked_object"))
@@ -864,29 +877,31 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
 
         Seeded at render and follows every zoom (and Python-side
         ``.widget.fov = ...`` assignments); reading before the first render
-        cancels silently (like ``req(False)``). Not rate-limited.
+        cancels silently (like ``req(False)``). Not rate-limited. With two
+        or more ipyaladin viewers on the same page, this follows only the
+        last-rendered one (an ipyaladin limitation: its frontend syncs the
+        field of view from one viewer per page).
         """
         self._read_accessor("fov")
         return cast(Aladin, self._widget).fov
 
 
-class _IpyleafletAccessors:
+if TYPE_CHECKING:
+    # So the mixin type-checks against the base it's always combined with
+    # (at runtime it contributes nothing to the MRO beyond object).
+    _IpyleafletBase = render_widget_base[Any, Any]
+else:
+    _IpyleafletBase = object
+
+
+class _IpyleafletAccessors(_IpyleafletBase):
     """Accessor methods shared by render_ipyleaflet and render_leafmap (whose
     ipyleaflet backend is an ipyleaflet.Map)."""
 
-    if TYPE_CHECKING:
-        # Defined by render_widget_base; declared so the mixin type-checks
-        def _read_accessor(self, name: str, *, raw: bool = False) -> object: ...
-
     def _read_ipyleaflet(self, name: str) -> object:
-        # A non-ipyleaflet backend (render_leafmap) is reported by the attach
-        # as a sentinel rather than a raise (attach runs during render, where
-        # a raise would break the output), so it's reported here, at read
-        # time.
-        raw = self._read_accessor(name, raw=True)
-        if isinstance(raw, NotIpyleaflet):
-            raise TypeError(raw.message)
-        return raw
+        # A non-ipyleaflet backend (render_leafmap) raises a TypeError via
+        # the specs' sentinel-reporting payloads
+        return self._read_accessor(name)
 
     def bounds(self) -> Tuple[Tuple[float, float], Tuple[float, float]]:
         """
@@ -921,8 +936,10 @@ class _IpyleafletAccessors:
     def clicked(self) -> Optional[Dict[str, Any]]:
         """
         The most recent map click as ipyleaflet reports it: a dict with
-        ``coordinates: [lat, lng]`` (note the order; lonboard reports
-        ``(lng, lat)``), or ``None`` until the first click. A double-click
+        ``type`` (``"click"``), ``coordinates`` (``[lat, lng]`` -- note the
+        order; lonboard reports ``(lng, lat)``), and ``location``, or ``None``
+        until the first click. Kept across
+        re-renders until the user clicks the new map. A double-click
         publishes once: the second click has the same coordinates, so it
         isn't a change (the ``dblclick`` itself is ignored). Marker clicks
         don't bubble up to the map -- use a layer's own ``on_click`` for
@@ -941,10 +958,7 @@ class _IpyleafletAccessors:
         # The attach emits sentinels rather than raising (it runs during
         # render, where a raise would break the output): a non-ipyleaflet
         # backend or a missing DrawControl is reported here, at read time.
-        raw = self._read_ipyleaflet("drawn_features")
-        if raw is NO_DRAW_CONTROL:
-            raise TypeError(NO_DRAW_CONTROL_MESSAGE)
-        return cast(List[Dict[str, Any]], raw)
+        return cast(List[Dict[str, Any]], self._read_ipyleaflet("drawn_features"))
 
 
 class render_ipyleaflet(_IpyleafletAccessors, render_widget_base[ValueT, LeafletMap]):
@@ -1007,6 +1021,9 @@ class render_ipyleaflet(_IpyleafletAccessors, render_widget_base[ValueT, Leaflet
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("clicked")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = IPYLEAFLET_ACCESSORS
@@ -1113,6 +1130,9 @@ class render_itables(render_widget_base[ValueT, ITable]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("selected_rows")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = ITABLES_ACCESSORS
@@ -1205,6 +1225,9 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("selection")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = JSCATTER_ACCESSORS
@@ -1280,6 +1303,9 @@ class render_k3d(render_widget_base[ValueT, K3dPlot]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("camera")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = (K3D_CAMERA,)
@@ -1347,22 +1373,28 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
     ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
     the interaction changes:
 
-    * ``node_clicked()``: the JSON data of the most recently clicked node.
-    * ``edge_clicked()``: the JSON data of the most recently clicked edge.
+    * ``clicked_node()``: the JSON data of the most recently clicked node.
+    * ``clicked_edge()``: the JSON data of the most recently clicked edge.
+    * ``selected_nodes()``: the data dicts of the currently selected nodes.
+    * ``selected_edges()``: the data dicts of the currently selected edges.
 
-    Each returns ``None`` until the interaction happens (a normal state, not
-    an error, so check for it, or use ``req(graph.node_clicked())``), and
-    resets to ``None`` on re-render. For other event types, register
+    ``clicked_node()`` and ``clicked_edge()`` return ``None`` until the
+    interaction happens (a normal state, not an error, so check for it, or use
+    ``req(graph.clicked_node())``), and keep their value across re-renders (the
+    last interaction still happened, though its payload refers to the previous
+    render's graph). For other event types, register
     callbacks with `CytoscapeWidget.on()` inside the render function, before
     returning the widget, and have them set a :class:`~shiny.reactive.value`
-    (ipycytoscape drops callbacks registered after the graph is displayed,
-    e.g. from an effect).
+    (registering there also means an interaction right at display isn't
+    missed).
 
-    Node selection is also synced to each node's `selected` trait, readable
-    with :func:`~shinywidgets.reactive_read`, but ipycytoscape makes nodes
-    unselectable by default: create the widget with `auto_unselectify=False`
-    and set `selectable = True` on each node (plus `box_selection_enabled=True`
-    for shift-drag selection).
+    ipycytoscape makes nodes unselectable by default, so ``selected_nodes()``
+    stays ``[]`` unless you create the widget with `auto_unselectify=False`
+    and set `selectable = True` on each node (plus
+    `box_selection_enabled=True` for shift-drag selection). Each node's
+    selection is also synced to its `selected` trait, readable with
+    :func:`~shinywidgets.reactive_read` (e.g., ``reactive_read(node,
+    "selected")`` on a node in ``.widget.graph.nodes``).
 
     Parameters
     ----------
@@ -1380,42 +1412,84 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     rate_policy
-        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget
+        and on its graph's child ``Node``/``Edge`` widgets, which own the
+        traits worth reading (``selected`` on both, ``grabbed`` on nodes):
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
-        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
-        this renderer declares a default.
+        ``reactive_read()`` only if ``rate_delay`` is given, and keeps the
+        ``selected_nodes()``/``selected_edges()`` accessors' own debounce
+        default (0.25s), which these kwargs override. Nodes or edges added
+        to the graph after the render aren't covered (re-render to cover
+        them).
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("clicked_node")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = CYTOSCAPE_ACCESSORS
 
-    def node_clicked(self) -> Optional[Dict[str, Any]]:
+    def _rate_policy_widgets(self, widget: CytoscapeWidget) -> Tuple[Widget, ...]:
+        # The interaction traits worth rate-limiting (`selected` on both,
+        # `grabbed` on nodes) live on the child Node/Edge widgets, not the
+        # CytoscapeWidget itself
+        return (widget, *widget.graph.nodes, *widget.graph.edges)
+
+    def clicked_node(self) -> Optional[Dict[str, Any]]:
         """
         The most recently clicked node, as its cytoscape ``ele.json()`` dict
         (its ``"data"`` key holds the node's data, including ``"id"``).
 
-        Returns ``None`` until the user clicks a node, and resets to ``None``
-        on re-render, so use ``req(graph.node_clicked())`` to wait for a
-        click. Node ids are strings, even for integer networkx nodes.
+        Returns ``None`` until the user clicks a node, and keeps its value
+        across re-renders (the payload then refers to the previous render's
+        graph -- node ids may not exist in the new one), so use
+        ``req(graph.clicked_node())`` to wait for a click. Node ids are
+        strings, even for integer networkx nodes.
         Clicking the same node twice doesn't fire twice. Not rate-limited.
         """
-        return cast(Optional[Dict[str, Any]], self._read_accessor("node_clicked"))
+        return cast(Optional[Dict[str, Any]], self._read_accessor("clicked_node"))
 
-    def edge_clicked(self) -> Optional[Dict[str, Any]]:
+    def clicked_edge(self) -> Optional[Dict[str, Any]]:
         """
         The most recently clicked edge, as its cytoscape ``ele.json()`` dict
         (its ``"data"`` key holds the edge's data, including ``"id"``,
         ``"source"``, and ``"target"``).
 
-        Returns ``None`` until the user clicks an edge, and resets to
-        ``None`` on re-render, so use ``req(graph.edge_clicked())`` to wait
+        Returns ``None`` until the user clicks an edge, and keeps its value
+        across re-renders, so use ``req(graph.clicked_edge())`` to wait
         for a click. Edge ids generated from networkx graphs are fresh UUIDs
-        each render. Clicking the same edge twice doesn't fire twice. Not
+        each render, so a retained payload's id won't exist in the new
+        graph. Clicking the same edge twice doesn't fire twice. Not
         rate-limited.
         """
-        return cast(Optional[Dict[str, Any]], self._read_accessor("edge_clicked"))
+        return cast(Optional[Dict[str, Any]], self._read_accessor("clicked_edge"))
+
+    def selected_nodes(self) -> List[Dict[str, Any]]:
+        """
+        The currently selected nodes, as their ``data`` dicts (each
+        including its ``"id"``), in graph order; ``[]`` when nothing is
+        selected.
+
+        Unlike ``clicked_node()``, this covers box/multi-select, and it
+        doesn't reset on re-render. ipycytoscape makes nodes unselectable
+        by default: create the widget with `auto_unselectify=False` and set
+        `selectable = True` on each node (plus `box_selection_enabled=True`
+        for shift-drag selection). Debounced by default (0.25s; see the
+        renderer's ``rate_policy``/``rate_delay`` parameters).
+        """
+        return cast(List[Dict[str, Any]], self._read_accessor("selected_nodes"))
+
+    def selected_edges(self) -> List[Dict[str, Any]]:
+        """
+        The currently selected edges, as their ``data`` dicts (each
+        including its ``"id"``, ``"source"``, and ``"target"``), in graph
+        order; ``[]`` when nothing is selected.
+
+        See :meth:`selected_nodes` for selection setup and rate limiting.
+        """
+        return cast(List[Dict[str, Any]], self._read_accessor("selected_edges"))
 
     def _as_widget(self, value: ValueT) -> CytoscapeWidget:
         # A networkx graph is a generic type (render_ipysigma accepts one too), so
@@ -1510,6 +1584,9 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("selection")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = BPLOT_ACCESSORS
@@ -1524,7 +1601,11 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
         ``interaction``) or by click-select (``interactions={"click": "select"}``).
         Single-mark figures read ``fig.selection()[0]``. Debounced (250 ms) by
         default, since brush selectors update during the drag; see the
-        ``rate_policy`` and ``rate_delay`` parameters.
+        ``rate_policy`` and ``rate_delay`` parameters. The indices are
+        positions into the mark's data: after in-place data replacement
+        through ``.widget`` (``mark.x = ...``), a retained index can point
+        at a different element, so key lookups by ID rather than position
+        when the data can change.
         """
         return cast(List[Optional["np.ndarray"]], self._read_accessor("selection"))
 
@@ -1773,6 +1854,9 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
 
     app = App(app_ui, server)
     ```
+
+    ``out.read("camera")`` also works, but returns the raw camera snapshot
+    tuple; prefer :meth:`camera`, which returns the live `Camera` object.
     """
 
     _accessor_specs = (PYTHREEJS_CAMERA,)
@@ -1874,6 +1958,9 @@ class render_leafmap(_IpyleafletAccessors, render_widget_base[ValueT, LeafletMap
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("clicked")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = IPYLEAFLET_ACCESSORS
@@ -1940,6 +2027,9 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("selected_index")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = LONBOARD_ACCESSORS
@@ -1965,14 +2055,31 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         The positional index of the most recently picked row, as
         ``gdf.iloc[map.selected_index()]``, or ``None`` until the first pick.
 
+        This accessor attaches at render, and lonboard retains the pick on
+        each layer's ``selected_index`` trait, so a pick made before this
+        accessor's first read -- for example, before a chat handler or LLM
+        tool first reads it -- is reflected in that first read instead of
+        being lost. The value follows the displayed map's retained pick: a
+        re-render keeps it only until the new map reports its own (a freshly
+        built map has no pick, so it becomes ``None``).
+
         With several pickable layers this is the most recent pick across all
         of them; it doesn't say which layer, and picking the same index on two
         different layers in a row doesn't re-fire -- with several pickable
         layers, observe each layer yourself instead:
-        ``reactive_read(layer, "selected_index")``. A layer only reports when
-        ``pickable=True`` (the default). Picking the same row of the same
-        layer twice doesn't re-fire (the trait only changes when the value
-        does), and clicking empty space doesn't clear it.
+        ``reactive_read(layer, "selected_index")``. When the accessor attaches
+        and more than one layer already holds a pick (possible only for a map
+        that outlives its render, e.g. a :func:`~shinywidgets.shared_lifetime`
+        map), there is no timestamp to say which was most recent, so the seed
+        is ``None`` rather than an arbitrary layer's pick. A layer only
+        reports when ``pickable=True`` (the default). Picking the same row of
+        the same layer twice doesn't re-fire (the trait only changes when the
+        value does), and clicking empty space doesn't clear it.
+
+        The index is a position: if the layer's data is replaced in place
+        (e.g. ``layer.table = ...`` on a long-lived map), a retained index
+        can point at a different row. To track rows across data changes,
+        carry an ID column in the geo data frame and look the pick up by it.
         """
         return cast(Optional[int], self._read_accessor("selected_index"))
 
@@ -1991,8 +2098,8 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         """
         The ``(lng, lat)`` of the most recent map click -- note the order;
         ipyleaflet reports ``[lat, lng]`` -- or ``None`` until the first
-        click. Clicking the same spot twice doesn't re-fire. Reading this is
-        what enables click reporting in the browser.
+        click. Clicking the same spot twice doesn't re-fire. Kept across
+        re-renders until the user clicks the new map.
         """
         return cast(Optional[Tuple[float, float]], self._read_accessor("clicked"))
 
@@ -2181,9 +2288,10 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
 
     * ``clicked()`` and ``picked()`` return ``None`` until the interaction
       happens. That's a normal state, not an error, so check for it, or use
-      ``req(plot.clicked())`` to wait for it; they reset to ``None`` on
-      re-render. ``limits()`` waits for the first render, then always holds
-      the axes' current limits.
+      ``req(plot.clicked())`` to wait for it; they keep their value across
+      re-renders (the payload then refers to the previous render's figure).
+      ``limits()`` waits for the first render, then always holds the axes'
+      current limits.
     * Each press fires ``clicked()`` -- a double-click arrives as three
       presses.
     * ``limits()`` updates at most once the user pauses for 250 ms (see
@@ -2253,6 +2361,9 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
 
     app = App(app_ui, server)
     ```
+
+    Each accessor can also be read by name -- ``out.read("clicked")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = MATPLOTLIB_ACCESSORS
@@ -2263,8 +2374,9 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
         `matplotlib.backend_bases.MouseEvent` (``.xdata``/``.ydata`` in the
         data coordinates of the axes under the press, ``.inaxes`` that axes).
 
-        Returns ``None`` until the user clicks, and resets to ``None`` on
-        re-render, so use ``req(plot.clicked())`` to wait for a click.
+        Returns ``None`` until the user clicks, and keeps its value across
+        re-renders (the payload then refers to the previous render's
+        figure), so use ``req(plot.clicked())`` to wait for a click.
         Presses that start a toolbar pan/zoom drag, or land outside any axes,
         don't count. Every press fires -- a double-click arrives as three
         presses. Not rate-limited.
@@ -2278,8 +2390,9 @@ class render_matplotlib(render_widget_base[ValueT, MplCanvas]):
         ``.ind`` the picked point indices). Only artists created with
         ``picker=`` (e.g., ``ax.plot(x, y, picker=5)``) are pickable.
 
-        Returns ``None`` until the user picks, and resets to ``None`` on
-        re-render. Every pick fires. Not rate-limited.
+        Returns ``None`` until the user picks, and keeps its value across
+        re-renders (the payload then refers to the previous render's
+        figure). Every pick fires. Not rate-limited.
         """
         return cast(Optional["PickEvent"], self._read_accessor("picked"))
 
@@ -2444,6 +2557,9 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("params")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     def __init__(
@@ -2474,8 +2590,9 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     def params(self) -> Dict[str, Any]:
         """
         The dashboard's current selection params: ``{name: {"value": ...,
-        "predicate": ...}}`` for each active selection, ``{}`` while nothing
-        is selected.
+        "predicate": ...}}`` for each declared selection, ``{}`` until the
+        dashboard's spec loads, and null-valued entries (``{"value": None,
+        ...}``) for selections the user hasn't brushed yet.
 
         ``predicate`` is the selection's clauses ANDed together (ready to
         embed in SQL); ``value`` is the latest value only. Updates are
@@ -2664,8 +2781,8 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
 
     * ``clicked()``: the most recent mouse press on the plot. It returns
       ``None`` until the user clicks (a normal state, not an error, so check
-      for it, or use ``req(plot.clicked())``), and resets to ``None`` on
-      re-render.
+      for it, or use ``req(plot.clicked())``), and keeps its value across
+      re-renders.
     * ``limits(ax=0)``: an axes' x/y limits after a zoom or pan, seeded from
       the rendered plot and updated once the user pauses for 250 ms
       (debounced; see ``rate_policy`` and ``rate_delay``).
@@ -2696,6 +2813,9 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("clicked")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = (CLICKED, LIMITS)
@@ -2710,7 +2830,8 @@ class render_plotnine(render_widget_base[ValueT, MplCanvas]):
         the data, and discrete (categorical) scales use integer positions --
         and with ``facet_wrap()``/``facet_grid()``, ``.inaxes`` names the
         panel's axes, but nothing in the event names its facet. Returns
-        ``None`` until the user clicks, and resets to ``None`` on re-render,
+        ``None`` until the user clicks, and keeps its value across re-renders
+        (the payload then refers to the previous render's figure),
         so use ``req(plot.clicked())`` to wait for a click. Presses that
         start a toolbar pan/zoom drag, or land outside any axes, don't count.
         Every press fires -- a double-click arrives as three presses. Not
@@ -2786,11 +2907,26 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
 
     How they behave:
 
-    * Each returns ``None`` until the interaction happens (``selected_rows()``
-      an empty frame). That's a normal state, not an error, so check for it, or
-      use ``req(plot.tapped())`` to wait for it.
+    * ``tapped()`` returns ``None`` until the user taps. That's a normal
+      state, not an error, so check for it, or use ``req(plot.tapped())``
+      to wait for it. ``selected()`` starts at ``[]`` instead: it's seeded
+      with the plot's current selection at render, so a selection made
+      before its first read isn't lost -- but a reader can't distinguish
+      "nothing selected yet" from a selection that caught nothing
+      (``selected_rows()`` is an empty frame either way). ``zoomed()`` is
+      also seeded at attach, from the plot's current ranges, when those
+      ranges hold explicit values -- so it reports the displayed viewport
+      from the start rather than ``None`` until the first zoom or pan (an
+      auto-fitting or categorical range still reports ``None`` until the
+      first gesture).
     * A re-render (e.g. when the render function reads an input) gives the user
-      a new plot, so they all start over.
+      a new plot, but every accessor keeps its value -- the last interaction
+      still *happened*. ``tapped()`` holds the old plot's last tap until a
+      new one happens; ``zoomed()`` seeds from the plot's current ranges at
+      attach, so it tracks the displayed viewport (initially the unzoomed
+      one). ``selected()`` follows the displayed plot's selection instead,
+      keeping its value until the new plot reports its own (initially empty,
+      so it becomes ``[]`` once it does).
     * Selecting the same points again isn't a change, so readers of
       ``selected()`` don't re-run. Every tap, zoom, or pan re-runs readers of
       ``tapped()`` and ``zoomed()``.
@@ -2826,22 +2962,33 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("selected")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = BOKEH_ACCESSORS
 
-    def selected(self) -> Optional[List[int]]:
+    def selected(self) -> List[int]:
         """
-        The row indices (into the plot's `ColumnDataSource`) of the most recent
+        The row indices (into the plot's `ColumnDataSource`) of the current
         selection, from a tap, box, or lasso select tool.
 
-        Returns ``None`` until the user selects, and ``[]`` after a selection
-        that caught nothing.
+        Returns ``[]`` while nothing is selected. Seeded with the plot's
+        current selection at render, so a selection made before the first read
+        is kept; as a result, "nothing selected yet" and a selection that
+        caught nothing both read as ``[]``.
         Requires a plot (or layout) with exactly one `ColumnDataSource`.
         Debounced (250 ms) by default; see the ``rate_policy`` and
         ``rate_delay`` parameters.
+
+        The indices are positions: after a re-render (or an in-place
+        ``source.data`` replacement) with new rows, a retained index can
+        point at a different row. To track rows across data changes, carry
+        an ID column in the source and map positions through it
+        (``source.data["id"][i]`` for each ``i`` in ``plot.selected()``).
         """
-        return cast(Optional[List[int]], self._read_accessor("selected"))
+        return cast(List[int], self._read_accessor("selected"))
 
     def selected_rows(self) -> pd.DataFrame:
         """
@@ -2858,7 +3005,8 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         """
         The most recent tap on a plot, as a `bokeh.events.Tap` (``.x`` and
         ``.y`` in data units, ``.model`` the plot). Returns ``None`` until the
-        user taps. Not rate-limited.
+        user taps, and keeps its value across re-renders (the payload then
+        refers to the previous render's plot). Not rate-limited.
         """
         return cast(Optional["Tap"], self._read_accessor("tapped"))
 
@@ -2866,8 +3014,13 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         """
         The plot ranges after the most recent zoom or pan, as a
         `bokeh.events.RangesUpdate` (``.x0``, ``.x1``, ``.y0``, ``.y1``,
-        ``.model``). Returns ``None`` until the user zooms or pans. Not
-        rate-limited (bokeh reports once per gesture).
+        ``.model``). Seeded with the plot's current (default) ranges at
+        attach, so a zoom made before the first read is reported; an
+        auto-fitting or categorical range reports ``None`` until the first
+        gesture, and extra ranges aren't included. Not rate-limited (bokeh
+        reports once per gesture). With several plots (a layout), the seed
+        is emitted one event per plot in document order, so the reader sees
+        the last plot's ranges until the next gesture.
         """
         return cast(Optional["RangesUpdate"], self._read_accessor("zoomed"))
 
@@ -3100,6 +3253,9 @@ class render_perspective(render_widget_base[ValueT, PerspectiveWidget]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("view_config")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = PERSPECTIVE_ACCESSORS
@@ -3157,8 +3313,8 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `DataGrid` instance. Use ``.selections()``, ``.cell_clicked()``, and
-    ``.cell_edited()`` to reactively read what the user does in the grid, or
+    `DataGrid` instance. Use ``.selections()``, ``.clicked_cell()``, and
+    ``.edited_cell()`` to reactively read what the user does in the grid, or
     `.widget` to programmatically update the rendered grid
     in place (trait changes on the widget are synced to the browser), or to
     reactively read widget state (e.g., `selections`) with
@@ -3204,6 +3360,9 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("selections")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = IPYDATAGRID_ACCESSORS
@@ -3223,33 +3382,45 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         Dragging a selection rectangle reports continuously (on every
         pointer move), so this accessor is debounced by default (0.25 s;
         see the renderer's ``rate_policy``/``rate_delay``).
+
+        On re-render, the new grid re-seeds this from its own ``selections``
+        trait (``[]`` unless the render function pre-selects). But replacing
+        the data in place (``grid.data = df``) does *not* clear the
+        selection -- ipydatagrid keeps it, so the rectangles then refer to
+        positions in the old frame. Clear it yourself when replacing data
+        (``grid.selections = []``), and prefer keying selected rows by the
+        frame's index (via :meth:`visible_data`) over positions, so lookups
+        survive data changes.
         """
         return cast(List[Dict[str, int]], self._read_accessor("selections"))
 
-    def cell_clicked(self) -> Optional[Dict[str, Any]]:
+    def clicked_cell(self) -> Optional[Dict[str, Any]]:
         """
-        The most recently clicked cell, or ``None`` if no click has happened
-        since the last render: ``{"region", "column", "column_index", "row",
+        The most recently clicked cell, or ``None`` until the first click:
+        ``{"region", "column", "column_index", "row",
         "primary_key_row", "cell_value"}``, where ``row`` is the *visible*
-        row and ``primary_key_row`` the *data* row (they differ after a sort).
+        row and ``primary_key_row`` the *data* row (they differ after a
+        sort). Kept across re-renders until the user clicks the new grid.
 
-        Fires in any ``selection_mode``, including ``"none"``; fires for
-        column-header clicks (``region="column-header"``) and twice per
-        double-click. Not rate-limited.
+        Fires in any ``selection_mode``, including ``"none"``, and for
+        column-header clicks (``region="column-header"``). Not rate-limited.
         """
-        return cast(Optional[Dict[str, Any]], self._read_accessor("cell_clicked"))
+        return cast(Optional[Dict[str, Any]], self._read_accessor("clicked_cell"))
 
-    def cell_edited(self) -> Optional[Dict[str, Any]]:
+    def edited_cell(self) -> Optional[Dict[str, Any]]:
         """
-        The most recent cell edit, or ``None`` if no edit has happened since
-        the last render: ``{"row", "column", "column_index", "value"}``,
+        The most recent cell edit, or ``None`` until the first edit:
+        ``{"row", "column", "column_index", "value"}``,
         where ``row`` is the *data* row. The widget's data is already updated
-        when this fires.
+        when this fires. Kept across re-renders until the next edit -- after
+        a re-render or data replacement with new rows, a retained ``row``
+        position can point at a different record, so key follow-up lookups
+        off ``.widget.data``'s index at read time rather than the position.
 
         Requires ``editable=True``. Also fires for Python-side
         ``set_cell_value*()`` calls. Not rate-limited.
         """
-        return cast(Optional[Dict[str, Any]], self._read_accessor("cell_edited"))
+        return cast(Optional[Dict[str, Any]], self._read_accessor("edited_cell"))
 
     def visible_data(self) -> "pd.DataFrame":
         """
@@ -3275,6 +3446,7 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
 
     # A DataFrame is a generic type (several renderers accept one), so it isn't
     # registered with as_widget()
+
     def _as_widget(self, value: ValueT) -> DataGrid:
         if is_pandas_dataframe(value):
             return dataframe_to_datagrid(cast("pd.DataFrame", value))
@@ -3403,10 +3575,15 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     ``@reactive.effect``), which then re-runs whenever the interaction changes:
 
     * ``clicked()``: the clicked points.
+    * ``hover()``: the points under the mouse.
     * ``selected()``: the points of a box or lasso selection, once the drag ends
       (``selecting()``: the same, while the user drags).
     * ``brushed()``: the selected region itself (``brushing()``: while dragging).
     * ``relayout()``: the axis ranges after a zoom, pan, or autoscale.
+    * ``double_clicked()``: a pulse on every double-click (e.g. a view reset).
+    * ``legend_clicked()``: the traces of the most recent legend click.
+    * ``visible_traces()``: the current visibility of every trace, seeded from
+      the displayed figure.
     * ``selected_rows(df)``: the rows of your data the user selected. This needs
       each point to carry its row as ``customdata``, e.g.
       ``px.scatter(df, ..., custom_data=[df.index])``; see the method for
@@ -3418,11 +3595,14 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
       state, not an error, so check for it (``req(pts is not None)``; not
       ``req(pts)``, since a data frame has no truth value).
     * A re-render (e.g. when the render function reads an input) gives the user
-      a new plot. ``clicked()``, ``selecting()``, ``brushing()``, and
-      ``relayout()`` start over at ``None``; ``selected()`` and ``brushed()``
-      follow the displayed plot's selection instead, keeping their value until
-      the new plot reports its own (initially empty, so they become ``None``
-      once it does).
+      a new plot, but every accessor keeps its value -- the last interaction
+      still *happened*. ``selected()``, ``brushed()``, and
+      ``visible_traces()`` also follow the displayed plot: the new plot
+      re-seeds them at attach, so they track what the user sees (initially
+      nothing selected, so the selection accessors become ``None`` once it
+      reports). ``clicked()``, ``hover()``, ``selecting()``, ``brushing()``,
+      ``relayout()``, ``double_clicked()``, and ``legend_clicked()`` hold the
+      old plot's last interaction until a new one happens on the new plot.
     * Repeating an interaction (clicking the same point twice) isn't a change,
       so readers don't re-run.
     * A double-click on the plot background clears ``clicked()``, and a
@@ -3431,8 +3611,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
       clear, so it leaves ``clicked()`` unchanged. With ``dragmode="select"``
       or ``"lasso"``, a plain click also resets ``selected()`` and
       ``brushed()`` (plotly.js reports it as a zero-area selection).
-    * The streaming ones, ``selecting()`` and ``brushing()``, update at most
-      once the user pauses for 250 ms (see ``rate_policy`` and ``rate_delay``).
+    * The streaming ones, ``hover()``, ``selecting()``, and ``brushing()``,
+      update at most once the user pauses for 250 ms (see ``rate_policy`` and
+      ``rate_delay``).
     * They can't be read inside this output's own render function, which builds
       a new plot each time it runs. To change the plot in response to a click,
       modify ``.widget`` from a ``@reactive.effect`` instead (see the example).
@@ -3474,11 +3655,12 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     rate_policy
-        How to rate-limit :meth:`selecting` and :meth:`brushing` (debounced by
-        default) and :func:`~shinywidgets.reactive_read` on the widget:
-        ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps each
-        accessor's own default, and debounces ``reactive_read()`` only if
-        ``rate_delay`` is given.
+        How to rate-limit :meth:`hover`, :meth:`selecting`, and
+        :meth:`brushing` (debounced by default) and
+        :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
+        ``"throttle"``. ``None`` (the default) keeps each accessor's own
+        default, and debounces ``reactive_read()`` only if ``rate_delay`` is
+        given.
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
@@ -3531,6 +3713,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         req(pts is not None)
         plot.widget.layout.title.text = f"Clicked x={pts['x'].iloc[0]}"
     ```
+
+    Each accessor can also be read by name -- ``out.read("selected")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = PLOTLY_ACCESSORS
@@ -3547,6 +3732,10 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         wait for a click. A double-click on a marker re-fires the click after
         the clear, so it leaves the value unchanged. Clicking the same point
         twice doesn't fire twice. Not rate-limited. Requires pandas.
+
+        Kept across re-renders: after a re-render with new data, a retained
+        ``point_index`` can point at a different point, so key lookups off
+        ``customdata`` (see :meth:`selected_rows`) rather than the position.
         """
         return cast(Optional["pd.DataFrame"], self._read_accessor("clicked"))
 
@@ -3555,12 +3744,18 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         The points of the most recent box or lasso selection, once the gesture
         ends, with the same columns as :meth:`clicked`.
 
+        Selection must be enabled on the plot: set ``dragmode="select"`` or
+        ``"lasso"`` on the figure's layout, or leave the modebar visible so
+        the user can pick the Box/Lasso Select tool.
+
         Returns ``None`` until the user selects, and again after a deselect
         (double-click); an empty frame for a selection that caught no points.
         With ``dragmode="select"`` or ``"lasso"``, a plain click also resets
         it (plotly.js reports the click as a zero-area selection). Not
         rate-limited. Requires pandas. See :meth:`selected_rows` for rows of
-        your data.
+        your data -- and prefer keying lookups off ``customdata`` as it
+        does: ``point_index`` is a position, which a re-render with new data
+        can silently re-point at a different point.
         """
         return cast(Optional["pd.DataFrame"], self._read_accessor("selected"))
 
@@ -3599,10 +3794,86 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         plotly.js reports them: keys like ``"xaxis.range[0]"`` and
         ``"xaxis.autorange"`` (other relayout keys are dropped).
 
-        Returns ``None`` until the user changes an axis. Not rate-limited
-        (plotly.js reports once per gesture).
+        The payload is a *delta* -- only the keys that gesture changed, not
+        the current axes -- and it keeps its value across re-renders, where
+        it then refers to the previous render's plot (R plotly's
+        ``event_data("plotly_relayout")`` behaves the same way). For the
+        displayed plot's current ranges, read ``plot.widget.layout``
+        (e.g. ``plot.widget.layout.xaxis.range``) -- plotly.py syncs every
+        zoom and pan back to it; this accessor works well as the reactive
+        trigger for such a read. Returns ``None`` until the user changes an
+        axis. Not rate-limited (plotly.js reports once per gesture).
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("relayout"))
+
+    def hover(self) -> Optional[pd.DataFrame]:
+        """
+        The points under the mouse, with the same columns as :meth:`clicked`.
+
+        Returns ``None`` until the mouse first crosses a point, and again when
+        it leaves the points (plotly.js's ``plotly_unhover``), so check for
+        ``None`` (e.g. ``req(pts is not None)``). Debounced (250 ms) by
+        default, so readers update once the mouse rests; see the
+        ``rate_policy`` and ``rate_delay`` parameters. Requires pandas.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("hover"))
+
+    def double_clicked(self) -> Optional[bool]:
+        """
+        A pulse that fires on every double-click: ``None`` until the first
+        one, then ``True``, re-firing readers on each subsequent one even
+        though the value stays ``True``.
+
+        This is how "the user reset the view" becomes observable on every
+        subplot type: a cartesian double-click reset also reports axis ranges
+        to :meth:`relayout`, but mapbox, 3D, and smith subplots don't.
+
+        Note that a double-click on the plot background also clears
+        :meth:`clicked` (and a deselect clears the selection accessors), so
+        ``clicked()`` becoming ``None`` conflates double-click and deselect
+        by design -- read this accessor to tell them apart. In the
+        ``"select"``/``"lasso"`` dragmodes a background double-click
+        deselects *without* firing this pulse (plotly.js emits
+        ``plotly_doubleclick`` only where it means resetting the view,
+        matching R plotly). Not rate-limited.
+        """
+        return cast(Optional[bool], self._read_accessor("double_clicked"))
+
+    def legend_clicked(self) -> Optional[pd.DataFrame]:
+        """
+        The traces affected by the most recent legend click, one row per
+        trace: ``trace_index``, ``name``, and ``legendgroup``. The clicked
+        trace is the first row; when it belongs to a ``legendgroup``, the
+        group's other traces follow (plotly.js toggles the whole group by
+        default, but only the clicked trace when the legend's
+        ``groupclick="toggleitem"``), unlike R plotly's
+        ``plotly_legendclick``, which ships the traces' full data.
+
+        Returns ``None`` until the user clicks a legend item, and re-fires
+        on every click, even of the same item (a second click toggles
+        visibility back). A legend double-click (isolate traces) also fires
+        it, once per click. Read :meth:`visible_traces` for the visibility
+        state the click produces. Not rate-limited. Requires pandas.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("legend_clicked"))
+
+    def visible_traces(self) -> Optional[pd.DataFrame]:
+        """
+        The current visibility of every trace: ``trace_index``, ``name``,
+        and ``visible`` (``False`` once a legend click hides the trace, or
+        the figure set ``visible=False``/``"legendonly"``).
+
+        Seeded from the displayed figure at render, so it reflects the
+        initial figure before any interaction, and updated after every
+        restyle that changes visibility (legend clicks and double-clicks, or
+        ``.widget.update_traces(visible=...)``, batched or not) and after
+        trace-structure changes (``.widget.add_trace(...)``,
+        ``delete_traces``, reordering). Visibility here is each
+        trace's ``visible`` attribute; traces expanded by a groupby
+        transform report their own, not each group's. Not rate-limited.
+        Requires pandas.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("visible_traces"))
 
     def selected_rows(
         self, df: IntoDataFrameT, *, key: Optional[str] = None
@@ -3721,6 +3992,9 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
       would leak 3 models per light (and log a transient console error).
     * Rotate objects via ``mesh.quaternion``; pythreejs's ``rotation`` (Euler)
       updates don't render (an upstream pythreejs bug).
+
+    ``out.read("camera")`` also works, but returns the raw camera snapshot
+    tuple; prefer :meth:`camera`, which returns the live `Camera` object.
     """
 
     _accessor_specs = (PYTHREEJS_CAMERA,)
@@ -4288,6 +4562,9 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+
+    Each accessor can also be read by name -- ``out.read("sql")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     def __init__(
@@ -4349,6 +4626,7 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
 
     # DataFrames are a generic type that several renderers accept, so rather than
     # registering them in AS_WIDGET_MAP, coerce them here
+
     def _as_widget(self, value: ValueT) -> QuakWidget:
         if isinstance(value, Widget):
             widget = cast(QuakWidget, super()._as_widget(value))
@@ -4495,7 +4773,7 @@ def _attach_clicked(widget: Widget, emit: Emit) -> Callable[[], None]:
         emit(change["new"])
 
     grid_widget.observe(_on, names=["callback_kwargs"])
-    # No seeding: an event is None until it happens
+    # No seeding: nothing to report until the first click
     return lambda: grid_widget.unobserve(_on, names=["callback_kwargs"])
 
 
@@ -4550,8 +4828,11 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       every displayed column plus ``mols2grid-id`` -- for click-to-inspect
       panels and drill-downs. The payload can be wide (it includes the
       cell's image markup), so pick the keys you display rather than
-      stringifying the whole dict. A click is an event, not state:
-      ``clicked()`` is `None` until the first click and resets on re-render.
+      stringifying the whole dict -- and ``clicked()`` raises without
+      ``clicks=True`` or a Python ``callback``. ``clicked()`` is `None`
+      until the first click and
+      keeps its value across re-renders (the last click still happened,
+      though its row data refers to the previous render's grid).
     * **Filtering (Python -> browser):** ``grid.grid.filter(mask)`` (a boolean
       mask, Series, or list) hides non-matching molecules in the already
       rendered grid, without re-rendering. The mask is positional against the
@@ -4616,9 +4897,10 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     clicks
         Whether clicking a molecule's image posts its row data for
         `.clicked()` to read. Adds a click target to each cell. Ignored when
-        an explicit ``callback`` is passed (a Python one enables the same
-        target; note that with a JavaScript callback the browser runs it
-        instead of posting the row data, so `.clicked()` receives nothing).
+        an explicit ``callback`` is passed: a Python callback enables the
+        same channel on its own, while a JavaScript callback runs in the
+        browser and posts nothing -- so in that combination `.clicked()` is
+        unavailable (it raises, pointing here).
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -4678,9 +4960,12 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
 
     app = App(app_ui, server)
     ```
+
+    Each accessor can also be read by name -- ``out.read("selection")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
-    _accessor_specs: ClassVar[tuple[AccessorSpec, ...]] = (
+    _accessor_specs = (
         AccessorSpec(
             name="selection",
             kind="state",
@@ -4689,13 +4974,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         ),
         AccessorSpec(
             name="clicked",
-            kind="event",
+            kind="state",
             attach=_attach_clicked,
             payload=_parse_trait_dict,
-            # Attach at render, not on first read: with no seeding (an event
-            # is None until it happens), a click that lands before the first
-            # read would otherwise never be emitted
-            eager=True,
         ),
     )
 
@@ -4714,6 +4995,18 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         rate_delay: Optional[int] = None,
         **kwargs: Any,
     ):
+        # The click channel only exists when the grid document is rendered
+        # with a Python callback (clicks=True injects a no-op one; a
+        # JavaScript callback runs in the browser and posts nothing, so
+        # clicks=True + a JS callback has no channel either -- _as_widget
+        # skips the injection for any explicit callback), so the clicked()
+        # accessor exists only then -- must be set before super().__init__()
+        # builds the accessors from it
+        callback = kwargs.get("callback")
+        if not (callable(callback) or (clicks and not callback)):
+            self._accessor_specs = tuple(
+                s for s in self._accessor_specs if s.name != "clicked"
+            )
         super().__init__(
             _fn,
             width=width,
@@ -4808,17 +5101,25 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
 
     def clicked(self) -> Optional[Dict[str, Any]]:
         """
-        The row data of the molecule image most recently clicked since the
-        last render, or `None` if no click has happened yet (requires
-        ``clicks=True`` or a Python ``callback``).
+        The row data of the molecule image most recently clicked, or `None`
+        if no click has happened yet (requires ``clicks=True`` or a Python
+        ``callback``).
 
-        Unlike `.selection()` (the checkbox set), a click is an event: it
-        carries the clicked row's data (every displayed column, plus
-        ``mols2grid-id``) and resets to `None` on re-render. All values are
+        Unlike `.selection()` (the checkbox set), a click is retained
+        last-click state: it carries the clicked row's data (every displayed
+        column, plus ``mols2grid-id``) and keeps its value across re-renders
+        until the user clicks the new grid. All values are
         strings except ``mols2grid-id`` (an int), and clicking the same
         molecule twice in a row does not re-fire (a mols2grid limitation:
-        the trait only changes when the payload does).
+        the trait only changes when the payload does). Raises without
+        ``clicks=True`` or a Python ``callback``.
         """
+        if "clicked" not in self._accessors.names():
+            raise RuntimeError(
+                "clicked() needs the grid's click channel, which the document "
+                "only renders when asked: add clicks=True (or a Python "
+                "callback=) to the @render_mols2grid decorator."
+            )
         return cast(Optional[Dict[str, Any]], self._read_accessor("clicked"))
 
     async def _render(self) -> Jsonifiable | None:
@@ -5234,8 +5535,9 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
     input. Call it in a reactive function (a ``@render.*`` function,
     ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
     the selection changes. It returns ``None`` until the viewer first reports
-    (typically its empty load-time selection), and resets to ``None`` on
-    re-render.
+    (typically its empty load-time selection). A re-render keeps the last
+    selection only briefly: the new viewer's own empty load-time selection
+    promptly replaces it.
 
     For play/pause, timeline scrubbing, and other interactions (which have no
     accessor), register a callback with `rerun.notebook.Viewer.on_event()`
@@ -5317,6 +5619,9 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
         rec.log("points", rr.Points3D(np.random.rand(100, 3)))
         return Viewer(width="auto", height="auto", recording=rec)
     ```
+
+    Each accessor can also be read by name -- ``out.read("selection")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = (SELECTION,)
@@ -5331,8 +5636,9 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
 
         Returns ``None`` until the viewer first reports -- typically its
         empty selection at load, so ``selection()`` soon reflects "nothing
-        selected" rather than staying ``None`` -- and resets to ``None`` on
-        re-render, so use ``req(viewer.selection())`` to wait for a report.
+        selected" rather than staying ``None`` -- and keeps its value across
+        re-renders only until the new viewer's empty load-time selection
+        replaces it, so use ``req(viewer.selection())`` to wait for a report.
         Selecting the same thing twice doesn't fire twice. Not rate-limited.
         """
         return cast(Optional["SelectionChangeEvent"], self._read_accessor("selection"))
@@ -5530,6 +5836,9 @@ class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
             searchable=True,
         )
     ```
+
+    Each accessor can also be read by name -- ``out.read("selected_rows")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = REACTABLE_ACCESSORS
@@ -5544,6 +5853,13 @@ class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
         ``selection=`` prop to be set. Silently cancels (``req(False)``) until
         the browser first reports the table's state, shortly after render. Not
         rate-limited.
+
+        Positions are into the *current* data: after a re-render with new
+        data (or a ``.widget.props`` data replacement), a retained position
+        can point at a different row until the table re-reports. To track
+        rows across data changes, include an ID column and resolve positions
+        against the data the table currently shows
+        (``df.iloc[tbl.selected_rows()]["id"]``).
         """
         return cast("List[int]", self._read_accessor("selected_rows"))
 
@@ -5639,16 +5955,23 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
     position, much like ``input.my_slider()`` reads an input. Call it in a
     reactive function (a ``@render.*`` function, ``@reactive.calc``, or
     ``@reactive.effect``), which then re-runs whenever the crosshair moves.
-    It returns ``None`` until the first crosshair move (the position is not
-    sent on load), and resets to ``None`` on re-render. Debounced (250 ms)
-    by default; see ``rate_policy`` and ``rate_delay``. For every event
-    un-debounced, register a callback with ``@nv.on_location_change`` inside
-    the render function and have it set a session-scoped `reactive.Value`.
+    It attaches at render, seeded with the position the viewer has already
+    synced to Python, so a crosshair move made before its first read (e.g.,
+    behind a button or chat handler) is reflected in that read instead of
+    lost. A re-render re-seeds from the new viewer at attach (a freshly
+    rendered viewer starts at the volume center, ``[0.5, 0.5, 0.5]``).
+    Debounced (250 ms) by default; see ``rate_policy`` and ``rate_delay``.
+    For every event un-debounced, register a callback with
+    ``@nv.on_location_change`` inside the render function and have it set a
+    session-scoped `reactive.Value`.
 
-    **Reading the crosshair**: the crosshair position does *not* sync back
-    as a trait (``reactive_read(nv.widget.scene, "crosshair_pos")`` never
-    updates); ``location()`` (above) and the `on_location_change` callback
-    are the ways to read it. (Beware: exceptions raised inside
+    **Reading the crosshair**: ``location()`` (above) and the
+    `on_location_change` callback are the ways to read the crosshair
+    reactively. The position does sync back to
+    ``nv.widget.scene.crosshair_pos`` (``location()``'s seed reads it), but
+    ipyniivue applies that sync silently, so
+    ``reactive_read(nv.widget.scene, "crosshair_pos")`` never re-runs.
+    (Beware: exceptions raised inside
     `on_location_change` callbacks are swallowed by ipywidgets, so a failing
     callback just looks like "no updates".) Similarly,
     ``nv.frac2mm()``/``nv.mm2frac()`` don't work on Shiny (the coordinate
@@ -5723,6 +6046,9 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
 
     app = App(app_ui, server)
     ```
+
+    Each accessor can also be read by name -- ``out.read("location")`` --
+    which also accepts the widget's bare synced-trait names.
     """
 
     _accessor_specs = (LOCATION,)
@@ -5736,9 +6062,14 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
         per volume), ``string`` (a formatted summary), and ``xy`` (canvas
         coordinates).
 
-        Returns ``None`` until the first crosshair move (the position is not
-        sent on load), and resets to ``None`` on re-render, so use
-        ``req(nv.location())`` to wait for a report. Debounced (250 ms) by
+        The accessor attaches at render, seeded with the position the viewer
+        has already synced to Python (``nv.widget.scene.crosshair_pos``), so
+        a crosshair move made before its first read is reflected in that
+        read instead of lost, and a re-render re-seeds from the new viewer's
+        position at attach. Only ``frac`` syncs back, so a seeded
+        value carries just ``frac`` plus a ``"seeded": True`` marker; the
+        other keys (``mm``, ``vox``, ``values``, ...) appear with the next
+        crosshair move, which reports the full dict. Debounced (250 ms) by
         default; see the ``rate_policy`` and ``rate_delay`` parameters.
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("location"))

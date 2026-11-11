@@ -222,32 +222,42 @@ def test_read_unknown_name_raises() -> None:
         a.read("nope")
 
 
-def test_lazy_attach_on_first_read_then_every_render() -> None:
+def test_attach_at_render_and_reattach_every_render() -> None:
+    # Every accessor attaches at render (never on first read), so an
+    # interaction before the first read isn't lost
     a, cap, _ = make()
     a.on_render(object())
-    assert cap.attached == 0
-    assert a.read("clicked") is None
     assert cap.attached == 1
+    cap.send({"x": 1})
+    assert a.read("clicked") == {"x": 1}
     a.on_render(object())
     assert cap.detached == 1 and cap.attached == 2
 
 
-def test_eager_attach_in_on_render() -> None:
-    a, cap, _ = make(eager=True)
+def test_failed_render_attach_is_retried_on_read() -> None:
+    # An attach that raises at render must not break the output; the next
+    # read retries the attach (and surfaces the error there)
+    cap = Capture()
+    attempts = 0
+
+    def flaky_attach(
+        widget: object, emit: Callable[[object], None]
+    ) -> Callable[[], None]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise Cancel()
+        return cap.attach(widget, emit)
+
+    spec = acc.AccessorSpec(name="clicked", kind="event", attach=flaky_attach)
+    a = acc.Accessors([spec], schedule=FakeSchedule())
     a.on_render(object())
+    assert attempts == 1 and cap.attached == 0
+    assert a.read("clicked") is None
     assert cap.attached == 1
 
 
-def test_eager_defaults_to_kind() -> None:
-    # State accessors attach at render (a change before the first read -- a
-    # lasso drawn before a chat handler's first read -- is then not lost);
-    # event accessors stay lazy
-    state = acc.AccessorSpec(name="zoom", kind="state", attach=noop_attach)
-    event = acc.AccessorSpec(name="clicked", kind="event", attach=noop_attach)
-    assert state.eager is True and event.eager is False
-
-
-def test_state_attach_is_eager_by_default() -> None:
+def test_state_attach_at_render() -> None:
     cap = Capture()
     spec = acc.AccessorSpec(name="zoom", kind="state", attach=cap.attach)
     a = acc.Accessors([spec], schedule=FakeSchedule())
@@ -255,19 +265,9 @@ def test_state_attach_is_eager_by_default() -> None:
     assert cap.attached == 1  # attached at render, with no read
 
 
-def test_event_attach_stays_lazy_by_default() -> None:
+def test_event_attach_also_at_render() -> None:
     a, cap, _ = make()  # make() builds a kind="event" spec
     a.on_render(object())
-    assert cap.attached == 0
-
-
-def test_eager_false_keeps_a_state_accessor_lazy() -> None:
-    cap = Capture()
-    spec = acc.AccessorSpec(name="zoom", kind="state", attach=cap.attach, eager=False)
-    a = acc.Accessors([spec], schedule=FakeSchedule())
-    a.on_render(object())
-    assert cap.attached == 0
-    a.read("zoom")
     assert cap.attached == 1
 
 
@@ -504,7 +504,7 @@ def test_value_emitted_during_attach_skips_rate_limit() -> None:
     assert a.read("sel") == "initial" and s.timers == []
 
 
-def test_failed_attach_is_not_retried_on_render() -> None:
+def test_failed_attach_is_retried_at_render_but_raises_only_at_read() -> None:
     calls: List[int] = []
 
     def attach(widget: object, emit: Callable[[object], None]) -> Callable[[], None]:
@@ -515,11 +515,12 @@ def test_failed_attach_is_not_retried_on_render() -> None:
         [acc.AccessorSpec(name="sel", kind="event", attach=attach)],
         schedule=FakeSchedule(),
     )
-    a.on_render(object())
+    a.on_render(object())  # attach is attempted (and swallowed) at render
+    assert len(calls) == 1
     with pytest.raises(TypeError):
         a.read("sel")
-    a.on_render(object())  # must not raise from inside a render
-    assert calls == [1]
+    a.on_render(object())  # retried at the next render; still must not raise
+    assert len(calls) == 3
 
 
 def test_attach_failing_on_a_new_widget_raises_at_the_read_not_the_render() -> None:

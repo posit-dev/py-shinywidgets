@@ -4,10 +4,12 @@ Accessors for `render_reactable`, backed by shinywidgets' reactable state bridge
 reactable-py's widget never calls `model.send()` itself, but its JavaScript
 bundle exports R reactable's state API (`getState`/`onStateChange`), keyed by
 the table's `elementId` prop (which `render_reactable` defaults to a unique
-value when the user didn't set one). When an accessor attaches, the bridge in
-`js/src/reactable.ts` subscribes to that API and forwards a pruned table state
-(page, sort, filters, search, selection) as custom messages, so nothing is
-subscribed and no traffic flows until an accessor is read.
+value when the user didn't set one). Every accessor attaches at render (the
+shinywidgets norm): the bridge in `js/src/reactable.ts` subscribes to that
+API and forwards a pruned table state (page, sort, filters, search,
+selection) as custom messages. The frontend's `getState` reports the full
+current state on bind, so the attach also seeds the accessor -- a sort or
+selection made before the first read is reflected in it.
 """
 
 from __future__ import annotations
@@ -15,7 +17,6 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from ._accessors import AccessorSpec, Attach, Emit
-from ._comm import when_comm_open
 
 # Sent when an accessor attaches; the JS bridge binds once per model.
 BIND_MESSAGE = {"shinywidgets": "bind-reactable"}
@@ -57,11 +58,7 @@ def state_attach(key: str, none_as: object = _USE_NATIVE) -> Attach:
 
         widget.on_msg(on_msg)
         # Idempotent on the JS side, so several accessors may each send it.
-        # The send must wait for the widget's comm: a widget built during a
-        # render only gets its real comm after the render's flush, and until
-        # then sends are silently dropped (e.g. on every re-render, where the
-        # helper re-attaches during _render()).
-        when_comm_open(widget, lambda: widget.send(dict(BIND_MESSAGE)))
+        widget.send(dict(BIND_MESSAGE))
         return lambda: widget.on_msg(on_msg, remove=True)
 
     return attach
