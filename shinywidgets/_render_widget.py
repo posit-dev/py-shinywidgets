@@ -507,7 +507,11 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         ``alt.selection_interval(name="brush")``), and may be omitted when the
         chart has only one. Always name selections: altair's generated names
         change between renders. Debounced (250 ms) by default; see the
-        ``rate_policy`` and ``rate_delay`` parameters.
+        ``rate_policy`` and ``rate_delay`` parameters. Prefer declaring
+        selections with ``fields=`` or ``encodings=``: a bare
+        ``alt.selection_point()`` selects positional row indices, which are
+        only meaningful for non-aggregated charts and can silently point at
+        different rows after a re-render with new data.
         """
         selections = cast(Dict[str, "Selection"], self._read_accessor("selected"))
         return pick_selection(selections, name)
@@ -1381,8 +1385,8 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
     render's graph). For other event types, register
     callbacks with `CytoscapeWidget.on()` inside the render function, before
     returning the widget, and have them set a :class:`~shiny.reactive.value`
-    (ipycytoscape drops callbacks registered after the graph is displayed,
-    e.g. from an effect).
+    (registering there also means an interaction right at display isn't
+    missed).
 
     ipycytoscape makes nodes unselectable by default, so ``selected_nodes()``
     stays ``[]`` unless you create the widget with `auto_unselectify=False`
@@ -1597,7 +1601,11 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
         ``interaction``) or by click-select (``interactions={"click": "select"}``).
         Single-mark figures read ``fig.selection()[0]``. Debounced (250 ms) by
         default, since brush selectors update during the drag; see the
-        ``rate_policy`` and ``rate_delay`` parameters.
+        ``rate_policy`` and ``rate_delay`` parameters. The indices are
+        positions into the mark's data: after in-place data replacement
+        through ``.widget`` (``mark.x = ...``), a retained index can point
+        at a different element, so key lookups by ID rather than position
+        when the data can change.
         """
         return cast(List[Optional["np.ndarray"]], self._read_accessor("selection"))
 
@@ -1847,8 +1855,8 @@ class render_ipyvolume(render_widget_base[ValueT, IpyvolumeFigure]):
     app = App(app_ui, server)
     ```
 
-    Each accessor can also be read by name -- ``out.read("camera")`` --
-    which also accepts the widget's bare synced-trait names.
+    ``out.read("camera")`` also works, but returns the raw camera snapshot
+    tuple; prefer :meth:`camera`, which returns the live `Camera` object.
     """
 
     _accessor_specs = (PYTHREEJS_CAMERA,)
@@ -2067,6 +2075,11 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         reports when ``pickable=True`` (the default). Picking the same row of
         the same layer twice doesn't re-fire (the trait only changes when the
         value does), and clicking empty space doesn't clear it.
+
+        The index is a position: if the layer's data is replaced in place
+        (e.g. ``layer.table = ...`` on a long-lived map), a retained index
+        can point at a different row. To track rows across data changes,
+        carry an ID column in the geo data frame and look the pick up by it.
         """
         return cast(Optional[int], self._read_accessor("selected_index"))
 
@@ -2577,8 +2590,9 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     def params(self) -> Dict[str, Any]:
         """
         The dashboard's current selection params: ``{name: {"value": ...,
-        "predicate": ...}}`` for each active selection, ``{}`` while nothing
-        is selected.
+        "predicate": ...}}`` for each declared selection, ``{}`` until the
+        dashboard's spec loads, and null-valued entries (``{"value": None,
+        ...}``) for selections the user hasn't brushed yet.
 
         ``predicate`` is the selection's clauses ANDed together (ready to
         embed in SQL); ``value`` is the latest value only. Updates are
@@ -2967,6 +2981,12 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         Requires a plot (or layout) with exactly one `ColumnDataSource`.
         Debounced (250 ms) by default; see the ``rate_policy`` and
         ``rate_delay`` parameters.
+
+        The indices are positions: after a re-render (or an in-place
+        ``source.data`` replacement) with new rows, a retained index can
+        point at a different row. To track rows across data changes, carry
+        an ID column in the source and map positions through it
+        (``source.data["id"][i]`` for each ``i`` in ``plot.selected()``).
         """
         return cast(List[int], self._read_accessor("selected"))
 
@@ -2998,7 +3018,9 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
         attach, so a zoom made before the first read is reported; an
         auto-fitting or categorical range reports ``None`` until the first
         gesture, and extra ranges aren't included. Not rate-limited (bokeh
-        reports once per gesture).
+        reports once per gesture). With several plots (a layout), the seed
+        is emitted one event per plot in document order, so the reader sees
+        the last plot's ranges until the next gesture.
         """
         return cast(Optional["RangesUpdate"], self._read_accessor("zoomed"))
 
@@ -3360,6 +3382,15 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         Dragging a selection rectangle reports continuously (on every
         pointer move), so this accessor is debounced by default (0.25 s;
         see the renderer's ``rate_policy``/``rate_delay``).
+
+        On re-render, the new grid re-seeds this from its own ``selections``
+        trait (``[]`` unless the render function pre-selects). But replacing
+        the data in place (``grid.data = df``) does *not* clear the
+        selection -- ipydatagrid keeps it, so the rectangles then refer to
+        positions in the old frame. Clear it yourself when replacing data
+        (``grid.selections = []``), and prefer keying selected rows by the
+        frame's index (via :meth:`visible_data`) over positions, so lookups
+        survive data changes.
         """
         return cast(List[Dict[str, int]], self._read_accessor("selections"))
 
@@ -3381,7 +3412,10 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         The most recent cell edit, or ``None`` until the first edit:
         ``{"row", "column", "column_index", "value"}``,
         where ``row`` is the *data* row. The widget's data is already updated
-        when this fires. Kept across re-renders until the next edit.
+        when this fires. Kept across re-renders until the next edit -- after
+        a re-render or data replacement with new rows, a retained ``row``
+        position can point at a different record, so key follow-up lookups
+        off ``.widget.data``'s index at read time rather than the position.
 
         Requires ``editable=True``. Also fires for Python-side
         ``set_cell_value*()`` calls. Not rate-limited.
@@ -3690,6 +3724,10 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         wait for a click. A double-click on a marker re-fires the click after
         the clear, so it leaves the value unchanged. Clicking the same point
         twice doesn't fire twice. Not rate-limited. Requires pandas.
+
+        Kept across re-renders: after a re-render with new data, a retained
+        ``point_index`` can point at a different point, so key lookups off
+        ``customdata`` (see :meth:`selected_rows`) rather than the position.
         """
         return cast(Optional["pd.DataFrame"], self._read_accessor("clicked"))
 
@@ -3707,7 +3745,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         With ``dragmode="select"`` or ``"lasso"``, a plain click also resets
         it (plotly.js reports the click as a zero-area selection). Not
         rate-limited. Requires pandas. See :meth:`selected_rows` for rows of
-        your data.
+        your data -- and prefer keying lookups off ``customdata`` as it
+        does: ``point_index`` is a position, which a re-render with new data
+        can silently re-point at a different point.
         """
         return cast(Optional["pd.DataFrame"], self._read_accessor("selected"))
 
@@ -3746,8 +3786,15 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         plotly.js reports them: keys like ``"xaxis.range[0]"`` and
         ``"xaxis.autorange"`` (other relayout keys are dropped).
 
-        Returns ``None`` until the user changes an axis. Not rate-limited
-        (plotly.js reports once per gesture).
+        The payload is a *delta* -- only the keys that gesture changed, not
+        the current axes -- and it keeps its value across re-renders, where
+        it then refers to the previous render's plot (R plotly's
+        ``event_data("plotly_relayout")`` behaves the same way). For the
+        displayed plot's current ranges, read ``plot.widget.layout``
+        (e.g. ``plot.widget.layout.xaxis.range``) -- plotly.py syncs every
+        zoom and pan back to it; this accessor works well as the reactive
+        trigger for such a read. Returns ``None`` until the user changes an
+        axis. Not rate-limited (plotly.js reports once per gesture).
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("relayout"))
 
@@ -3869,8 +3916,8 @@ class render_pythreejs(render_widget_base[ValueT, PythreejsRenderer]):
     * Rotate objects via ``mesh.quaternion``; pythreejs's ``rotation`` (Euler)
       updates don't render (an upstream pythreejs bug).
 
-    Each accessor can also be read by name -- ``out.read("camera")`` --
-    which also accepts the widget's bare synced-trait names.
+    ``out.read("camera")`` also works, but returns the raw camera snapshot
+    tuple; prefer :meth:`camera`, which returns the live `Camera` object.
     """
 
     _accessor_specs = (PYTHREEJS_CAMERA,)
@@ -4772,9 +4819,10 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     clicks
         Whether clicking a molecule's image posts its row data for
         `.clicked()` to read. Adds a click target to each cell. Ignored when
-        an explicit ``callback`` is passed (a Python one enables the same
-        target; note that with a JavaScript callback the browser runs it
-        instead of posting the row data, so `.clicked()` receives nothing).
+        an explicit ``callback`` is passed: a Python callback enables the
+        same channel on its own, while a JavaScript callback runs in the
+        browser and posts nothing -- so in that combination `.clicked()` is
+        unavailable (it raises, pointing here).
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -4871,10 +4919,13 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     ):
         # The click channel only exists when the grid document is rendered
         # with a Python callback (clicks=True injects a no-op one; a
-        # JavaScript callback runs in the browser and posts nothing), so the
-        # clicked() accessor exists only then -- must be set before
-        # super().__init__() builds the accessors from it
-        if not (clicks or callable(kwargs.get("callback"))):
+        # JavaScript callback runs in the browser and posts nothing, so
+        # clicks=True + a JS callback has no channel either -- _as_widget
+        # skips the injection for any explicit callback), so the clicked()
+        # accessor exists only then -- must be set before super().__init__()
+        # builds the accessors from it
+        callback = kwargs.get("callback")
+        if not (callable(callback) or (clicks and not callback)):
             self._accessor_specs = tuple(
                 s for s in self._accessor_specs if s.name != "clicked"
             )
@@ -5406,8 +5457,9 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
     input. Call it in a reactive function (a ``@render.*`` function,
     ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
     the selection changes. It returns ``None`` until the viewer first reports
-    (typically its empty load-time selection), and keeps its value across
-    re-renders.
+    (typically its empty load-time selection). A re-render keeps the last
+    selection only briefly: the new viewer's own empty load-time selection
+    promptly replaces it.
 
     For play/pause, timeline scrubbing, and other interactions (which have no
     accessor), register a callback with `rerun.notebook.Viewer.on_event()`
@@ -5507,7 +5559,8 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
         Returns ``None`` until the viewer first reports -- typically its
         empty selection at load, so ``selection()`` soon reflects "nothing
         selected" rather than staying ``None`` -- and keeps its value across
-        re-renders, so use ``req(viewer.selection())`` to wait for a report.
+        re-renders only until the new viewer's empty load-time selection
+        replaces it, so use ``req(viewer.selection())`` to wait for a report.
         Selecting the same thing twice doesn't fire twice. Not rate-limited.
         """
         return cast(Optional["SelectionChangeEvent"], self._read_accessor("selection"))
@@ -5722,6 +5775,13 @@ class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
         ``selection=`` prop to be set. Silently cancels (``req(False)``) until
         the browser first reports the table's state, shortly after render. Not
         rate-limited.
+
+        Positions are into the *current* data: after a re-render with new
+        data (or a ``.widget.props`` data replacement), a retained position
+        can point at a different row until the table re-reports. To track
+        rows across data changes, include an ID column and resolve positions
+        against the data the table currently shows
+        (``df.iloc[tbl.selected_rows()]["id"]``).
         """
         return cast("List[int]", self._read_accessor("selected_rows"))
 
@@ -5820,8 +5880,8 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
     It attaches at render, seeded with the position the viewer has already
     synced to Python, so a crosshair move made before its first read (e.g.,
     behind a button or chat handler) is reflected in that read instead of
-    lost. A re-render keeps the last position until the new viewer reports
-    its own (a freshly rendered viewer starts at the volume center).
+    lost. A re-render re-seeds from the new viewer at attach (a freshly
+    rendered viewer starts at the volume center, ``[0.5, 0.5, 0.5]``).
     Debounced (250 ms) by default; see ``rate_policy`` and ``rate_delay``.
     For every event un-debounced, register a callback with
     ``@nv.on_location_change`` inside the render function and have it set a
@@ -5927,8 +5987,8 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
         The accessor attaches at render, seeded with the position the viewer
         has already synced to Python (``nv.widget.scene.crosshair_pos``), so
         a crosshair move made before its first read is reflected in that
-        read instead of lost, and a re-render keeps the last position until
-        the new viewer reports its own. Only ``frac`` syncs back, so a seeded
+        read instead of lost, and a re-render re-seeds from the new viewer's
+        position at attach. Only ``frac`` syncs back, so a seeded
         value carries just ``frac`` plus a ``"seeded": True`` marker; the
         other keys (``mm``, ``vox``, ``values``, ...) appear with the next
         crosshair move, which reports the full dict. Debounced (250 ms) by

@@ -163,6 +163,25 @@ def test_zoomed_seeds_current_ranges(widget_session: Session) -> None:
     assert (seed.x0, seed.x1, seed.y0, seed.y1) == (2, 10, -1, 5)
 
 
+def test_zoomed_seed_reports_datetime_ranges_as_floats(
+    widget_session: Session,
+) -> None:
+    # A datetime Range1d stores datetimes Python-side, but live RangesUpdate
+    # events from the browser report floats (ms since epoch) -- the seed must
+    # match, or a reader sees a different payload type before the first zoom
+    import datetime as dt
+
+    p, _ = plot()
+    p.x_range.start = dt.datetime(2024, 1, 1)
+    p.x_range.end = dt.datetime(2024, 2, 1)
+    p.y_range.start, p.y_range.end = -1, 5
+    w = widget(widget_session, p)
+    emitted: List[object] = []
+    sb.attach_zoomed(w, emitted.append)
+    seed = next(e for e in emitted if isinstance(e, RangesUpdate))
+    assert (seed.x0, seed.x1) == (1704067200000.0, 1706745600000.0)
+
+
 def test_zoomed_skips_the_seed_when_ranges_are_unknown(
     widget_session: Session,
 ) -> None:

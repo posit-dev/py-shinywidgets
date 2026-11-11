@@ -31,9 +31,8 @@ def make_widget(session: Session) -> CytoscapeWidget:
 
 
 def test_clicked_node_attaches_at_render() -> None:
-    # ipycytoscape's frontend drops click registrations made after the view
-    # exists, so attach must happen in _render() (every accessor attaches at
-    # render; see Accessors.on_render)
+    # Like every accessor, the click specs attach at render, so a click
+    # before the first read isn't lost
     assert sc.CLICKED_NODE.kind == "state" and sc.CLICKED_EDGE.kind == "state"
 
 

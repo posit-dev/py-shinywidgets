@@ -6,11 +6,9 @@ The click accessors are backed by the widget's interaction handlers
 trait on the graph's child Node/Edge widgets, plus the graph's
 nodes/edges list traits so membership and order changes republish.
 
-All specs attach at render (the shinywidgets norm). The click specs must:
-ipycytoscape's frontend wires up only the event types it knows when the
-view is created, so a handler registered after the view exists would be
-silently dropped. The selection specs' attach seeds from the children's
-current `selected` traits.
+All specs attach at render (the shinywidgets norm): a click that lands
+before the first read would otherwise be lost. The selection specs' attach
+seeds from the children's current `selected` traits.
 """
 
 from __future__ import annotations

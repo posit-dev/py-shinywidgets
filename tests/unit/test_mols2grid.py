@@ -768,6 +768,16 @@ def test_clicked_needs_the_click_channel_enabled() -> None:
     )
 
 
+def test_clicked_absent_when_clicks_true_meets_a_js_callback() -> None:
+    # clicks=True normally keeps clicked(), but with a JavaScript callback
+    # the document never posts to Python (clicks=True's injected no-op is
+    # skipped for any explicit callback), so there is no click channel
+    r = rw.render_mols2grid(clicks=True, callback="console.log('clicked')")
+    assert "clicked" not in r._accessors.names()
+    with pytest.raises(RuntimeError, match="clicks=True"):
+        r.clicked()
+
+
 def test_clicked_accessor_reads_clicked_row(widget_session: Session) -> None:
     # Clicking a molecule's image (not its checkbox) posts the whole row to
     # the callback_kwargs trait; .clicked() parses it reactively

@@ -87,12 +87,14 @@ def attach_zoomed(widget: BokehModel, emit: Emit) -> Callable[[], None]:
         if not (isinstance(x, numeric) and isinstance(y, numeric)):
             continue
         # bokeh's stubs type range start/end as the `Value` descriptor; at
-        # runtime they're floats (or None/NaN before the first compute)
+        # runtime they're floats (or None/NaN before the first compute, or
+        # datetimes on a datetime axis -- converted to the ms floats the
+        # browser's live RangesUpdate events report)
         values = (
-            cast("Optional[float]", x.start),
-            cast("Optional[float]", x.end),
-            cast("Optional[float]", y.start),
-            cast("Optional[float]", y.end),
+            cast("Optional[float]", browser_ms(x.start)),
+            cast("Optional[float]", browser_ms(x.end)),
+            cast("Optional[float]", browser_ms(y.start)),
+            cast("Optional[float]", browser_ms(y.end)),
         )
         if all(v is not None and v == v for v in values):
             emit(
@@ -101,6 +103,18 @@ def attach_zoomed(widget: BokehModel, emit: Emit) -> Callable[[], None]:
                 )
             )
     return detach
+
+
+def browser_ms(value: object) -> object:
+    # The browser reports RangesUpdate coordinates as floats (ms since
+    # epoch); a datetime axis holds datetimes/timedeltas Python-side, which
+    # bokeh's converter turns into the same floats (it raises on numbers)
+    from bokeh.util.serialization import convert_datetime_type
+
+    try:
+        return convert_datetime_type(value)
+    except ValueError:
+        return value
 
 
 def single_source(model: Any) -> ColumnDataSource:
