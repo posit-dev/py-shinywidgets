@@ -112,6 +112,6 @@ def test_selection_follows_a_rerender_with_new_data(widget_session: Session) -> 
         )
     r = render_embedding_atlas(rate_delay=0)
     seen = reads_across_rerender(
-        r, atlas_widget(widget_session), smaller, lambda: len(r.selection())
+        r, atlas_widget(widget_session), smaller, lambda: len(r.selected())
     )
     assert seen == [4, 2]
