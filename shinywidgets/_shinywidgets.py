@@ -181,13 +181,6 @@ def init_shiny_widget(w: Widget):
         # The browser opened this comm (see open_client_comm()) and already has
         # the model, so there's nothing to send; just own it for session cleanup.
         SESSION_WIDGET_ID_MAP.setdefault(session.id, []).append(w.comm.comm_id)
-        # Mark it as browser-created: it exists only to back another widget's
-        # state (e.g. pythreejs's default light target/shadow), so
-        # close_render_widgets() closes it once nothing live references it
-        # (it's session-owned above, so a leaked one would otherwise live
-        # until the session ends).
-        w._shinywidgets_client_created = True  # type: ignore[attr-defined]
-        CLIENT_CREATED_IDS.add(w.comm.comm_id)
         return
 
     # Make sure window.require() calls made by 3rd party widgets
@@ -575,16 +568,11 @@ def init_session(session: Session) -> None:
         # this widget as a child) may still read it.
         # A session that only had shared widgets opened in it constructed none.
         for id in SESSION_WIDGET_ID_MAP.get(session.id, []):
-            # A browser-created widget closed directly (widget.close()) has no
-            # registry entry to find here, but its id lingers in
-            # CLIENT_CREATED_IDS; discard the session's ids regardless
-            CLIENT_CREATED_IDS.discard(id)
             widget = WIDGET_INSTANCE_MAP.get(id)
             if widget and not is_process_global(widget):
                 close_widget(widget)
         SESSION_WIDGET_ID_MAP.pop(session.id, None)
         KEPT_WIDGETS.pop(session.id, None)
-        DEFERRED_CLIENT_CREATED.pop(session.id, None)
 
     session.on_ended(_cleanup_session_state)
 
@@ -697,6 +685,7 @@ def handle_client_comm_msg(session: Session, msg: Dict[str, Any]) -> None:
             comm = COMM_MANAGERS[session.id].comms.get(msg["content"]["comm_id"])
             if comm is not None:
                 comm.handle_msg(msg)
+        claim_browser_created(session, msg)
     finally:
         msg_id = header.get("msg_id") if isinstance(header, dict) else None
         if isinstance(msg_id, str):
@@ -765,6 +754,55 @@ def close_client_comm(session: Session, msg: Dict[str, Any]) -> None:
     w = WIDGET_INSTANCE_MAP.get(comm_id)
     if w is not None and w.comm is comm:
         close_widget(w)
+
+
+def claim_browser_created(session: Session, msg: Dict[str, Any]) -> None:
+    """
+    Give the browser-created widgets (see open_client_comm()) that `msg` names
+    the lifetime of what references them, instead of the session's.
+
+    A widget's JS creates such a model for another widget's state (pythreejs's
+    default light target/shadow, bqplot's toolbar PanZoom), then names it in
+    the state it sends for that widget. From then on it's an ordinary
+    KEPT_WIDGETS entry: close_render_widgets() closes it once nothing live in
+    the session references it. Until it's named it stays session-owned, since
+    the message attaching it may still be on its way.
+    """
+    content = msg["content"]
+    data = content.get("data")
+    state = data.get("state") if isinstance(data, dict) else None
+    referrer = WIDGET_INSTANCE_MAP.get(content["comm_id"])
+    # Never closed, and not one of this session's own widgets, so the sweep
+    # can't see what it references: leave those session-owned
+    if referrer is not None and is_process_global(referrer):
+        return
+    comms = COMM_MANAGERS[session.id].comms
+    named = [
+        comm
+        for model_id in ipy_model_references(state)
+        if (comm := comms.get(model_id)) is not None and comm.awaiting_owner
+    ]
+    if not named:
+        return
+    # The sweep only follows widget-valued traits, so only hand it what it can
+    # see `referrer` holding (the state may have been rejected, or held as a
+    # plain string); anything else it would close while still in use
+    held = (
+        None
+        if referrer is None
+        else {id(r) for r in direct_widget_references(referrer)}
+    )
+    for comm in named:
+        w = WIDGET_INSTANCE_MAP.get(comm.comm_id)
+        if w is None or (held is not None and id(w) not in held):
+            continue
+        comm.awaiting_owner = False
+        KEPT_WIDGETS.setdefault(session.id, []).append(w)
+    # Named by a widget that already closed (the browser was still creating a
+    # render's models when the server retired it): no later render
+    # invalidation is tied to these, so collect them now
+    if referrer is None:
+        close_render_widgets(session, [])
 
 
 def importing_lonboard() -> bool:
@@ -1236,29 +1274,6 @@ RENDER_OWNED_WIDGETS: dict[int, list[Widget]] = {}
 # session references them anymore.
 KEPT_WIDGETS: dict[str, list[Widget]] = {}
 
-# Model ids of the live browser-created widgets (see open_client_comm()),
-# across all sessions. close_render_widgets() skips its client-created garbage
-# sweep when this is empty (the common case: an app whose widgets' JS never
-# creates models), so such an app pays nothing for the sweep. Entries are
-# added where widgets are marked and discarded in close_widget(), which every
-# close path (render invalidation, session end, browser-initiated close)
-# funnels through.
-CLIENT_CREATED_IDS: set[str] = set()
-
-# session.id -> model ids of browser-created widgets a sweep kept alive (a
-# live widget referenced them), re-checked on later sweeps and collected once
-# nothing live references them anymore (see close_render_widgets()).
-DEFERRED_CLIENT_CREATED: dict[str, set[str]] = {}
-
-
-def is_client_created(w: Widget) -> bool:
-    """
-    Was `w` constructed as the Python counterpart of a model the browser
-    created (see open_client_comm())? Such widgets exist only to back another
-    widget's state (e.g. pythreejs's default light target/shadow).
-    """
-    return getattr(w, "_shinywidgets_client_created", False)  # type: ignore[attr-defined]
-
 
 def close_render_widgets(session: Session, widgets: list[Widget]) -> None:
     """
@@ -1266,10 +1281,6 @@ def close_render_widgets(session: Session, widgets: list[Widget]) -> None:
     in this session still references (e.g. a Layout first materialized while
     serializing a session-owned widget). Those are kept and re-checked the next
     time a render in this session is invalidated, rather than skipped forever.
-
-    Also closes the browser-created widgets (see open_client_comm()) only the
-    closing widgets referenced: they're session-owned, so without this sweep
-    they'd leak until the session ends.
     """
     widgets = KEPT_WIDGETS.pop(session.id, []) + widgets
     closing = {id(w) for w in widgets}
@@ -1282,77 +1293,12 @@ def close_render_widgets(session: Session, widgets: list[Widget]) -> None:
         for wid in SESSION_WIDGET_ID_MAP.get(session.id, ())
     ]
     # A process-global widget in `closing` survives (see the loop below), so
-    # root the walk at it too: what it references must survive with it.
-    # Browser-created widgets (open_client_comm, e.g. pythreejs's default
-    # light target/shadow, bqplot's toolbar PanZoom) are excluded from the
-    # roots even though they're session-registered: they exist only to back
-    # another widget's state, so anything worth keeping is reachable through
-    # a non-browser-created referrer. This is also what makes the garbage
-    # sweep below able to collect them.
+    # root the walk at it too: what it references must survive with it
     keep = referenced_widgets(
         w
         for w in (*roots, *widgets)
-        if w is not None
-        and not is_client_created(w)
-        and (id(w) not in closing or is_process_global(w))
+        if w is not None and (id(w) not in closing or is_process_global(w))
     )
-    # Browser-created widgets are session-owned, so they never appear in
-    # `widgets`: left alone, they'd live until the session ends even when only
-    # closing widgets reference them (e.g. pythreejs's DirectionalLight
-    # target/shadow/shadow-camera -- ~3 models leaked per re-render of a
-    # one-light scene). One walk from every closing widget collects the ones
-    # nothing else keeps alive (the walk's roots are render-owned, hence never
-    # client-created themselves). Skipped entirely when no browser-created
-    # widgets are live, and pruned at kept widgets: anything past a kept
-    # widget is reachable from live roots, hence in `keep`, never garbage.
-    client_garbage: dict[int, Widget] = {}
-    if CLIENT_CREATED_IDS:
-        own_ids = set(SESSION_WIDGET_ID_MAP.get(session.id, ()))
-        # Process-global widgets survive (see the loop below), so what they
-        # reference survives too: a shared scene's browser-created light
-        # target is still needed after the render that carried it here is
-        # gone, even though the scene isn't a keep root (it isn't
-        # session-owned).
-        protected = keep | referenced_widgets(SHARED_WIDGETS.values())
-        client_garbage = {
-            id(r): r
-            for r in walk_widget_tree(
-                (
-                    w
-                    for w in widgets
-                    if not is_closed_widget(w)
-                    and not is_process_global(w)
-                    and id(w) not in protected
-                ),
-                prune=lambda w: id(w) in protected or is_process_global(w),
-            )
-            if is_client_created(r)
-            and not is_closed_widget(r)
-            and not is_process_global(r)
-            and id(r) not in protected
-            # Only this session's own: a closing widget may hold a (transient)
-            # reference to another session's browser-created widget, which
-            # that session is still using
-            and r.model_id in own_ids
-        }
-        # Browser-created widgets a live referrer kept alive on an earlier
-        # sweep are deferred, not forgotten: re-check them on every sweep and
-        # collect them once nothing live references them anymore (e.g. the
-        # referrer dropped the reference without closing). Ones never
-        # referenced at all never enter the set: the browser may simply not
-        # have attached them to a parent yet.
-        deferred = DEFERRED_CLIENT_CREATED.setdefault(session.id, set())
-        for wid in own_ids:
-            if wid not in CLIENT_CREATED_IDS:
-                continue  # not browser-created
-            w = WIDGET_INSTANCE_MAP.get(wid)
-            if w is None or is_closed_widget(w):
-                deferred.discard(wid)
-            elif id(w) in protected:
-                deferred.add(wid)
-            elif wid in deferred:
-                deferred.discard(wid)
-                client_garbage[id(w)] = w
     kept: list[Widget] = []
     for w in widgets:
         if is_closed_widget(w):  # already closed (e.g. by this session ending)
@@ -1362,10 +1308,6 @@ def close_render_widgets(session: Session, widgets: list[Widget]) -> None:
         if id(w) in keep:
             kept.append(w)
             continue
-        close_widget(w)
-    # Close after the referrers, so the browser destroys a light's model
-    # before the target/shadow models it pointed at
-    for w in client_garbage.values():
         close_widget(w)
     if kept:
         KEPT_WIDGETS[session.id] = kept
@@ -1381,7 +1323,6 @@ def close_widget(w: Widget) -> None:
     # at runtime, and some packages like ipyleaflet want to use this id
     # to manage references between widgets.
     w.comm = OrphanedShinyComm(model_id, pending_open=False)
-    CLIENT_CREATED_IDS.discard(model_id)
     # Assigning a comm has the side-effect of adding back a reference to
     # the widget instance, so remove it again
     if WIDGET_INSTANCE_MAP.get(model_id) is w:

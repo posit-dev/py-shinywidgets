@@ -57,6 +57,10 @@ class ShinyComm:
     # a client update with an `echo_update`, and the browser only drops stale
     # echoes if they name the update they answer in `parent_header.msg_id`.
     _parent_header: Optional[object] = None
+    # True for a comm the browser opened (see from_client()), until a browser
+    # message names its widget and so settles what its lifetime follows (see
+    # claim_browser_created() in _shinywidgets.py).
+    awaiting_owner: bool = False
 
     def __init__(
         self,
@@ -93,6 +97,7 @@ class ShinyComm:
         comm.target_name = target_name
         comm.session = session
         comm._closed = False
+        comm.awaiting_owner = True
         comm_manager.register_comm(comm)
         return comm
 
