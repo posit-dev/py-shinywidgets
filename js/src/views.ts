@@ -271,11 +271,20 @@ interface BokehViewLike {
   remove(): void;
 }
 
+const patchedBokehViewProtos = new WeakSet<BokehViewLike>();
+
 export function patchBokehView(widgetModule: { BokehView?: { prototype: BokehViewLike } }): void {
   const proto = widgetModule.BokehView?.prototype;
   if (!proto) {
     return;
   }
+  // The loader runs this on every module resolution, not just the first load,
+  // so guard against re-wrapping: each additional wrap would chain onto the
+  // last and make every teardown repeat clear() that many times.
+  if (patchedBokehViewProtos.has(proto)) {
+    return;
+  }
+  patchedBokehViewProtos.add(proto);
   const nativeRemove = proto.remove;
   proto.remove = function (this: BokehViewLike) {
     try {

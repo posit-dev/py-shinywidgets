@@ -25,15 +25,28 @@ def test_bokeh_index_stays_bounded_on_rerender(
         page.click("#rerender")
         expect(page.locator("#render_count")).to_have_text(str(i))
         # The old view is removed (and its bokehjs views dropped from
-        # Bokeh.index) before its replacement attaches
+        # Bokeh.index) before its replacement attaches; wait for both, so the
+        # next re-render can't start against a replacement that isn't live yet
         page.wait_for_function("(node) => !node.isConnected", arg=old_node)
+        page.wait_for_selector("#plot .bk-Figure", timeout=10000)
 
     # The replacement view's own index entries may land asynchronously, so
-    # wait for the count to settle back to (at most) the baseline rather than
-    # asserting a sample that could race view construction
+    # require the count to equal the baseline across consecutive polls: a
+    # single sample could catch a transient dip below it (e.g. before the
+    # last replacement's views register) and pass without a live plot
     page.wait_for_function(
-        f"(baseline) => Object.keys(window.Bokeh.index).length <= {baseline}",
+        """(baseline) => new Promise((resolve) => {
+            let consecutive = 0;
+            const poll = setInterval(() => {
+                const atBaseline = Object.keys(window.Bokeh.index).length === baseline;
+                consecutive = atBaseline ? consecutive + 1 : 0;
+                if (consecutive >= 3) {
+                    clearInterval(poll);
+                    resolve(true);
+                }
+            }, 100);
+        })""",
         arg=baseline,
         timeout=10000,
     )
-    assert page.evaluate(BOKEH_INDEX_SIZE_JS) <= baseline
+    assert page.evaluate(BOKEH_INDEX_SIZE_JS) == baseline
