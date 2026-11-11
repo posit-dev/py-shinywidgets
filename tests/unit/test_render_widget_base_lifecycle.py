@@ -281,9 +281,7 @@ class RecordingAttach:
 
 def renderer_with_clicked(att: RecordingAttach):  # type: ignore[no-untyped-def]
     class R(rwb.render_widget_base):
-        _accessor_specs = (
-            acc.AccessorSpec(name="clicked", kind="event", attach=att, eager=True),
-        )
+        _accessor_specs = (acc.AccessorSpec(name="clicked", kind="event", attach=att),)
 
         def clicked(self):  # type: ignore[no-untyped-def]
             return self._read_accessor("clicked")

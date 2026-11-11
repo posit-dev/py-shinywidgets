@@ -1,11 +1,19 @@
 """
 Accessors for `render_bokeh`, attached to the bokeh models the user returned
 (`BokehModel._model`), since `BokehModel` itself has no useful traits.
+
+A selection is state, not just an event: jupyter_bokeh mirrors every
+browser-side model change onto the Python-side document, so
+`source.selected.indices` holds the current selection at any moment.
+`attach_selected` therefore seeds it at attach (no comm wait needed, unlike
+`event_attach`, whose `on_event` registration patches the browser document),
+which lets `selected()` be a state accessor that attaches at render -- a
+selection made before the first read isn't lost.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, cast
 
 from ._accessors import AccessorSpec, Emit
 
@@ -24,6 +32,11 @@ def attach_selected(widget: BokehModel, emit: Emit) -> Callable[[], None]:
         emit(list(new))
 
     source.selected.on_change("indices", on_change)
+    # A selection is retained on the Python-side document (see the module
+    # docstring), so seed the accessor with the current one: a selection made
+    # before this attach -- e.g. before the first read -- is not lost. An
+    # empty selection seeds as [] (there is no "nothing selected yet" value).
+    emit(list(source.selected.indices))
     return lambda: source.selected.remove_on_change("indices", on_change)
 
 
@@ -51,6 +64,57 @@ def event_attach(event: str) -> Callable[[BokehModel, Emit], Callable[[], None]]
         return detach
 
     return attach
+
+
+def attach_zoomed(widget: BokehModel, emit: Emit) -> Callable[[], None]:
+    detach = event_attach("rangesupdate")(widget, emit)
+
+    # Ranges are retained, browser-synced document properties, so a zoom made
+    # before this attach is recoverable. Seed one event per Plot in document
+    # order: the reader sees the last, as with live events in sequence. Only
+    # seed ranges with real values at attach: a DataRange1d defaults to NaN
+    # (its span is computed browser-side), and a FactorRange's synthetic
+    # coords are likewise only known after the browser computes them.
+    from bokeh.events import RangesUpdate
+    from bokeh.models import Plot
+    from bokeh.models.ranges import DataRange1d, Range1d
+
+    numeric = (Range1d, DataRange1d)
+    for model in widget._model.select({"type": Plot}):
+        if not isinstance(model, Plot):
+            continue
+        x, y = model.x_range, model.y_range
+        if not (isinstance(x, numeric) and isinstance(y, numeric)):
+            continue
+        # bokeh's stubs type range start/end as the `Value` descriptor; at
+        # runtime they're floats (or None/NaN before the first compute, or
+        # datetimes on a datetime axis -- converted to the ms floats the
+        # browser's live RangesUpdate events report)
+        values = (
+            cast("Optional[float]", browser_ms(x.start)),
+            cast("Optional[float]", browser_ms(x.end)),
+            cast("Optional[float]", browser_ms(y.start)),
+            cast("Optional[float]", browser_ms(y.end)),
+        )
+        if all(v is not None and v == v for v in values):
+            emit(
+                RangesUpdate(
+                    model, x0=values[0], x1=values[1], y0=values[2], y1=values[3]
+                )
+            )
+    return detach
+
+
+def browser_ms(value: object) -> object:
+    # The browser reports RangesUpdate coordinates as floats (ms since
+    # epoch); a datetime axis holds datetimes/timedeltas Python-side, which
+    # bokeh's converter turns into the same floats (it raises on numbers)
+    from bokeh.util.serialization import convert_datetime_type
+
+    try:
+        return convert_datetime_type(value)
+    except ValueError:
+        return value
 
 
 def single_source(model: Any) -> ColumnDataSource:
@@ -92,14 +156,14 @@ def selected_frame(widget: BokehModel, indices: Optional[List[int]]) -> Any:
 
 SELECTED = AccessorSpec(
     name="selected",
-    kind="event",
+    kind="state",
     attach=attach_selected,
     rate_policy="debounce",
 )
 # Changes whenever `source.data` does. selected_rows() reads it, since data
 # replaced in place (at the same length) keeps the selected indices.
 SOURCE_DATA = AccessorSpec(name="source_data", kind="event", attach=attach_source_data)
-TAPPED = AccessorSpec(name="tapped", kind="event", attach=event_attach("tap"))
-ZOOMED = AccessorSpec(name="zoomed", kind="event", attach=event_attach("rangesupdate"))
+TAPPED = AccessorSpec(name="tapped", kind="state", attach=event_attach("tap"))
+ZOOMED = AccessorSpec(name="zoomed", kind="state", attach=attach_zoomed)
 
 BOKEH_ACCESSORS = (SELECTED, SOURCE_DATA, TAPPED, ZOOMED)

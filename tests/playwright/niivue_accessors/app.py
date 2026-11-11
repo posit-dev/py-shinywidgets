@@ -79,6 +79,10 @@ def server(input, output, session):
         value = brain.location()
         if value is None:
             return "None"
+        # A seeded value (the position synced before any crosshair report)
+        # carries only frac, not the stream's mm
+        if value.get("seeded"):
+            return "seed:" + ",".join(f"{v:.2f}" for v in value["frac"])
         return ",".join(f"{v:.1f}" for v in value["mm"])
 
     @render.text

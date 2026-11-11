@@ -163,6 +163,57 @@ def test_ipysigma_rerender_releases_old_views(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+# Reach the patched SigmaView class through a live view. patchSigmaView()
+# wraps proto.render/proto.remove, so if it re-runs on a later module
+# resolution the methods become new function objects; identity across a
+# re-render proves the class was patched exactly once.
+_FIND_SIGMA_PROTO_JS = """() => {
+  for (const v of window.widgetManager._liveViews) {
+    if (v.model?.get('_view_name') === 'SigmaView') return Object.getPrototypeOf(v);
+  }
+  return null;
+}"""
+
+
+def test_ipysigma_view_class_patched_once(page: Page, local_app) -> None:
+    # The loader runs patchSigmaView() on every ipysigma module resolution,
+    # and the module re-resolves for each new SigmaModel (this page alone
+    # renders four). Without a guard, each resolution wraps render()/remove()
+    # around the previous wrapper, so one teardown would repeat the WebGL
+    # cleanup once per past resolution.
+    errors, failed_requests = collect_errors(page)
+    page.route("**/output.js", expose_manager)
+    page.goto(local_app.url)
+    wait_for_graph(page, "#fills")
+
+    page.evaluate(
+        "() => { const proto = ("
+        + _FIND_SIGMA_PROTO_JS
+        + ")(); window.__sigmaPatched = { render: proto.render, remove: proto.remove }; }"
+    )
+
+    # The render count is a separate output and wait_for_graph() only counts
+    # canvases, so both could pass while the original graph is still mounted
+    # and the replacement's module resolution (the thing that re-wraps the
+    # class without the guard) hasn't happened yet. Wait for the old widget
+    # to disconnect and the replacement to mount before comparing.
+    old = page.locator("#fills .ipysigma-widget").element_handle()
+    page.click("#rerender")
+    expect(page.locator("#render_count")).to_have_text("1")
+    page.wait_for_function("(el) => !el.isConnected", arg=old)
+    wait_for_graph(page, "#fills")
+
+    assert page.evaluate(
+        "() => { const proto = ("
+        + _FIND_SIGMA_PROTO_JS
+        + ")(); return proto !== null"
+        + " && proto.render === window.__sigmaPatched.render"
+        + " && proto.remove === window.__sigmaPatched.remove; }"
+    )
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 # Sigma draws each view with 3 WebGL contexts. Chrome caps live contexts per page
 # (about 16) and evicts the oldest when that's exceeded, so contexts a removed view
 # didn't release would eventually blank the other (older) graphs on the page.
