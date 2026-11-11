@@ -25,6 +25,26 @@ def _():
     plot.widget.update_traces(marker_size=20)
 
 
+ui.input_action_button("hide_b", "hide b")
+ui.input_action_button("show_b", "show b")
+
+
+# A batched update goes through Plotly.update (plotly_update), which
+# visible_traces() must follow just like restyles
+@reactive.effect
+@reactive.event(input.hide_b)
+def _():
+    with plot.widget.batch_update():
+        plot.widget.data[1].visible = False
+
+
+@reactive.effect
+@reactive.event(input.show_b)
+def _():
+    with plot.widget.batch_update():
+        plot.widget.data[1].visible = True
+
+
 @render.text
 def clicked():
     pts = plot.clicked()

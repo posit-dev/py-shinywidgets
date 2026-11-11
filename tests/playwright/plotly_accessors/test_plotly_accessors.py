@@ -131,6 +131,14 @@ def test_plotly_hover_doubleclick_and_legend_gestures(page: Page, local_app) -> 
     page.locator("#plot .legend .traces", has_text="b").click()
     expect(page.locator("#visible_traces")).to_have_text("True,True", timeout=5000)
 
+    # A batched visibility update from Python (Plotly.update, not restyle)
+    # is reflected too (a visible=False trace leaves the legend, so Python
+    # re-shows it)
+    page.click("#hide_b")
+    expect(page.locator("#visible_traces")).to_have_text("True,False", timeout=5000)
+    page.click("#show_b")
+    expect(page.locator("#visible_traces")).to_have_text("True,True", timeout=5000)
+
     # A legend double-click isolates the trace
     page.locator("#plot .legend .traces", has_text="b").dblclick()
     expect(page.locator("#visible_traces")).to_have_text("False,True", timeout=5000)

@@ -3867,8 +3867,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
 
         Seeded from the displayed figure at render, so it reflects the
         initial figure before any interaction, and updated after every
-        restyle that changes visibility (legend clicks and double-clicks,
-        or ``.widget.update_traces(visible=...)``). Visibility here is each
+        restyle that changes visibility (legend clicks and double-clicks, or
+        ``.widget.update_traces(visible=...)``, batched or not). Visibility
+        here is each
         trace's ``visible`` attribute; traces expanded by a groupby
         transform report their own, not each group's. Not rate-limited.
         Requires pandas.

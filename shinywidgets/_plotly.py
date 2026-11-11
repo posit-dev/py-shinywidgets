@@ -19,7 +19,17 @@ attach at render, so a lasso drawn before their first read isn't lost.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Union,
+    cast,
+)
 
 from ._accessors import AccessorSpec, Emit
 
@@ -118,15 +128,19 @@ def customdata_value(point: Point) -> object:
 
 
 def bridge_attach(
-    fires: str, shape: Callable[[Dict[str, Any]], object], clears: Sequence[str]
+    fires: Union[str, Sequence[str]],
+    shape: Callable[[Dict[str, Any]], object],
+    clears: Sequence[str],
 ) -> Callable[[Any, Emit], Callable[[], None]]:
+    names = (fires,) if isinstance(fires, str) else tuple(fires)
+
     def attach(widget: Any, emit: Emit) -> Callable[[], None]:
         # ipywidgets swallows exceptions raised here, so this must not raise.
         def on_msg(_widget: object, content: object, _buffers: object) -> None:
             if not isinstance(content, dict) or content.get("shinywidgets") != "event":
                 return
             name = content.get("event")
-            if name == fires:
+            if name in names:
                 value = shape(content)
                 if value is not SKIP:
                     emit(value)
@@ -134,7 +148,7 @@ def bridge_attach(
                 emit(None)
 
         widget.on_msg(on_msg)
-        widget.send({"shinywidgets": "bind", "events": [fires, *clears]})
+        widget.send({"shinywidgets": "bind", "events": [*names, *clears]})
         return lambda: widget.on_msg(on_msg, remove=True)
 
     return attach
@@ -241,10 +255,12 @@ VISIBLE_TRACES = AccessorSpec(
     name="visible_traces",
     kind="state",
     # Legend visibility toggles apply through Plots.restyle, which emits
-    # plotly_restyle after the new visibility is in place; the bridge
-    # recomputes and sends the visibility of every trace then (and seeds it
-    # at bind), so this is the traces' current truth, not a stream of edits.
-    attach=bridge_attach("plotly_restyle", traces_of, ()),
+    # plotly_restyle after the new visibility is in place; batched updates
+    # (plotly.py's batch_update -> Plotly.update) emit plotly_update instead.
+    # The bridge recomputes and sends the visibility of every trace then (and
+    # seeds it at bind), so this is the traces' current truth, not a stream
+    # of edits.
+    attach=bridge_attach(("plotly_restyle", "plotly_update"), traces_of, ()),
     payload=visibility_frame,
 )
 

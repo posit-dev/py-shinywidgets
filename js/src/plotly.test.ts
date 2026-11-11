@@ -60,6 +60,23 @@ describe("throttleLeadTrail", () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
+  it("drops a stale pending value when its timer fires late", () => {
+    const fn = vi.fn();
+    const throttled = throttleLeadTrail(fn, HOVER_THROTTLE_MS);
+    const t0 = Date.now(); // fake timers start at the real time, not epoch 0
+    throttled("a"); // t0, leading
+    vi.setSystemTime(t0 + 50);
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    throttled("b"); // pending, trailing timer due at t0+250
+    const trailing = timeoutSpy.mock.calls[0][0] as () => void;
+    // The timer runs late (event-loop contention), after the window closed
+    vi.setSystemTime(t0 + 300);
+    throttled("c"); // new leading edge
+    trailing(); // the overdue timer finally runs: must not publish stale "b"
+    expect(fn.mock.calls.map((c) => c[0])).toEqual(["a", "c"]);
+    timeoutSpy.mockRestore();
+  });
+
   it("cancel()ed throttle forwards the next call as a new leading edge", () => {
     const fn = vi.fn();
     const throttled = throttleLeadTrail(fn, HOVER_THROTTLE_MS);
@@ -157,12 +174,15 @@ describe("visibilitySeed", () => {
     ]);
   });
 
-  it("shapes a plotly_restyle payload from the graph div's current state", () => {
+  it("shapes restyle and update payloads from the graph div's current state", () => {
     const plotEl = {
       data: [{ name: "a", visible: "legendonly" }],
     } as unknown as HTMLElement;
-    expect(eventPayload("plotly_restyle", [["visible", "legendonly"], [0]], plotEl)).toEqual({
+    const expected = {
       traces: [{ trace_index: 0, name: "a", visible: false }],
-    });
+    };
+    expect(eventPayload("plotly_restyle", [["visible", "legendonly"], [0]], plotEl)).toEqual(expected);
+    // Plotly.update (e.g. plotly.py's batch_update) emits plotly_update, not plotly_restyle
+    expect(eventPayload("plotly_update", {}, plotEl)).toEqual(expected);
   });
 });

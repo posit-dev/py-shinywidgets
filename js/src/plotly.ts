@@ -112,6 +112,13 @@ export function throttleLeadTrail(
   const throttled = ((data?: any) => {
     const now = Date.now();
     if (now - last >= windowMs) {
+      // A new leading edge supersedes anything pending: timers can fire
+      // late, and a stale trailing value must not publish after a newer one
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      pending = null;
       last = now;
       fn(data);
       return;
@@ -162,7 +169,7 @@ export function bindPlotlyEvents(plotEl: HTMLElement, model: WidgetModel): void 
     if (bound.has(event)) continue;
     bound.add(event);
     if (event === "plotly_selected") boundSelected = true;
-    if (event === "plotly_restyle") boundRestyle = true;
+    if (event === "plotly_restyle" || event === "plotly_update") boundRestyle = true;
     if (event === "plotly_hover" && hoverThrottle) {
       plotEl.on(event, hoverThrottle);
       continue;
@@ -321,7 +328,11 @@ export function eventPayload(
   // The restyle args themselves aren't useful; what matters is the
   // visibility they left behind, which the graph div holds post-restyle
   // (Plots.restyle emits plotly_restyle after applying the update).
-  if (event === "plotly_restyle") return plotEl ? { traces: visibilitySeed(plotEl) } : {};
+  // plotly_update covers Plotly.update (e.g. plotly.py's batch_update),
+  // which emits it instead of plotly_restyle
+  if (event === "plotly_restyle" || event === "plotly_update") {
+    return plotEl ? { traces: visibilitySeed(plotEl) } : {};
+  }
   if (event === "plotly_legendclick") return legendPayload(data);
   const out: Record<string, unknown> = {};
   if (!data) return out;
