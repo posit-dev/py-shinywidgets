@@ -76,6 +76,26 @@ def test_selected_ignores_the_load_time_empty_seed(widget_session: Session) -> N
     assert evt.items == []
 
 
+def test_selected_ignores_a_delayed_load_time_empty_seed(
+    widget_session: Session,
+) -> None:
+    # In the browser, a fast early selection can reach Python before the
+    # viewer's asynchronous load-time empty report. The first empty report is
+    # still that seed; the next empty report is a real deselection.
+    widget = inner_viewer(widget_session)
+    emitted: List[object] = []
+    sr.SELECTED.attach(widget, emitted.append)
+    cb = widget._raw_event_callbacks[-1]
+    cb(SELECTION_JSON)
+    cb(EMPTY_SELECTION_JSON)
+    assert len(emitted) == 1
+    cb(EMPTY_SELECTION_JSON)
+    assert len(emitted) == 2
+    evt = emitted[-1]
+    assert isinstance(evt, SelectionChangeEvent)
+    assert evt.items == []
+
+
 def test_selected_emits_parsed_event(widget_session: Session) -> None:
     # Pins the shape of rerun's private _on_raw_event/_viewer_event_from_json_str
     # APIs (Review Focus 5): an upstream change must fail loudly here

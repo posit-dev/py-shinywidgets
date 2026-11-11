@@ -29,11 +29,12 @@ def attach_selection(widget: RerunNotebookViewer, emit: Emit) -> Callable[[], No
     # viewer's load message arrives ~1s after the re-render), and it carries
     # no information -- the slot already starts out None/empty. Only the
     # *first* empty event per attach is the seed; a later empty event is a
-    # real deselection. The seed always precedes any user interaction.
-    seed_pending = True
+    # real deselection. The seed is asynchronous and can arrive after an
+    # early selection.
+    empty_seed_pending = True
 
     def on_raw(json_str: str) -> None:
-        nonlocal seed_pending
+        nonlocal empty_seed_pending
         # The raw stream includes high-frequency time_update events (every
         # timeline tick during playback), so filter on the JSON string before
         # parsing
@@ -49,10 +50,10 @@ def attach_selection(widget: RerunNotebookViewer, emit: Emit) -> Callable[[], No
         # The substring prefilter can false-positive (e.g., an application_id
         # of "selection_change"); only the parsed event's type decides
         if isinstance(event, SelectionChangeEvent):
-            is_seed = seed_pending
-            seed_pending = False
-            if is_seed and not event.items:
-                return
+            if not event.items:
+                if empty_seed_pending:
+                    empty_seed_pending = False
+                    return
             emit(event)
 
     # Private API, pinned by tests (see the module docstring)
