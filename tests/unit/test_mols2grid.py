@@ -881,7 +881,7 @@ def test_clicks_true_does_not_clobber_js_callback(
 def test_clicked_accessor_observes_before_first_read(
     widget_session: Session,
 ) -> None:
-    # The clicked accessor attaches eagerly at render (not on first read):
+    # The clicked accessor attaches at render (not on first read):
     # with no seeding, a click that lands before the first .clicked() read
     # would otherwise never be emitted, and the read would return None
     r = rw.render_mols2grid(clicks=True)
@@ -893,9 +893,10 @@ def test_clicked_accessor_observes_before_first_read(
 
 
 def test_none_render_does_not_raise(widget_session: Session) -> None:
-    # A render function returning None renders nothing; the eager clicked
-    # attach must not choke on the absent widget -- neither on a first render
-    # to None, nor on a re-render to None after a successful render
+    # A render function returning None renders nothing; the render-time
+    # clicked attach must not choke on the absent widget -- neither on a
+    # first render to None, nor on a re-render to None after a successful
+    # render
     r = rw.render_mols2grid(clicks=True)
     assert render(r, lambda: None, widget_session) is None
 

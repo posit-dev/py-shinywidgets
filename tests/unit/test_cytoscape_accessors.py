@@ -30,10 +30,11 @@ def make_widget(session: Session) -> CytoscapeWidget:
     return widget
 
 
-def test_clicked_node_spec_is_eager() -> None:
+def test_clicked_node_attaches_at_render() -> None:
     # ipycytoscape's frontend drops click registrations made after the view
-    # exists, so attach must happen in _render(), not on first read
-    assert sc.CLICKED_NODE.eager and sc.CLICKED_EDGE.eager
+    # exists, so attach must happen in _render() (every accessor attaches at
+    # render; see Accessors.on_render)
+    assert sc.CLICKED_NODE.kind == "state" and sc.CLICKED_EDGE.kind == "state"
 
 
 def test_clicked_node_emits_element_json(widget_session: Session) -> None:
@@ -86,7 +87,7 @@ def test_selected_specs_are_debounced_state() -> None:
     # box-select changes many children's `selected` at once, so the default
     # is debounced
     for spec in (sc.SELECTED_NODES, sc.SELECTED_EDGES):
-        assert spec.kind == "state" and spec.eager
+        assert spec.kind == "state"
         assert spec.rate_policy == "debounce"
 
 
@@ -254,6 +255,6 @@ def test_renderer_selected_round_trips_and_keeps_state(widget_session: Session) 
     # State semantics: a re-render doesn't reset the accessor...
     r._accessors.on_render(widget)
     assert len(r.selected_edges()) == 1
-    # ...and the eager re-attach still reports changes
+    # ...and the render-time re-attach still reports changes
     widget.graph.edges[0].selected = False
     assert r.selected_edges() == []

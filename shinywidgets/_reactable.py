@@ -4,13 +4,12 @@ Accessors for `render_reactable`, backed by shinywidgets' reactable state bridge
 reactable-py's widget never calls `model.send()` itself, but its JavaScript
 bundle exports R reactable's state API (`getState`/`onStateChange`), keyed by
 the table's `elementId` prop (which `render_reactable` defaults to a unique
-value when the user didn't set one). When an accessor attaches, the bridge in
-`js/src/reactable.ts` subscribes to that API and forwards a pruned table state
-(page, sort, filters, search, selection) as custom messages, so nothing is
-subscribed and no traffic flows until an accessor is read. This is
-deliberate: the frontend's `getState` reports the full current state on
-bind, so a late first read loses nothing, and display-only tables pay no
-subscription cost.
+value when the user didn't set one). Every accessor attaches at render (the
+shinywidgets norm): the bridge in `js/src/reactable.ts` subscribes to that
+API and forwards a pruned table state (page, sort, filters, search,
+selection) as custom messages. The frontend's `getState` reports the full
+current state on bind, so the attach also seeds the accessor -- a sort or
+selection made before the first read is reflected in it.
 """
 
 from __future__ import annotations
@@ -68,28 +67,24 @@ def state_attach(key: str, none_as: object = _USE_NATIVE) -> Attach:
 SELECTED_ROWS = AccessorSpec(
     name="selected_rows",
     kind="state",
-    eager=False,
     attach=state_attach("selected"),
     not_ready=unreported,
 )
 PAGE = AccessorSpec(
     name="page",
     kind="state",
-    eager=False,
     attach=state_attach("page"),
     not_ready=unreported,
 )
 SORTED = AccessorSpec(
     name="sorted",
     kind="state",
-    eager=False,
     attach=state_attach("sorted"),
     not_ready=unreported,
 )
 FILTERED = AccessorSpec(
     name="filtered",
     kind="state",
-    eager=False,
     attach=state_attach("filters"),
     rate_policy="debounce",
     not_ready=unreported,
@@ -97,7 +92,6 @@ FILTERED = AccessorSpec(
 SEARCH = AccessorSpec(
     name="search",
     kind="state",
-    eager=False,
     attach=state_attach("searchValue", none_as=""),
     rate_policy="debounce",
     not_ready=unreported,

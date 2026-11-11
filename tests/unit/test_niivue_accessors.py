@@ -47,9 +47,8 @@ def test_location_routes_through_the_library_dispatcher(
 
 def test_location_is_state_and_debounced_by_default() -> None:
     assert sn.LOCATION.kind == "state"
-    # State accessors attach eagerly (at render) by default, which is what
-    # lets the seed reach a reader gated behind e.g. a button
-    assert sn.LOCATION.eager is True
+    # Attached at render like every accessor, which is what lets the seed
+    # reach a reader gated behind e.g. a button
     assert sn.LOCATION.rate_policy == "debounce" and sn.LOCATION.rate_delay == 0.25
 
 

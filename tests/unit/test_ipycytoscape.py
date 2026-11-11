@@ -115,7 +115,7 @@ def test_rate_policy_covers_late_children_only_on_rerender() -> None:
         assert rate_policy_for(child) is not None
 
     async def add_late_node() -> None:
-        # The eager selection accessors observe graph membership, so this
+        # The selection accessors observe graph membership, so this
         # emit goes through their debounce limiter, whose timer needs a
         # running event loop
         w.graph.add_node(ipycytoscape.Node(data={"id": "d"}))

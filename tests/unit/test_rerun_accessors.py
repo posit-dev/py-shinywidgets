@@ -71,9 +71,10 @@ def test_selection_emits_parsed_event(widget_session: Session) -> None:
     assert evt.items[0].entity_path == "points"
 
 
-def test_selection_spec_is_eager() -> None:
-    # The viewer sends an empty selection at load; only eager attach catches it
-    assert sr.SELECTION.eager
+def test_selection_spec_is_state() -> None:
+    # The viewer sends an empty selection at load; only a render-time attach
+    # catches it
+    assert sr.SELECTION.kind == "state"
 
 
 def test_selection_detach_is_a_safe_noop(widget_session: Session) -> None:

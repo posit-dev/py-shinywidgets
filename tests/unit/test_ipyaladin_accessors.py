@@ -21,9 +21,8 @@ def make_renderer(aladin: Aladin) -> rw.render_ipyaladin[Aladin]:
 
 
 def test_clicked_object_is_a_state_accessor() -> None:
+    # Attached at render like every accessor (see Accessors.on_render)
     assert sa.CLICKED_OBJECT.kind == "state"
-    # State accessors attach at render by default (see AccessorSpec.eager)
-    assert sa.CLICKED_OBJECT.eager is True
 
 
 def test_clicked_object_reads_none_until_a_click(widget_session: Session) -> None:
@@ -58,7 +57,7 @@ def test_clicked_object_seeds_a_click_from_before_render(
 def test_clicked_object_reflects_a_click_before_the_first_read(
     widget_session: Session,
 ) -> None:
-    # The accessor attaches at render (eager state), so a click that lands
+    # The accessor attaches at render, so a click that lands
     # before anything reads it -- e.g. a reader gated behind an input -- is
     # reflected in that first read instead of being lost
     from ipyaladin import Aladin
