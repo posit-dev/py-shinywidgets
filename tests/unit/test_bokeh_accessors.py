@@ -13,7 +13,6 @@ from jupyter_bokeh import BokehModel
 from shiny import Session
 from shiny.reactive._core import Context
 from shiny.session import session_context
-from shinywidgets._comm import run_comm_open_callbacks
 
 
 def plot() -> Tuple[Any, ColumnDataSource]:
@@ -69,9 +68,6 @@ def test_tapped_subscribes_so_browser_events_arrive(widget_session: Session) -> 
     # What jupyter_bokeh does with a browser event: only subscribed models get it
     tap = Tap(model=p, x=1.5, y=4.5)
     p.document.callbacks.trigger_event(tap)
-    assert emitted == []  # registration waits for the widget's comm
-    run_comm_open_callbacks(w.model_id)
-    p.document.callbacks.trigger_event(tap)
     assert emitted == [tap]
     detach()
     p.document.callbacks.trigger_event(Tap(model=p, x=0, y=0))
@@ -83,7 +79,6 @@ def test_zoomed_reports_ranges_update(widget_session: Session) -> None:
     w = widget(widget_session, p)
     emitted: List[object] = []
     sb.ZOOMED.attach(w, emitted.append)
-    run_comm_open_callbacks(w.model_id)
     ev = RangesUpdate(model=p, x0=0, x1=1, y0=2, y1=3)
     p.document.callbacks.trigger_event(ev)
     assert emitted == [ev]

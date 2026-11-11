@@ -47,11 +47,11 @@ def server(input, output, session):
 
     @render.text
     def click():
-        return str(grid.cell_clicked())
+        return str(grid.clicked_cell())
 
     @render.text
     def edit():
-        return str(grid.cell_edited())
+        return str(grid.edited_cell())
 
     @render.text
     def vis():

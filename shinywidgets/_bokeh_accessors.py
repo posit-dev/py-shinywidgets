@@ -16,7 +16,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable, List, Optional, cast
 
 from ._accessors import AccessorSpec, Emit
-from ._comm import when_comm_open
 
 if TYPE_CHECKING:
     from bokeh.events import Event
@@ -52,17 +51,12 @@ def event_attach(event: str) -> Callable[[BokehModel, Emit], Callable[[], None]]
             if active[0]:
                 emit(e)
 
-        # Registering patches the browser's document (the plot's
-        # subscribed_events), so it must wait for the widget's comm.
-        def register() -> None:
-            for plot in widget._model.select({"type": Plot}):
-                plot.on_event(event, on_event)
-                # on_event only subscribes the plot to browser events when it
-                # joins a document, which already happened at render.
-                if plot.document is not None:
-                    plot.document.callbacks.subscribe(event, plot)
-
-        when_comm_open(widget, register)
+        for plot in widget._model.select({"type": Plot}):
+            plot.on_event(event, on_event)
+            # on_event only subscribes the plot to browser events when it
+            # joins a document, which already happened at render.
+            if plot.document is not None:
+                plot.document.callbacks.subscribe(event, plot)
 
         def detach() -> None:
             active[0] = False
