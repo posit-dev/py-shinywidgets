@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import base64
+import gc
 import json
+import weakref
 from typing import Any, Dict
 
 import pytest
@@ -246,9 +248,10 @@ def test_orphaned_shiny_comm_queues_sends_until_open_or_close() -> None:
     orphan = comm.OrphanedShinyComm("c1")
     orphan.send(data={"n": 1})
     orphan.send(data={"n": 2}, metadata={"m": 0})
-    assert orphan.take_queued_sends() == [
-        ((), {"data": {"n": 1}}),
-        ((), {"data": {"n": 2}, "metadata": {"m": 0}}),
+    queued = [json.loads(msg_txt) for msg_txt in orphan.take_queued_sends()]
+    assert [(m["content"]["data"], m["metadata"]) for m in queued] == [
+        ({"n": 1}, {}),
+        ({"n": 2}, {"m": 0}),
     ]
     assert orphan.take_queued_sends() == []
     # Once the real comm has taken over, sends here are no-ops
@@ -405,44 +408,105 @@ def test_queued_sends_snapshot_payloads_at_send_time() -> None:
     assert [base64.b64decode(m["buffers"][0]) for m in msgs] == [b"first", b"secnd"]
 
 
-def test_comm_open_work_does_not_leak_for_never_opened_widgets(
-    widget_session,
+@pytest.mark.parametrize(
+    "make_data",
+    [
+        lambda: {"method": "custom", "raw": bytearray([1, 2])},
+        lambda: {"method": "custom", "samples": (i for i in [1, 2])},
+        lambda: {"method": "custom", "raw": b"\x01\x02", "view": memoryview(b"ab")},
+    ],
+    ids=["bytearray", "generator", "bytes-and-memoryview"],
+)
+def test_queued_sends_are_serialized_like_direct_sends(make_data: Any) -> None:
+    """
+    What a send puts on the wire must not depend on whether the comm had
+    opened yet: both go through the same serializer.
+    """
+    import shinywidgets._comm as comm
+
+    session = FakeSession()
+    mgr = comm.ShinyCommManager()
+    real = comm.ShinyComm(
+        comm_id="c1", comm_manager=mgr, target_name="jupyter.widget", session=session
+    )
+    session._flush_handlers.clear()
+    session._flushed_handlers.clear()
+
+    real.send(data=make_data(), buffers=[bytearray(b"buf")])
+    orphan = comm.OrphanedShinyComm("c1")
+    orphan.send(data=make_data(), buffers=[bytearray(b"buf")])
+    comm.flush_queued_sends(orphan, real)
+
+    direct, queued = (closure_map(fn)["msg_txt"] for fn in session._flushed_handlers)
+    assert queued == direct
+
+
+def test_queued_send_errors_surface_at_the_send() -> None:
+    """
+    An unsendable payload raises where it was sent (e.g. in the render
+    function), not later when the comm opens.
+    """
+    import shinywidgets._comm as comm
+
+    orphan = comm.OrphanedShinyComm("c1")
+    with pytest.raises(TypeError, match="buffer protocol"):
+        orphan.send(data={"method": "custom"}, buffers=[object()])  # type: ignore[list-item]  # deliberately invalid
+    with pytest.raises(TypeError, match="not JSON serializable"):
+        orphan.send(data={"method": "custom", "bad": object()})
+    assert orphan.take_queued_sends() == []
+
+
+def test_widget_closed_before_its_comm_opened_sends_nothing(
+    widget_session, flush_to_browser
 ) -> None:
     """
-    A widget closed before its comm opened must drop the callbacks registered
-    for that open (and the queued sends die with the placeholder), and
-    registering a callback on an already-closed widget must not linger either.
+    A widget closed before its comm opened never reaches the browser: neither
+    its comm_open, nor the sends queued before (or made after) the close.
     """
-    import asyncio
-
     from ipywidgets import HTML
-    from shiny import reactive
     from shiny.session import session_context
-    from shinywidgets import when_comm_open
-    from shinywidgets._comm import COMM_OPEN_CALLBACKS, OrphanedShinyComm
     from shinywidgets._shinywidgets import close_widget
-
-    loop = asyncio.get_event_loop()
 
     with session_context(widget_session):
         w = HTML(value="pending")
-        model_id = w.model_id
-        calls: list[int] = []
-        when_comm_open(w, lambda: calls.append(1))
-        assert model_id in COMM_OPEN_CALLBACKS
-        assert isinstance(w.comm, OrphanedShinyComm)
-        w.comm.send(data={"method": "custom"})
-
+        w.send({"n": 1})
         close_widget(w)
-        assert model_id not in COMM_OPEN_CALLBACKS
+        w.send({"n": 2})
 
-        # Registering on an already-closed widget doesn't leak (or run)
-        when_comm_open(w, lambda: calls.append(2))
-        assert model_id not in COMM_OPEN_CALLBACKS
+    assert [
+        m for m in flush_to_browser() if m["content"]["comm_id"] == w.model_id
+    ] == []
 
-        loop.run_until_complete(reactive.flush())
-        loop.run_until_complete(widget_session._flushed_callbacks.invoke())
-    assert calls == []
+
+@pytest.mark.parametrize("opened", [False, True], ids=["never-opened", "opened"])
+def test_closed_widget_is_freed_without_the_cyclic_gc(
+    widget_session, flush_to_browser, opened: bool
+) -> None:
+    """
+    Routing a widget's pre-open sends must not tie it into a reference cycle:
+    a re-rendered widget (and, e.g., a large figure's data) would then linger
+    until the garbage collector's next pass instead of being freed right away.
+    """
+    from ipywidgets import HTML
+    from shiny.session import session_context
+    from shinywidgets._shinywidgets import close_widget
+
+    with session_context(widget_session):
+        w = HTML(value="x")
+        if opened:
+            flush_to_browser()
+        close_widget(w)
+    # Deliver what's pending: scheduled sends hold the comm until then
+    flush_to_browser()
+
+    freed = weakref.ref(w)
+    gc.collect()
+    gc.disable()
+    try:
+        del w
+        assert freed() is None
+    finally:
+        gc.enable()
 
 
 def test_messages_go_to_the_session_that_opened_the_comm():
@@ -606,34 +670,3 @@ def test_shared_comm_close_is_noop():
     for s in sessions.values():
         assert s._flushed_handlers == []
         assert s._flush_handlers == []
-
-
-def test_when_comm_open_waits_for_the_real_comm() -> None:
-    from shinywidgets._comm import (
-        OrphanedShinyComm,
-        run_comm_open_callbacks,
-        when_comm_open,
-    )
-
-    class W:
-        comm: object = OrphanedShinyComm("m1")
-
-    calls: list[int] = []
-    when_comm_open(W(), lambda: calls.append(1))
-    assert calls == []
-    run_comm_open_callbacks("m1")
-    assert calls == [1]
-    run_comm_open_callbacks("m1")  # runs once
-    assert calls == [1]
-
-    class Open:
-        comm: object = object()
-
-    when_comm_open(Open(), lambda: calls.append(2))
-    assert calls == [1, 2]
-
-    class Closed:
-        comm: object = OrphanedShinyComm("m2", pending_open=False)
-
-    when_comm_open(Closed(), lambda: calls.append(3))
-    assert calls == [1, 2]

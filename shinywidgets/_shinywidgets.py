@@ -49,7 +49,6 @@ from ._as_widget import as_widget, pydeck_has_widget
 from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import (
-    COMM_OPEN_CALLBACKS,
     BufferType,
     DataType,
     OrphanedShinyComm,
@@ -58,7 +57,6 @@ from ._comm import (
     ShinyCommManager,
     flush_queued_sends,
     is_sessionless,
-    run_comm_open_callbacks,
 )
 from ._dependencies import (
     custom_elements_dependency,
@@ -250,19 +248,16 @@ def init_shiny_widget(w: Widget):
         # Closed before it was opened (explicitly, or because its render was
         # invalidated): leave it closed rather than reopening it.
         if w is None or WIDGET_INSTANCE_MAP.get(id) is not w:
-            COMM_OPEN_CALLBACKS.pop(id, None)
             return
 
         if is_ipyreact_registry_widget(w):
             fan_out_ipyreact_registry(w)
-            run_comm_open_callbacks(id)
             return
 
         # Already opened in another session by open_shared_in(); a plain
         # ShinyComm here would cut that session off.
         if isinstance(w.comm, SharedShinyComm):
             open_shared_in(w, session)
-            run_comm_open_callbacks(id)
             return
 
         # A shared widget's lazily created defaults (e.g. its Layout) are shared too
@@ -307,11 +302,7 @@ def init_shiny_widget(w: Widget):
         )
 
         flush_ipycanvas_manager(w)
-        # Deliver the sends that queued on the pre-open placeholder (after the
-        # open, and before callbacks registered for the open, so everything
-        # stays in the order it was issued)
         flush_queued_sends(placeholder, w.comm)
-        run_comm_open_callbacks(id)
 
     # If the widget initialized in a reactive _output_ context, then cleanup the widget
     # when the context gets invalidated. Use the render output's Context (captured by
@@ -1271,9 +1262,6 @@ def close_widget(w: Widget) -> None:
     # at runtime, and some packages like ipyleaflet want to use this id
     # to manage references between widgets.
     w.comm = OrphanedShinyComm(model_id, pending_open=False)
-    # Work registered for the comm's open (which now never happens) must not
-    # linger; the pre-open send queue died with the old placeholder
-    COMM_OPEN_CALLBACKS.pop(model_id, None)
     # Assigning a comm has the side-effect of adding back a reference to
     # the widget instance, so remove it again
     if WIDGET_INSTANCE_MAP.get(model_id) is w:
@@ -1295,12 +1283,19 @@ def queue_sends_until_comm_open(w: Widget) -> None:
     behavior: the comm open carries the widget's full current state, so
     replaying a snapshot taken earlier would risk rolling it back.
     """
-    original_send = getattr(w, "_send", None)
+    class_send = getattr(type(w), "_send", None)
     # A widget without _send() has no Widget.send() to route
-    if original_send is None:
+    if class_send is None:
         return
+    # Held weakly: the instance attribute assigned below would otherwise tie
+    # the widget into a reference cycle, so a closed widget's memory would wait
+    # for the garbage collector instead of being freed right away
+    w_ref = ref(w)
 
     def _send(msg: Dict[str, object], buffers: BufferType = None) -> None:
+        w = w_ref()
+        if w is None:
+            return
         comm = w.comm
         if (
             isinstance(comm, OrphanedShinyComm)
@@ -1309,7 +1304,7 @@ def queue_sends_until_comm_open(w: Widget) -> None:
         ):
             comm.send(data=msg, buffers=buffers)
         else:
-            original_send(msg, buffers=buffers)
+            class_send(w, msg, buffers=buffers)
 
     # ipywidgets' kernel check lives on the class and can't be satisfied
     # without breaking ipyvue's template caching, so patch the instance

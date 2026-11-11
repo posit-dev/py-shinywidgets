@@ -17,7 +17,6 @@ except ImportError:
 
 from ._as_widget import as_widget
 from ._bokeh import bokeh_dependency
-from ._comm import when_comm_open
 from ._output_widget import output_widget
 from ._render_widget import (
     render_altair,
@@ -120,7 +119,6 @@ __all__ = (
     # Other methods last
     "as_widget",
     "bokeh_dependency",
-    "when_comm_open",
     # Lifetime methods
     "session_lifetime",
     "shared_lifetime",

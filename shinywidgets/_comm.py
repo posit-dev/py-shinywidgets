@@ -2,9 +2,8 @@ import logging
 import threading
 from base64 import b64encode
 from contextvars import ContextVar
-from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional
 
 from shiny import Session
 
@@ -168,46 +167,21 @@ class ShinyComm:
         buffers: BufferType = None,
         **keys: object,
     ) -> None:
-        data = {} if data is None else data
-        metadata = {} if metadata is None else metadata
-
-        # Add buffers, if any. Note that this is just here for validation of the buffers
-        # and the buffer paths should be embedded inside data.
-        buffers = [] if buffers is None else buffers
-        for idx, buf in enumerate(buffers):
-            if not isinstance(buf, memoryview):
-                try:
-                    view = memoryview(buf)
-                    if not view.contiguous:
-                        # zmq requires memoryviews to be contiguous
-                        raise ValueError(
-                            "Buffer %i (%r) is not contiguous" % (idx, buf)
-                        )
-                except TypeError as e:
-                    raise TypeError(
-                        "Buffer objects must support the buffer protocol."
-                    ) from e
-
-        # Construct the message payload
-        msg: Dict[str, object] = dict(
-            content=dict(data=data, comm_id=self.comm_id, **keys),
-            metadata=metadata,
-            # Since Shiny doesn't currently have support for sending binary data, we base64 encode
-            # it (and decode whenever it's received).
-            buffers=[b64encode(b).decode("ascii") for b in buffers],
-            # I don't think this value matters unless we decide we want to sign
-            # the message in a similar way to the kernel (since we don't
-            # necessarily execute code from the client, it doesn't seem necessary)
-            # https://github.com/ipython/ipykernel/blob/378af4b/ipykernel/comm/comm.py#L36-L40
-            ident="comm-" + self.comm_id,
-            # I don't think we need this info, but I could be wrong
-            parent={},  # self.kernel.get_parent("shell")
+        self.publish_packed(
+            msg_type,
+            pack_comm_msg(
+                self.comm_id,
+                data=data,
+                metadata=metadata,
+                buffers=buffers,
+                parent_header=self._parent_header,
+                **keys,
+            ),
         )
-        if self._parent_header is not None:
-            msg["parent_header"] = self._parent_header
 
+    def publish_packed(self, msg_type: str, msg_txt: str) -> None:
+        """Schedule an already serialized message (see pack_comm_msg())."""
         session = self.session
-        msg_txt = json_packer(msg)
 
         async def _send():
             if msg_type == "shinywidgets_comm_close":
@@ -281,67 +255,15 @@ class ShinyComm:
             self._close_callback(msg)
 
 
-# Work waiting for a widget's comm to open, by model id (see when_comm_open())
-COMM_OPEN_CALLBACKS: Dict[str, List[Callable[[], None]]] = {}
-
-
-def when_comm_open(widget: object, fn: Callable[[], None]) -> None:
-    """
-    Run `fn` once `widget`'s comm has opened to the browser (i.e., once the
-    browser has the widget's model).
-
-    A widget constructed during a render gets its real comm on a later
-    reactive flush; until then, `widget.comm` is an `OrphanedShinyComm`
-    placeholder. `widget.send(...)` calls made in that window queue up and are
-    delivered, in order, when the comm opens, so they don't need this helper;
-    use it for other work that must wait for the open (e.g., reading state
-    back from a model the browser just created).
-
-    If the widget's comm is already open, `fn` runs immediately. If the widget
-    is already closed, `fn` never runs.
-    """
-    comm = getattr(widget, "comm", None)
-    if isinstance(comm, OrphanedShinyComm):
-        # A post-close placeholder's comm never opens; registering `fn` would
-        # leak it in COMM_OPEN_CALLBACKS forever.
-        if comm.pending_open:
-            COMM_OPEN_CALLBACKS.setdefault(comm.comm_id, []).append(fn)
-    else:
-        fn()
-
-
-def run_comm_open_callbacks(model_id: str) -> None:
-    for fn in COMM_OPEN_CALLBACKS.pop(model_id, []):
-        fn()
-
-
-def freeze_payload(value: object) -> object:
-    """
-    Deep-copy a queued send payload, freezing buffer objects to `bytes`, so
-    later mutation (or buffer reuse) can't rewrite a message queued for replay.
-    """
-    if isinstance(value, (bytearray, memoryview)):
-        return bytes(value)
-    if isinstance(value, dict):
-        return {k: freeze_payload(v) for k, v in value.items()}
-    if isinstance(value, tuple):
-        return tuple(freeze_payload(v) for v in value)
-    if isinstance(value, list):
-        return [freeze_payload(v) for v in value]
-    return deepcopy(value)
-
-
 def flush_queued_sends(placeholder: object, comm: "ShinyComm") -> None:
     """
-    Replay, in order, the sends queued on a pre-open placeholder through the
+    Deliver, in order, the sends queued on a pre-open placeholder through the
     real comm that replaced it (see OrphanedShinyComm).
     """
     if not isinstance(placeholder, OrphanedShinyComm):
         return
-    for args, kwargs in placeholder.take_queued_sends():
-        # The queue replays exactly what was passed to send() (typed `object`
-        # so the placeholder accepts every widget's call signature)
-        comm.send(*cast(Any, args), **cast(Any, kwargs))
+    for msg_txt in placeholder.take_queued_sends():
+        comm.publish_packed("shinywidgets_comm_msg", msg_txt)
 
 
 @dataclass
@@ -357,8 +279,9 @@ class OrphanedShinyComm:
       `flush_queued_sends()`), so widget methods that send custom messages
       (e.g., k3d's `start_auto_play()`) work even when called while their
       output is still rendering. `widget.send()` reaches the queue too (see
-      `queue_sends_until_comm_open()`), and payloads are snapshotted at send
-      time (see `freeze_payload()`), as a real send would serialize them.
+      `queue_sends_until_comm_open()`). A send is serialized right away, by
+      the serializer an open comm uses (see `pack_comm_msg()`), so what
+      reaches the browser doesn't depend on whether the comm had opened yet.
     * Post-close (`pending_open=False`): the widget was closed (or was never
       meant to open); the placeholder only keeps `model_id` working, and
       sends are no-ops, as they've always been for a closed widget.
@@ -366,9 +289,7 @@ class OrphanedShinyComm:
 
     comm_id: str
     pending_open: bool = True
-    _queue: List[Tuple[Tuple[object, ...], Dict[str, object]]] = field(
-        default_factory=list, repr=False
-    )
+    _queue: List[str] = field(default_factory=lambda: [], repr=False)
 
     # Cross-library contract: ipywidgets treats a comm with `kernel = None`
     # like a `DummyComm`, and ipyvue >= 3 skips caching templates whose comm
@@ -377,17 +298,14 @@ class OrphanedShinyComm:
 
     def send(
         self,
-        *args: object,
-        **kwargs: object,
+        data: DataType = None,
+        metadata: MetadataType = None,
+        buffers: BufferType = None,
     ) -> None:
         if self.pending_open:
-            # Snapshot the payload now, as ShinyComm._publish_msg() would at
-            # send time: the caller may mutate the data or reuse the buffers
-            # before the queue flushes.
             self._queue.append(
-                (
-                    cast(Tuple[object, ...], freeze_payload(args)),
-                    cast(Dict[str, object], freeze_payload(kwargs)),
+                pack_comm_msg(
+                    self.comm_id, data=data, metadata=metadata, buffers=buffers
                 )
             )
 
@@ -403,9 +321,9 @@ class OrphanedShinyComm:
     def on_msg(self, callback: MsgCallback) -> None:
         pass
 
-    def take_queued_sends(self) -> List[Tuple[Tuple[object, ...], Dict[str, object]]]:
+    def take_queued_sends(self) -> List[str]:
         """
-        The sends queued while pre-open, in FIFO order. Drains the queue and
+        The (serialized) sends queued while pre-open, in FIFO order. Drains the queue and
         ends the pre-open state (the real comm is taking over), so a later
         `send()` is a no-op here and goes through the real comm instead.
         """
@@ -494,6 +412,59 @@ class SharedShinyComm:
         self._close_callback = callback
         for comm in self.comms.values():
             comm.on_close(callback)
+
+
+def pack_comm_msg(
+    comm_id: str,
+    data: DataType = None,
+    metadata: MetadataType = None,
+    buffers: BufferType = None,
+    parent_header: Optional[object] = None,
+    **keys: object,
+) -> str:
+    """
+    Serialize a comm message for the wire.
+
+    The one serializer for every comm message, whether it's published right
+    away (ShinyComm) or queued until the comm opens (OrphanedShinyComm).
+    """
+    data = {} if data is None else data
+    metadata = {} if metadata is None else metadata
+
+    # Add buffers, if any. Note that this is just here for validation of the buffers
+    # and the buffer paths should be embedded inside data.
+    buffers = [] if buffers is None else buffers
+    for idx, buf in enumerate(buffers):
+        if not isinstance(buf, memoryview):
+            try:
+                view = memoryview(buf)
+                if not view.contiguous:
+                    # zmq requires memoryviews to be contiguous
+                    raise ValueError("Buffer %i (%r) is not contiguous" % (idx, buf))
+            except TypeError as e:
+                raise TypeError(
+                    "Buffer objects must support the buffer protocol."
+                ) from e
+
+    # Construct the message payload
+    msg: Dict[str, object] = dict(
+        content=dict(data=data, comm_id=comm_id, **keys),
+        metadata=metadata,
+        # Since Shiny doesn't currently have support for sending binary data, we base64 encode
+        # it (and decode whenever it's received).
+        buffers=[b64encode(b).decode("ascii") for b in buffers],
+        # I don't think this value matters unless we decide we want to sign
+        # the message in a similar way to the kernel (since we don't
+        # necessarily execute code from the client, it doesn't seem necessary)
+        # https://github.com/ipython/ipykernel/blob/378af4b/ipykernel/comm/comm.py#L36-L40
+        ident="comm-" + comm_id,
+        # I don't think we need this info, but I could be wrong
+        parent={},  # self.kernel.get_parent("shell")
+    )
+    if parent_header is not None:
+        msg["parent_header"] = parent_header
+
+    return json_packer(msg)
 
 
 logger = logging.getLogger("shinywidgets")
