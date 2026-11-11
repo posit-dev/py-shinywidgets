@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Callable
 from ._accessors import AccessorSpec, Emit
 
 if TYPE_CHECKING:
+    import pandas as pd
     from jscatter.widget import JupyterScatter
 
 
@@ -23,6 +24,25 @@ def attach_selection(widget: JupyterScatter, emit: Emit) -> Callable[[], None]:
     widget.observe(on_change, "selection")
     emit(widget.selection)
     return lambda: widget.unobserve(on_change, "selection")
+
+
+def scatter_frame(value: object) -> "pd.DataFrame":
+    """
+    The frame a `jscatter.Scatter` was built with -- the `df` default for
+    `selected_rows()`. `_data` is jscatter's own attribute (there's no public
+    getter; `Scatter.data()` is a setter), so this guards with isinstance and
+    a not-None check rather than trusting it to be there.
+    """
+    from jscatter import Scatter
+
+    if isinstance(value, Scatter) and value._data is not None:
+        return value._data
+    raise TypeError(
+        "`selected_rows()` needs the data frame: `plot.selected_rows(df)`. It "
+        "defaults to the frame the returned `jscatter.Scatter` was built with, "
+        "but this output's render function didn't return one built from a "
+        "data frame."
+    )
 
 
 def is_unreported(raw: object) -> bool:

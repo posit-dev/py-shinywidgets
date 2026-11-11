@@ -20,6 +20,7 @@ from typing import (
     TypeVar,
     Union,
     cast,
+    overload,
 )
 
 from htmltools import Tag
@@ -148,7 +149,7 @@ from ._ipyaladin import IPYALADIN_ACCESSORS
 from ._ipydatagrid import IPYDATAGRID_ACCESSORS
 from ._ipyleaflet import IPYLEAFLET_ACCESSORS
 from ._itables import ITABLES_ACCESSORS
-from ._jscatter import JSCATTER_ACCESSORS
+from ._jscatter import JSCATTER_ACCESSORS, scatter_frame
 from ._k3d import CAMERA as K3D_CAMERA
 from ._lonboard import LONBOARD_ACCESSORS
 from ._maplibre import MAPLIBRE_ACCESSORS
@@ -167,6 +168,7 @@ from ._render_widget_base import (
     render_widget_base,
 )
 from ._rerun import SELECTED
+from ._utils import select_rows_at
 
 if TYPE_CHECKING:
     # The values a @render_plotly render function may return (bound below):
@@ -1423,7 +1425,8 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
     ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``), which
     re-runs whenever the user selects points (with the lasso, or by clicking one),
     much like ``input.my_slider()`` reads an input. The selection is an array
-    of row *positions* (use ``df.iloc[...]``), not index labels. A re-render
+    of row *positions*, not index labels; ``plot.selected_rows()`` returns the
+    selected rows of the plot's data frame instead. A re-render
     (e.g. when the render function reads an input) gives the user a new plot,
     whose selection starts out empty. It can't be read inside this output's
     own render function, which builds a new plot each time it runs. Other
@@ -1487,6 +1490,35 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
         Not rate-limited.
         """
         return cast("np.ndarray", self._read_accessor("selected"))
+
+    @overload
+    def selected_rows(self, df: None = None) -> "pd.DataFrame": ...
+    @overload
+    def selected_rows(self, df: IntoDataFrameT) -> IntoDataFrameT: ...
+    def selected_rows(
+        self, df: Optional[IntoDataFrameT] = None
+    ) -> Union["pd.DataFrame", IntoDataFrameT]:
+        """
+        The rows of `df` at the selected positions (see :meth:`selected`).
+
+        `df` defaults to the frame the returned `jscatter.Scatter` was built
+        with (``Scatter(data=df, ...)``); pass it when the render function
+        returns a bare `JupyterScatter` (which retains no frame), or when the
+        plot's rows aren't `df`'s rows in order. Any frame type works
+        (pandas, polars, ...); the result has the same type. Empty while
+        nothing is selected, so it can be passed straight to
+        ``@render.data_frame``. Cancels until the browser first reports,
+        like :meth:`selected`.
+
+        The match is positional (``df.iloc[plot.selected()]``), so after a
+        re-render or in-place data replacement with different rows, a
+        retained position can point at a different row -- carry an ID column
+        and look rows up by it when the data can change.
+        """
+        positions = self.selected()
+        if df is None:
+            return select_rows_at(scatter_frame(self._value), positions)
+        return select_rows_at(df, positions)
 
 
 class render_k3d(render_widget_base[ValueT, K3dPlot]):

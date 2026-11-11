@@ -59,7 +59,7 @@ ipysigma = ["ipysigma"]
 # ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
 ipyvolume = ["ipyvolume", "ipython_genutils"]
 itables = ["itables[widget]"]
-jscatter = ["jupyter-scatter"]
+jscatter = ["jupyter-scatter", "narwhals"]
 k3d = ["k3d"]
 # An explicit pre-release specifier, so uv/pip accept it without --pre.
 # keplergl 0.3.x imports pkg_resources (removed in setuptools 82), so 0.4
