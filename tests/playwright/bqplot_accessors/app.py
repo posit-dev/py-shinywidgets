@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import bqplot
+import pandas as pd
 from bqplot.interacts import BrushIntervalSelector, BrushSelector
 from shiny import App, render, ui
 from shinywidgets import output_widget, render_bqplot
 
 x = [float(i) for i in range(11)]
 y = [float((i * 3) % 11) for i in range(11)]
+df = pd.DataFrame({"x": x, "y": y})
 
 app_ui = ui.page_fluid(
     output_widget("fig1", height="300px"),
     ui.output_text("sel1"),
+    ui.output_text("rows1"),
     output_widget("fig2", height="300px"),
     ui.output_text("brush2"),
 )
@@ -44,6 +47,12 @@ def server(input, output, session):
         return str(
             [None if s is None else sorted(int(i) for i in s) for s in fig1.selected()]
         )
+
+    @render.text
+    def rows1():
+        rows = fig1.selected_rows(df)
+        shown = ",".join(str(int(v)) for v in rows["x"])
+        return f"{len(rows)} rows: {shown}"
 
     @render_bqplot
     def fig2():

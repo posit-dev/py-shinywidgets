@@ -3,9 +3,12 @@ from __future__ import annotations
 from typing import Any, Tuple
 
 import numpy as np
+import pandas as pd
 import shinywidgets._bqplot as sb
 from shiny import Session
 from shiny.session import session_context
+
+DF = pd.DataFrame({"x": [1.0, 2.0, 3.0], "y": [4.0, 5.0, 6.0], "c": list("abc")})
 
 
 def figure(session: Session) -> Tuple[Any, Any]:
@@ -157,3 +160,91 @@ def test_selected_accessor(widget_session: Session) -> None:
     assert r.selected() == [None]
     sc.selected = np.array([2, 1], dtype=np.uint32)
     assert [list(s) for s in r.selected()] == [[2, 1]]
+
+
+def bqplot_render(widget_session: Session, marks: int = 1) -> Tuple[Any, Any]:
+    from bqplot import Figure, Scatter
+
+    with session_context(widget_session):
+        scatters = [Scatter(x=[1, 2, 3], y=[4, 5, 6]) for _ in range(marks)]
+        fig = Figure(marks=scatters)
+    from shinywidgets import render_bqplot
+
+    r = render_bqplot(rate_delay=0)  # undo the default debounce for the test
+    r._widget = fig  # stands in for _render()
+    r._accessors.on_render(fig)
+    return r, fig
+
+
+def test_selected_rows_single_mark_no_selection_is_empty(
+    widget_session: Session,
+) -> None:
+    r, _ = bqplot_render(widget_session)
+    out = r.selected_rows(DF)
+    assert isinstance(out, pd.DataFrame)
+    assert len(out) == 0
+    assert list(out.columns) == list(DF.columns)
+
+
+def test_selected_rows_single_mark_default(widget_session: Session) -> None:
+    r, fig = bqplot_render(widget_session)
+    fig.marks[0].selected = np.array([2, 0], dtype=np.uint32)
+    out = r.selected_rows(DF)
+    assert isinstance(out, pd.DataFrame)
+    assert out["c"].tolist() == ["c", "a"]  # selection order, not frame order
+
+
+def test_selected_rows_explicit_frame_keeps_its_type(
+    widget_session: Session,
+) -> None:
+    import polars as pl
+
+    r, fig = bqplot_render(widget_session)
+    fig.marks[0].selected = np.array([1], dtype=np.uint32)
+    out = r.selected_rows(pl.DataFrame({"y": [4.0, 5.0, 6.0]}))
+    assert isinstance(out, pl.DataFrame)
+    assert out["y"].to_list() == [5.0]
+
+
+def test_selected_rows_empty_selection_is_empty_frame(
+    widget_session: Session,
+) -> None:
+    r, fig = bqplot_render(widget_session)
+    fig.marks[0].selected = np.array([], dtype=np.uint32)
+    out = r.selected_rows(DF)
+    assert len(out) == 0
+    assert list(out.columns) == list(DF.columns)
+
+
+def test_selected_rows_multi_mark_requires_mark(widget_session: Session) -> None:
+    import pytest
+
+    r, _ = bqplot_render(widget_session, marks=2)
+    with pytest.raises(ValueError, match="mark="):
+        r.selected_rows(DF)
+
+
+def test_selected_rows_mark_by_index(widget_session: Session) -> None:
+    r, fig = bqplot_render(widget_session, marks=2)
+    fig.marks[0].selected = np.array([0], dtype=np.uint32)
+    fig.marks[1].selected = np.array([2, 1], dtype=np.uint32)
+    out = r.selected_rows(DF, mark=1)
+    assert out["c"].tolist() == ["c", "b"]
+
+
+def test_selected_rows_mark_by_mark_object(widget_session: Session) -> None:
+    r, fig = bqplot_render(widget_session, marks=2)
+    fig.marks[1].selected = np.array([1], dtype=np.uint32)
+    out = r.selected_rows(DF, mark=fig.marks[1])
+    assert out["c"].tolist() == ["b"]
+
+
+def test_selected_rows_mark_object_not_in_figure(widget_session: Session) -> None:
+    import pytest
+    from bqplot import Scatter
+
+    r, _ = bqplot_render(widget_session, marks=2)
+    with session_context(widget_session):
+        other = Scatter(x=[1], y=[2])
+    with pytest.raises(ValueError, match="not one of"):
+        r.selected_rows(DF, mark=other)

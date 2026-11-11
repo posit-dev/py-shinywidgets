@@ -17,12 +17,13 @@ interaction-free figures.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, List, Tuple, cast
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union, cast
 
 from ._accessors import AccessorSpec, Emit
 
 if TYPE_CHECKING:
     from bqplot import Figure as BqplotFigure
+    from bqplot import Mark
 
 
 def selections_equal(a: List[object], b: List[object]) -> bool:
@@ -46,6 +47,28 @@ def selections_equal(a: List[object], b: List[object]) -> bool:
         ):
             return False
     return True
+
+
+def pick_mark(fig: BqplotFigure, mark: Optional[Union[int, "Mark"]]) -> int:
+    """
+    The index into ``fig.marks`` for `selected_rows()`'s `mark` argument:
+    `mark` may be an index or the `Mark` object itself, and may be omitted
+    only when the figure has exactly one mark.
+    """
+    if isinstance(mark, int):
+        return mark
+    n = len(fig.marks)
+    if mark is None:
+        if n == 1:
+            return 0
+        raise ValueError(
+            f"The figure has {n} marks; pass `mark=` to `selected_rows()` "
+            "(its index in `fig.marks`, or the `Mark` object itself)."
+        )
+    try:
+        return list(fig.marks).index(mark)
+    except ValueError:
+        raise ValueError("`mark` is not one of the figure's marks.") from None
 
 
 def attach_selection(widget: BqplotFigure, emit: Emit) -> Callable[[], None]:
