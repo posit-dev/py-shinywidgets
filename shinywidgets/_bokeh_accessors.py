@@ -13,14 +13,13 @@ selection made before the first read isn't lost.
 
 from __future__ import annotations
 
-import weakref
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, cast
+from typing import TYPE_CHECKING, Any, Callable, List, Optional, cast
 
 from ._accessors import AccessorSpec, Emit
 
 if TYPE_CHECKING:
     from bokeh.events import Event
-    from bokeh.models import ColumnDataSource, Plot
+    from bokeh.models import ColumnDataSource
     from jupyter_bokeh import BokehModel
 
 
@@ -45,82 +44,37 @@ def event_attach(event: str) -> Callable[[BokehModel, Emit], Callable[[], None]]
     def attach(widget: BokehModel, emit: Emit) -> Callable[[], None]:
         from bokeh.models import Plot
 
-        # bokeh's stubs type select() as list[Model] even when filtered
-        plots = cast("List[Plot]", widget._model.select({"type": Plot}))
-        fans = [_event_fan_for(plot, event) for plot in plots]
-        for fan in fans:
-            fan.append(emit)
+        active = [True]
 
-        detached = False
+        def on_event(e: Event) -> None:
+            if active[0]:
+                emit(e)
+
+        plots = widget._model.select({"type": Plot})
+        for plot in plots:
+            plot.on_event(event, on_event)
+            # on_event only subscribes the plot to browser events when it
+            # joins a document, which already happened at render.
+            if plot.document is not None:
+                plot.document.callbacks.subscribe(event, plot)
 
         def detach() -> None:
-            nonlocal detached
-            # Idempotent, so a stale handle can't remove a later attachment
-            # of the same emit
-            if detached:
-                return
-            detached = True
-            for fan in fans:
-                # Identity, not equality: another attachment of an equal
-                # emit must not be removed
-                for i, r in enumerate(fan):
-                    if r is emit:
-                        del fan[i]
-                        break
+            active[0] = False
+            for plot in plots:
+                # bokeh has no public way to remove an on_event callback, so
+                # drop it from bokeh's private registry; if that ever goes
+                # away, the flag above still mutes the callback. Replace the
+                # list rather than mutate it: a detach during dispatch would
+                # otherwise make bokeh's loop over it skip the next callback.
+                callbacks = getattr(plot, "_event_callbacks", None)
+                if callbacks is not None:
+                    callbacks[event] = [
+                        cb for cb in callbacks[event] if cb is not on_event
+                    ]
 
         return detach
 
     return attach
-
-
-# bokeh's on_event() only appends callbacks and has no public removal API, so
-# each (plot, event) pair gets one permanent callback that fans out to the
-# currently attached emits; detach removes its emit from the list instead of
-# leaving a muted closure on the plot. The registry only finds a plot's
-# fan-out state again at the next attach, so it references it weakly: the
-# state is owned by the plot itself (through the callbacks it holds), whose
-# emits capture the renderer, which owns the widget and its plot -- a strong
-# reference here would keep plots alive after everything else has dropped
-# them.
-_EVENT_FANS: weakref.WeakKeyDictionary[Plot, "weakref.ReferenceType[_Fans]"] = (
-    weakref.WeakKeyDictionary()
-)
-
-
-class _Fans(Dict[str, List[Emit]]):
-    # A plain dict can't be weakly referenced, and _EVENT_FANS references
-    # this weakly (see above)
-    pass
-
-
-def _event_fan_for(plot: Plot, event: str) -> List[Emit]:
-    fans_ref = _EVENT_FANS.get(plot)
-    fans = fans_ref() if fans_ref is not None else None
-    if fans is None:
-        fans = _Fans()
-        _EVENT_FANS[plot] = weakref.ref(fans)
-    if event in fans:
-        return fans[event]
-    emits: List[Emit] = []
-
-    def on_event(
-        e: Event, emits: List[Emit] = emits, _owns_fans: object = fans
-    ) -> None:
-        # Iterate a snapshot but check liveness before each delivery: an
-        # emit may detach (mutating `emits`) mid-dispatch, and a detached
-        # emit must not be called. Identity (not equality) keeps a later
-        # attachment of an equal emit live.
-        for emit in list(emits):
-            if any(r is emit for r in emits):
-                emit(e)
-
-    plot.on_event(event, on_event)
-    # on_event only subscribes the plot to browser events when it joins a
-    # document, which already happened at render.
-    if plot.document is not None:
-        plot.document.callbacks.subscribe(event, plot)
-    fans[event] = emits
-    return emits
 
 
 def attach_zoomed(widget: BokehModel, emit: Emit) -> Callable[[], None]:
