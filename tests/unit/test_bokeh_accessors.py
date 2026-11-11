@@ -88,6 +88,19 @@ def test_event_callbacks_do_not_accumulate_across_attaches(
     assert p._event_callbacks["tap"] == []
 
 
+def test_event_callbacks_do_not_accumulate_under_a_layout_root(
+    widget_session: Session,
+) -> None:
+    # A layout's select() returns a one-shot generator (a figure's returns a
+    # list), which attach must not leave exhausted for detach
+    p, _ = plot()
+    w = widget(widget_session, row(p))
+    for _ in range(3):
+        detach = sb.TAPPED.attach(w, lambda raw: None)
+        detach()
+    assert p._event_callbacks["tap"] == []
+
+
 def test_multiple_live_accessors_on_the_same_event_each_receive_events(
     widget_session: Session,
 ) -> None:

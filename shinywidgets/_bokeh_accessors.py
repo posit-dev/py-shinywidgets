@@ -50,7 +50,9 @@ def event_attach(event: str) -> Callable[[BokehModel, Emit], Callable[[], None]]
             if active[0]:
                 emit(e)
 
-        plots = widget._model.select({"type": Plot})
+        # A list, since detach walks it again and a layout's select() returns
+        # a one-shot generator (a figure's returns a list)
+        plots = list(widget._model.select({"type": Plot}))
         for plot in plots:
             plot.on_event(event, on_event)
             # on_event only subscribes the plot to browser events when it
