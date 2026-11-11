@@ -22,7 +22,7 @@ def test_lonboard_accessors_follow_gestures(page: Page, local_app) -> None:
     assert box is not None
     cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
 
-    # Click on the cluster: clicked() reports (lng, lat) and selected_index()
+    # Click on the cluster: clicked() reports (lng, lat) and selected()
     # picks a row. The map is centered on (20, 40), so the distinct
     # magnitudes catch a lat/lng swap.
     page.mouse.click(cx, cy)

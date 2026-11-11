@@ -44,10 +44,10 @@ CLICKED_OBJECT = AccessorSpec(
     attach=observe_trait("clicked_object"),
     payload=none_if_no_click,
 )
-SELECTED_OBJECTS = AccessorSpec(
-    name="selected_objects", kind="state", attach=observe_trait("_selected_objects")
+SELECTED = AccessorSpec(
+    name="selected", kind="state", attach=observe_trait("_selected_objects")
 )
 TARGET = AccessorSpec(name="target", kind="state", attach=observe_trait("_target"))
 FOV = AccessorSpec(name="fov", kind="state", attach=observe_trait("_fov"))
 
-IPYALADIN_ACCESSORS = (CLICKED_OBJECT, SELECTED_OBJECTS, TARGET, FOV)
+IPYALADIN_ACCESSORS = (CLICKED_OBJECT, SELECTED, TARGET, FOV)

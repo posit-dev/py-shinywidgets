@@ -55,7 +55,7 @@ def server(input, output, session):
 
     @render.text
     def selected_objects():
-        return str(sum(len(t) for t in sky.selected_objects()))
+        return str(sum(len(t) for t in sky.selected()))
 
 
 app = App(app_ui, server)

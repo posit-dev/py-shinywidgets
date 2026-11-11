@@ -32,7 +32,7 @@ def server(input, output, session):
 
     @render.text
     def selection():
-        evt = viewer.selection()
+        evt = viewer.selected()
         if evt is None:
             return "(waiting)"
         return "[" + ", ".join(type(item).__name__ for item in evt.items) + "]"

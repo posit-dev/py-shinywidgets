@@ -23,7 +23,7 @@ def server(input, output, session):
 
     @render.text
     def sel():
-        return ",".join(str(i) for i in sc.selection())
+        return ",".join(str(i) for i in sc.selected())
 
 
 app = App(app_ui, server)

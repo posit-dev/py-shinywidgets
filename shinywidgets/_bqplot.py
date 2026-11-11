@@ -149,8 +149,8 @@ def attach_brush(widget: BqplotFigure, emit: Emit) -> Callable[[], None]:
     return detach
 
 
-SELECTION = AccessorSpec(
-    name="selection",
+SELECTED = AccessorSpec(
+    name="selected",
     kind="state",
     attach=attach_selection,
     # Brush selectors update during the drag
@@ -165,4 +165,4 @@ BRUSH = AccessorSpec(
     rate_policy="debounce",
 )
 
-BPLOT_ACCESSORS = (SELECTION, BRUSH)
+BPLOT_ACCESSORS = (SELECTED, BRUSH)

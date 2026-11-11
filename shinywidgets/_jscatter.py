@@ -31,11 +31,11 @@ def is_unreported(raw: object) -> bool:
     return raw is None
 
 
-SELECTION = AccessorSpec(
-    name="selection",
+SELECTED = AccessorSpec(
+    name="selected",
     kind="state",
     attach=attach_selection,
     not_ready=is_unreported,
 )
 
-JSCATTER_ACCESSORS = (SELECTION,)
+JSCATTER_ACCESSORS = (SELECTED,)

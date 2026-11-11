@@ -6,7 +6,7 @@ Accessors for `render_lonboard`, backed by the map's traits (`view_state`,
 A pick is state, not just an event: lonboard retains it on the layer's
 `selected_index` trait (the frontend sets it on click and pushes it with
 `save_changes()`), so `attach_selected_index` seeds the accessor from the
-layers' retained picks. That lets `selected_index()` be a state accessor
+layers' retained picks. That lets `selected()` be a state accessor
 that attaches at render, so a pick made before its first read isn't lost.
 """
 
@@ -104,12 +104,10 @@ VIEW_STATE = AccessorSpec(
     attach=attach_view_state,
     rate_policy="debounce",
 )
-SELECTED_INDEX = AccessorSpec(
-    name="selected_index", kind="state", attach=attach_selected_index
-)
+SELECTED = AccessorSpec(name="selected", kind="state", attach=attach_selected_index)
 SELECTED_BOUNDS = AccessorSpec(
     name="selected_bounds", kind="state", attach=attach_selected_bounds
 )
 CLICKED = AccessorSpec(name="clicked", kind="state", attach=attach_clicked)
 
-LONBOARD_ACCESSORS = (VIEW_STATE, SELECTED_INDEX, SELECTED_BOUNDS, CLICKED)
+LONBOARD_ACCESSORS = (VIEW_STATE, SELECTED, SELECTED_BOUNDS, CLICKED)

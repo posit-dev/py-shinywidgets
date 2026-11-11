@@ -166,7 +166,7 @@ from ._render_widget_base import (
     WidgetT,
     render_widget_base,
 )
-from ._rerun import SELECTION
+from ._rerun import SELECTED
 
 if TYPE_CHECKING:
     # The values a @render_plotly render function may return (bound below):
@@ -681,7 +681,7 @@ class render_embedding_atlas(
 
     **Responding to user interaction**: the filter a user builds in the
     browser is synced to the widget's (upstream-internal) `_predicate`
-    trait: read ``atlas.selection()`` for the filtered rows, or
+    trait: read ``atlas.selected()`` for the filtered rows, or
     ``atlas.predicate()`` for the filter as a SQL expression, reactively
     (``atlas.read("_predicate")`` remains available for the raw trait).
 
@@ -711,7 +711,7 @@ class render_embedding_atlas(
         connection lets any visitor run arbitrary SQL with the server process's
         permissions.
     rate_policy
-        How to rate-limit :meth:`predicate` and :meth:`selection` (debounced
+        How to rate-limit :meth:`predicate` and :meth:`selected` (debounced
         by default) and :func:`~shinywidgets.reactive_read` on the widget:
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps the
         debounce, and debounces ``reactive_read()`` only if ``rate_delay`` is
@@ -776,13 +776,13 @@ class render_embedding_atlas(
         and brushes and the embedding view's lasso.
 
         For pushing the filter into your own SQL or aggregation; use
-        :meth:`selection` for the filtered rows themselves. Debounced
+        :meth:`selected` for the filtered rows themselves. Debounced
         (250 ms) by default; see the ``rate_policy`` and ``rate_delay``
         parameters.
         """
         return cast(Optional[str], self._read_accessor("predicate"))
 
-    def selection(self) -> Any:
+    def selected(self) -> Any:
         """
         The rows passing the explorer's current cross-filter (see
         :meth:`predicate`), as the same frame type (pandas or polars) the
@@ -898,7 +898,7 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
     the interaction changes:
 
     * ``clicked_object()``: the catalog source most recently clicked.
-    * ``selected_objects()``: the catalog sources inside the current box
+    * ``selected()``: the catalog sources inside the current box
       selection (needs selection mode armed, e.g.
       ``.widget.selection("rectangle")``).
     * ``target()``: the sky position at the center of the view.
@@ -921,7 +921,7 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
     gate on the ``_ready`` trait instead: ipyaladin does not reliably set it.
 
     **Interacting with catalogs**: ``clicked_object()`` and
-    ``selected_objects()`` (above) cover the common cases; the trait-level
+    ``selected()`` (above) cover the common cases; the trait-level
     equivalents (``clicked_object`` and ``_selected_objects``) also work with
     ``sky.read()``. Prefer any of these over
     ``.widget.set_listener()``: in ipyaladin 0.8.x listener callbacks are
@@ -985,7 +985,7 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("clicked_object"))
 
-    def selected_objects(self) -> List[Table]:
+    def selected(self) -> List[Table]:
         """
         The catalog sources inside the current selection, as a list of
         astropy `Table`s (one per catalog).
@@ -995,7 +995,7 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
         render, so it never returns ``None``; reading before the first render
         cancels silently (like ``req(False)``). Not rate-limited.
         """
-        self._read_accessor("selected_objects")
+        self._read_accessor("selected")
         return cast(Aladin, self._widget).selected_objects
 
     def target(self) -> Union[SkyCoord, Tuple[Longitude, Latitude]]:
@@ -1419,7 +1419,7 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
     be read reactively with ``plot.read("some_trait")`` (a shortcut for
     :func:`~shinywidgets.reactive_read` on `.widget`).
 
-    **Responding to user interaction**: read ``plot.selection()`` in a reactive function (a
+    **Responding to user interaction**: read ``plot.selected()`` in a reactive function (a
     ``@render.*`` function, ``@reactive.calc``, or ``@reactive.effect``), which
     re-runs whenever the user selects points (with the lasso, or by clicking one),
     much like ``input.my_slider()`` reads an input. The selection is an array
@@ -1461,7 +1461,7 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
 
-    Each accessor can also be read by name -- ``out.read("selection")`` --
+    Each accessor can also be read by name -- ``out.read("selected")`` --
     which also accepts the widget's bare synced-trait names.
 
     See also
@@ -1473,10 +1473,10 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
 
     _accessor_specs = JSCATTER_ACCESSORS
 
-    def selection(self) -> "np.ndarray":
+    def selected(self) -> "np.ndarray":
         """
         The currently selected points as a `numpy.ndarray` (uint32) of row
-        *positions* into the plot's data (use ``df.iloc[plot.selection()]``),
+        *positions* into the plot's data (use ``df.iloc[plot.selected()]``),
         from a lasso or single click.
 
         Empty while nothing is selected. Cancels (like `.widget`) until the
@@ -1486,7 +1486,7 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
         ``data_use_index=True``), use ``plot.value.selection()``.
         Not rate-limited.
         """
-        return cast("np.ndarray", self._read_accessor("selection"))
+        return cast("np.ndarray", self._read_accessor("selected"))
 
 
 class render_k3d(render_widget_base[ValueT, K3dPlot]):
@@ -1836,7 +1836,7 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
     `.widget`, the rendered `Figure` instance. Widget state can also be read
     reactively with :func:`~shinywidgets.reactive_read`.
 
-    **Responding to user interaction**: read ``fig.selection()`` (the selected
+    **Responding to user interaction**: read ``fig.selected()`` (the selected
     elements of each mark) or ``fig.brush()`` (the current brush region) in a
     reactive function (a ``@render.*`` function, ``@reactive.calc``, or
     ``@reactive.effect``), which re-runs whenever the user selects or brushes
@@ -1877,7 +1877,7 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     rate_policy
-        How to rate-limit :meth:`selection` and :meth:`brush` (debounced by
+        How to rate-limit :meth:`selected` and :meth:`brush` (debounced by
         default) and :func:`~shinywidgets.reactive_read` on the widget:
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps the
         debounce, and debounces ``reactive_read()`` only if ``rate_delay`` is
@@ -1886,7 +1886,7 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
 
-    Each accessor can also be read by name -- ``out.read("selection")`` --
+    Each accessor can also be read by name -- ``out.read("selected")`` --
     which also accepts the widget's bare synced-trait names.
 
     See also
@@ -1898,7 +1898,7 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
 
     _accessor_specs = BPLOT_ACCESSORS
 
-    def selection(self) -> List[Optional["np.ndarray"]]:
+    def selected(self) -> List[Optional["np.ndarray"]]:
         """
         The selected elements of each mark, as a list aligned with
         ``fig.marks``: each entry is a `numpy.ndarray` of element indices, or
@@ -1906,7 +1906,7 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
 
         Set by a brush/lasso `bqplot.interacts.Selector` (the figure's
         ``interaction``) or by click-select (``interactions={"click": "select"}``).
-        Single-mark figures read ``fig.selection()[0]``. Debounced (250 ms) by
+        Single-mark figures read ``fig.selected()[0]``. Debounced (250 ms) by
         default, since brush selectors update during the drag; see the
         ``rate_policy`` and ``rate_delay`` parameters. The indices are
         positions into the mark's data: after in-place data replacement
@@ -1914,7 +1914,7 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
         at a different element, so key lookups by ID rather than position
         when the data can change.
         """
-        return cast(List[Optional["np.ndarray"]], self._read_accessor("selection"))
+        return cast(List[Optional["np.ndarray"]], self._read_accessor("selected"))
 
     def brush(self) -> Optional[Union["np.ndarray", Dict[str, Any]]]:
         """
@@ -2416,7 +2416,7 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
 
     * ``map.view_state()``: the camera (longitude, latitude, zoom, pitch,
       bearing).
-    * ``map.selected_index()``: the most recently picked row, across layers.
+    * ``map.selected()``: the most recently picked row, across layers.
     * ``map.selected_bounds()``: the bbox dragged with the Select BBox control.
     * ``map.clicked()``: the most recent map click, as ``(lng, lat)`` -- note
       the order; ipyleaflet reports ``[lat, lng]``.
@@ -2453,7 +2453,7 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
 
-    Each accessor can also be read by name -- ``out.read("selected_index")`` --
+    Each accessor can also be read by name -- ``out.read("selected")`` --
     which also accepts the widget's bare synced-trait names.
 
     See also
@@ -2481,10 +2481,10 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         """
         return cast("BaseViewState", self._read_accessor("view_state"))
 
-    def selected_index(self) -> Optional[int]:
+    def selected(self) -> Optional[int]:
         """
         The positional index of the most recently picked row, as
-        ``gdf.iloc[map.selected_index()]``, or ``None`` until the first pick.
+        ``gdf.iloc[map.selected()]``, or ``None`` until the first pick.
 
         This accessor attaches at render, and lonboard retains the pick on
         each layer's ``selected_index`` trait, so a pick made before this
@@ -2512,7 +2512,7 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         can point at a different row. To track rows across data changes,
         carry an ID column in the geo data frame and look the pick up by it.
         """
-        return cast(Optional[int], self._read_accessor("selected_index"))
+        return cast(Optional[int], self._read_accessor("selected"))
 
     def selected_bounds(self) -> Optional[Tuple[float, float, float, float]]:
         """
@@ -4157,7 +4157,7 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
     (a shortcut for :func:`~shinywidgets.reactive_read` on `.widget`).
 
     **Responding to user interaction**: read what the user does in the grid
-    with ``.selections()``, ``.clicked_cell()``, and ``.edited_cell()``.
+    with ``.selected()``, ``.clicked_cell()``, and ``.edited_cell()``.
 
     **Mutating the widget**: use `.widget` to update the rendered grid in
     place; trait changes on the widget are synced to the browser.
@@ -4193,7 +4193,7 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     rate_policy
-        How to rate-limit :meth:`selections` (debounced by default) and
+        How to rate-limit :meth:`selected` (debounced by default) and
         :func:`~shinywidgets.reactive_read` on the widget: ``"debounce"`` or
         ``"throttle"``. ``None`` (the default) keeps the debounce, and
         debounces ``reactive_read()`` only if ``rate_delay`` is given.
@@ -4201,7 +4201,7 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
 
-    Each accessor can also be read by name -- ``out.read("selections")`` --
+    Each accessor can also be read by name -- ``out.read("selected")`` --
     which also accepts the widget's bare synced-trait names.
 
     See also
@@ -4213,7 +4213,7 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
 
     _accessor_specs = IPYDATAGRID_ACCESSORS
 
-    def selections(self) -> List[Dict[str, int]]:
+    def selected(self) -> List[Dict[str, int]]:
         """
         The grid's current selection rectangles, as ``[{"r1", "r2", "c1",
         "c2"}, ...]`` (inclusive), in *visible* row/column coordinates —
@@ -4238,7 +4238,7 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         frame's index (via :meth:`visible_data`) over positions, so lookups
         survive data changes.
         """
-        return cast(List[Dict[str, int]], self._read_accessor("selections"))
+        return cast(List[Dict[str, int]], self._read_accessor("selected"))
 
     def clicked_cell(self) -> Optional[Dict[str, Any]]:
         """
@@ -4271,7 +4271,7 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
     def visible_data(self) -> "pd.DataFrame":
         """
         The grid's rows as currently displayed (after its sort and filter),
-        as a pandas data frame — the ``selections()`` rectangles' coordinate
+        as a pandas data frame — the ``selected()`` rectangles' coordinate
         space, so ``visible_data().iloc[r1:r2 + 1]`` maps a selection to rows.
 
         The whole frame until the user sorts, filters, or edits, and an
@@ -5758,7 +5758,7 @@ def _attach_selection(widget: Widget, emit: Emit) -> Callable[[], None]:
 
     grid_widget.observe(_on, names=["selection"])
     # A state accessor reads correctly from mount: publish the current value
-    # at attach, or selection() is None until the first checkbox toggle (and
+    # at attach, or selected() is None until the first checkbox toggle (and
     # after every re-render, since the runtime re-attaches)
     emit(grid_widget.selection)
     return lambda: grid_widget.unobserve(_on, names=["selection"])
@@ -5831,11 +5831,11 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     the `MolGrid` instance backing it. The `MolGridWidget` that syncs
     selection state is `.grid.widget`.
 
-    **Responding to user interaction**: ``grid.selection()`` gives the
+    **Responding to user interaction**: ``grid.selected()`` gives the
     current molecule selection, and ``grid.clicked()`` the most recently
     clicked molecule's row data (with ``clicks=True``):
 
-    * **Selection (browser -> Python):** ``grid.selection()`` gives the selected
+    * **Selection (browser -> Python):** ``grid.selected()`` gives the selected
       rows reactively, as a dict, e.g. ``{0: "CCO"}``. Row indices are
       positional against the rows *as rendered*. ``grid.grid.get_selection()``
       returns the selected rows as a DataFrame. (If you read the underlying
@@ -5936,7 +5936,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
         ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
         this renderer declares a default, so ``rate_policy``/``rate_delay``
-        don't affect :meth:`selection` or :meth:`clicked` (each fires at
+        don't affect :meth:`selected` or :meth:`clicked` (each fires at
         most once per gesture).
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
@@ -5972,13 +5972,13 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
 
         @render.text
         def n_selected():
-            return f"{len(grid.selection() or {})} molecule(s) selected"
+            return f"{len(grid.selected() or {})} molecule(s) selected"
 
 
     app = App(app_ui, server)
     ```
 
-    Each accessor can also be read by name -- ``out.read("selection")`` --
+    Each accessor can also be read by name -- ``out.read("selected")`` --
     which also accepts the widget's bare synced-trait names.
 
     See also
@@ -5990,7 +5990,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
 
     _accessor_specs = (
         AccessorSpec(
-            name="selection",
+            name="selected",
             kind="state",
             attach=_attach_selection,
             payload=_parse_trait_dict,
@@ -6108,7 +6108,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             "The `grid` attribute of a @render_mols2grid function is read only."
         )
 
-    def selection(self) -> Optional[Dict[int, str]]:
+    def selected(self) -> Optional[Dict[int, str]]:
         """
         The grid's current molecule selection, as ``{row_index: SMILES}``.
 
@@ -6120,7 +6120,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         to a different molecule. For the selected rows as a DataFrame, use
         ``.grid.get_selection()``.
         """
-        return cast(Optional[Dict[int, str]], self._read_accessor("selection"))
+        return cast(Optional[Dict[int, str]], self._read_accessor("selected"))
 
     def clicked(self) -> Optional[Dict[str, Any]]:
         """
@@ -6128,7 +6128,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         if no click has happened yet (requires ``clicks=True`` or a Python
         ``callback``).
 
-        Unlike `.selection()` (the checkbox set), a click is retained
+        Unlike `.selected()` (the checkbox set), a click is retained
         last-click state: it carries the clicked row's data (every displayed
         column, plus ``mols2grid-id``) and keeps its value across re-renders
         until the user clicks the new grid. All values are
@@ -6570,7 +6570,7 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
     (`update_panels()`, `set_time_ctrl()`, `send_table()`, ...) from later
     reactive updates.
 
-    **Responding to user interaction**: ``viewer.selection()`` reads the
+    **Responding to user interaction**: ``viewer.selected()`` reads the
     viewer's current selection, much like ``input.my_slider()`` reads an
     input. Call it in a reactive function (a ``@render.*`` function,
     ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
@@ -6663,7 +6663,7 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
         return Viewer(width="auto", height="auto", recording=rec)
     ```
 
-    Each accessor can also be read by name -- ``out.read("selection")`` --
+    Each accessor can also be read by name -- ``out.read("selected")`` --
     which also accepts the widget's bare synced-trait names.
 
     See also
@@ -6673,9 +6673,9 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
     defined).
     """
 
-    _accessor_specs = (SELECTION,)
+    _accessor_specs = (SELECTED,)
 
-    def selection(self) -> Optional[SelectionChangeEvent]:
+    def selected(self) -> Optional[SelectionChangeEvent]:
         """
         The viewer's most recently reported selection, as a
         `rerun.notebook.SelectionChangeEvent`. Its ``.items`` is a list of
@@ -6687,10 +6687,10 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
         viewer's empty selection at load is ignored, so a selection is kept
         across re-renders (a kept selection's items refer to the previous
         recording). An empty report after that is a real deselection and is
-        published. Use ``req(viewer.selection())`` to wait for a selection.
+        published. Use ``req(viewer.selected())`` to wait for a selection.
         Selecting the same thing twice doesn't fire twice. Not rate-limited.
         """
-        return cast(Optional["SelectionChangeEvent"], self._read_accessor("selection"))
+        return cast(Optional["SelectionChangeEvent"], self._read_accessor("selected"))
 
 
 class render_pyvista(render_widget_base[PyvistaValueT, PyvistaHtmlWidget]):

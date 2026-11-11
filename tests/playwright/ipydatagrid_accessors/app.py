@@ -43,7 +43,7 @@ def server(input, output, session):
 
     @render.text
     def sels():
-        return str(grid.selections())
+        return str(grid.selected())
 
     @render.text
     def click():
