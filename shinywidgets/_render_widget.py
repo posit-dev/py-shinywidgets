@@ -2715,7 +2715,11 @@ class render_maplibre(render_widget_base[MaplibreValueT, MapWidget]):
         limiting.
 
     Each accessor can also be read by name -- ``out.read("view_state")`` --
-    which also accepts the widget's bare synced-trait names.
+    which also accepts the widget's bare synced-trait names. Accessor reads
+    (including by name) ignore ``rate_policy``/``rate_delay``, which apply to
+    :func:`~shinywidgets.reactive_read` only; to rate-limit a view-state read
+    (e.g. bursts of programmatic ``fly_to()``s), use
+    ``reactive_read(map.widget, "view_state")`` instead.
 
     See also
     --------

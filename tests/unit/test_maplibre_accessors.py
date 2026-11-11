@@ -30,7 +30,7 @@ def map_widget(session: Session, **kwargs) -> MapWidget:
         return MapWidget(**kwargs)
 
 
-def renderer(w: MapWidget) -> "render_maplibre[object]":
+def renderer(w: MapWidget) -> "render_maplibre[MapWidget]":
     r = render_maplibre()
     r._widget = w  # stands in for _render()
     r._accessors.on_render(w)
