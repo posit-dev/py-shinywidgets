@@ -120,3 +120,10 @@ def test_plotnine_shares_the_matplotlib_specs() -> None:
     assert (
         rw.render_plotnine._accessor_specs[1] is rw.render_matplotlib._accessor_specs[2]
     )
+
+
+def test_click_accessors_are_retained() -> None:
+    from shinywidgets._matplotlib import CLICKED, PICKED
+
+    assert CLICKED.kind == "state"
+    assert PICKED.kind == "state"

@@ -30,10 +30,10 @@ def make_widget(session: Session) -> CytoscapeWidget:
     return widget
 
 
-def test_clicked_node_spec_is_eager() -> None:
-    # ipycytoscape's frontend drops click registrations made after the view
-    # exists, so attach must happen in _render(), not on first read
-    assert sc.CLICKED_NODE.eager and sc.CLICKED_EDGE.eager
+def test_clicked_node_attaches_at_render() -> None:
+    # Like every accessor, the click specs attach at render, so a click
+    # before the first read isn't lost
+    assert sc.CLICKED_NODE.kind == "state" and sc.CLICKED_EDGE.kind == "state"
 
 
 def test_clicked_node_emits_element_json(widget_session: Session) -> None:
@@ -58,7 +58,9 @@ def test_clicked_node_detach_unregisters(widget_session: Session) -> None:
     assert not widget._interaction_handlers["node"]["click"].callbacks
 
 
-def test_renderer_clicked_node_round_trips_and_resets(widget_session: Session) -> None:
+def test_renderer_clicked_node_round_trips_and_is_retained(
+    widget_session: Session,
+) -> None:
     widget = make_widget(widget_session)
     r = rw.render_ipycytoscape()
     r._widget = widget  # stands in for _render()
@@ -66,12 +68,17 @@ def test_renderer_clicked_node_round_trips_and_resets(widget_session: Session) -
     assert r.clicked_node() is None
     widget._interaction_handlers["node"]["click"]({"data": {"id": "a"}})
     assert r.clicked_node() == {"data": {"id": "a"}}
-    # Event semantics: a re-render resets the accessor to None
+    # Retained semantics: a re-render keeps the last click (it still happened)
     r._accessors.on_render(widget)
-    assert r.clicked_node() is None
-    # ...and the eager re-attach still reports clicks
+    assert r.clicked_node() == {"data": {"id": "a"}}
+    # ...and the re-attach still reports clicks
     widget._interaction_handlers["node"]["click"]({"data": {"id": "b"}})
     assert r.clicked_node() == {"data": {"id": "b"}}
+
+
+def test_click_accessors_are_retained() -> None:
+    assert sc.CLICKED_NODE.kind == "state"
+    assert sc.CLICKED_EDGE.kind == "state"
 
 
 def test_selected_specs_are_debounced_state() -> None:
@@ -79,7 +86,7 @@ def test_selected_specs_are_debounced_state() -> None:
     # box-select changes many children's `selected` at once, so the default
     # is debounced
     for spec in (sc.SELECTED_NODES, sc.SELECTED_EDGES):
-        assert spec.kind == "state" and spec.eager
+        assert spec.kind == "state"
         assert spec.rate_policy == "debounce"
 
 
@@ -247,6 +254,6 @@ def test_renderer_selected_round_trips_and_keeps_state(widget_session: Session) 
     # State semantics: a re-render doesn't reset the accessor...
     r._accessors.on_render(widget)
     assert len(r.selected_edges()) == 1
-    # ...and the eager re-attach still reports changes
+    # ...and the render-time re-attach still reports changes
     widget.graph.edges[0].selected = False
     assert r.selected_edges() == []

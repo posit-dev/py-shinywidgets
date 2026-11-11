@@ -20,6 +20,7 @@ CONFIG_KEYS = (
     "columns",
     "group_by",
     "split_by",
+    "split_rollup_mode",
     "aggregates",
     "sort",
     "filter",

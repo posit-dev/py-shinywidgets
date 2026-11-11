@@ -5,7 +5,7 @@ import { isJQuery, jsonParse, lendDataTables, protectPageJQuery } from './utils'
 import { NGLVIEW_COLORMAKER_REGISTRY_MODEL, renderHiddenColormakerRegistry } from './nglview';
 import { isPlotlyBindRequest, requestPlotlyEvents } from './plotly';
 import { isReactableBindRequest, requestReactableState } from './reactable';
-import { disposeMols2GridGlobalsOnRemove, disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
+import { disposeMols2GridGlobalsOnRemove, disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchBokehView, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
 import { uuid } from '@jupyter-widgets/base';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
@@ -252,6 +252,9 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
   return requireLoader(moduleName, moduleVersion).then((widgetModule) => {
     if (moduleName === 'ipysigma') {
       patchSigmaView(widgetModule);
+    }
+    if (moduleName === '@bokeh/jupyter_bokeh') {
+      patchBokehView(widgetModule);
     }
     return widgetModule;
   }).finally(() => {
@@ -676,7 +679,7 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
     try {
       await m.close(true);
     } catch (closeErr) {
-      if (!isIgnorableTeardownError(closeErr)) {
+      if (!isIgnorableTeardownError(closeErr, m)) {
         console.error("Unexpected error while closing model:", closeErr);
       }
     }
@@ -685,7 +688,7 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
     try {
       m.trigger("comm:close");
     } catch (triggerErr) {
-      if (!isIgnorableTeardownError(triggerErr)) {
+      if (!isIgnorableTeardownError(triggerErr, m)) {
         console.error("Unexpected error while triggering comm:close:", triggerErr);
       }
     }
@@ -723,11 +726,20 @@ function setBaseURL(x: string = '') {
   }
 }
 
-function isIgnorableTeardownError(err: unknown): boolean {
+function isIgnorableTeardownError(err: unknown, model?: WidgetModel): boolean {
   const msg = errorMessage(err).toLowerCase();
   return (
     msg.includes("widget is not attached") ||
-    msg.includes("no comm channel defined")
+    msg.includes("no comm channel defined") ||
+    // pythreejs's browser-created light target/shadow models register a
+    // Backbone listener on the "uninitialized" string sentinel (an upstream
+    // setupListeners bug), so the stopListening() inside their close() throws
+    // "<listening>.obj.off is not a function". Harmless during teardown: the
+    // listeners die with the three.js objects anyway. Scoped to pythreejs
+    // (whose _model_module is "jupyter-threejs") so the same Backbone misuse
+    // in another package still surfaces instead of failing silently.
+    (model?.get("_model_module") === "jupyter-threejs" &&
+      msg.includes(".obj.off is not a function"))
   );
 }
 
