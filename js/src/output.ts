@@ -5,7 +5,7 @@ import { isJQuery, jsonParse, lendDataTables, protectPageJQuery } from './utils'
 import { NGLVIEW_COLORMAKER_REGISTRY_MODEL, renderHiddenColormakerRegistry } from './nglview';
 import { isPlotlyBindRequest, requestPlotlyEvents } from './plotly';
 import { isReactableBindRequest, requestReactableState } from './reactable';
-import { disposeMols2GridGlobalsOnRemove, disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
+import { disposeMols2GridGlobalsOnRemove, disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchBokehView, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
 import { uuid } from '@jupyter-widgets/base';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
 import type { HtmlDep } from 'rstudio-shiny/srcts/types/src/shiny/render';
@@ -252,6 +252,9 @@ const shinyRequireLoader = async function(moduleName: string, moduleVersion: str
   return requireLoader(moduleName, moduleVersion).then((widgetModule) => {
     if (moduleName === 'ipysigma') {
       patchSigmaView(widgetModule);
+    }
+    if (moduleName === '@bokeh/jupyter_bokeh') {
+      patchBokehView(widgetModule);
     }
     return widgetModule;
   }).finally(() => {
