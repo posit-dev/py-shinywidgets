@@ -156,8 +156,16 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         # `Stream.trigger()` subscribers from `get_plot()`); a reactive read in such
         # a callback must not register this render's Context as a dependent, or the
         # callback's write invalidates the render in progress and loops forever.
-        with isolate():
-            widget = self._as_widget(value)
+        try:
+            with isolate():
+                widget = self._as_widget(value)
+        except Exception:
+            # _value was already replaced above, so on_render() won't run for
+            # this failure: retire the previous widget's attachments here, or
+            # accessors keep watching (and reads keep reporting) the old
+            # object's state while the output has nothing rendered
+            self._accessors.on_render(None)
+            raise
 
         session = get_current_session()
         # _shinywidgets imports WidgetRenderContext and is_closed_widget from

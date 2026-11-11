@@ -147,6 +147,40 @@ def test_event_parameter_fires_on_every_trigger(widget_session: Session) -> None
         assert reader._invalidated
 
 
+def test_failed_rerender_unwatches_the_previous_value(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # _render() replaces .value before coercion; if coercion then fails, the
+    # accessor must not keep watching (and reporting) the previous object
+    gauge = Gauge(value=1)
+    r = make_renderer(widget_session, lambda: gauge)
+    do_render(widget_session, r)
+
+    def fail(value: object) -> None:
+        raise RuntimeError("coercion failed")
+
+    class Cancel(Exception):
+        pass
+
+    def cancel(*args: object) -> None:
+        raise Cancel()
+
+    import shinywidgets._accessors as acc
+
+    with session_context(widget_session):
+        assert r.param("value") == 1
+        assert watcher_count(gauge, "value") == 1
+        monkeypatch.setattr(r, "_as_widget", fail)
+        with pytest.raises(RuntimeError, match="coercion failed"):
+            do_render(widget_session, r)
+        # The old object is unwatched, so its changes no longer invalidate
+        assert watcher_count(gauge, "value") == 0
+        # ...and reads cancel while the output has no rendered widget
+        monkeypatch.setattr(acc, "req", cancel)
+        with pytest.raises(Cancel):
+            r.param("value")
+
+
 def test_param_requires_a_parameterized_value(widget_session: Session) -> None:
     # render_panel renders anything pn.panel() accepts; a raw value like a
     # DataFrame has no parameters to read
