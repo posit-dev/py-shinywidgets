@@ -42,6 +42,7 @@ The core challenge is establishing bidirectional communication between Python ip
 - Widget state is serialized with buffer handling for binary data (base64 encoded since Shiny doesn't support binary messages)
 - `SharedShinyComm` fans one process-global widget's messages out to a `ShinyComm` per session; shared widgets are never closed
 - Global state maps in `_shinywidgets.py`: `SESSIONS`, `COMM_MANAGERS`, `SESSION_WIDGET_ID_MAP`, `WIDGET_INSTANCE_MAP`, `SHARED_WIDGETS` (widgets built in `shared_lifetime()`)
+- A model the browser creates (`open_client_comm()`, e.g. pythreejs light targets, bqplot's toolbar PanZoom) is session-owned until a browser message names it; `claim_browser_created()` then makes it a `KEPT_WIDGETS` entry, so `close_render_widgets()` closes it once nothing live in the session references it. There is one sweep: give a new kind of widget an entry in it rather than a second collector
 - `is_process_global()` decides which widgets every session may display (and no render or session may close); `open_shared_in()` opens one in a session, and runs at session start (`init_session()`), at render time (`open_process_global_widgets()`), and when a referencing widget's comm opens
 
 **JavaScript side (`js/src/output.ts`, `js/src/comm.ts`):**
