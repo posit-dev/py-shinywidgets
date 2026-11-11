@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Iterator
+from typing import Any, Callable
 
 import pytest
 import shinywidgets._shinywidgets as sw
-from shiny import App, Inputs, Outputs, Session, ui
+from shiny import App, Inputs, Outputs, Session, reactive, ui
 from shiny._connection import MockConnection
+from shiny.session import session_context
 
 
 def widget_test_server(input: Inputs, output: Outputs, session: Session) -> None:
@@ -35,6 +38,33 @@ def widget_session(monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
         asyncio.set_event_loop(loop)
         loop.close()
         asyncio.set_event_loop(None)
+
+
+@pytest.fixture
+def flush_to_browser(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> Callable[[], list[dict[str, Any]]]:
+    """
+    Run a reactive flush cycle, returning every comm message `widget_session`
+    has sent its browser so far (each with its custom message `type`), in the
+    order sent.
+    """
+    sent: list[dict[str, Any]] = []
+
+    async def record(msg_type: str, msg_txt: str) -> None:
+        sent.append({"type": msg_type, **json.loads(msg_txt)})
+
+    monkeypatch.setattr(widget_session, "send_custom_message", record)
+
+    def flush() -> list[dict[str, Any]]:
+        loop = asyncio.get_event_loop()
+        with session_context(widget_session):
+            loop.run_until_complete(reactive.flush())
+            loop.run_until_complete(widget_session._flush_callbacks.invoke())
+            loop.run_until_complete(widget_session._flushed_callbacks.invoke())
+        return sent
+
+    return flush
 
 
 @pytest.fixture

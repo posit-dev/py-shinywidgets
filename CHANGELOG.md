@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug fixes
 
+* Widget methods that message the browser are no longer silently ignored when called before the widget's output has finished rendering, e.g., k3d's `start_auto_play()` in the render function that creates the plot, or mapwidget's `add_call()`/`add_basemap()` in an effect that runs right after a re-render. The messages are now delivered, in order, once the widget reaches the browser. (#415)
 * Fixed two long-standing `@render_plotly` layout issues: an explicit output height without `fillable=True` (e.g., `output_widget("fig", height="300px")`) now sizes the plot to that height instead of rendering at plotly's 360px fallback, and the renderer's compact 16px margins now survive an in-place template swap (e.g., `fig.widget.update_layout(template="plotly_dark")` for a dark-mode toggle), which previously reverted them to plotly's 80px defaults unless `margin=` was passed again.
 * Reading `.widget` or `.value` inside a `@render_*` function's own render function now raises a descriptive `RuntimeError` instead of silently returning the *previous* render's widget/value (matching the accessors, which already raised there).
 * `@render_ipycytoscape`'s `rate_policy`/`rate_delay` parameters now apply to `reactive_read()` on the graph's child `Node`/`Edge` widgets (home of the traits worth rate-limiting: `selected` on both, `grabbed` on nodes), not just the top-level `CytoscapeWidget`. Nodes or edges added to the graph after a render aren't covered until the next render.
