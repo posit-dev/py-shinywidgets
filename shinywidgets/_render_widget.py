@@ -3826,7 +3826,11 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         Note that a double-click on the plot background also clears
         :meth:`clicked` (and a deselect clears the selection accessors), so
         ``clicked()`` becoming ``None`` conflates double-click and deselect
-        by design -- read this accessor to tell them apart. Not rate-limited.
+        by design -- read this accessor to tell them apart. In the
+        ``"select"``/``"lasso"`` dragmodes a background double-click
+        deselects *without* firing this pulse (plotly.js emits
+        ``plotly_doubleclick`` only where it means resetting the view,
+        matching R plotly). Not rate-limited.
         """
         return cast(Optional[bool], self._read_accessor("double_clicked"))
 

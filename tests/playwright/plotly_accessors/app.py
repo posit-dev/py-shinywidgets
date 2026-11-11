@@ -52,6 +52,35 @@ def relayout():
     return "None" if r is None else ",".join(sorted(r))
 
 
+@render.text
+def hover():
+    pts = plot.hover()
+    if pts is None:
+        return "None"
+    return ";".join(
+        f"{r.trace_index},{r.point_index},{r.x},{r.y}" for r in pts.itertuples()
+    )
+
+
+@render.text
+def double_clicked():
+    return "None" if plot.double_clicked() is None else "fired"
+
+
+@render.text
+def legend_clicked():
+    traces = plot.legend_clicked()
+    if traces is None:
+        return "None"
+    return ";".join(f"{r.trace_index},{r.name}" for r in traces.itertuples())
+
+
+@render.text
+def visible_traces():
+    traces = plot.visible_traces()
+    return "None" if traces is None else ",".join(str(v) for v in traces["visible"])
+
+
 ui.input_action_button("late", "late")
 
 
