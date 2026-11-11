@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, List, Tuple
+from typing import Any, Callable, List, Tuple
 
 import pandas as pd
 import pytest
@@ -127,6 +127,39 @@ def test_detached_event_emits_are_not_invoked(widget_session: Session) -> None:
     assert stale == []
 
 
+def test_a_stale_detach_does_not_remove_a_later_attachment_of_the_same_emit(
+    widget_session: Session,
+) -> None:
+    p, _ = plot()
+    w = widget(widget_session, p)
+    received: List[object] = []
+    emit = received.append
+    detach = sb.TAPPED.attach(w, emit)
+    sb.TAPPED.attach(w, emit)  # the same emit attached a second time
+    detach()
+    detach()  # a stale second call must not remove the live attachment
+    tap = Tap(model=p, x=1, y=2)
+    p.document.callbacks.trigger_event(tap)
+    assert received == [tap]
+
+
+def test_an_emit_detached_mid_dispatch_is_not_called(
+    widget_session: Session,
+) -> None:
+    p, _ = plot()
+    w = widget(widget_session, p)
+    received_b: List[object] = []
+
+    def emit_a(raw: object) -> None:
+        detach_b()
+
+    # emit_a fans out first (attach order) and detaches b before b's turn
+    sb.TAPPED.attach(w, emit_a)
+    detach_b = sb.TAPPED.attach(w, received_b.append)
+    p.document.callbacks.trigger_event(Tap(model=p, x=1, y=2))
+    assert received_b == []
+
+
 def test_the_event_registry_holds_plots_weakly(widget_session: Session) -> None:
     import gc
     import weakref
@@ -141,6 +174,31 @@ def test_the_event_registry_holds_plots_weakly(widget_session: Session) -> None:
     # strongly references the document (which references the plot), so it
     # must be dropped too
     del p, src, w, detach
+    gc.collect()
+    assert ref() is None
+
+
+def test_an_attached_emit_does_not_keep_its_plot_alive(
+    widget_session: Session,
+) -> None:
+    import gc
+    import weakref
+
+    p, src = plot()
+    w = widget(widget_session, p)
+
+    # The accessor framework's emit captures the renderer, which owns the
+    # widget (and its plot); the registry must not hold it strongly, or a
+    # teardown that drops everything without detaching would keep the plot
+    # alive through the registry
+    def make_emit(model: BokehModel) -> Callable[[object], None]:
+        return lambda raw: model
+
+    sb.TAPPED.attach(w, make_emit(w))
+    ref = weakref.ref(p)
+    w.close()
+    # src must be dropped for the same reason as in the test above
+    del p, src, w
     gc.collect()
     assert ref() is None
 

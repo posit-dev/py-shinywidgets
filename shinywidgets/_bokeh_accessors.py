@@ -47,15 +47,26 @@ def event_attach(event: str) -> Callable[[BokehModel, Emit], Callable[[], None]]
 
         # bokeh's stubs type select() as list[Model] even when filtered
         plots = cast("List[Plot]", widget._model.select({"type": Plot}))
-        for plot in plots:
-            _event_fan_for(plot, event).append(emit)
+        fans = [_event_fan_for(plot, event) for plot in plots]
+        for fan in fans:
+            fan.append(emit)
+
+        detached = False
 
         def detach() -> None:
-            for plot in plots:
-                fans = _EVENT_FANS.get(plot)
-                emits = None if fans is None else fans.get(event)
-                if emits is not None and emit in emits:
-                    emits.remove(emit)
+            nonlocal detached
+            # Idempotent, so a stale handle can't remove a later attachment
+            # of the same emit
+            if detached:
+                return
+            detached = True
+            for fan in fans:
+                # Identity, not equality: another attachment of an equal
+                # emit must not be removed
+                for i, r in enumerate(fan):
+                    if r is emit:
+                        del fan[i]
+                        break
 
         return detach
 
@@ -65,23 +76,43 @@ def event_attach(event: str) -> Callable[[BokehModel, Emit], Callable[[], None]]
 # bokeh's on_event() only appends callbacks and has no public removal API, so
 # each (plot, event) pair gets one permanent callback that fans out to the
 # currently attached emits; detach removes its emit from the list instead of
-# leaving a muted closure on the plot. Weak keys let plots be garbage
-# collected once nothing else references them.
-_EVENT_FANS: weakref.WeakKeyDictionary[Plot, Dict[str, List[Emit]]] = (
+# leaving a muted closure on the plot. The registry only finds a plot's
+# fan-out state again at the next attach, so it references it weakly: the
+# state is owned by the plot itself (through the callbacks it holds), whose
+# emits capture the renderer, which owns the widget and its plot -- a strong
+# reference here would keep plots alive after everything else has dropped
+# them.
+_EVENT_FANS: weakref.WeakKeyDictionary[Plot, "weakref.ReferenceType[_Fans]"] = (
     weakref.WeakKeyDictionary()
 )
 
 
+class _Fans(Dict[str, List[Emit]]):
+    # A plain dict can't be weakly referenced, and _EVENT_FANS references
+    # this weakly (see above)
+    pass
+
+
 def _event_fan_for(plot: Plot, event: str) -> List[Emit]:
-    fans = _EVENT_FANS.setdefault(plot, {})
+    fans_ref = _EVENT_FANS.get(plot)
+    fans = fans_ref() if fans_ref is not None else None
+    if fans is None:
+        fans = _Fans()
+        _EVENT_FANS[plot] = weakref.ref(fans)
     if event in fans:
         return fans[event]
     emits: List[Emit] = []
 
-    def on_event(e: Event) -> None:
-        # Snapshot: an emit may detach (and mutate `emits`) while fanning out
+    def on_event(
+        e: Event, emits: List[Emit] = emits, _owns_fans: object = fans
+    ) -> None:
+        # Iterate a snapshot but check liveness before each delivery: an
+        # emit may detach (mutating `emits`) mid-dispatch, and a detached
+        # emit must not be called. Identity (not equality) keeps a later
+        # attachment of an equal emit live.
         for emit in list(emits):
-            emit(e)
+            if any(r is emit for r in emits):
+                emit(e)
 
     plot.on_event(event, on_event)
     # on_event only subscribes the plot to browser events when it joins a
