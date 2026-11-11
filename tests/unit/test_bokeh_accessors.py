@@ -74,6 +74,77 @@ def test_tapped_subscribes_so_browser_events_arrive(widget_session: Session) -> 
     assert emitted == [tap]
 
 
+def test_event_callbacks_do_not_accumulate_across_attaches(
+    widget_session: Session,
+) -> None:
+    # Every attach used to add a permanent plot.on_event() callback (bokeh
+    # has no public removal), so re-renders accumulated dead closures on the
+    # plot: N renders x M event accessors retained per plot (#418).
+    p, _ = plot()
+    w = widget(widget_session, p)
+    for _ in range(3):
+        detach = sb.TAPPED.attach(w, lambda raw: None)
+        detach()
+    assert len(p._event_callbacks["tap"]) == 1
+
+
+def test_multiple_live_accessors_on_the_same_event_each_receive_events(
+    widget_session: Session,
+) -> None:
+    p, _ = plot()
+    w = widget(widget_session, p)
+    a: List[object] = []
+    b: List[object] = []
+    detach_a = sb.TAPPED.attach(w, a.append)
+    detach_b = sb.TAPPED.attach(w, b.append)
+    assert len(p._event_callbacks["tap"]) == 1  # one fan-out callback, not two
+    tap = Tap(model=p, x=1, y=2)
+    p.document.callbacks.trigger_event(tap)
+    assert a == [tap]
+    assert b == [tap]
+    detach_a()
+    tap2 = Tap(model=p, x=3, y=4)
+    p.document.callbacks.trigger_event(tap2)
+    assert a == [tap]
+    assert b == [tap, tap2]
+    detach_b()
+
+
+def test_detached_event_emits_are_not_invoked(widget_session: Session) -> None:
+    p, _ = plot()
+    w = widget(widget_session, p)
+    stale: List[object] = []
+    detach = sb.TAPPED.attach(w, stale.append)
+    detach()
+    p.document.callbacks.trigger_event(Tap(model=p, x=0, y=0))
+    assert stale == []
+    # A re-attach (e.g. a re-render) of the same event still receives events
+    live: List[object] = []
+    sb.TAPPED.attach(w, live.append)
+    tap = Tap(model=p, x=1, y=2)
+    p.document.callbacks.trigger_event(tap)
+    assert live == [tap]
+    assert stale == []
+
+
+def test_the_event_registry_holds_plots_weakly(widget_session: Session) -> None:
+    import gc
+    import weakref
+
+    p, src = plot()
+    w = widget(widget_session, p)
+    detach = sb.TAPPED.attach(w, lambda raw: None)
+    detach()
+    ref = weakref.ref(p)
+    w.close()
+    # src is a model in the same bokeh document, and every document model
+    # strongly references the document (which references the plot), so it
+    # must be dropped too
+    del p, src, w, detach
+    gc.collect()
+    assert ref() is None
+
+
 def test_zoomed_reports_ranges_update(widget_session: Session) -> None:
     p, _ = plot()
     w = widget(widget_session, p)

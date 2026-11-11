@@ -13,13 +13,14 @@ selection made before the first read isn't lost.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, cast
+import weakref
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, cast
 
 from ._accessors import AccessorSpec, Emit
 
 if TYPE_CHECKING:
     from bokeh.events import Event
-    from bokeh.models import ColumnDataSource
+    from bokeh.models import ColumnDataSource, Plot
     from jupyter_bokeh import BokehModel
 
 
@@ -44,26 +45,51 @@ def event_attach(event: str) -> Callable[[BokehModel, Emit], Callable[[], None]]
     def attach(widget: BokehModel, emit: Emit) -> Callable[[], None]:
         from bokeh.models import Plot
 
-        # bokeh has no public way to remove an on_event callback
-        active = [True]
-
-        def on_event(e: Event) -> None:
-            if active[0]:
-                emit(e)
-
-        for plot in widget._model.select({"type": Plot}):
-            plot.on_event(event, on_event)
-            # on_event only subscribes the plot to browser events when it
-            # joins a document, which already happened at render.
-            if plot.document is not None:
-                plot.document.callbacks.subscribe(event, plot)
+        # bokeh's stubs type select() as list[Model] even when filtered
+        plots = cast("List[Plot]", widget._model.select({"type": Plot}))
+        for plot in plots:
+            _event_fan_for(plot, event).append(emit)
 
         def detach() -> None:
-            active[0] = False
+            for plot in plots:
+                fans = _EVENT_FANS.get(plot)
+                emits = None if fans is None else fans.get(event)
+                if emits is not None and emit in emits:
+                    emits.remove(emit)
 
         return detach
 
     return attach
+
+
+# bokeh's on_event() only appends callbacks and has no public removal API, so
+# each (plot, event) pair gets one permanent callback that fans out to the
+# currently attached emits; detach removes its emit from the list instead of
+# leaving a muted closure on the plot. Weak keys let plots be garbage
+# collected once nothing else references them.
+_EVENT_FANS: weakref.WeakKeyDictionary[Plot, Dict[str, List[Emit]]] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _event_fan_for(plot: Plot, event: str) -> List[Emit]:
+    fans = _EVENT_FANS.setdefault(plot, {})
+    if event in fans:
+        return fans[event]
+    emits: List[Emit] = []
+
+    def on_event(e: Event) -> None:
+        # Snapshot: an emit may detach (and mutate `emits`) while fanning out
+        for emit in list(emits):
+            emit(e)
+
+    plot.on_event(event, on_event)
+    # on_event only subscribes the plot to browser events when it joins a
+    # document, which already happened at render.
+    if plot.document is not None:
+        plot.document.callbacks.subscribe(event, plot)
+    fans[event] = emits
+    return emits
 
 
 def attach_zoomed(widget: BokehModel, emit: Emit) -> Callable[[], None]:

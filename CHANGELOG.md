@@ -88,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug fixes
 
+* Re-rendering a `@render_bokeh` output no longer accumulates dead event callbacks on the underlying plot. Each read of an event accessor (`tapped()`, `zoomed()`) used to add a permanent `plot.on_event()` callback that was only muted, never removed, so every browser event invoked a growing number of stale closures (N renders x M event accessors per plot). (#418)
 * Fixed many issues with widgets nested inside other widgets and with widget outputs inserted dynamically (e.g., `output_widget()` inside `@render.ui`). With ipywidgets 8, these either didn't render at all (e.g., a Plotly `FigureWidget` or a styled `HTML` widget inside an ipyleaflet popup) or rendered while logging errors like `Class HTMLStyleModel not found` (e.g., ipyleaflet popups, `WidgetControl` children, and leafmap legends). (#75, #101, #137, #157, #194, #237)
 * Re-rendering, replacing, hiding/showing, or removing widget outputs no longer leaks memory on the server or in the browser. Re-rendered widgets, and the data they hold, are now freed right away instead of when the session ends. (#246, #258, #260, #261, #262, #263, #303, #405) Related fixes:
   * pythreejs widgets no longer cause Shiny sessions to hang indefinitely with ipywidgets 8. (#244)
