@@ -2318,7 +2318,9 @@ class render_leafmap(_IpyleafletAccessors, render_widget_base[ValueT, LeafletMap
     ``bounds()``, ``zoom()``, ``center()``, ``clicked()``, and
     ``drawn_features()``. On the maplibre, plotly, and kepler backends they
     raise a `TypeError`; read those backends' state with ``.read()`` instead
-    (e.g., ``.read("view_state")`` for the maplibre one).
+    (e.g., ``.read("view_state")`` for the maplibre one). For a trait that
+    shares an accessor's name (``.read()`` prefers the accessor), use
+    :func:`~shinywidgets.reactive_read` on ``.widget`` instead.
 
     **Mutating the widget**: use `.widget` to update the rendered map in
     place (e.g., change its `zoom` or `center`, or add layers); trait
@@ -6516,10 +6518,11 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
     viewer's current selection, much like ``input.my_slider()`` reads an
     input. Call it in a reactive function (a ``@render.*`` function,
     ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
-    the selection changes. It returns ``None`` until the viewer first reports
-    (typically its empty load-time selection). A re-render keeps the last
-    selection only briefly: the new viewer's own empty load-time selection
-    promptly replaces it.
+    the selection changes. It returns ``None`` until the user first selects
+    something: the viewer's empty load-time report is ignored, so a re-render
+    keeps the last selection (its items then refer to the previous recording)
+    rather than being replaced by the new viewer's load-time report. A later
+    empty report is a real deselection and is published.
 
     For play/pause, timeline scrubbing, and other interactions (which have no
     accessor), register a callback with `rerun.notebook.Viewer.on_event()`
@@ -6624,11 +6627,11 @@ class render_rerun(render_widget_base[RerunValueT, RerunNotebookViewer]):
         `ViewSelectionItem`, and `ContainerSelectionItem` objects; an empty
         list means nothing is selected.
 
-        Returns ``None`` until the viewer first reports -- typically its
-        empty selection at load, so ``selection()`` soon reflects "nothing
-        selected" rather than staying ``None`` -- and keeps its value across
-        re-renders only until the new viewer's empty load-time selection
-        replaces it, so use ``req(viewer.selection())`` to wait for a report.
+        Returns ``None`` until the user first selects something: the
+        viewer's empty selection at load is ignored, so a selection is kept
+        across re-renders (a kept selection's items refer to the previous
+        recording). An empty report after that is a real deselection and is
+        published. Use ``req(viewer.selection())`` to wait for a selection.
         Selecting the same thing twice doesn't fire twice. Not rate-limited.
         """
         return cast(Optional["SelectionChangeEvent"], self._read_accessor("selection"))
