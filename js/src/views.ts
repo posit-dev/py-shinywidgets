@@ -298,11 +298,21 @@ export function patchBokehView(widgetModule: { BokehView?: { prototype: BokehVie
 
 const SIGMA_DEFAULT_HEIGHT = '500px';
 
+const patchedSigmaViewProtos = new WeakSet<SigmaView>();
+
 export function patchSigmaView(widgetModule: { SigmaView?: { prototype: SigmaView } }): void {
   const proto = widgetModule.SigmaView?.prototype;
   if (!proto) {
     return;
   }
+  // The loader runs this on every module resolution, not just the first load,
+  // so guard against re-wrapping: each additional wrap would chain render() and
+  // remove() onto their previous wrappers, repeating their bodies (e.g. the
+  // WebGL context release) once per past resolution on every render/teardown.
+  if (patchedSigmaViewProtos.has(proto)) {
+    return;
+  }
+  patchedSigmaViewProtos.add(proto);
   const nativeRender = proto.render;
   const nativeRemove = proto.remove;
   Object.assign(proto, {
