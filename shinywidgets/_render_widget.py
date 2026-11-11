@@ -1347,22 +1347,26 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
     ``@reactive.calc``, or ``@reactive.effect``), which then re-runs whenever
     the interaction changes:
 
-    * ``node_clicked()``: the JSON data of the most recently clicked node.
-    * ``edge_clicked()``: the JSON data of the most recently clicked edge.
+    * ``clicked_node()``: the JSON data of the most recently clicked node.
+    * ``clicked_edge()``: the JSON data of the most recently clicked edge.
+    * ``selected_nodes()``: the data dicts of the currently selected nodes.
+    * ``selected_edges()``: the data dicts of the currently selected edges.
 
     Each returns ``None`` until the interaction happens (a normal state, not
-    an error, so check for it, or use ``req(graph.node_clicked())``), and
+    an error, so check for it, or use ``req(graph.clicked_node())``), and
     resets to ``None`` on re-render. For other event types, register
     callbacks with `CytoscapeWidget.on()` inside the render function, before
     returning the widget, and have them set a :class:`~shiny.reactive.value`
     (ipycytoscape drops callbacks registered after the graph is displayed,
     e.g. from an effect).
 
-    Node selection is also synced to each node's `selected` trait, readable
-    with :func:`~shinywidgets.reactive_read`, but ipycytoscape makes nodes
-    unselectable by default: create the widget with `auto_unselectify=False`
-    and set `selectable = True` on each node (plus `box_selection_enabled=True`
-    for shift-drag selection).
+    ipycytoscape makes nodes unselectable by default, so ``selected_nodes()``
+    stays ``[]`` unless you create the widget with `auto_unselectify=False`
+    and set `selectable = True` on each node (plus
+    `box_selection_enabled=True` for shift-drag selection). Each node's
+    selection is also synced to its `selected` trait, readable with
+    :func:`~shinywidgets.reactive_read` (e.g., ``reactive_read(node,
+    "selected")`` on a node in ``.widget.graph.nodes``).
 
     Parameters
     ----------
@@ -1380,10 +1384,15 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
         contents on overflow). When ``None`` (the default), this is ``True`` if
         ``height`` is not specified.
     rate_policy
-        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
+        How to rate-limit :func:`~shinywidgets.reactive_read` on the widget
+        and on its graph's child ``Node``/``Edge`` widgets, which own the
+        traits worth reading (``selected`` on both, ``grabbed`` on nodes):
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
-        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
-        this renderer declares a default.
+        ``reactive_read()`` only if ``rate_delay`` is given, and keeps the
+        ``selected_nodes()``/``selected_edges()`` accessors' own debounce
+        default (0.25s), which these kwargs override. Nodes or edges added
+        to the graph after the render aren't covered (re-render to cover
+        them).
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
@@ -1391,31 +1400,62 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
 
     _accessor_specs = CYTOSCAPE_ACCESSORS
 
-    def node_clicked(self) -> Optional[Dict[str, Any]]:
+    def _rate_policy_widgets(self, widget: CytoscapeWidget) -> Tuple[Widget, ...]:
+        # The interaction traits worth rate-limiting (`selected` on both,
+        # `grabbed` on nodes) live on the child Node/Edge widgets, not the
+        # CytoscapeWidget itself
+        return (widget, *widget.graph.nodes, *widget.graph.edges)
+
+    def clicked_node(self) -> Optional[Dict[str, Any]]:
         """
         The most recently clicked node, as its cytoscape ``ele.json()`` dict
         (its ``"data"`` key holds the node's data, including ``"id"``).
 
         Returns ``None`` until the user clicks a node, and resets to ``None``
-        on re-render, so use ``req(graph.node_clicked())`` to wait for a
+        on re-render, so use ``req(graph.clicked_node())`` to wait for a
         click. Node ids are strings, even for integer networkx nodes.
         Clicking the same node twice doesn't fire twice. Not rate-limited.
         """
-        return cast(Optional[Dict[str, Any]], self._read_accessor("node_clicked"))
+        return cast(Optional[Dict[str, Any]], self._read_accessor("clicked_node"))
 
-    def edge_clicked(self) -> Optional[Dict[str, Any]]:
+    def clicked_edge(self) -> Optional[Dict[str, Any]]:
         """
         The most recently clicked edge, as its cytoscape ``ele.json()`` dict
         (its ``"data"`` key holds the edge's data, including ``"id"``,
         ``"source"``, and ``"target"``).
 
         Returns ``None`` until the user clicks an edge, and resets to
-        ``None`` on re-render, so use ``req(graph.edge_clicked())`` to wait
+        ``None`` on re-render, so use ``req(graph.clicked_edge())`` to wait
         for a click. Edge ids generated from networkx graphs are fresh UUIDs
         each render. Clicking the same edge twice doesn't fire twice. Not
         rate-limited.
         """
-        return cast(Optional[Dict[str, Any]], self._read_accessor("edge_clicked"))
+        return cast(Optional[Dict[str, Any]], self._read_accessor("clicked_edge"))
+
+    def selected_nodes(self) -> List[Dict[str, Any]]:
+        """
+        The currently selected nodes, as their ``data`` dicts (each
+        including its ``"id"``), in graph order; ``[]`` when nothing is
+        selected.
+
+        Unlike ``clicked_node()``, this covers box/multi-select, and it
+        doesn't reset on re-render. ipycytoscape makes nodes unselectable
+        by default: create the widget with `auto_unselectify=False` and set
+        `selectable = True` on each node (plus `box_selection_enabled=True`
+        for shift-drag selection). Debounced by default (0.25s; see the
+        renderer's ``rate_policy``/``rate_delay`` parameters).
+        """
+        return cast(List[Dict[str, Any]], self._read_accessor("selected_nodes"))
+
+    def selected_edges(self) -> List[Dict[str, Any]]:
+        """
+        The currently selected edges, as their ``data`` dicts (each
+        including its ``"id"``, ``"source"``, and ``"target"``), in graph
+        order; ``[]`` when nothing is selected.
+
+        See :meth:`selected_nodes` for selection setup and rate limiting.
+        """
+        return cast(List[Dict[str, Any]], self._read_accessor("selected_edges"))
 
     def _as_widget(self, value: ValueT) -> CytoscapeWidget:
         # A networkx graph is a generic type (render_ipysigma accepts one too), so
@@ -3157,8 +3197,8 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
 
     The decorated function also gains two read-only attributes: `.value`, the value
     most recently returned by the render function, and `.widget`, the rendered
-    `DataGrid` instance. Use ``.selections()``, ``.cell_clicked()``, and
-    ``.cell_edited()`` to reactively read what the user does in the grid, or
+    `DataGrid` instance. Use ``.selections()``, ``.clicked_cell()``, and
+    ``.edited_cell()`` to reactively read what the user does in the grid, or
     `.widget` to programmatically update the rendered grid
     in place (trait changes on the widget are synced to the browser), or to
     reactively read widget state (e.g., `selections`) with
@@ -3226,7 +3266,7 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         """
         return cast(List[Dict[str, int]], self._read_accessor("selections"))
 
-    def cell_clicked(self) -> Optional[Dict[str, Any]]:
+    def clicked_cell(self) -> Optional[Dict[str, Any]]:
         """
         The most recently clicked cell, or ``None`` if no click has happened
         since the last render: ``{"region", "column", "column_index", "row",
@@ -3237,9 +3277,9 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         column-header clicks (``region="column-header"``) and twice per
         double-click. Not rate-limited.
         """
-        return cast(Optional[Dict[str, Any]], self._read_accessor("cell_clicked"))
+        return cast(Optional[Dict[str, Any]], self._read_accessor("clicked_cell"))
 
-    def cell_edited(self) -> Optional[Dict[str, Any]]:
+    def edited_cell(self) -> Optional[Dict[str, Any]]:
         """
         The most recent cell edit, or ``None`` if no edit has happened since
         the last render: ``{"row", "column", "column_index", "value"}``,
@@ -3249,7 +3289,7 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
         Requires ``editable=True``. Also fires for Python-side
         ``set_cell_value*()`` calls. Not rate-limited.
         """
-        return cast(Optional[Dict[str, Any]], self._read_accessor("cell_edited"))
+        return cast(Optional[Dict[str, Any]], self._read_accessor("edited_cell"))
 
     def visible_data(self) -> "pd.DataFrame":
         """
