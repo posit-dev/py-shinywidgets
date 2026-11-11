@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any
 
 import pytest
 import shinywidgets._accessors as acc
@@ -284,9 +285,9 @@ class RecordingAttach:
         return detach
 
 
-def renderer_with_clicked(att: RecordingAttach):  # type: ignore[no-untyped-def]
+def renderer_with_clicked(att: RecordingAttach, kind: str = "event"):  # type: ignore[no-untyped-def]
     class R(rwb.render_widget_base):
-        _accessor_specs = (acc.AccessorSpec(name="clicked", kind="event", attach=att),)
+        _accessor_specs = (acc.AccessorSpec(name="clicked", kind=kind, attach=att),)  # type: ignore[arg-type]
 
         def clicked(self):  # type: ignore[no-untyped-def]
             return self._read_accessor("clicked")
@@ -356,7 +357,12 @@ def test_destroying_the_module_scope_detaches_accessors(monkeypatch) -> None:
         assert r._accessors.values["clicked"].get().raw is None
 
 
-def test_accessor_read_registers_current_context(monkeypatch) -> None:
+def test_accessor_read_does_not_depend_on_the_render(monkeypatch) -> None:
+    # Accessor readers invalidate only via the accessor's own reactive.Value
+    # (a new interaction, a changed re-seed, an event-kind reset), so they
+    # must NOT register in _contexts, which _render() invalidates wholesale
+    # on every re-render (.widget/.value reads still do -- reactive_read()
+    # has to re-attach to the new widget)
     att = RecordingAttach()
     r = renderer_with_clicked(att)
 
@@ -370,7 +376,161 @@ def test_accessor_read_registers_current_context(monkeypatch) -> None:
     monkeypatch.setattr(rwb, "get_current_context", lambda: ctx)
     with shiny_reactive.isolate():
         r.clicked()
+    assert ctx not in r._contexts
+    # .widget still takes the render dependency
+    r.widget
     assert ctx in r._contexts
+
+
+def test_kept_accessor_reader_is_not_rerun_by_rerenders(monkeypatch) -> None:
+    # An effect that reads a kept accessor and feeds a derived (new) object
+    # back into the same output's render must settle, not loop: a re-render
+    # must not re-run the accessor's readers when its value didn't change
+    # (reactive.Value dedupes only on identity, so each re-run would re-set
+    # the value and re-render forever)
+    att = RecordingAttach()
+    r = renderer_with_clicked(att, kind="state")
+
+    fed = shiny_reactive.Value(0.0)
+    renders: list = []
+    reads: list = []
+
+    @r
+    async def _():  # noqa: ANN202
+        renders.append(fed())
+        return 1
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
+
+    @shiny_reactive.Effect
+    async def _drive() -> None:
+        await r.render()
+
+    @shiny_reactive.Effect
+    def _watch() -> None:
+        val: Any = r.clicked()
+        if val is None or len(reads) >= 10:  # the cap keeps a loop finite
+            return
+        reads.append(val)
+        fed.set(float(val["x"]) * 1.0)  # a new object on every run
+
+    async def main() -> None:
+        await shiny_reactive.flush()
+        assert renders == [0.0] and reads == []
+
+        att.emit({"x": 1})
+        await shiny_reactive.flush()
+
+        # The click re-ran the reader once, its derived set re-rendered the
+        # output once, and that re-render did NOT re-run the reader
+        assert reads == [{"x": 1}]
+        assert renders == [0.0, 1.0]
+
+    asyncio.run(main())
+
+
+class SeededWidget:
+    """A widget whose current state the accessor attach reports at once."""
+
+    comm = object()
+
+    def __init__(self, current) -> None:  # type: ignore[no-untyped-def]
+        self.current = current
+
+
+def test_reseeded_accessor_reader_reruns_only_when_the_seed_changes(
+    monkeypatch,
+) -> None:
+    # A re-render re-seeds a state accessor from the new widget: a seed that
+    # differs from the published value still re-runs readers (publish-driven),
+    # while an identical seed no longer does (same as an ordinary input)
+    widgets = [SeededWidget(5), SeededWidget(5), SeededWidget(6)]
+
+    def attach(widget, emit):  # type: ignore[no-untyped-def]
+        emit(widget.current)
+        return lambda: None
+
+    class R(rwb.render_widget_base):
+        _accessor_specs = (acc.AccessorSpec(name="zoom", kind="state", attach=attach),)
+
+        def zoom(self):  # type: ignore[no-untyped-def]
+            return self._read_accessor("zoom")
+
+    r = R()
+    trigger = shiny_reactive.Value(0)
+
+    @r
+    async def _():  # noqa: ANN202
+        return trigger()
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: widgets[value])
+
+    reads: list = []
+
+    @shiny_reactive.Effect
+    async def _drive() -> None:
+        await r.render()
+
+    @shiny_reactive.Effect
+    def _watch() -> None:
+        reads.append(r.zoom())
+
+    async def main() -> None:
+        await shiny_reactive.flush()
+        assert reads == [5]
+
+        trigger.set(1)  # re-render with an identical seed
+        await shiny_reactive.flush()
+        assert reads == [5]
+
+        trigger.set(2)  # re-render with a changed seed
+        await shiny_reactive.flush()
+        assert reads == [5, 6]
+
+    asyncio.run(main())
+
+
+def test_unrender_does_not_rerun_kept_accessor_readers(monkeypatch) -> None:
+    # When the render function returns None (the output un-renders), a kept
+    # accessor's readers keep their last value instead of being re-run into
+    # the req(False) a read would now raise
+    att = RecordingAttach()
+    r = renderer_with_clicked(att, kind="state")
+
+    trigger: shiny_reactive.Value[Any] = shiny_reactive.Value(1)
+
+    @r
+    async def _():  # noqa: ANN202
+        return trigger()
+
+    monkeypatch.setattr(rwb, "as_widget", lambda value: FakeLiveWidget())
+
+    runs: list = []
+    reads: list = []
+
+    @shiny_reactive.Effect
+    async def _drive() -> None:
+        await r.render()
+
+    @shiny_reactive.Effect
+    def _watch() -> None:
+        runs.append(1)
+        reads.append(r.clicked())
+
+    async def main() -> None:
+        await shiny_reactive.flush()
+        att.emit({"x": 1})
+        await shiny_reactive.flush()
+        assert reads == [None, {"x": 1}]
+
+        trigger.set(None)  # the output un-renders
+        await shiny_reactive.flush()
+
+        # The reader was not woken by the un-render
+        assert len(runs) == 2
+        assert reads == [None, {"x": 1}]
+
+    asyncio.run(main())
 
 
 def test_render_returning_none_cancels_accessor_reads(monkeypatch) -> None:
