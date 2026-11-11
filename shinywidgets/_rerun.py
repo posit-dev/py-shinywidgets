@@ -67,4 +67,4 @@ def attach_selection(widget: RerunNotebookViewer, emit: Emit) -> Callable[[], No
     return detach
 
 
-SELECTION = AccessorSpec(name="selection", kind="state", attach=attach_selection)
+SELECTED = AccessorSpec(name="selected", kind="state", attach=attach_selection)

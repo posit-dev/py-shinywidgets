@@ -80,32 +80,32 @@ def test_view_state_rate_delay_zero_disables_the_debounce(
     assert a.read("view_state") == MapViewState(longitude=1.0, latitude=2.0, zoom=5.0)
 
 
-def test_selected_index_reports_the_most_recent_pick_across_layers(
+def test_selected_reports_the_most_recent_pick_across_layers(
     widget_session: Session,
 ) -> None:
     l1, l2 = layer(widget_session), layer(widget_session)
     m = lon_map(widget_session, l1, l2)
     emitted: List[object] = []
-    sl.SELECTED_INDEX.attach(m, emitted.append)
+    sl.SELECTED.attach(m, emitted.append)
     assert emitted == [None]  # state kind: seeds, and nothing is picked yet
     l2.selected_index = 4
     l1.selected_index = 1
     assert emitted == [None, 4, 1]
 
 
-def test_selected_index_seeds_a_pick_made_before_attach(
+def test_selected_seeds_a_pick_made_before_attach(
     widget_session: Session,
 ) -> None:
     lay = layer(widget_session)
     m = lon_map(widget_session, lay)
     lay.selected_index = 2  # a pick that landed before the accessor attached
     emitted: List[object] = []
-    detach = sl.SELECTED_INDEX.attach(m, emitted.append)
+    detach = sl.SELECTED.attach(m, emitted.append)
     assert emitted == [2]
     detach()
 
 
-def test_selected_index_seed_with_several_picked_layers_is_none(
+def test_selected_seed_with_several_picked_layers_is_none(
     widget_session: Session,
 ) -> None:
     # Each layer retains its own pick with no timestamp to order them, so
@@ -115,23 +115,23 @@ def test_selected_index_seed_with_several_picked_layers_is_none(
     l2.selected_index = 2
     m = lon_map(widget_session, l1, l2, l3)
     emitted: List[object] = []
-    detach1 = sl.SELECTED_INDEX.attach(m, emitted.append)
+    detach1 = sl.SELECTED.attach(m, emitted.append)
     assert emitted == [None]  # ambiguous: two layers hold picks
     detach1()
 
     l1.selected_index = None
     emitted.clear()
-    detach2 = sl.SELECTED_INDEX.attach(m, emitted.append)
+    detach2 = sl.SELECTED.attach(m, emitted.append)
     assert emitted == [2]  # unambiguous: only l2 holds a pick
     detach2()
 
 
-def test_selected_index_reattaches_when_layers_change(
+def test_selected_reattaches_when_layers_change(
     widget_session: Session,
 ) -> None:
     m = lon_map(widget_session)
     emitted: List[object] = []
-    detach = sl.SELECTED_INDEX.attach(m, emitted.append)
+    detach = sl.SELECTED.attach(m, emitted.append)
     assert emitted == [None]  # the seed
     new_layer = layer(widget_session)
     m.add_layer(new_layer)
@@ -175,22 +175,22 @@ def test_renderer_reads_and_retention(widget_session: Session) -> None:
     r = render_lonboard()
     r._widget = m  # stands in for _render()
     r._accessors.on_render(m)
-    assert r.clicked() is None and r.selected_index() is None
+    assert r.clicked() is None and r.selected() is None
     assert isinstance(r.view_state(), MapViewState)
     assert r.selected_bounds() is None
 
     m._handle_custom_msg({"kind": "on-click", "coordinate": [1.0, 2.0]}, [])
     assert r.clicked() == (1.0, 2.0)
     m.layers[0].selected_index = 3
-    assert r.selected_index() == 3
+    assert r.selected() == 3
 
     # A re-render retains the last click (it still happened), while the
     # state accessors re-seed from the new widget -- a fresh map has no
-    # pick, so selected_index() re-seeds to None. The old map's click channel
+    # pick, so selected() re-seeds to None. The old map's click channel
     # closes again.
     r._accessors.on_render(lon_map(widget_session))
     assert not m._has_click_handlers
-    assert r.clicked() == (1.0, 2.0) and r.selected_index() is None
+    assert r.clicked() == (1.0, 2.0) and r.selected() is None
     assert isinstance(r.view_state(), MapViewState)
 
 

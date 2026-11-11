@@ -42,7 +42,7 @@ def server(input, output, session):
     @render.text
     def sel1():
         return str(
-            [None if s is None else sorted(int(i) for i in s) for s in fig1.selection()]
+            [None if s is None else sorted(int(i) for i in s) for s in fig1.selected()]
         )
 
     @render_bqplot

@@ -37,7 +37,7 @@ def server(input, output, session):
 
     @render.text
     def picked():
-        return str(map.selected_index())
+        return str(map.selected())
 
     @render.text
     def clicked():

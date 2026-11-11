@@ -41,7 +41,7 @@ def test_predicate_attach_seeds_and_emits(widget_session: Session) -> None:
     assert emitted[-1] == "((\"group\" = 'g1'))"
 
 
-def test_predicate_and_selection_accessors(widget_session: Session) -> None:
+def test_predicate_and_selected_accessors(widget_session: Session) -> None:
     from shinywidgets import render_embedding_atlas
 
     w = atlas_widget(widget_session)
@@ -50,17 +50,17 @@ def test_predicate_and_selection_accessors(widget_session: Session) -> None:
     r._accessors.on_render(w)
     assert r.predicate() is None
     # No filter means all rows (library semantics), with __row_index__
-    assert len(r.selection()) == 4
-    assert "__row_index__" in r.selection().columns
+    assert len(r.selected()) == 4
+    assert "__row_index__" in r.selected().columns
     w._predicate = "((\"group\" = 'g2'))"
     assert r.predicate() == "((\"group\" = 'g2'))"
-    assert r.selection()["text"].tolist() == ["c", "d"]
+    assert r.selected()["text"].tolist() == ["c", "d"]
     # A re-render starts the new widget at no-filter
     r._accessors.on_render(atlas_widget(widget_session))
     assert r.predicate() is None
 
 
-def test_selection_matches_predicate_through_the_debounce_window(
+def test_selected_matches_predicate_through_the_debounce_window(
     widget_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import shinywidgets._accessors as acc
@@ -75,19 +75,19 @@ def test_selection_matches_predicate_through_the_debounce_window(
     r._widget = w  # stands in for _render()
     r._accessors.on_render(w)
     assert r.predicate() is None
-    assert len(r.selection()) == 4
+    assert len(r.selected()) == 4
 
     w._predicate = "((\"group\" = 'g2'))"
     # Inside the debounce window, predicate() hasn't republished -- and
-    # selection() must describe that same (still unfiltered) state, not the
+    # selected() must describe that same (still unfiltered) state, not the
     # widget's live filter
     assert r.predicate() is None
-    assert len(r.selection()) == 4
+    assert len(r.selected()) == 4
 
     # Once the debounce settles, both describe the new filter
     s.fire()
     assert r.predicate() == "((\"group\" = 'g2'))"
-    assert r.selection()["text"].tolist() == ["c", "d"]
+    assert r.selected()["text"].tolist() == ["c", "d"]
 
 
 def test_rows_for_predicate_fails_loudly_without_widget_internals() -> None:
