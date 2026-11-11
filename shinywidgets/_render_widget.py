@@ -4843,7 +4843,12 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             fillable=fillable,
             rate_policy=rate_policy,
             rate_delay=rate_delay,
-            listen_to=("clicked",) if clicks else (),
+            # A Python callback enables the same click channel as clicks=True,
+            # so it registers clicked() too (a JavaScript callback isn't
+            # callable, and posts nothing to Python)
+            listen_to=("clicked",)
+            if clicks or callable(kwargs.get("callback"))
+            else (),
         )
         self.smiles_col = smiles_col
         self.mol_col = mol_col
@@ -4930,9 +4935,9 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
 
     def clicked(self) -> Optional[Dict[str, Any]]:
         """
-        The row data of the molecule image most recently clicked since the
-        last render, or `None` if no click has happened yet (requires
-        ``clicks=True`` or a Python ``callback``).
+        The row data of the molecule image most recently clicked, or `None`
+        if no click has happened yet (requires ``clicks=True`` or a Python
+        ``callback``).
 
         Unlike `.selection()` (the checkbox set), a click is retained
         last-click state: it carries the clicked row's data (every displayed

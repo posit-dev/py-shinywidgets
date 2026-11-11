@@ -115,6 +115,14 @@ def test_mols2grid_clicks_kwarg_registers() -> None:
     r = render_mols2grid(clicks=True)
     assert "clicked" in r._accessors._listening
 
+    # A Python callback enables the same click channel, so it registers too
+    # (a JavaScript callback posts nothing to Python, so it doesn't)
+    r_py = render_mols2grid(callback=lambda *args: None)
+    assert "clicked" in r_py._accessors._listening
+
+    r_js = render_mols2grid(callback="console.log('clicked')")
+    assert "clicked" not in r_js._accessors._listening
+
     r2 = render_mols2grid()
     with pytest.raises(acc.AccessorRegistrationError, match="clicks=True"):
         r2._accessors.read("clicked")
