@@ -198,6 +198,43 @@ def test_double_clicked_is_a_republishing_pulse() -> None:
     assert emitted == [True, True]
 
 
+LEGEND_TRACES = [
+    {"trace_index": 2, "name": "c", "legendgroup": "g1"},
+    {"trace_index": 0, "name": "a", "legendgroup": "g1"},
+]
+
+VISIBLE_TRACES = [
+    {"trace_index": 0, "name": "a", "visible": True},
+    {"trace_index": 1, "name": "b", "visible": False},
+]
+
+
+def test_legend_clicked_emits_minimal_traces_and_republishes() -> None:
+    assert sp.LEGEND_CLICKED.priority == "event"
+    w, emitted, _ = attach(sp.LEGEND_CLICKED)
+    assert w.sent == [{"shinywidgets": "bind", "events": ["plotly_legendclick"]}]
+    msg = event("plotly_legendclick", legend={"traces": LEGEND_TRACES})
+    w.message(msg)
+    w.message(msg)
+    assert emitted == [LEGEND_TRACES, LEGEND_TRACES]
+
+
+def test_legend_clicked_skips_messages_without_legend_data() -> None:
+    w, emitted, _ = attach(sp.LEGEND_CLICKED)
+    w.message(event("plotly_legendclick"))
+    assert emitted == []
+
+
+def test_visible_traces_binds_restyle_and_emits_traces() -> None:
+    w, emitted, _ = attach(sp.VISIBLE_TRACES)
+    assert w.sent == [{"shinywidgets": "bind", "events": ["plotly_restyle"]}]
+    w.message(event("plotly_restyle", traces=VISIBLE_TRACES))
+    assert emitted == [VISIBLE_TRACES]
+    # A restyle message without trace visibility (shouldn't happen) is skipped
+    w.message(event("plotly_restyle"))
+    assert emitted == [VISIBLE_TRACES]
+
+
 def test_specs_have_expected_names() -> None:
     names: List[str] = [s.name for s in sp.PLOTLY_ACCESSORS]
     assert names == [
@@ -209,6 +246,8 @@ def test_specs_have_expected_names() -> None:
         "relayout",
         "hover",
         "double_clicked",
+        "legend_clicked",
+        "visible_traces",
     ]
 
 
@@ -262,6 +301,25 @@ def test_render_plotly_double_clicked_pulses() -> None:
     assert r.double_clicked() is True
 
 
+def test_render_plotly_legend_clicked_returns_frame() -> None:
+    r, w = rendered()
+    assert r.legend_clicked() is None
+    w.message(event("plotly_legendclick", legend={"traces": LEGEND_TRACES}))
+    clicked = r.legend_clicked()
+    assert isinstance(clicked, pd.DataFrame)
+    assert list(clicked.columns) == ["trace_index", "name", "legendgroup"]
+    assert clicked["trace_index"].tolist() == [2, 0]
+
+
+def test_render_plotly_visible_traces_returns_frame() -> None:
+    r, w = rendered()
+    assert r.visible_traces() is None
+    w.message(event("plotly_restyle", traces=VISIBLE_TRACES))
+    visible = r.visible_traces()
+    assert isinstance(visible, pd.DataFrame)
+    assert visible["visible"].tolist() == [True, False]
+
+
 def test_render_plotly_brushed_and_relayout() -> None:
     r, w = rendered()
     assert r.brushed() is None and r.relayout() is None
@@ -290,6 +348,8 @@ def test_all_accessors_are_retained_and_bind_at_render() -> None:
         {"shinywidgets": "bind", "events": ["plotly_relayout"]},
         {"shinywidgets": "bind", "events": ["plotly_hover", "plotly_unhover"]},
         {"shinywidgets": "bind", "events": ["plotly_doubleclick"]},
+        {"shinywidgets": "bind", "events": ["plotly_legendclick"]},
+        {"shinywidgets": "bind", "events": ["plotly_restyle"]},
     ]
 
 

@@ -3830,6 +3830,39 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         """
         return cast(Optional[bool], self._read_accessor("double_clicked"))
 
+    def legend_clicked(self) -> Optional[pd.DataFrame]:
+        """
+        The traces affected by the most recent legend click, one row per
+        trace: ``trace_index``, ``name``, and ``legendgroup``. The clicked
+        trace is the first row; when it belongs to a ``legendgroup``, the
+        group's other traces follow (plotly.js toggles the whole group by
+        default), unlike R plotly's ``plotly_legendclick``, which ships the
+        traces' full data.
+
+        Returns ``None`` until the user clicks a legend item, and re-fires
+        on every click, even of the same item (a second click toggles
+        visibility back). A legend double-click (isolate traces) also fires
+        it, once per click. Read :meth:`visible_traces` for the visibility
+        state the click produces. Not rate-limited. Requires pandas.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("legend_clicked"))
+
+    def visible_traces(self) -> Optional[pd.DataFrame]:
+        """
+        The current visibility of every trace: ``trace_index``, ``name``,
+        and ``visible`` (``False`` once a legend click hides the trace, or
+        the figure set ``visible=False``/``"legendonly"``).
+
+        Seeded from the displayed figure at render, so it reflects the
+        initial figure before any interaction, and updated after every
+        restyle that changes visibility (legend clicks and double-clicks,
+        or ``.widget.update_traces(visible=...)``). Visibility here is each
+        trace's ``visible`` attribute; traces expanded by a groupby
+        transform report their own, not each group's. Not rate-limited.
+        Requires pandas.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("visible_traces"))
+
     def selected_rows(
         self, df: IntoDataFrameT, *, key: Optional[str] = None
     ) -> IntoDataFrameT:

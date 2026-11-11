@@ -146,6 +146,7 @@ export function bindPlotlyEvents(plotEl: HTMLElement, model: WidgetModel): void 
   const bound = boundEvents.get(plotEl) ?? new Set<string>();
   boundEvents.set(plotEl, bound);
   let boundSelected = false;
+  let boundRestyle = false;
   // Hover's throttler is created before any binding below, so unhover can
   // cancel its trailing forward regardless of the requested set's order.
   const hoverThrottle =
@@ -161,6 +162,7 @@ export function bindPlotlyEvents(plotEl: HTMLElement, model: WidgetModel): void 
     if (bound.has(event)) continue;
     bound.add(event);
     if (event === "plotly_selected") boundSelected = true;
+    if (event === "plotly_restyle") boundRestyle = true;
     if (event === "plotly_hover" && hoverThrottle) {
       plotEl.on(event, hoverThrottle);
       continue;
@@ -173,8 +175,17 @@ export function bindPlotlyEvents(plotEl: HTMLElement, model: WidgetModel): void 
       continue;
     }
     plotEl.on(event, (data?: any) => {
-      model.send({ shinywidgets: "event", event, ...eventPayload(event, data) }, {});
+      model.send({ shinywidgets: "event", event, ...eventPayload(event, data, plotEl) }, {});
     });
+  }
+  // Like the selection seed below: trace visibility is state on the graph
+  // div, so report it at bind (as a synthetic restyle, which is how later
+  // visibility changes arrive).
+  if (boundRestyle) {
+    model.send(
+      { shinywidgets: "event", event: "plotly_restyle", traces: visibilitySeed(plotEl) },
+      {},
+    );
   }
   // A selection is state on the graph div (trace `selectedpoints`), not just
   // an event: a lasso drawn before this bind (e.g. before an accessor's first
@@ -301,14 +312,73 @@ function lassoValue(token: string): unknown {
 
 // Shaped like R plotly's event_data(): one entry per point, with its trace
 // index, its index within the trace, coordinates, and customdata.
-function eventPayload(event: string, data: any): Record<string, unknown> {
+export function eventPayload(
+  event: string,
+  data: any,
+  plotEl?: HTMLElement,
+): Record<string, unknown> {
   if (event === "plotly_relayout") return { relayout: data };
+  // The restyle args themselves aren't useful; what matters is the
+  // visibility they left behind, which the graph div holds post-restyle
+  // (Plots.restyle emits plotly_restyle after applying the update).
+  if (event === "plotly_restyle") return plotEl ? { traces: visibilitySeed(plotEl) } : {};
+  if (event === "plotly_legendclick") return legendPayload(data);
   const out: Record<string, unknown> = {};
   if (!data) return out;
   if (Array.isArray(data.points)) out.points = data.points.flatMap(pointEntries);
   if (data.range) out.range = data.range;
   if (data.lassoPoints) out.lassoPoints = data.lassoPoints;
   return out;
+}
+
+// A minimal answer to R plotly's legendEventData, which ships whole trace
+// objects (data arrays included): the clicked trace first, then the other
+// traces of its legendgroup (plotly.js toggles the whole group by default).
+function legendPayload(data: any): Record<string, unknown> {
+  if (!data || !Array.isArray(data.data)) return {};
+  const traces: any[] = data.data;
+  const clicked = traces[data.curveNumber];
+  if (!clicked) return {};
+  // An empty-string legendgroup is plotly's default, not a group
+  const group = clicked.legendgroup || null;
+  const ordered: number[] = [data.curveNumber];
+  if (group) {
+    traces.forEach((t: any, i: number) => {
+      if (i !== data.curveNumber && t?.legendgroup === group) ordered.push(i);
+    });
+  }
+  return {
+    legend: {
+      traces: ordered.map((i) => ({
+        trace_index: i,
+        name: traceName(data.fullData, traces, i),
+        legendgroup: traces[i]?.legendgroup ?? null,
+      })),
+    },
+  };
+}
+
+// One entry per trace with its current visibility, seeded at bind and
+// recomputed on every restyle. `visible` is the trace's own attribute (false
+// once a legend click hides it), so traces expanded by a groupby transform
+// report their own visibility, not each group's.
+export function visibilitySeed(plotEl: HTMLElement): Record<string, unknown>[] {
+  const data = (plotEl as any).data;
+  if (!Array.isArray(data)) return [];
+  return data.map((trace: any, i: number) => ({
+    trace_index: i,
+    name: traceName((plotEl as any)._fullData, data, i),
+    visible: trace?.visible !== false && trace?.visible !== "legendonly",
+  }));
+}
+
+// plotly auto-names traces ("trace 0") only on the full trace; use it when
+// fullData aligns with data by user-trace index (it doesn't once a transform
+// expands a trace).
+function traceName(fullData: any, traces: any[], i: number): unknown {
+  const full = Array.isArray(fullData) ? fullData[i] : undefined;
+  if (full?.index === i && typeof full.name === "string") return full.name;
+  return traces[i]?.name ?? `trace ${i}`;
 }
 
 function pointEntries(p: any): Record<string, unknown>[] {

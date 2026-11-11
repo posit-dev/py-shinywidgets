@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from narwhals.typing import IntoDataFrameT
 
 Point = Dict[str, Any]
+Trace = Dict[str, Any]
 
 # Events that clear an accessor (as in R plotly's eventClearMap).
 DESELECT = "plotly_deselect"
@@ -57,6 +58,25 @@ def points_frame(points: List[Point]) -> "pd.DataFrame":
         if any(optional in p for p in points):
             columns.append(optional)
     return pd.DataFrame(points, columns=columns)
+
+
+def traces_frame(traces: List[Trace], columns: List[str]) -> "pd.DataFrame":
+    try:
+        import pandas as pd
+    except ImportError as e:  # plotly itself doesn't need pandas
+        raise ImportError(
+            "Reading plotly trace info as a DataFrame requires pandas "
+            "(`pip install 'shinywidgets[plotly]'`)."
+        ) from e
+    return pd.DataFrame(traces, columns=columns)
+
+
+def legend_frame(traces: List[Trace]) -> "pd.DataFrame":
+    return traces_frame(traces, ["trace_index", "name", "legendgroup"])
+
+
+def visibility_frame(traces: List[Trace]) -> "pd.DataFrame":
+    return traces_frame(traces, ["trace_index", "name", "visible"])
 
 
 def select_rows(
@@ -138,6 +158,20 @@ def pulse_of(content: Dict[str, Any]) -> object:
     return True
 
 
+def legend_of(content: Dict[str, Any]) -> object:
+    legend = content.get("legend")
+    if not isinstance(legend, dict):
+        return SKIP
+    return legend.get("traces")
+
+
+def traces_of(content: Dict[str, Any]) -> object:
+    traces = content.get("traces")
+    if not isinstance(traces, list):
+        return SKIP
+    return traces
+
+
 def relayout_of(content: Dict[str, Any]) -> object:
     relayout = content.get("relayout")
     if not isinstance(relayout, dict):
@@ -195,6 +229,24 @@ DOUBLE_CLICKED = AccessorSpec(
     # Identical raws re-publish, so every double-click fires
     priority="event",
 )
+LEGEND_CLICKED = AccessorSpec(
+    name="legend_clicked",
+    kind="state",
+    attach=bridge_attach("plotly_legendclick", legend_of, ()),
+    payload=legend_frame,
+    # Toggling the same legend item twice re-fires
+    priority="event",
+)
+VISIBLE_TRACES = AccessorSpec(
+    name="visible_traces",
+    kind="state",
+    # Legend visibility toggles apply through Plots.restyle, which emits
+    # plotly_restyle after the new visibility is in place; the bridge
+    # recomputes and sends the visibility of every trace then (and seeds it
+    # at bind), so this is the traces' current truth, not a stream of edits.
+    attach=bridge_attach("plotly_restyle", traces_of, ()),
+    payload=visibility_frame,
+)
 
 PLOTLY_ACCESSORS = (
     CLICKED,
@@ -205,4 +257,6 @@ PLOTLY_ACCESSORS = (
     RELAYOUT,
     HOVER,
     DOUBLE_CLICKED,
+    LEGEND_CLICKED,
+    VISIBLE_TRACES,
 )
