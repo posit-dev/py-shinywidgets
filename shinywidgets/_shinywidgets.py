@@ -1087,6 +1087,10 @@ def shared_lifetime() -> Iterator[None]:
     """
     Construct one widget that every Shiny session displays.
 
+    Experimental: not every widget package behaves well when one widget is
+    mirrored into several browsers (see the caveats below), and this function's
+    behavior may change in a future release.
+
     Widgets constructed inside this block exist once per Python process and are
     mirrored into every session's browser: any user's interaction with one changes
     it for everyone, and it is never freed. Use it for static content or state that
@@ -1106,6 +1110,13 @@ def shared_lifetime() -> Iterator[None]:
     kept forever and sent to every new session, so each run adds one more.
     Widgets a shared widget references (e.g., a container's children) must be
     constructed inside `shared_lifetime()` too, or other sessions can't show them.
+
+    Share widgets whose appearance is fully described by their state (their
+    synced traits). A session that opens a shared widget receives its current
+    state, not the messages it was sent before that session joined, so a widget
+    that is drawn or changed by messages (e.g., an ipycanvas canvas's drawing
+    commands, or changes made to a Bokeh figure after its widget was created)
+    looks incomplete to sessions that join later.
 
     Don't rely on models a shared widget's JavaScript creates in the browser when
     a trait is left at its default (e.g., pythreejs's light `target` and `shadow`):
