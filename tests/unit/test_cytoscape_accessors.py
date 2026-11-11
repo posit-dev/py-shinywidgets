@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, List
+from dataclasses import replace
+from typing import Any, Callable, Dict, List, Tuple, cast
 
 import networkx as nx
 import shinywidgets._cytoscape as sc
@@ -8,6 +9,16 @@ import shinywidgets._render_widget as rw
 from ipycytoscape import CytoscapeWidget, Node
 from shiny import Session
 from shiny.session import session_context
+from shinywidgets._accessors import Accessors
+
+
+def node_ids(raw: object) -> List[str]:
+    data = cast(List[Dict[str, Any]], sc.SELECTED_NODES.payload(raw))
+    return [d["id"] for d in data]
+
+
+def edge_datas(raw: object) -> List[Dict[str, Any]]:
+    return cast(List[Dict[str, Any]], sc.SELECTED_EDGES.payload(raw))
 
 
 def make_widget(session: Session) -> CytoscapeWidget:
@@ -77,45 +88,145 @@ def test_selected_nodes_attach_seeds_and_observes(widget_session: Session) -> No
     emitted: List[Any] = []
     detach = sc.SELECTED_NODES.attach(widget, emitted.append)
     # A state accessor seeds the current (empty) selection at attach
-    assert emitted == [[]]
+    assert node_ids(emitted[0]) == []
     widget.graph.nodes[0].selected = True
-    assert [d["id"] for d in emitted[-1]] == ["a"]
+    assert node_ids(emitted[-1]) == ["a"]
     widget.graph.nodes[1].selected = True
-    assert [d["id"] for d in emitted[-1]] == ["a", "b"]
+    assert node_ids(emitted[-1]) == ["a", "b"]
     widget.graph.nodes[0].selected = False
-    assert [d["id"] for d in emitted[-1]] == ["b"]
+    assert node_ids(emitted[-1]) == ["b"]
     detach()
     widget.graph.nodes[1].selected = False
-    assert [d["id"] for d in emitted[-1]] == ["b"]  # no emits after detach
+    assert node_ids(emitted[-1]) == ["b"]  # no emits after detach
 
 
 def test_selected_edges_attach_observes_edges_only(widget_session: Session) -> None:
     widget = make_widget(widget_session)
     emitted: List[Any] = []
     detach = sc.SELECTED_EDGES.attach(widget, emitted.append)
-    assert emitted == [[]]
+    assert edge_datas(emitted[0]) == []
     widget.graph.edges[0].selected = True
-    assert len(emitted[-1]) == 1
-    assert (emitted[-1][0]["source"], emitted[-1][0]["target"]) == ("a", "b")
+    edge = edge_datas(emitted[-1])[0]
+    assert (edge["source"], edge["target"]) == ("a", "b")
     # A node selection doesn't reach the edge accessor
     widget.graph.nodes[0].selected = True
     assert len(emitted) == 2
     detach()
 
 
-def test_selected_nodes_ignores_children_added_after_attach(
+def test_selected_nodes_republishes_without_removed_selected_child(
     widget_session: Session,
 ) -> None:
-    # The documented limitation: children added to the graph after a render
-    # aren't observed until the next render (re-attach)
     widget = make_widget(widget_session)
-    emitted: List[object] = []
+    emitted: List[Any] = []
     detach = sc.SELECTED_NODES.attach(widget, emitted.append)
+    node_a, node_b, _ = widget.graph.nodes
+    node_a.selected = True
+    widget.graph.remove_node(node_a)
+    assert node_ids(emitted[-1]) == []
+    # The removed child's `selected` observer was detached
+    n = len(emitted)
+    node_a.selected = False
+    assert len(emitted) == n
+    node_b.selected = True
+    assert node_ids(emitted[-1]) == ["b"]
+    detach()
+
+
+def test_selected_edges_republishes_without_removed_selected_child(
+    widget_session: Session,
+) -> None:
+    widget = make_widget(widget_session)
+    r = rw.render_ipycytoscape(rate_delay=0)
+    r._widget = widget  # stands in for _render()
+    r._accessors.on_render(widget)
+    edge = widget.graph.edges[0]
+    edge.selected = True
+    assert len(r.selected_edges()) == 1
+    widget.graph.remove_edge(edge)
+    assert r.selected_edges() == []
+
+
+def test_selected_nodes_follow_graph_order_on_reorder(
+    widget_session: Session,
+) -> None:
+    widget = make_widget(widget_session)
+    r = rw.render_ipycytoscape(rate_delay=0)
+    r._widget = widget  # stands in for _render()
+    r._accessors.on_render(widget)
+    widget.graph.nodes[0].selected = True
+    widget.graph.nodes[2].selected = True
+    assert [d["id"] for d in r.selected_nodes()] == ["a", "c"]
+    widget.graph.nodes.reverse()
+    assert [d["id"] for d in r.selected_nodes()] == ["c", "a"]
+
+
+def test_selected_nodes_tracks_children_added_after_attach(
+    widget_session: Session,
+) -> None:
+    widget = make_widget(widget_session)
+    r = rw.render_ipycytoscape(rate_delay=0)
+    r._widget = widget  # stands in for _render()
+    r._accessors.on_render(widget)
     with session_context(widget_session):
         widget.graph.add_node(Node(data={"id": "d"}))
     widget.graph.nodes[-1].selected = True
-    assert emitted == [[]]
+    assert [d["id"] for d in r.selected_nodes()] == ["d"]
+
+
+def test_selected_burst_emits_cheap_raws_and_materializes_once_per_publication(
+    widget_session: Session,
+) -> None:
+    widget = make_widget(widget_session)
+    raws: List[object] = []
+    detach = sc.SELECTED_NODES.attach(widget, raws.append)
+    # A box-select-shaped burst: each child toggles once
+    for node in widget.graph.nodes:
+        node.selected = True
     detach()
+    # The attach emits one cheap raw per toggle (plus the seed): the graph
+    # order and the selected set, not the user-facing data list
+    assert len(raws) == 1 + len(widget.graph.nodes)
+    for raw in raws:
+        order, selected = cast(Tuple[object, object], raw)
+        assert isinstance(order, tuple) and isinstance(selected, frozenset)
+
+    # The data list is built by the spec's payload, which runs once per
+    # publication (post-debounce), not per notification
+    calls = 0
+
+    def counting_payload(raw: Any) -> object:
+        nonlocal calls
+        calls += 1
+        return sc.SELECTED_NODES.payload(raw)
+
+    spec = replace(sc.SELECTED_NODES, payload=counting_payload)
+    pending: List[Callable[[], None]] = []
+
+    def schedule(delay: float, fn: Callable[[], None]) -> Callable[[], None]:
+        cancelled = False
+
+        def run() -> None:
+            if not cancelled:
+                fn()
+
+        def cancel() -> None:
+            nonlocal cancelled
+            cancelled = True
+
+        pending.append(run)
+        return cancel
+
+    accessors = Accessors([spec], schedule=schedule)
+    accessors.on_render(widget)
+    for node in widget.graph.nodes:
+        node.selected = False
+    assert calls == 0  # debounced: nothing published yet
+    for fn in pending:
+        fn()
+    accessors.read("selected_nodes")
+    accessors.read("selected_nodes")  # memoized per publication
+    assert calls == 1
 
 
 def test_renderer_selected_round_trips_and_keeps_state(widget_session: Session) -> None:

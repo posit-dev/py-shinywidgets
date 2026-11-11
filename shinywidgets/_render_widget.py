@@ -1443,8 +1443,7 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
         by default: create the widget with `auto_unselectify=False` and set
         `selectable = True` on each node (plus `box_selection_enabled=True`
         for shift-drag selection). Debounced by default (0.25s; see the
-        renderer's ``rate_policy``/``rate_delay`` parameters). Nodes added
-        to the graph after the render aren't tracked until the next render.
+        renderer's ``rate_policy``/``rate_delay`` parameters).
         """
         return cast(List[Dict[str, Any]], self._read_accessor("selected_nodes"))
 
@@ -1455,8 +1454,6 @@ class render_ipycytoscape(render_widget_base[ValueT, CytoscapeWidget]):
         order; ``[]`` when nothing is selected.
 
         See :meth:`selected_nodes` for selection setup and rate limiting.
-        Edges added to the graph after the render aren't tracked until the
-        next render.
         """
         return cast(List[Dict[str, Any]], self._read_accessor("selected_edges"))
 
