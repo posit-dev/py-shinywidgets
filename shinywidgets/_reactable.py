@@ -4,10 +4,13 @@ Accessors for `render_reactable`, backed by shinywidgets' reactable state bridge
 reactable-py's widget never calls `model.send()` itself, but its JavaScript
 bundle exports R reactable's state API (`getState`/`onStateChange`), keyed by
 the table's `elementId` prop (which `render_reactable` defaults to a unique
-value when the user didn't set one). When an accessor attaches, the bridge in
-`js/src/reactable.ts` subscribes to that API and forwards a pruned table state
-(page, sort, filters, search, selection) as custom messages, so nothing is
-subscribed and no traffic flows until an accessor is read.
+value when the user didn't set one). Every accessor here is kind="state", so
+they all attach at render: the bridge in `js/src/reactable.ts` binds once per
+model, subscribing to that API and forwarding the pruned table state (page,
+sort, filters, search, selection) as custom messages. The accessors share
+that one subscription -- each emits only its `key` slice -- and binding is
+idempotent on the JS side, so re-renders and several accessors don't stack
+subscriptions.
 """
 
 from __future__ import annotations
