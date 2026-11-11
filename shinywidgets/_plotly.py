@@ -32,6 +32,7 @@ Point = Dict[str, Any]
 # Events that clear an accessor (as in R plotly's eventClearMap).
 DESELECT = "plotly_deselect"
 DOUBLECLICK = "plotly_doubleclick"
+UNHOVER = "plotly_unhover"
 
 # Returned by a shape function for messages that shouldn't reach the accessor.
 SKIP = object()
@@ -175,5 +176,12 @@ RELAYOUT = AccessorSpec(
     kind="state",
     attach=bridge_attach("plotly_relayout", relayout_of, ()),
 )
+HOVER = AccessorSpec(
+    name="hover",
+    kind="state",
+    attach=bridge_attach("plotly_hover", points_of, (UNHOVER,)),
+    payload=points_frame,
+    rate_policy="debounce",
+)
 
-PLOTLY_ACCESSORS = (CLICKED, SELECTED, SELECTING, BRUSHED, BRUSHING, RELAYOUT)
+PLOTLY_ACCESSORS = (CLICKED, SELECTED, SELECTING, BRUSHED, BRUSHING, RELAYOUT, HOVER)

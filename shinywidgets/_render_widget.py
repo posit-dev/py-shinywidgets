@@ -3798,6 +3798,21 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("relayout"))
 
+    def hover(self) -> Optional[pd.DataFrame]:
+        """
+        The points under the mouse, with the same columns as :meth:`clicked`.
+
+        Returns ``None`` until the mouse first crosses a point, and again when
+        it leaves the points (plotly.js's ``plotly_unhover``), so check for
+        ``None`` (e.g. ``req(pts is not None)``). Debounced (250 ms) by
+        default, so readers update once the mouse rests; see the
+        ``rate_policy`` and ``rate_delay`` parameters. The browser also
+        throttles how often hover positions are sent (hover streams per
+        mousemove), so ``rate_delay=0`` doesn't report every mousemove.
+        Requires pandas.
+        """
+        return cast(Optional["pd.DataFrame"], self._read_accessor("hover"))
+
     def selected_rows(
         self, df: IntoDataFrameT, *, key: Optional[str] = None
     ) -> IntoDataFrameT:
