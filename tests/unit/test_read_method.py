@@ -66,8 +66,8 @@ def test_read_falls_through_to_trait(widget_session: object) -> None:
     assert r.read("value") == 7
 
 
-def test_read_overloads_typecheck() -> None:
-    # Runtime smoke: the overloaded read() still dispatches correctly.
+def test_read_unknown_name_reports_accessors() -> None:
+    # Runtime smoke: read() on a real renderer dispatches correctly.
     pytest.importorskip("plotly")
     from shinywidgets._render_widget import render_plotly
 
