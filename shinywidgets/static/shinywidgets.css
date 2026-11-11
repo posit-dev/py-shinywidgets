@@ -254,7 +254,9 @@
   height: 100%;
 }
 
-/* !important is needed to override the container's inline height */
+/* !important is needed to override the container's inline height and resize.
+* resize: none removes the (now inert) resize grip, since the height is no
+* longer user-resizable once it's set explicitly here. */
 .shiny-ipywidget-output[style*="height:"]:not(
     [style*="height:auto"],
     [style*="height: auto"],
@@ -279,7 +281,7 @@
   )
   > .embedding-atlas-widget-container {
   height: 100% !important;
-  resize: none;
+  resize: none !important;
 }
 
 /*
