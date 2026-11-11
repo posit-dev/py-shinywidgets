@@ -3814,10 +3814,7 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         it leaves the points (plotly.js's ``plotly_unhover``), so check for
         ``None`` (e.g. ``req(pts is not None)``). Debounced (250 ms) by
         default, so readers update once the mouse rests; see the
-        ``rate_policy`` and ``rate_delay`` parameters. The browser also
-        throttles how often hover positions are sent (hover streams per
-        mousemove), so ``rate_delay=0`` doesn't report every mousemove.
-        Requires pandas.
+        ``rate_policy`` and ``rate_delay`` parameters. Requires pandas.
         """
         return cast(Optional["pd.DataFrame"], self._read_accessor("hover"))
 

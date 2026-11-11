@@ -88,65 +88,6 @@ export function waitForPlotlyGraphDiv(
   });
 }
 
-// plotly_hover streams per mousemove, so the bridge throttles its forwarding
-// (leading + trailing edge of a streak) to bound websocket traffic. Python's
-// own debounce limits reactive invalidation, but not bytes on the wire.
-export const HOVER_THROTTLE_MS = 250;
-
-export interface Throttled {
-  (data?: any): void;
-  cancel(): void;
-}
-
-// Leading + trailing throttle: the first call forwards immediately, calls
-// inside the window collapse into one trailing forward of the last value when
-// the window closes. cancel() drops a pending trailing forward (e.g. an
-// unhover must not be followed by a stale hover).
-export function throttleLeadTrail(
-  fn: (data?: any) => void,
-  windowMs: number,
-): Throttled {
-  let last = Number.NEGATIVE_INFINITY;
-  let pending: { data: any } | null = null;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  const throttled = ((data?: any) => {
-    const now = Date.now();
-    if (now - last >= windowMs) {
-      // A new leading edge supersedes anything pending: timers can fire
-      // late, and a stale trailing value must not publish after a newer one
-      if (timer !== null) {
-        clearTimeout(timer);
-        timer = null;
-      }
-      pending = null;
-      last = now;
-      fn(data);
-      return;
-    }
-    pending = { data };
-    if (timer === null) {
-      timer = setTimeout(() => {
-        timer = null;
-        if (pending !== null) {
-          const p = pending;
-          pending = null;
-          last = Date.now();
-          fn(p.data);
-        }
-      }, windowMs - (now - last));
-    }
-  }) as Throttled;
-  throttled.cancel = () => {
-    pending = null;
-    if (timer !== null) {
-      clearTimeout(timer);
-      timer = null;
-    }
-    last = Number.NEGATIVE_INFINITY;
-  };
-  return throttled;
-}
-
 export function bindPlotlyEvents(plotEl: HTMLElement, model: WidgetModel): void {
   const requested = requestedEvents.get(model);
   if (!requested || !hasMethod<PlotlyEventEmitter, "on">(plotEl, "on")) return;
@@ -154,33 +95,11 @@ export function bindPlotlyEvents(plotEl: HTMLElement, model: WidgetModel): void 
   boundEvents.set(plotEl, bound);
   let boundSelected = false;
   let boundRestyle = false;
-  // Hover's throttler is created before any binding below, so unhover can
-  // cancel its trailing forward regardless of the requested set's order.
-  const hoverThrottle =
-    requested.has("plotly_hover") && !bound.has("plotly_hover")
-      ? throttleLeadTrail((data?: any) => {
-          model.send(
-            { shinywidgets: "event", event: "plotly_hover", ...eventPayload("plotly_hover", data) },
-            {},
-          );
-        }, HOVER_THROTTLE_MS)
-      : undefined;
   for (const event of requested) {
     if (bound.has(event)) continue;
     bound.add(event);
     if (event === "plotly_selected") boundSelected = true;
     if (event === "plotly_restyle" || event === "plotly_update") boundRestyle = true;
-    if (event === "plotly_hover" && hoverThrottle) {
-      plotEl.on(event, hoverThrottle);
-      continue;
-    }
-    if (event === "plotly_unhover" && hoverThrottle) {
-      plotEl.on(event, (data?: any) => {
-        hoverThrottle.cancel();
-        model.send({ shinywidgets: "event", event, ...eventPayload(event, data) }, {});
-      });
-      continue;
-    }
     plotEl.on(event, (data?: any) => {
       model.send({ shinywidgets: "event", event, ...eventPayload(event, data, plotEl) }, {});
     });
@@ -373,7 +292,9 @@ function legendPayload(data: any): Record<string, unknown> {
 // recomputed on every restyle. `visible` is the trace's own attribute (false
 // once a legend click hides it), so traces expanded by a groupby transform
 // report their own visibility, not each group's.
-export function visibilitySeed(plotEl: HTMLElement): Record<string, unknown>[] {
+export function visibilitySeed(
+  plotEl: HTMLElement,
+): { trace_index: number; name: string; visible: boolean }[] {
   const data = (plotEl as any).data;
   if (!Array.isArray(data)) return [];
   return data.map((trace: any, i: number) => ({
@@ -386,7 +307,7 @@ export function visibilitySeed(plotEl: HTMLElement): Record<string, unknown>[] {
 // plotly auto-names traces ("trace 0") only on the full trace; use it when
 // fullData aligns with data by user-trace index (it doesn't once a transform
 // expands a trace).
-function traceName(fullData: any, traces: any[], i: number): unknown {
+function traceName(fullData: any, traces: any[], i: number): string {
   const full = Array.isArray(fullData) ? fullData[i] : undefined;
   if (full?.index === i && typeof full.name === "string") return full.name;
   return traces[i]?.name ?? `trace ${i}`;
