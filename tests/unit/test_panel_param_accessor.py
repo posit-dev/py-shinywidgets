@@ -16,6 +16,8 @@ from shinywidgets._render_widget_base import WidgetRenderContext
 class Gauge(param.Parameterized):
     value = param.Integer(default=0)
     label = param.String(default="a")
+    xs = param.List(default=[])
+    clicked = param.Event()
 
 
 def watcher_count(obj: param.Parameterized, name: str) -> int:
@@ -91,6 +93,58 @@ def test_rerender_reattaches_to_the_new_value(widget_session: Session) -> None:
         assert r.param("value") == 5
         new.value = 8
         assert r.param("value") == 8
+
+
+def test_rerender_with_equal_param_value_follows_the_new_object(
+    widget_session: Session,
+) -> None:
+    # An equal-but-fresh parameter value must still republish: readers should
+    # hold the new object's list, not the old one's
+    current = {"gauge": Gauge(xs=[1, 2])}
+    r = make_renderer(widget_session, lambda: current["gauge"])
+    do_render(widget_session, r)
+    with session_context(widget_session):
+        assert r.param("xs") == [1, 2]
+        new = Gauge(xs=[1, 2])
+        current["gauge"] = new
+        do_render(widget_session, r)
+        assert r.param("xs") is new.xs
+
+
+def test_in_place_mutation_and_trigger_invalidates(widget_session: Session) -> None:
+    # param can't see in-place mutation, so users call param.trigger() -- the
+    # documented idiom -- which fires with event.new is event.old
+    gauge = Gauge(xs=[1, 2])
+    r = make_renderer(widget_session, lambda: gauge)
+    do_render(widget_session, r)
+    with session_context(widget_session):
+        reader = Context()
+        with reader():
+            assert r.param("xs") == [1, 2]
+        gauge.xs.append(3)
+        gauge.param.trigger("xs")
+        assert reader._invalidated
+        assert r.param("xs") == [1, 2, 3]
+
+
+def test_event_parameter_fires_on_every_trigger(widget_session: Session) -> None:
+    # param.Event is a pulse by design: repeated identical firings each count
+    gauge = Gauge()
+    r = make_renderer(widget_session, lambda: gauge)
+    do_render(widget_session, r)
+    with session_context(widget_session):
+        reader = Context()
+        with reader():
+            r.param("clicked")
+        gauge.param.trigger("clicked")
+        assert reader._invalidated
+        # Dependencies are one-shot: the reader re-runs (re-reads) before the
+        # next pulse can invalidate it again
+        reader._invalidated = False
+        with reader():
+            r.param("clicked")
+        gauge.param.trigger("clicked")
+        assert reader._invalidated
 
 
 def test_param_requires_a_parameterized_value(widget_session: Session) -> None:

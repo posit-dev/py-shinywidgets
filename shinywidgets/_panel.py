@@ -29,7 +29,13 @@ def dynamic_accessor_spec(renderer: render_panel, name: str) -> Optional[Accesso
     def attach(widget: BokehModel, emit: Emit) -> Callable[[], None]:
         return watch_param(renderer, param_name, emit)
 
-    return AccessorSpec(name=name, kind="state", attach=attach)
+    # Event, not input, priority: param already suppresses unchanged-value
+    # notifications (onlychanged=True), so every notification that reaches
+    # the watcher is meaningful -- a param.trigger() after an in-place
+    # mutation, a param.Event pulse, or a fresh-but-equal value on the new
+    # object after a re-render (which readers must receive to follow the new
+    # object's identity). Deduping those by equality would swallow them.
+    return AccessorSpec(name=name, kind="state", priority="event", attach=attach)
 
 
 def watch_param(renderer: render_panel, name: str, emit: Emit) -> Callable[[], None]:
