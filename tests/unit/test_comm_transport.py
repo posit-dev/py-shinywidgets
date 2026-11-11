@@ -245,7 +245,7 @@ def test_orphaned_shiny_comm_queues_sends_until_open_or_close() -> None:
     import shinywidgets._comm as comm
 
     # Pre-open sends queue FIFO; taking them ends the pre-open state
-    orphan = comm.OrphanedShinyComm("c1")
+    orphan = comm.OrphanedShinyComm("c1", pending_open=True)
     orphan.send(data={"n": 1})
     orphan.send(data={"n": 2}, metadata={"m": 0})
     queued = [json.loads(msg_txt) for msg_txt in orphan.take_queued_sends()]
@@ -259,7 +259,7 @@ def test_orphaned_shiny_comm_queues_sends_until_open_or_close() -> None:
     assert orphan.take_queued_sends() == []
 
     # Closing a pre-open placeholder drops its queue, and later sends no-op
-    closing = comm.OrphanedShinyComm("c2")
+    closing = comm.OrphanedShinyComm("c2", pending_open=True)
     closing.send(data={"n": 1})
     closing.close()
     closing.send(data={"n": 2})
@@ -282,7 +282,7 @@ def test_queued_sends_flush_through_the_replacement_comm() -> None:
     session._flush_handlers.clear()
     session._flushed_handlers.clear()
 
-    orphan = comm.OrphanedShinyComm("c1")
+    orphan = comm.OrphanedShinyComm("c1", pending_open=True)
     orphan.send(data={"method": "custom", "data": "first"})
     orphan.send(data={"method": "custom", "data": "second"})
     comm.flush_queued_sends(orphan, real)
@@ -394,7 +394,7 @@ def test_queued_sends_snapshot_payloads_at_send_time() -> None:
     session._flush_handlers.clear()
     session._flushed_handlers.clear()
 
-    orphan = comm.OrphanedShinyComm("c1")
+    orphan = comm.OrphanedShinyComm("c1", pending_open=True)
     payload: Dict[str, Any] = {"method": "custom", "n": 1}
     buf = bytearray(b"first")
     orphan.send(data=payload, buffers=[buf])
@@ -433,7 +433,7 @@ def test_queued_sends_are_serialized_like_direct_sends(make_data: Any) -> None:
     session._flushed_handlers.clear()
 
     real.send(data=make_data(), buffers=[bytearray(b"buf")])
-    orphan = comm.OrphanedShinyComm("c1")
+    orphan = comm.OrphanedShinyComm("c1", pending_open=True)
     orphan.send(data=make_data(), buffers=[bytearray(b"buf")])
     comm.flush_queued_sends(orphan, real)
 
@@ -448,7 +448,7 @@ def test_queued_send_errors_surface_at_the_send() -> None:
     """
     import shinywidgets._comm as comm
 
-    orphan = comm.OrphanedShinyComm("c1")
+    orphan = comm.OrphanedShinyComm("c1", pending_open=True)
     with pytest.raises(TypeError, match="buffer protocol"):
         orphan.send(data={"method": "custom"}, buffers=[object()])  # type: ignore[list-item]  # deliberately invalid
     with pytest.raises(TypeError, match="not JSON serializable"):

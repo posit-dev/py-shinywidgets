@@ -219,7 +219,7 @@ def init_shiny_widget(w: Widget):
     # Since the actual ShinyComm() is initialized _after_ the Widget is initialized,
     # and Widget.__init__() includes a call to Widget.open() which opens an unnecessary
     # comm, we just set the comm to a dummy comm for now (to avoid unnecessary work)
-    w.comm = OrphanedShinyComm(id)
+    w.comm = OrphanedShinyComm(id, pending_open=True)
     queue_sends_until_comm_open(w)
 
     # Capture the render (if any) now, so the deferred open below can re-enter it:

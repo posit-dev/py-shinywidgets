@@ -74,7 +74,8 @@ def preimported() -> Iterator[Callable[[type[Widget]], Widget]]:
 
 
 def test_orphaned_comm_has_no_kernel() -> None:
-    assert OrphanedShinyComm("x").kernel is None
+    assert OrphanedShinyComm("x", pending_open=True).kernel is None
+    assert OrphanedShinyComm("x", pending_open=False).kernel is None
 
 
 def test_ipyvue_does_not_cache_templates_under_shinywidgets(

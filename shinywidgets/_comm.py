@@ -288,7 +288,9 @@ class OrphanedShinyComm:
     """
 
     comm_id: str
-    pending_open: bool = True
+    # No default: a placeholder left at a close site in the pre-open state
+    # would queue every later send for as long as the widget lives
+    pending_open: bool
     _queue: List[str] = field(default_factory=lambda: [], repr=False)
 
     # Cross-library contract: ipywidgets treats a comm with `kernel = None`
