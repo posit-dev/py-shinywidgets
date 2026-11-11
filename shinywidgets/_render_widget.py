@@ -682,7 +682,7 @@ class render_embedding_atlas(
     browser is synced to the widget's (upstream-internal) `_predicate`
     trait: read ``atlas.selection()`` for the filtered rows, or
     ``atlas.predicate()`` for the filter as a SQL expression, reactively
-    (``my_atlas.read("_predicate")`` remains available for the raw trait).
+    (``atlas.read("_predicate")`` remains available for the raw trait).
 
     **Mutating the widget**: the explorer doesn't respond to trait changes
     made from Python; to change it, re-render.
