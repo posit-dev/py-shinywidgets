@@ -44,6 +44,37 @@ SELECTION_JSON = json.dumps(
     }
 )
 
+# The viewer sends this once when it loads, whether or not the user has
+# selected anything; a later empty event is a real deselection
+EMPTY_SELECTION_JSON = json.dumps(
+    {
+        "type": "selection_change",
+        "application_id": "test",
+        "recording_id": "rec",
+        "segment_id": None,
+        "items": [],
+    }
+)
+
+
+def test_selection_ignores_the_load_time_empty_seed(widget_session: Session) -> None:
+    # The first empty selection per attach is the viewer's load-time seed and
+    # must not be emitted (it would clobber a selection kept across a
+    # re-render); a *subsequent* empty event is a real deselection
+    widget = inner_viewer(widget_session)
+    emitted: List[object] = []
+    sr.SELECTION.attach(widget, emitted.append)
+    cb = widget._raw_event_callbacks[-1]
+    cb(EMPTY_SELECTION_JSON)
+    assert emitted == []
+    cb(SELECTION_JSON)
+    assert len(emitted) == 1
+    cb(EMPTY_SELECTION_JSON)
+    assert len(emitted) == 2
+    evt = emitted[-1]
+    assert isinstance(evt, SelectionChangeEvent)
+    assert evt.items == []
+
 
 def test_selection_emits_parsed_event(widget_session: Session) -> None:
     # Pins the shape of rerun's private _on_raw_event/_viewer_event_from_json_str
@@ -72,8 +103,7 @@ def test_selection_emits_parsed_event(widget_session: Session) -> None:
 
 
 def test_selection_spec_is_state() -> None:
-    # The viewer sends an empty selection at load; only a render-time attach
-    # catches it
+    # A selection is user-interaction state, so it is kept across re-renders
     assert sr.SELECTION.kind == "state"
 
 
@@ -103,6 +133,9 @@ def test_renderer_selection_round_trips_and_is_retained(
     assert isinstance(evt, SelectionChangeEvent)
     # Retained semantics: a re-render keeps the last selection
     r._accessors.on_render(widget)
+    assert isinstance(r.selection(), SelectionChangeEvent)
+    # ...the new viewer's load-time empty seed doesn't clobber it...
+    widget._raw_event_callbacks[-1](EMPTY_SELECTION_JSON)
     assert isinstance(r.selection(), SelectionChangeEvent)
     # ...and the re-attach still reports selections
     widget._raw_event_callbacks[-1](SELECTION_JSON)
