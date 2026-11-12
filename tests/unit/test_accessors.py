@@ -628,7 +628,10 @@ def _attach_recorder(calls: List[str], name: str) -> acc.Attach:
 def test_opt_in_accessor_attaches_and_reads_when_listened() -> None:
     calls: List[str] = []
     spec = acc.AccessorSpec(
-        name="selected", kind="state", attach=_attach_recorder(calls, "selected"), opt_in=True
+        name="selected",
+        kind="state",
+        attach=_attach_recorder(calls, "selected"),
+        opt_in=True,
     )
     a = acc.Accessors([spec], listen_to=["selected"])
     a.on_render(object())
@@ -638,7 +641,10 @@ def test_opt_in_accessor_attaches_and_reads_when_listened() -> None:
 def test_opt_in_accessor_not_attached_without_listen_to() -> None:
     calls: List[str] = []
     spec = acc.AccessorSpec(
-        name="selected", kind="state", attach=_attach_recorder(calls, "selected"), opt_in=True
+        name="selected",
+        kind="state",
+        attach=_attach_recorder(calls, "selected"),
+        opt_in=True,
     )
     a = acc.Accessors([spec])
     a.on_render(object())
@@ -647,7 +653,10 @@ def test_opt_in_accessor_not_attached_without_listen_to() -> None:
 
 def test_opt_in_accessor_read_raises_without_listen_to() -> None:
     spec = acc.AccessorSpec(
-        name="selected", kind="state", attach=_attach_recorder([], "selected"), opt_in=True
+        name="selected",
+        kind="state",
+        attach=_attach_recorder([], "selected"),
+        opt_in=True,
     )
     a = acc.Accessors([spec])
     a.on_render(object())
@@ -657,7 +666,10 @@ def test_opt_in_accessor_read_raises_without_listen_to() -> None:
 
 def test_listen_to_unknown_name_raises() -> None:
     spec = acc.AccessorSpec(
-        name="selected", kind="state", attach=_attach_recorder([], "selected"), opt_in=True
+        name="selected",
+        kind="state",
+        attach=_attach_recorder([], "selected"),
+        opt_in=True,
     )
     with pytest.raises(ValueError, match="bogus"):
         acc.Accessors([spec], listen_to=["bogus"])
