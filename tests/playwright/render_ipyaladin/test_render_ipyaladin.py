@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from playwright.sync_api import Page, expect
-from tests.playwright.conftest import assert_no_unexpected_errors, collect_errors
+from tests.playwright.conftest import (
+    aladin_hips_outage_as_skip,
+    assert_no_unexpected_errors,
+    collect_errors,
+)
 
 # The viewer loads its JavaScript from esm.sh and its sky imagery (HiPS tiles)
 # from CDS servers; tolerate failed requests to those (e.g., tile 404s at
@@ -112,21 +116,22 @@ def test_ipyaladin_pan_zoom_roundtrips_to_python(page: Page, local_app) -> None:
     initial_fov = page.locator("#fov").inner_text()
     assert initial_target
 
-    # Drag the sky: the new center should sync back to Python (via the _target
-    # trait and reactive_read)
-    box = canvas.bounding_box()
-    assert box is not None
-    cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
-    page.mouse.move(cx, cy)
-    page.mouse.down()
-    page.mouse.move(cx + 80, cy + 40, steps=10)
-    page.mouse.up()
-    expect(page.locator("#target")).not_to_have_text(initial_target, timeout=10000)
+    with aladin_hips_outage_as_skip(errors):
+        # Drag the sky: the new center should sync back to Python (via the
+        # _target trait and reactive_read)
+        box = canvas.bounding_box()
+        assert box is not None
+        cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        page.mouse.move(cx, cy)
+        page.mouse.down()
+        page.mouse.move(cx + 80, cy + 40, steps=10)
+        page.mouse.up()
+        expect(page.locator("#target")).not_to_have_text(initial_target, timeout=10000)
 
-    # Zooming with the mouse wheel syncs the field of view back (_fov)
-    page.mouse.move(cx, cy)
-    page.mouse.wheel(0, -240)
-    expect(page.locator("#fov")).not_to_have_text(initial_fov, timeout=10000)
+        # Zooming with the mouse wheel syncs the field of view back (_fov)
+        page.mouse.move(cx, cy)
+        page.mouse.wheel(0, -240)
+        expect(page.locator("#fov")).not_to_have_text(initial_fov, timeout=10000)
 
     check_errors(errors, failed_requests)
 
