@@ -438,7 +438,7 @@ def test_cached_selection_cleared_when_rows_change(
     assert r.grid.widget.selection == "{}"
 
 
-def test_selection_accessor_reads_parsed_selection(
+def test_selected_accessor_reads_parsed_selection(
     widget_session: Session,
 ) -> None:
     from shiny.types import SilentException
@@ -447,20 +447,20 @@ def test_selection_accessor_reads_parsed_selection(
     # Before the first render there is no value to read: the accessor
     # req()s, like reading a not-yet-rendered output in a reactive context
     with pytest.raises(SilentException):
-        r.selection()
+        r.selected()
 
     render(r, lambda: DF, widget_session)
     # Reading outside a reactive context returns the current value without
     # taking a dependency (matching .value/.widget)
-    assert r.selection() == {}
+    assert r.selected() == {}
 
     # The accessor parses the widget's repr-string trait into a dict
     assert isinstance(r.grid, MolGrid)
     r.grid.widget.selection = str({0: "CCO"})
-    assert r.selection() == {0: "CCO"}
+    assert r.selected() == {0: "CCO"}
 
 
-def test_selection_accessor_seeds_current_value_on_reattach(
+def test_selected_accessor_seeds_current_value_on_reattach(
     widget_session: Session,
 ) -> None:
     # A state accessor must publish the trait's current value at attach
@@ -470,15 +470,15 @@ def test_selection_accessor_seeds_current_value_on_reattach(
     render(r, lambda: DF, widget_session)
     assert isinstance(r.grid, MolGrid)
     r.grid.widget.selection = str({0: "CCO"})
-    assert r.selection() == {0: "CCO"}
+    assert r.selected() == {0: "CCO"}
 
     render(r, lambda: DF, widget_session)
     assert isinstance(r.grid, MolGrid)
     assert r.grid.widget.selection == str({0: "CCO"})
-    assert r.selection() == {0: "CCO"}
+    assert r.selected() == {0: "CCO"}
 
 
-def test_selection_accessor_reactively_invalidates(
+def test_selected_accessor_reactively_invalidates(
     widget_session: Session,
 ) -> None:
     from shiny import reactive
@@ -492,7 +492,7 @@ def test_selection_accessor_reactively_invalidates(
 
         @reactive.Effect
         def _() -> None:
-            reads.append(r.selection())
+            reads.append(r.selected())
 
         async def main() -> None:
             await reactive.flush()
@@ -500,7 +500,7 @@ def test_selection_accessor_reactively_invalidates(
             assert isinstance(r.grid, MolGrid)
             r.grid.widget.selection = str({0: "CCO"})
             await reactive.flush()
-            # The trait change must invalidate the dependency .selection took
+            # The trait change must invalidate the dependency .selected took
             assert reads == [{}, {0: "CCO"}]
 
         asyncio.run(main())

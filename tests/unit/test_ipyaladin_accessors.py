@@ -154,9 +154,9 @@ def test_state_accessors_seed_and_follow_traits(widget_session: Session) -> None
     target = r.target()
     assert isinstance(target, SkyCoord) and target.ra.deg == 10
     assert r.fov().deg == 5
-    assert r.selected_objects() == []
+    assert r.selected() == []
     aladin._target = "30 40"  # what a browser pan syncs back
     assert r.target().ra.deg == 30
     aladin._selected_objects = [[{"data": {"a": 1}}]]
-    tables = r.selected_objects()
+    tables = r.selected()
     assert len(tables) == 1 and tables[0]["a"][0] == 1

@@ -44,8 +44,8 @@ def attach_edited_cell(widget: DataGrid, emit: Emit) -> Callable[[], None]:
 # Dragging a selection rectangle streams `selections` on every pointer move,
 # so (like the other selection streams: plotly, altair, bqplot, ...) the
 # accessor debounces by default
-SELECTIONS = AccessorSpec(
-    name="selections",
+SELECTED = AccessorSpec(
+    name="selected",
     kind="state",
     attach=attach_selections,
     rate_policy="debounce",
@@ -119,4 +119,4 @@ VISIBLE_ROWS = AccessorSpec(
     attach=attach_visible_rows,
 )
 
-IPYDATAGRID_ACCESSORS = (SELECTIONS, CLICKED_CELL, EDITED_CELL, VISIBLE_ROWS)
+IPYDATAGRID_ACCESSORS = (SELECTED, CLICKED_CELL, EDITED_CELL, VISIBLE_ROWS)

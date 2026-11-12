@@ -13,6 +13,7 @@ df = pd.DataFrame({"x": rng.uniform(0, 1, N), "y": rng.uniform(0, 1, N)})
 app_ui = ui.page_fluid(
     output_widget("sc", height="400px"),
     ui.output_text("sel"),
+    ui.output_text("rows"),
 )
 
 
@@ -23,7 +24,13 @@ def server(input, output, session):
 
     @render.text
     def sel():
-        return ",".join(str(i) for i in sc.selection())
+        return ",".join(str(i) for i in sc.selected())
+
+    @render.text
+    def rows():
+        selected = sc.selected_rows()
+        shown = ",".join(f"{x:.2f}" for x in selected["x"].head(3))
+        return f"{len(selected)} rows: {shown}"
 
 
 app = App(app_ui, server)

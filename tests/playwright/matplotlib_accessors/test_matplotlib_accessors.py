@@ -93,15 +93,17 @@ def test_rerender_does_not_stack_click_handlers(page: Page, local_app) -> None:
 
     # Exactly one evaluation happens at load
     expect(page.locator("#click_count")).to_have_text("1", timeout=10000)
+    old = page.locator("#plot canvas:visible").first.element_handle()
     page.click("#rerender")
-    # The re-render forces one more evaluation (readers depend on the
-    # widget); waiting for it also means the re-render -- and its attach of
-    # the click handler to the new canvas -- has finished, so it's safe to
-    # click
-    expect(page.locator("#click_count")).to_have_text("2", timeout=10000)
+    # Waiting for the re-render's new canvas also means its attach of the
+    # click handler has finished, so it's safe to click
+    page.wait_for_function("(el) => !el.isConnected", arg=old, timeout=30000)
+    page.wait_for_function(CANVAS_HAS_PIXELS_JS, arg="#plot", timeout=30000)
+    # A re-render with an unchanged value does NOT re-run the accessor's
+    # readers: the evaluation count stays put
+    expect(page.locator("#click_count")).to_have_text("1", timeout=10000)
     expect(page.locator("#clicked")).to_have_text("None", timeout=10000)
     expect(page.locator("#limits")).to_have_text(LIMITS, timeout=10000)
-    page.wait_for_function(CANVAS_HAS_PIXELS_JS, arg="#plot", timeout=30000)
 
     click_center(page)
     # One click increments the server-side evaluation count by exactly one.
@@ -109,7 +111,7 @@ def test_rerender_does_not_stack_click_handlers(page: Page, local_app) -> None:
     # it can't reproduce handler stacking (the app builds a fresh Figure every
     # render) -- the detach contract for a cached Figure is pinned by the
     # unit test (test_clicked_detach_disconnects_the_cid)
-    expect(page.locator("#click_count")).to_have_text("3", timeout=10000)
+    expect(page.locator("#click_count")).to_have_text("2", timeout=10000)
     expect(page.locator("#clicked")).to_have_text(COORDS, timeout=10000)
 
     assert_no_unexpected_errors(errors, failed_requests)

@@ -54,12 +54,12 @@ def click_pick(page: Page, cx: float, cy: float) -> None:
 
 def test_pick_before_first_read_is_reported(page: Page, local_app) -> None:
     """A pick made before the accessor's (gated) first read is reflected in
-    that read. Nothing in the app reads selected_index() before the button
+    that read. Nothing in the app reads selected() before the button
     click, so the first read is genuinely late: before accessors attached
     at render, the pick below fired into a nonexistent listener and this
     read returned None.
 
-    selected_index() is a kind="state" accessor: it attaches at render, so
+    selected() is a kind="state" accessor: it attaches at render, so
     its observer on each layer's selected_index trait is in place before
     the browser can pick, and the pick is captured whether it precedes the
     first read (retained on the trait) or follows it (live sync).
@@ -77,7 +77,7 @@ def test_pick_before_first_read_is_reported(page: Page, local_app) -> None:
     assert box is not None
     cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
 
-    # Pick BEFORE the gated first read of selected_index(), and wait for the
+    # Pick BEFORE the gated first read of selected(), and wait for the
     # pick to reach the server before clicking (see wait_for_sync)
     click_pick(page, cx, cy)
     wait_for_sync(page)

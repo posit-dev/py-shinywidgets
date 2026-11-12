@@ -14,6 +14,8 @@ from shiny import Session
 from shiny.reactive._core import Context
 from shiny.session import session_context
 
+from tests.unit.conftest import reads_across_rerender
+
 
 def plot() -> Tuple[Any, ColumnDataSource]:
     src = ColumnDataSource({"x": [1, 2, 3], "y": [4, 5, 6]})
@@ -72,6 +74,93 @@ def test_tapped_subscribes_so_browser_events_arrive(widget_session: Session) -> 
     detach()
     p.document.callbacks.trigger_event(Tap(model=p, x=0, y=0))
     assert emitted == [tap]
+
+
+def test_event_callbacks_do_not_accumulate_across_attaches(
+    widget_session: Session,
+) -> None:
+    # Every attach adds a plot.on_event() callback, and bokeh has no public
+    # way to remove one. Left on the plot, a figure returned by every render
+    # collects a dead closure per render per event accessor (#418).
+    p, _ = plot()
+    w = widget(widget_session, p)
+    for _ in range(3):
+        detach = sb.TAPPED.attach(w, lambda raw: None)
+        detach()
+    assert p._event_callbacks["tap"] == []
+
+
+def test_event_callbacks_do_not_accumulate_under_a_layout_root(
+    widget_session: Session,
+) -> None:
+    # A layout's select() returns a one-shot generator (a figure's returns a
+    # list), which attach must not leave exhausted for detach
+    p, _ = plot()
+    w = widget(widget_session, row(p))
+    for _ in range(3):
+        detach = sb.TAPPED.attach(w, lambda raw: None)
+        detach()
+    assert p._event_callbacks["tap"] == []
+
+
+def test_multiple_live_accessors_on_the_same_event_each_receive_events(
+    widget_session: Session,
+) -> None:
+    p, _ = plot()
+    w = widget(widget_session, p)
+    a: List[object] = []
+    b: List[object] = []
+    detach_a = sb.TAPPED.attach(w, a.append)
+    detach_b = sb.TAPPED.attach(w, b.append)
+    tap = Tap(model=p, x=1, y=2)
+    p.document.callbacks.trigger_event(tap)
+    assert a == [tap]
+    assert b == [tap]
+    detach_a()
+    tap2 = Tap(model=p, x=3, y=4)
+    p.document.callbacks.trigger_event(tap2)
+    assert a == [tap]
+    assert b == [tap, tap2]
+    detach_b()
+
+
+def test_detached_event_emits_are_not_invoked(widget_session: Session) -> None:
+    p, _ = plot()
+    w = widget(widget_session, p)
+    stale: List[object] = []
+    detach = sb.TAPPED.attach(w, stale.append)
+    detach()
+    p.document.callbacks.trigger_event(Tap(model=p, x=0, y=0))
+    assert stale == []
+    # A re-attach (e.g. a re-render) of the same event still receives events
+    live: List[object] = []
+    sb.TAPPED.attach(w, live.append)
+    tap = Tap(model=p, x=1, y=2)
+    p.document.callbacks.trigger_event(tap)
+    assert live == [tap]
+    assert stale == []
+
+
+def test_detaching_mid_dispatch_neither_calls_nor_skips_other_emits(
+    widget_session: Session,
+) -> None:
+    p, _ = plot()
+    w = widget(widget_session, p)
+    received_b: List[object] = []
+    received_c: List[object] = []
+
+    def emit_a(raw: object) -> None:
+        detach_a()
+        detach_b()
+
+    # Emits run in attach order, so a detaches itself and b before b's turn
+    detach_a = sb.TAPPED.attach(w, emit_a)
+    detach_b = sb.TAPPED.attach(w, received_b.append)
+    sb.TAPPED.attach(w, received_c.append)
+    tap = Tap(model=p, x=1, y=2)
+    p.document.callbacks.trigger_event(tap)
+    assert received_b == []
+    assert received_c == [tap]
 
 
 def test_zoomed_reports_ranges_update(widget_session: Session) -> None:
@@ -199,3 +288,27 @@ def test_zoomed_skips_the_seed_when_ranges_are_unknown(
     emitted_q: List[object] = []
     sb.attach_zoomed(wq, emitted_q.append)
     assert emitted_q == []
+
+
+def test_selected_rows_follows_a_rerender_with_an_equal_selection(
+    widget_session: Session,
+) -> None:
+    # The new plot's source seeds the same selection as the previous one, so
+    # the accessor publishes nothing: readers have to follow the widget itself
+    from shinywidgets import render_bokeh
+
+    def first_point_selected(xs: List[int]) -> BokehModel:
+        src = ColumnDataSource({"x": xs, "y": xs})
+        src.selected.indices = [0]
+        p = figure()
+        p.scatter("x", "y", source=src)
+        return widget(widget_session, p)
+
+    r = render_bokeh(rate_delay=0)
+    seen = reads_across_rerender(
+        r,
+        first_point_selected([1, 2]),
+        first_point_selected([7, 8]),
+        lambda: r.selected_rows()["x"].tolist(),
+    )
+    assert seen == [[1], [7]]

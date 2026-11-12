@@ -44,14 +44,16 @@ def event_attach(event: str) -> Callable[[BokehModel, Emit], Callable[[], None]]
     def attach(widget: BokehModel, emit: Emit) -> Callable[[], None]:
         from bokeh.models import Plot
 
-        # bokeh has no public way to remove an on_event callback
         active = [True]
 
         def on_event(e: Event) -> None:
             if active[0]:
                 emit(e)
 
-        for plot in widget._model.select({"type": Plot}):
+        # A list, since detach walks it again and a layout's select() returns
+        # a one-shot generator (a figure's returns a list)
+        plots = list(widget._model.select({"type": Plot}))
+        for plot in plots:
             plot.on_event(event, on_event)
             # on_event only subscribes the plot to browser events when it
             # joins a document, which already happened at render.
@@ -60,6 +62,17 @@ def event_attach(event: str) -> Callable[[BokehModel, Emit], Callable[[], None]]
 
         def detach() -> None:
             active[0] = False
+            for plot in plots:
+                # bokeh has no public way to remove an on_event callback, so
+                # drop it from bokeh's private registry; if that ever goes
+                # away, the flag above still mutes the callback. Replace the
+                # list rather than mutate it: a detach during dispatch would
+                # otherwise make bokeh's loop over it skip the next callback.
+                callbacks = getattr(plot, "_event_callbacks", None)
+                if callbacks is not None:
+                    callbacks[event] = [
+                        cb for cb in callbacks[event] if cb is not on_event
+                    ]
 
         return detach
 
