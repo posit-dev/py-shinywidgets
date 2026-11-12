@@ -490,23 +490,45 @@ def fan_out_ipyreact_registry(w: Widget) -> None:
         open_shared_in(w, s)
 
 
+def open_shared_references(comm: ShinyComm, data: DataType) -> None:
+    """
+    Open, in `comm`'s session, the process-global widgets that a message about
+    to be sent on `comm` references and that session's browser doesn't have.
+
+    A widget that is already open can gain such a reference (e.g.
+    `box.children = [shared]`), and no render or comm-open is left to notice
+    it. The open is sent on flush and the message after it (see
+    ShinyComm.publish_packed()), so the browser has the model by the time it
+    resolves the reference.
+    """
+    # Skipped when the process has nothing shared, since a message's data can
+    # be large. A session that has ended has no browser left to open one in.
+    if not SHARED_WIDGETS or not comm.comm_manager.active:
+        return
+    comms = comm.comm_manager.comms
+    for model_id in ipy_model_references(data):
+        if model_id in comms:
+            continue
+        w = WIDGET_INSTANCE_MAP.get(model_id)
+        # is_swapped_out_default() widgets (e.g. ipycanvas's module-level
+        # manager) must never get a fan-out comm
+        if w is not None and is_process_global(w) and not is_swapped_out_default(w):
+            open_shared_in(w, comm.session)
+
+
 def guard_shared_send(comm: SharedShinyComm, data: DataType) -> None:
     """
-    Keep an update fanned out to several sessions from dangling in any of their
-    browsers. A referenced model every fan-out session has is fine. A
-    process-global one (e.g. a shared widget built lazily, after some session
-    already had this widget open) is opened in the sessions missing it. Any
-    other reference (session-owned or closed) can never reach them, so warn
-    once per referenced model rather than leave those browsers waiting.
+    Warn about an update, fanned out to several sessions, that would dangle in
+    some of their browsers. A referenced model every fan-out session has is
+    fine, and a process-global one (e.g. a shared widget built lazily, after
+    some session already had this widget open) is opened by each session's own
+    send (see open_shared_references()). Any other reference (session-owned or
+    closed) can never reach the sessions missing it, so warn once per
+    referenced model rather than leave those browsers waiting.
     """
     for model_id in ipy_model_references(data):
         w = WIDGET_INSTANCE_MAP.get(model_id)
         if w is not None and is_process_global(w):
-            # is_swapped_out_default() widgets (e.g. ipycanvas's module-level
-            # manager) must never get a fan-out comm
-            if not is_swapped_out_default(w):
-                for session_id in comm.sessions_missing(model_id):
-                    open_shared_in(w, comm.comms[session_id].session)
             continue
         # A session that owns the referenced widget receives its model when
         # the widget's deferred comm-open runs at the next flush; only the
@@ -601,11 +623,17 @@ def init_session(session: Session) -> None:
 
     session.on_ended(_cleanup_session_state)
 
-    # As in Jupyter, where every widget is in the one frontend's manager, since
-    # some views look models up there (e.g. ipyvuetify's finds `theme`). Snapshot
-    # both, since opening can construct widgets.
+    # A process-global widget normally reaches a session by reference: when the
+    # session renders it, opens a widget that references it, or sends an update
+    # naming it (open_shared_in()'s other callers), so a session that never
+    # shows one is never sent it. EAGERLY_SHARED_PACKAGES are the exception:
+    # their frontends find a model without a reference to it, so every session
+    # gets theirs up front. Snapshot both, since opening can construct widgets.
     for w in list(SHARED_WIDGETS.values()):
-        if w.comm is not None:  # not closed by the user
+        if (
+            w.comm is not None  # not closed by the user
+            and widget_pkg(type(w)) in EAGERLY_SHARED_PACKAGES
+        ):
             open_shared_in(w, session)
     for w in list(WIDGET_INSTANCE_MAP.values()):
         if (
@@ -1172,10 +1200,17 @@ def shared_lifetime() -> Iterator[None]:
     behavior may change in a future release.
 
     Widgets constructed inside this block exist once per Python process and are
-    mirrored into every session's browser: any user's interaction with one changes
-    it for everyone, and it is never freed. Use it for static content or state that
-    is deliberately shared between users. To reuse a widget across renders within a
-    single session instead, use `session_lifetime()`.
+    mirrored into the browser of every session that displays them: any user's
+    interaction with one changes it for everyone, and it is never freed. Use it for
+    static content or state that is deliberately shared between users. To reuse a
+    widget across renders within a single session instead, use `session_lifetime()`.
+
+    A session is sent a shared widget the first time it displays it, or displays or
+    updates a widget that references it (e.g., adds a shared layer to its own map),
+    so a large shared widget costs nothing in the sessions that never show it. A
+    shared widget that nothing a session displays references is never sent: create
+    a `jslink()` between shared widgets per session (e.g., in the server function)
+    rather than inside this block.
 
     Works with or without an active session, so a widget can be built at module
     level and returned from any session's render. Layout defaults a renderer
@@ -1187,7 +1222,7 @@ def shared_lifetime() -> Iterator[None]:
     imports, or lazily, cached in a module-level variable. Don't construct one in
     code that runs per render or per session (including the body of a Shiny
     Express app file, which runs once per session): every widget built here is
-    kept forever and sent to every new session, so each run adds one more.
+    kept forever, so each run adds one more.
     Widgets a shared widget references (e.g., a container's children) must be
     constructed inside `shared_lifetime()` too, or other sessions can't show them.
 
@@ -1432,8 +1467,10 @@ IMPORT_TIME_WIDGET_PACKAGES = (
     "nglview",
 )
 
-# The subset whose import-time widgets the frontend expects to simply exist in
-# the browser. ipyvuetify's view finds `theme` by scanning the widget manager;
+# The subset whose process-global widgets the frontend expects to simply exist
+# in the browser, so init_session() opens them in every session. ipyvuetify's
+# view finds `theme` by scanning the widget manager; ipyvue templates name a
+# registered component (register_component_from_string()) by its tag;
 # nglview's ColormakerRegistry must be open (and its view rendered, see
 # js/src/nglview.ts) for its view to register custom color schemes
 EAGERLY_SHARED_PACKAGES = ("ipyvue", "ipyvuetify", "nglview")
