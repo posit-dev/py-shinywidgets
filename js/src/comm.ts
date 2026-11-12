@@ -23,13 +23,20 @@ export function setMaxClientMessageBytes(n: number): void {
   maxClientMessageBytes = n;
 }
 
+// The {"method":"update","data":{"shinywidgets_comm_send":...}} envelope
+// the message travels inside, with margin
+const ENVELOPE_BYTES = 100;
+
 // True if the message may be sent; otherwise logs an actionable error and
 // returns false. Exported for tests.
 export function messageWithinLimit(msg_txt: string, comm_id?: string): boolean {
-  // A UTF-16 char encodes to at most 3 UTF-8 bytes, so only measure
-  // exactly when it could matter
-  if (msg_txt.length * 3 <= maxClientMessageBytes) return true;
-  const bytes = new TextEncoder().encode(msg_txt).length;
+  // On the wire msg_txt is a JSON string inside Shiny's update envelope, so
+  // every quote/backslash in it is escaped and the frame can be much larger
+  // than msg_txt itself. JSON.stringify gives the exact escaped form. A
+  // UTF-16 code unit stringifies to at most 6 chars (\uXXXX), so only
+  // measure exactly when it could matter
+  if (msg_txt.length * 6 + ENVELOPE_BYTES <= maxClientMessageBytes) return true;
+  const bytes = new TextEncoder().encode(JSON.stringify(msg_txt)).length + ENVELOPE_BYTES;
   if (bytes <= maxClientMessageBytes) return true;
   const mb = (n: number) => (n / 1024 / 1024).toFixed(1);
   console.error(

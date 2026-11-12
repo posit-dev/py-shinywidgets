@@ -27,10 +27,9 @@ def point(page: Page, x: float, y: float, id: str = "plot") -> tuple[float, floa
     return px, py
 
 
-def lasso_center(page: Page, id: str = "plot") -> None:
-    """Lasso the center of the cloud (most of its 300K points): a closed
-    rectangular path around (0, 0), retried until the selection lands."""
-    corners = [(-1, 1), (1, 1), (1, -1), (-1, -1), (-1, 1)]
+def lasso(page: Page, corners: list[tuple[float, float]], id: str = "plot") -> None:
+    """Draw a closed lasso path through `corners` (data coordinates),
+    retried until the selection lands."""
     for _ in range(10):
         pts = [point(page, x, y, id=id) for x, y in corners]
         page.mouse.move(*pts[0])
@@ -46,15 +45,27 @@ def lasso_center(page: Page, id: str = "plot") -> None:
     page.wait_for_function(SELECTED_STATE_JS, arg=id, timeout=30000)
 
 
+def lasso_center(page: Page, id: str = "plot") -> None:
+    """Lasso the center of the cloud (most of its 300K points): a closed
+    rectangular path around (0, 0)."""
+    lasso(page, [(-1, 1), (1, 1), (1, -1), (-1, -1), (-1, 1)], id=id)
+
+
 def test_oversized_message_is_dropped_not_disconnected(page: Page, local_app) -> None:
     """A selection message over the (here tiny) limit is dropped client-side
     with an actionable console error; the session keeps working."""
     errors, failed_requests = collect_errors(page)
     dropped: list[str] = []
+    frames: list[str] = []
     page.on(
         "console",
         lambda msg: dropped.append(msg.text) if "dropped a" in msg.text else None,
     )
+
+    def on_ws(ws) -> None:  # noqa: ANN001
+        ws.on("framesent", lambda payload: frames.append(payload))
+
+    page.on("websocket", on_ws)
     page.goto(local_app.url)
     expect(page.locator("#plot .js-plotly-plot")).to_be_visible(timeout=60000)
 
@@ -69,10 +80,22 @@ def test_oversized_message_is_dropped_not_disconnected(page: Page, local_app) ->
     assert dropped, "expected a 'dropped a ... MB message' console error"
     assert "--ws-max-size" in dropped[0]
 
-    # The session is still alive: no disconnect overlay, and the app still
-    # responds to the server round-trip
+    # The oversized messages were actually dropped, not just logged: neither
+    # the bridge's selection event nor plotly.py's own points callback ever
+    # reached the server (a log-but-send bug would pass the checks above,
+    # since only the client-side limit is tiny)
+    # No frame over the 64 KB limit was sent (the bind-time seed's tiny
+    # `plotly_selected` frame and other small messages are fine; the fat
+    # ones were dropped)
+    assert frames, "expected some client->server frames"
+    assert max(len(f) for f in frames) < 65_536
+
+    # The session is still alive: no disconnect overlay
     expect(page.locator("#shiny-disconnected-overlay")).to_have_count(0)
-    expect(page.locator("#heartbeat")).to_have_text("alive")
-    assert page.evaluate("() => 1 + 1") == 2
+
+    # ...and the widget channel still works after the drop: a small
+    # selection (a corner patch, far under the limit) reaches Python
+    lasso(page, [(2, 2.6), (3, 2.6), (3, 3.2), (2, 3.2), (2, 2.6)])
+    expect(page.locator("#selected")).not_to_have_text("None", timeout=30000)
 
     assert_no_unexpected_errors(errors, failed_requests, allowed_errors=("dropped a",))
