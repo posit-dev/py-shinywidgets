@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from shinywidgets._shinywidgets import ws_max_size
 
 

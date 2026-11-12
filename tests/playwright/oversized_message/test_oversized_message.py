@@ -75,6 +75,4 @@ def test_oversized_message_is_dropped_not_disconnected(page: Page, local_app) ->
     expect(page.locator("#heartbeat")).to_have_text("alive")
     assert page.evaluate("() => 1 + 1") == 2
 
-    assert_no_unexpected_errors(
-        errors, failed_requests, allowed_errors=("dropped a",)
-    )
+    assert_no_unexpected_errors(errors, failed_requests, allowed_errors=("dropped a",))
