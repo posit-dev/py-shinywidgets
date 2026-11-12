@@ -592,9 +592,16 @@ body > [data-overlay-container] {
   height: 100%;
 }
 
+/* In a container shorter than ~350px the controls and footer would shrink the
+   table region to 0 rows. Floor the region at roughly a header plus two rows
+   instead: a fixed floor (min-content would propagate the body's full content
+   height) that pushes the footer into the output's scrollable overflow rather
+   than letting the body overlap it. Everything inside the region keeps
+   min-height: 0 so it can always shrink to fit within the floor (no overlap,
+   even with multi-row headers). */
 .shinywidgets-itables-fill .dt-layout-row.dt-layout-table {
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 7rem;
   align-items: stretch;
 }
 
@@ -618,10 +625,7 @@ body > [data-overlay-container] {
 
 .shinywidgets-itables-fill .dt-scroll-body {
   flex: 1 1 auto;
-  /* In a container shorter than ~350px the controls and footer would shrink
-     the body to 0 rows; floor it at about two rows and let the output scroll
-     (below), so rows show and the footer stays reachable */
-  min-height: 4rem;
+  min-height: 0;
   max-height: none !important;
   height: auto !important;
 }

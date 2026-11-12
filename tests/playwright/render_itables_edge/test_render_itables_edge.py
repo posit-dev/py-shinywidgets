@@ -171,8 +171,9 @@ def test_short_card_keeps_rows_visible_and_footer_reachable(
     page: Page, local_app_short_card
 ) -> None:
     # A filling card shorter than ~350px leaves no room for rows below
-    # DataTables' controls; the scroll body gets a min-height floor instead,
-    # and the output scrolls so the paging footer stays reachable
+    # DataTables' controls; the table region gets a min-height floor instead
+    # (pushing the footer out), and the output scrolls so the footer stays
+    # reachable
     errors, failed_requests = collect_errors(page)
     # Narrow enough that DataTables' controls wrap onto multiple rows,
     # squeezing the scroll body out of the 300px card entirely
@@ -185,30 +186,38 @@ def test_short_card_keeps_rows_visible_and_footer_reachable(
     geom = page.evaluate(
         """() => {
           const out = document.getElementById('short');
-          const body = out.querySelector('.dt-scroll-body');
+          const rows = out.querySelectorAll('.dt-layout-row');
+          const body = out.querySelector('.dt-scroll-body').getBoundingClientRect();
           return {
-            bodyHeight: body.getBoundingClientRect().height,
+            bodyHeight: body.height,
+            bodyBottom: body.bottom,
+            footerTop: rows[rows.length - 1].getBoundingClientRect().top,
+            overflowY: getComputedStyle(out).overflowY,
             canScroll: out.scrollHeight > out.clientHeight,
           };
         }"""
     )
-    # The body floors at about two rows (4rem) instead of collapsing to 0
+    # The body keeps about two rows (the 7rem table-region floor less the
+    # header) instead of collapsing to 0
     assert geom["bodyHeight"] >= 60, geom
+    # ...and pushes the footer below itself rather than overlapping it
+    assert geom["footerTop"] >= geom["bodyBottom"] - 1, geom
 
-    # Whatever the floor pushes out of the short card (e.g., the paging
-    # footer) is reachable by scrolling the output
-    if geom["canScroll"]:
-        page.evaluate(
-            "() => { const out = document.getElementById('short'); "
-            "out.scrollTop = out.scrollHeight; }"
-        )
-        paging_box = page.locator("#short .dt-paging").bounding_box()
-        out_box = page.locator("#short").bounding_box()
-        assert paging_box is not None and out_box is not None
-        assert (
-            paging_box["y"] + paging_box["height"]
-            <= out_box["y"] + out_box["height"] + 1
-        )
+    # The footer the floor pushes out of the card is reachable by scrolling
+    # the output. Assert the computed overflow (not just scrollHeight, which
+    # overflow: hidden also grows) so reverting to overflow: hidden fails here
+    assert geom["canScroll"], geom
+    assert geom["overflowY"] in ("auto", "scroll"), geom
+    page.evaluate(
+        "() => { const out = document.getElementById('short'); "
+        "out.scrollTop = out.scrollHeight; }"
+    )
+    paging_box = page.locator("#short .dt-paging").bounding_box()
+    out_box = page.locator("#short").bounding_box()
+    assert paging_box is not None and out_box is not None
+    assert (
+        paging_box["y"] + paging_box["height"] <= out_box["y"] + out_box["height"] + 1
+    )
 
     assert_no_unexpected_errors(errors, failed_requests)
 
