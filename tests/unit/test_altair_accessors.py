@@ -97,6 +97,17 @@ def test_filter_by_unit_empty_store_gives_empty_frames() -> None:
     assert len(out["pts"]) == 0 and len(out["lns"]) == 0
 
 
+def test_filter_by_unit_index_selection_partitions_vgsid() -> None:
+    sel = IndexSelection(
+        name="pick",
+        value=[0, 2],
+        store=[{"unit": "pts", "_vgsid_": 1}, {"unit": "lns", "_vgsid_": 3}],
+    )  # type: ignore[arg-type]
+    out = sa.filter_selection_by_unit(sel, {"pts": POINTS, "lns": LINES}, None)
+    assert out["pts"]["y"].tolist() == [10]
+    assert out["lns"]["z"].tolist() == [300]
+
+
 def test_filter_by_unit_rejects_unknown_units() -> None:
     with pytest.raises(ValueError, match="'nope'"):
         sa.filter_selection_by_unit(
