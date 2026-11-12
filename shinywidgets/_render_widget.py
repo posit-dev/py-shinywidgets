@@ -645,7 +645,10 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         frame object, a single frame is returned. Returns an empty frame (or
         a dict of empty frames) while nothing is selected. Dates are compared
         in UTC, reading time-zone-naive columns in the browser's time zone,
-        as Vega-Lite does.
+        as Vega-Lite does. A bare point selection (positional row indices,
+        from `alt.selection_point()` without ``fields=``/``encodings=``)
+        isn't supported on a chart with several datasets -- declare the
+        selection with ``fields=`` or ``encodings=`` instead.
         """
         selection = self.selected(name)
         widget = cast(JupyterChart, self.widget)

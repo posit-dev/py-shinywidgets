@@ -214,7 +214,10 @@ def filter_selection_by_unit(
     The rows of each view's frame in `selection`, for a selection whose store
     spans several views: `frames` is keyed by view name (the store entries'
     `unit`) and each frame is filtered by its own view's entries only. An
-    entry naming a view with no frame raises.
+    entry naming a view with no frame raises. So does a bare point selection
+    (an `IndexSelection`): its store holds positional `_vgsid_` ids, which
+    Vega assigns across the whole chart's dataflow, so they can't be mapped
+    back to rows of one view's frame.
     """
     import narwhals as nw
     from altair.utils.selection import IndexSelection
@@ -231,22 +234,20 @@ def filter_selection_by_unit(
             )
         stores[unit].append(entry)
 
+    if isinstance(selection, IndexSelection):
+        raise ValueError(
+            f"The selection {selection.name!r} selects positional row indices "
+            "(a bare `alt.selection_point()` without `fields=`/`encodings=`), "
+            "which can't be mapped back to rows on a chart with several "
+            "datasets. Declare the selection with `fields=` or `encodings=` "
+            "(e.g. `alt.selection_point(encodings=['x'])`) so it selects "
+            "values instead of positions."
+        )
+
     out: Dict[str, IntoDataFrameT] = {}
     for view, df in frames.items():
         frame = nw.from_native(df, eager_only=True)
-        if isinstance(selection, IndexSelection):
-            # Fields-less point selections store {"unit", "_vgsid_"} tuples;
-            # _vgsid_ is 1-based within each view's own dataset
-            indices = [e["_vgsid_"] - 1 for e in stores[view]]
-            row = "__shinywidgets_row__"
-            out[view] = (
-                frame.with_row_index(row)
-                .filter(nw.col(row).is_in(indices))
-                .drop(row)
-                .to_native()
-            )
-        else:
-            out[view] = filter_store(stores[view], frame, local_tz).to_native()
+        out[view] = filter_store(stores[view], frame, local_tz).to_native()
     return out
 
 

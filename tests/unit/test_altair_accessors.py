@@ -97,15 +97,17 @@ def test_filter_by_unit_empty_store_gives_empty_frames() -> None:
     assert len(out["pts"]) == 0 and len(out["lns"]) == 0
 
 
-def test_filter_by_unit_index_selection_partitions_vgsid() -> None:
+def test_filter_by_unit_index_selection_raises() -> None:
+    # A bare alt.selection_point() stores positional `_vgsid_` ids, which Vega
+    # assigns across the whole chart's dataflow -- they can't be resolved to
+    # rows of one view's frame, so the per-view path refuses them
     sel = IndexSelection(
         name="pick",
         value=[0, 2],
         store=[{"unit": "pts", "_vgsid_": 1}, {"unit": "lns", "_vgsid_": 3}],
     )  # type: ignore[arg-type]
-    out = sa.filter_selection_by_unit(sel, {"pts": POINTS, "lns": LINES}, None)
-    assert out["pts"]["y"].tolist() == [10]
-    assert out["lns"]["z"].tolist() == [300]
+    with pytest.raises(ValueError, match="encodings="):
+        sa.filter_selection_by_unit(sel, {"pts": POINTS, "lns": LINES}, None)
 
 
 def test_filter_by_unit_rejects_unknown_units() -> None:
