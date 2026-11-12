@@ -23,7 +23,7 @@ app_ui = ui.page_fluid(
 
 
 def server(input, output, session):
-    @render_plotly
+    @render_plotly(listen_to=["selected"])
     def plot():
         fig = px.scatter(df, x="x", y="y", color="g", custom_data=[df.index])
         fig.update_traces(marker_size=14)
