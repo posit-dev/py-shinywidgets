@@ -39,6 +39,31 @@ def test_selection_follows_brush_drag(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_selected_rows_follows_brush_drag(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+
+    overlay = page.locator('#fig1 rect[pointer-events="all"]').first
+    expect(overlay).to_be_visible(timeout=30000)
+    expect(page.locator("#rows1")).to_have_text("0 rows: ", timeout=30000)
+
+    # Brush the left half of the plot
+    box = overlay.bounding_box()
+    assert box is not None
+    drag(page, box, 0.05, 0.05, 0.5, 0.95)
+
+    expect(page.locator("#rows1")).not_to_have_text("0 rows: ", timeout=30000)
+    page.wait_for_timeout(500)
+    # The rows come from the app's data frame at the selected positions; its
+    # x column is the position itself, so the two outputs must agree
+    sel = ast.literal_eval(page.locator("#sel1").inner_text())[0]
+    n, _, shown = page.locator("#rows1").inner_text().partition(" rows: ")
+    assert int(n) == len(sel)
+    assert sorted(int(v) for v in shown.split(",")) == sel
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_brush_reports_the_region(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)

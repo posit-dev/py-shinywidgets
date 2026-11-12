@@ -75,8 +75,8 @@ def axes_limits(figure: Figure) -> AxesLimits:
     return tuple(limits)
 
 
-CLICKED = AccessorSpec(name="clicked", kind="event", attach=attach_clicked)
-PICKED = AccessorSpec(name="picked", kind="event", attach=attach_picked)
+CLICKED = AccessorSpec(name="clicked", kind="state", attach=attach_clicked)
+PICKED = AccessorSpec(name="picked", kind="state", attach=attach_picked)
 LIMITS = AccessorSpec(
     name="limits", kind="state", attach=attach_limits, rate_policy="debounce"
 )

@@ -31,12 +31,12 @@ def attach_selections(widget: DataGrid, emit: Emit) -> Callable[[], None]:
     return lambda: widget.unobserve(on_change, "selections")
 
 
-def attach_cell_clicked(widget: DataGrid, emit: Emit) -> Callable[[], None]:
+def attach_clicked_cell(widget: DataGrid, emit: Emit) -> Callable[[], None]:
     widget.on_cell_click(emit)
     return lambda: widget.on_cell_click(emit, remove=True)
 
 
-def attach_cell_edited(widget: DataGrid, emit: Emit) -> Callable[[], None]:
+def attach_edited_cell(widget: DataGrid, emit: Emit) -> Callable[[], None]:
     widget.on_cell_change(emit)
     return lambda: widget.on_cell_change(emit, remove=True)
 
@@ -44,23 +44,23 @@ def attach_cell_edited(widget: DataGrid, emit: Emit) -> Callable[[], None]:
 # Dragging a selection rectangle streams `selections` on every pointer move,
 # so (like the other selection streams: plotly, altair, bqplot, ...) the
 # accessor debounces by default
-SELECTIONS = AccessorSpec(
-    name="selections",
+SELECTED = AccessorSpec(
+    name="selected",
     kind="state",
     attach=attach_selections,
     rate_policy="debounce",
 )
 
-CELL_CLICKED = AccessorSpec(
-    name="cell_clicked",
-    kind="event",
-    attach=attach_cell_clicked,
+CLICKED_CELL = AccessorSpec(
+    name="clicked_cell",
+    kind="state",
+    attach=attach_clicked_cell,
 )
 
-CELL_EDITED = AccessorSpec(
-    name="cell_edited",
-    kind="event",
-    attach=attach_cell_edited,
+EDITED_CELL = AccessorSpec(
+    name="edited_cell",
+    kind="state",
+    attach=attach_edited_cell,
 )
 
 
@@ -119,4 +119,4 @@ VISIBLE_ROWS = AccessorSpec(
     attach=attach_visible_rows,
 )
 
-IPYDATAGRID_ACCESSORS = (SELECTIONS, CELL_CLICKED, CELL_EDITED, VISIBLE_ROWS)
+IPYDATAGRID_ACCESSORS = (SELECTED, CLICKED_CELL, EDITED_CELL, VISIBLE_ROWS)

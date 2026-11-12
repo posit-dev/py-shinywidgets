@@ -1,33 +1,22 @@
 """
 Accessors for `render_ipyaladin`.
 
-`clicked_object()` is message-backed: ipyaladin registers its own custom
-message handler via `on_msg`, so handlers the accessor adds through the same
-dispatcher still fire (unlike ipyniivue, which overrides `_handle_custom_msg`;
-see `_niivue.py`). The state accessors observe the widget's synced traits.
+All four accessors observe the widget's synced traits. ipyaladin's frontend
+retains the last clicked catalog source in the synced `clicked_object` trait
+(it `model.set`s it and calls `save_changes()` on every click, per model), so
+`clicked_object()` seeds at attach like the other state accessors, and the
+parallel `object_clicked` custom message the frontend also sends isn't
+needed.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Dict
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from ._accessors import AccessorSpec, Attach, Emit
 
 if TYPE_CHECKING:
     from ipyaladin import Aladin
-
-
-def attach_object_clicked(widget: Aladin, emit: Emit) -> Callable[[], None]:
-    def on_msg(_: object, content: object, _buffers: object) -> None:
-        if isinstance(content, dict) and content.get("event_type") == "object_clicked":
-            # Guard like the check above: ipywidgets swallows handler
-            # exceptions silently, so a malformed message must not raise
-            clicked = content.get("content")
-            if clicked is not None:
-                emit(clicked)
-
-    widget.on_msg(on_msg)
-    return lambda: widget.on_msg(on_msg, remove=True)
 
 
 def observe_trait(name: str) -> Attach:
@@ -43,13 +32,22 @@ def observe_trait(name: str) -> Attach:
     return attach
 
 
+def none_if_no_click(raw: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    # The synced trait defaults to {} (no click yet); report it as None to
+    # keep the "None until the first click" contract
+    return raw or None
+
+
 CLICKED_OBJECT = AccessorSpec(
-    name="clicked_object", kind="event", attach=attach_object_clicked
+    name="clicked_object",
+    kind="state",
+    attach=observe_trait("clicked_object"),
+    payload=none_if_no_click,
 )
-SELECTED_OBJECTS = AccessorSpec(
-    name="selected_objects", kind="state", attach=observe_trait("_selected_objects")
+SELECTED = AccessorSpec(
+    name="selected", kind="state", attach=observe_trait("_selected_objects")
 )
 TARGET = AccessorSpec(name="target", kind="state", attach=observe_trait("_target"))
 FOV = AccessorSpec(name="fov", kind="state", attach=observe_trait("_fov"))
 
-IPYALADIN_ACCESSORS = (CLICKED_OBJECT, SELECTED_OBJECTS, TARGET, FOV)
+IPYALADIN_ACCESSORS = (CLICKED_OBJECT, SELECTED, TARGET, FOV)

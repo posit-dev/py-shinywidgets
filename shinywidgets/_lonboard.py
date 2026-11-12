@@ -2,15 +2,22 @@
 Accessors for `render_lonboard`, backed by the map's traits (`view_state`,
 `selected_bounds`), its click handler registry, and each layer's
 `selected_index` trait.
+
+A pick is state, not just an event: lonboard retains it on the layer's
+`selected_index` trait (the frontend sets it on click and pushes it with
+`save_changes()`), so `attach_selected_index` seeds the accessor from the
+layers' retained picks. That lets `selected()` be a state accessor
+that attaches at render, so a pick made before its first read isn't lost.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Dict
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable
 
-from ._accessors import AccessorSpec, Emit
+from ._accessors import AccessorSpec, Emit, has_current_context
 
 if TYPE_CHECKING:
+    import geopandas
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
 
 
@@ -21,6 +28,74 @@ def attach_view_state(widget: LonboardMap, emit: Emit) -> Callable[[], None]:
     widget.observe(on_change, "view_state")
     emit(widget.view_state)  # computed from the layers at construction
     return lambda: widget.unobserve(on_change, "view_state")
+
+
+def pick_frame(
+    widget: LonboardMap, positions: Iterable[int]
+) -> "geopandas.GeoDataFrame":
+    """
+    The rows at `positions` of the frame a pick indexes into, for
+    `selected_rows()`'s `df` default: those rows of the data table of the
+    map's one pickable layer, sliced in Arrow and converted with
+    `geopandas.GeoDataFrame.from_arrow` (slicing first keeps a pick on a
+    large layer from converting rows nobody asked for; the result gets a
+    fresh RangeIndex). A layer counts as pickable when it has the
+    `selected_index` trait (which every lonboard layer has, data-backed or
+    not) and `pickable=True` -- a non-pickable layer can't supply a pick, so
+    it doesn't make the pick's origin ambiguous; a map whose pick could
+    come from several pickable layers raises, since the pick has no layer
+    identity. In a reactive context, reading also takes a dependency on the
+    map's layers, each layer's `pickable` trait, and the layer's table, so
+    in-place changes on a long-lived map re-read the picked row.
+    """
+    if has_current_context():
+        # Local import: ._shinywidgets imports ._render_widget, which
+        # imports this module
+        from ._shinywidgets import reactive_read
+
+        reactive_read(widget, "layers")
+        for layer in widget.layers:
+            if layer.has_trait("pickable"):
+                reactive_read(layer, "pickable")
+    layers = [
+        layer
+        for layer in widget.layers
+        if layer.has_trait("selected_index") and getattr(layer, "pickable", True)
+    ]
+    if len(layers) != 1:
+        raise ValueError(
+            f"`selected_rows()` can't default `df`: the map has {len(layers)} "
+            "pickable layers and a pick doesn't say which layer it's from. "
+            "Pass `df=` (the frame of the layer you mean), or read each "
+            'layer\'s pick yourself with `reactive_read(layer, "selected_index")`.'
+        )
+    if has_current_context() and layers[0].has_trait("table"):
+        from ._shinywidgets import reactive_read
+
+        reactive_read(layers[0], "table")
+    table = getattr(layers[0], "table", None)
+    if table is None:
+        raise TypeError(
+            "`selected_rows()` can't default `df`: the map's pickable layer "
+            "has no data table (e.g. a BitmapLayer). Pass `df=` explicitly."
+        )
+    try:
+        import geopandas as gpd
+        import pyarrow as pa
+    except ImportError:
+        raise ImportError(
+            "`selected_rows()` without `df` reconstructs the layer's data "
+            "frame with geopandas, which isn't installed "
+            "(pip install geopandas). Or pass `df=` explicitly."
+        ) from None
+    idx = [int(p) for p in positions]
+    pt = pa.table(table)
+    if not idx and pt.num_rows:
+        # from_arrow() can't convert an empty interleaved-geometry array (a
+        # numpy reshape bug in geopandas), so build the empty frame by
+        # converting one row and dropping it
+        return gpd.GeoDataFrame.from_arrow(pt.slice(0, 1)).iloc[0:0]
+    return gpd.GeoDataFrame.from_arrow(pt.take(pa.array(idx, type=pa.int64())))
 
 
 def attach_selected_bounds(widget: LonboardMap, emit: Emit) -> Callable[[], None]:
@@ -34,9 +109,10 @@ def attach_selected_bounds(widget: LonboardMap, emit: Emit) -> Callable[[], None
 
 def attach_clicked(widget: LonboardMap, emit: Emit) -> Callable[[], None]:
     # Registering flips _has_click_handlers, which is what makes the browser
-    # send click messages at all. This is why the spec must attach lazily
-    # (on first read), never eagerly: users who never read clicked() must
-    # see no change.
+    # send click messages at all. That's the only effect: the map's picking,
+    # selection, and cursor are driven by an onClick deck.gl always gets, so
+    # subscribing changes nothing the user can see, and the per-click payload
+    # is just a (lng, lat) pair -- no reason to gate it behind an opt-in.
     widget.on_click(emit)  # the callback receives the (lng, lat) tuple
     return lambda: widget.on_click(emit, remove=True)
 
@@ -68,6 +144,18 @@ def attach_selected_index(widget: LonboardMap, emit: Emit) -> Callable[[], None]
         attach_layer(layer)
     widget.observe(on_layers, "layers")
 
+    # Seed from the pick each layer retains on its `selected_index` trait.
+    # With picks on several layers there is no timestamp to order them, so
+    # the seed is a pick only when exactly one layer holds one; otherwise
+    # it's None (a fresh map has no pick, and an ambiguous one can't be
+    # attributed).
+    picks = [
+        layer.selected_index
+        for layer in widget.layers
+        if layer.has_trait("selected_index") and layer.selected_index is not None
+    ]
+    emit(picks[0] if len(picks) == 1 else None)
+
     def detach() -> None:
         widget.unobserve(on_layers, "layers")
         for d in detaches.values():
@@ -85,12 +173,10 @@ VIEW_STATE = AccessorSpec(
     attach=attach_view_state,
     rate_policy="debounce",
 )
-SELECTED_INDEX = AccessorSpec(
-    name="selected_index", kind="event", attach=attach_selected_index
-)
+SELECTED = AccessorSpec(name="selected", kind="state", attach=attach_selected_index)
 SELECTED_BOUNDS = AccessorSpec(
     name="selected_bounds", kind="state", attach=attach_selected_bounds
 )
-CLICKED = AccessorSpec(name="clicked", kind="event", attach=attach_clicked)
+CLICKED = AccessorSpec(name="clicked", kind="state", attach=attach_clicked)
 
-LONBOARD_ACCESSORS = (VIEW_STATE, SELECTED_INDEX, SELECTED_BOUNDS, CLICKED)
+LONBOARD_ACCESSORS = (VIEW_STATE, SELECTED, SELECTED_BOUNDS, CLICKED)

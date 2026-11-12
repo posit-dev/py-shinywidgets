@@ -74,7 +74,8 @@ def preimported() -> Iterator[Callable[[type[Widget]], Widget]]:
 
 
 def test_orphaned_comm_has_no_kernel() -> None:
-    assert OrphanedShinyComm("x").kernel is None
+    assert OrphanedShinyComm("x", pending_open=True).kernel is None
+    assert OrphanedShinyComm("x", pending_open=False).kernel is None
 
 
 def test_ipyvue_does_not_cache_templates_under_shinywidgets(
@@ -347,6 +348,81 @@ def test_pending_open_defers_to_shared_comm(
     assert w.comm.has_session(b.id)
 
 
+def test_pre_open_sends_flush_once_through_the_first_sessions_comm(
+    widget_session: Session,
+    other_session: Session,
+    shared_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Sends queued on a shared widget's pre-open placeholder flush exactly once,
+    through the first session's comm to open the widget. A session that opens
+    the widget later gets its full state via comm_open, not the backlog (a
+    shared widget never closes, so keeping the backlog would leak it).
+    """
+    a, b = widget_session, other_session
+    sent: dict[str, list[Any]] = {"a": [], "b": []}
+
+    async def record_a(msg_type: str, msg_txt: str) -> None:
+        sent["a"].append(msg_type)
+
+    async def record_b(msg_type: str, msg_txt: str) -> None:
+        sent["b"].append(msg_type)
+
+    monkeypatch.setattr(a, "send_custom_message", record_a)
+    monkeypatch.setattr(b, "send_custom_message", record_b)
+
+    with session_context(a), sw.shared_construction():
+        w = HTML()
+        assert isinstance(w.comm, OrphanedShinyComm)
+        w.comm.send(data={"method": "custom", "data": "startup"})
+        flush()
+        assert isinstance(w.comm, ShinyComm)
+        run(w.comm.session._flushed_callbacks.invoke())
+
+    assert sent["a"] == ["shinywidgets_comm_msg"]
+
+    sw.open_shared_in(w, b)
+    assert isinstance(w.comm, SharedShinyComm)
+    run(b._flushed_callbacks.invoke())
+
+    # b's comm_open is scheduled on_flush (which this harness never fires);
+    # the point is no backlog message reaches b
+    assert sent["b"] == []
+
+
+def test_open_shared_in_flushes_sends_queued_before_the_wrap(
+    widget_session: Session,
+    other_session: Session,
+    shared_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    A shared widget opened in a session before its deferred open flushes (e.g.
+    rendered in the same flush it was constructed) flushes its queued sends
+    through that session's comm.
+    """
+    a, b = widget_session, other_session
+    sent: list[str] = []
+
+    async def record(msg_type: str, msg_txt: str) -> None:
+        sent.append(msg_type)
+
+    monkeypatch.setattr(b, "send_custom_message", record)
+
+    with session_context(a):
+        with Context()(), WidgetRenderContext():
+            with sw.shared_construction():
+                w = HTML()
+            assert isinstance(w.comm, OrphanedShinyComm)
+            w.comm.send(data={"method": "custom", "data": "startup"})
+            sw.open_shared_in(w, b)
+        flush()
+    assert isinstance(w.comm, SharedShinyComm)
+    run(b._flushed_callbacks.invoke())
+    assert sent == ["shinywidgets_comm_msg"]
+
+
 def test_open_shared_in_opens_sessionless_references(
     widget_session: Session,
     shared_state: None,
@@ -599,6 +675,51 @@ def test_session_start_opens_listed_import_time_singletons(
     assert isinstance(g.comm, SharedShinyComm)
     assert g.comm.has_session(widget_session.id)
     assert o.comm is o_comm
+
+
+def test_session_start_leaves_an_undisplayed_shared_widget_unopened(
+    widget_session: Session, shared_state: None
+) -> None:
+    # A session that never shows a shared widget shouldn't be sent it (#461)
+    with shared_lifetime():
+        s = IntSlider()
+    with session_context(widget_session):
+        HTML()
+    flush()
+    assert s.model_id not in sw.COMM_MANAGERS[widget_session.id].comms
+
+
+def test_every_session_start_opens_shared_widgets_of_eager_packages(
+    widget_session: Session, other_session: Session, shared_state: None
+) -> None:
+    # A frontend finds these by name rather than by reference (e.g. a component
+    # built by ipyvue.register_component_from_string()), so nothing a session
+    # displays would ever open one
+    with shared_lifetime():
+        g = IpyvueThing()
+    for session in (widget_session, other_session):
+        with session_context(session):
+            HTML()
+        flush()
+        assert g.model_id in sw.COMM_MANAGERS[session.id].comms
+
+
+def test_session_start_opens_eager_singletons_another_session_imported(
+    widget_session: Session,
+    other_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    shared_state: None,
+) -> None:
+    # A package first imported inside a session (a lazy import in a render)
+    # builds its singletons with that session's comm, not a sessionless one
+    with session_context(widget_session), monkeypatch.context() as mp:
+        mp.setitem(sys.modules, "ipyvue.ForceLoad", ModuleType("ipyvue.ForceLoad"))
+        g = IpyvueThing()
+    flush()
+    with session_context(other_session):
+        HTML()
+    flush()
+    assert g.model_id in sw.COMM_MANAGERS[other_session.id].comms
 
 
 def test_rendering_an_unlisted_sessionless_widget_raises(
@@ -856,6 +977,65 @@ def test_shared_send_allows_a_reference_pending_open_in_its_own_session(
     with pytest.warns(UserWarning, match="references HTML"):
         box.children = (child,)
     box.children = ()
+
+
+def test_session_update_opens_the_shared_widget_it_references(
+    widget_session: Session,
+    flush_to_browser: Callable[[], list[dict[str, Any]]],
+    shared_state: None,
+) -> None:
+    with shared_lifetime():
+        child = HTML()
+    # Already open, so no render or comm-open is left to notice the child
+    with session_context(widget_session), session_lifetime():
+        box = VBox()
+    flush_to_browser()
+
+    box.children = (child,)
+    sent = [(m["type"], m["content"]["comm_id"]) for m in flush_to_browser()]
+    child_open = ("shinywidgets_comm_open", child.model_id)
+    assert child_open in sent
+    # The browser must have the child's model before the update that names it
+    assert sent.index(child_open) < sent.index(("shinywidgets_comm_msg", box.model_id))
+
+
+def test_send_queued_before_open_opens_the_shared_widget_it_references(
+    widget_session: Session,
+    flush_to_browser: Callable[[], list[dict[str, Any]]],
+    shared_state: None,
+) -> None:
+    with shared_lifetime():
+        scene = HTML()
+    # Like pythreejs's WebGLRenderer.render(scene, camera), called in a render
+    # function: a custom message naming a widget its own state doesn't hold,
+    # sent before its comm opens
+    with session_context(widget_session), session_lifetime():
+        renderer = HTML()
+        renderer.send({"type": "render", "scene": f"IPY_MODEL_{scene.model_id}"})
+
+    sent = [(m["type"], m["content"]["comm_id"]) for m in flush_to_browser()]
+    scene_open = ("shinywidgets_comm_open", scene.model_id)
+    assert scene_open in sent
+    render_msg = ("shinywidgets_comm_msg", renderer.model_id)
+    assert sent.index(scene_open) < sent.index(render_msg)
+
+
+def test_update_after_session_end_opens_nothing(
+    widget_session: Session, shared_state: None
+) -> None:
+    with shared_lifetime():
+        child = HTML()
+    with session_context(widget_session), session_lifetime():
+        box = VBox()
+    flush()
+    comm = box.comm
+    assert isinstance(comm, ShinyComm)
+    run(widget_session.close())
+
+    # e.g. a package's close() that sets traits while the session is torn down
+    comm.send(data={"state": {"children": [f"IPY_MODEL_{child.model_id}"]}})
+    assert widget_session not in sw.SESSIONS
+    assert not isinstance(child.comm, SharedShinyComm)
 
 
 # A VBox built by a rejected render still has its deferred open pending, and that

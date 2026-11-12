@@ -1,10 +1,27 @@
+from __future__ import annotations
+
 import importlib
 import math
 import os
 import tempfile
-from typing import Any
+from typing import TYPE_CHECKING, Any, Iterable, cast
 
 from ipywidgets import Widget
+
+if TYPE_CHECKING:
+    from narwhals.typing import IntoDataFrameT
+
+
+def select_rows_at(df: IntoDataFrameT, positions: Iterable[int]) -> IntoDataFrameT:
+    """
+    The rows of `df` at `positions`, in the order given -- a positional select
+    (pandas `.iloc`-style) that preserves the frame's type. An empty
+    `positions` gives an empty frame with `df`'s columns.
+    """
+    import narwhals as nw
+
+    frame = nw.from_native(df, eager_only=True)
+    return cast("IntoDataFrameT", frame[[int(p) for p in positions]].to_native())
 
 
 # similar to base::system.file()

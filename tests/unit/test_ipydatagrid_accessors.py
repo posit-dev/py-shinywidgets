@@ -6,6 +6,7 @@ from shiny import Session
 from shiny.session import session_context
 from shinywidgets._accessors import Accessors
 
+from tests.unit.conftest import reads_across_rerender
 from tests.unit.test_accessors import FakeSchedule
 
 
@@ -21,41 +22,41 @@ def grid(session: Session, **kwargs: object) -> object:
         )
 
 
-def test_selections_stream_debounces_by_default(widget_session: Session) -> None:
+def test_selected_stream_debounces_by_default(widget_session: Session) -> None:
     # Dragging a selection rectangle streams `selections` continuously, so
     # (like other selection streams) the accessor debounces by default and
     # the renderer's rate_policy/rate_delay kwargs apply to it.
-    assert sd.SELECTIONS.rate_policy == "debounce"
+    assert sd.SELECTED.rate_policy == "debounce"
 
     g = grid(widget_session)
     s = FakeSchedule()
-    a = Accessors([sd.SELECTIONS], schedule=s)
+    a = Accessors([sd.SELECTED], schedule=s)
     a.on_render(g)
-    assert a.read("selections") == []  # the seed doesn't wait out the debounce
+    assert a.read("selected") == []  # the seed doesn't wait out the debounce
     g.selections = [{"r1": 0, "r2": 1, "c1": 0, "c2": 0}]
     g.selections = [{"r1": 0, "r2": 2, "c1": 0, "c2": 0}]
-    assert a.read("selections") == []  # mid-drag values are held
+    assert a.read("selected") == []  # mid-drag values are held
     s.fire()
-    assert a.read("selections") == [{"r1": 0, "r2": 2, "c1": 0, "c2": 0}]
+    assert a.read("selected") == [{"r1": 0, "r2": 2, "c1": 0, "c2": 0}]
 
 
-def test_selections_rate_delay_zero_disables_the_debounce(
+def test_selected_rate_delay_zero_disables_the_debounce(
     widget_session: Session,
 ) -> None:
     g = grid(widget_session)
-    a = Accessors([sd.SELECTIONS], rate_delay=0, schedule=FakeSchedule())
+    a = Accessors([sd.SELECTED], rate_delay=0, schedule=FakeSchedule())
     a.on_render(g)
-    # The first read attaches the observer, so the set below goes through
-    # the limiter (without it, the set would be picked up as the seed)
-    a.read("selections")
+    # The render-time attach already seeded the observer, so the set below
+    # goes through the limiter (a set before attach would be the seed)
+    a.read("selected")
     g.selections = [{"r1": 0, "r2": 1, "c1": 0, "c2": 0}]
-    assert a.read("selections") == [{"r1": 0, "r2": 1, "c1": 0, "c2": 0}]
+    assert a.read("selected") == [{"r1": 0, "r2": 1, "c1": 0, "c2": 0}]
 
 
-def test_selections_attach_seeds_and_emits(widget_session: Session) -> None:
+def test_selected_attach_seeds_and_emits(widget_session: Session) -> None:
     g = grid(widget_session)
     emitted: list[object] = []
-    detach = sd.SELECTIONS.attach(g, emitted.append)
+    detach = sd.SELECTED.attach(g, emitted.append)
     assert emitted == [[]]
     g.selections = [{"r1": 1, "r2": 2, "c1": 0, "c2": 1}]
     assert emitted[-1] == [{"r1": 1, "r2": 2, "c1": 0, "c2": 1}]
@@ -64,10 +65,10 @@ def test_selections_attach_seeds_and_emits(widget_session: Session) -> None:
     assert emitted[-1] == [{"r1": 1, "r2": 2, "c1": 0, "c2": 1}]
 
 
-def test_cell_clicked_is_an_event_with_detach(widget_session: Session) -> None:
+def test_clicked_cell_is_an_event_with_detach(widget_session: Session) -> None:
     g = grid(widget_session)
     emitted: list[object] = []
-    detach = sd.CELL_CLICKED.attach(g, emitted.append)
+    detach = sd.CLICKED_CELL.attach(g, emitted.append)
     assert emitted == []  # no seed: None until the first click
     click = {
         "region": "body",
@@ -84,10 +85,10 @@ def test_cell_clicked_is_an_event_with_detach(widget_session: Session) -> None:
     assert emitted == [click]
 
 
-def test_cell_edited_is_an_event_with_detach(widget_session: Session) -> None:
+def test_edited_cell_is_an_event_with_detach(widget_session: Session) -> None:
     g = grid(widget_session)
     emitted: list[object] = []
-    detach = sd.CELL_EDITED.attach(g, emitted.append)
+    detach = sd.EDITED_CELL.attach(g, emitted.append)
     assert emitted == []
     edit = {"row": 2, "column": "a", "column_index": 0, "value": 555}
     g._cell_change_handlers(edit)  # what the browser's cell-changed message does
@@ -104,9 +105,9 @@ def test_ipydatagrid_accessors(widget_session: Session) -> None:
     r = render_ipydatagrid()
     r._widget = g  # stands in for _render()
     r._accessors.on_render(g)
-    assert r.selections() == []
-    assert r.cell_clicked() is None
-    assert r.cell_edited() is None
+    assert r.selected() == []
+    assert r.clicked_cell() is None
+    assert r.edited_cell() is None
     g._cell_click_handlers(
         {
             "region": "body",
@@ -117,13 +118,15 @@ def test_ipydatagrid_accessors(widget_session: Session) -> None:
             "cell_value": 1,
         }
     )
-    assert r.cell_clicked()["cell_value"] == 1
+    assert r.clicked_cell()["cell_value"] == 1
     g._cell_change_handlers({"row": 0, "column": "a", "column_index": 0, "value": 9})
-    assert r.cell_edited()["value"] == 9
-    # Events reset on re-render; state re-seeds
+    assert r.edited_cell()["value"] == 9
+    # Clicks/edits are retained across a re-render (they still happened);
+    # selections re-seed from the new grid
     r._accessors.on_render(grid(widget_session))
-    assert r.cell_clicked() is None and r.cell_edited() is None
-    assert r.selections() == []
+    assert r.clicked_cell()["cell_value"] == 1
+    assert r.edited_cell()["value"] == 9
+    assert r.selected() == []
 
 
 def test_visible_data_follows_the_visible_row_map(widget_session: Session) -> None:
@@ -231,3 +234,27 @@ def test_visible_data_accessor(widget_session: Session) -> None:
     assert r.visible_data()["a"].tolist() == [1, 2, 3]
     g._visible_rows = [2, 1, 0]
     assert r.visible_data()["a"].tolist() == [3, 2, 1]
+
+
+def test_click_accessors_are_retained() -> None:
+    from shinywidgets._ipydatagrid import CLICKED_CELL, EDITED_CELL
+
+    assert CLICKED_CELL.kind == "state"
+    assert EDITED_CELL.kind == "state"
+
+
+def test_visible_data_follows_a_rerender_with_new_data(
+    widget_session: Session,
+) -> None:
+    # A new grid starts with the same (empty) row map as the previous one, so
+    # the accessor publishes nothing: readers have to follow the widget itself
+    from ipydatagrid import DataGrid
+    from shinywidgets import render_ipydatagrid
+
+    with session_context(widget_session):
+        bigger = DataGrid(pd.DataFrame({"a": [1, 2, 3, 4, 5]}))
+    r = render_ipydatagrid()
+    seen = reads_across_rerender(
+        r, grid(widget_session), bigger, lambda: len(r.visible_data())
+    )
+    assert seen == [3, 5]
