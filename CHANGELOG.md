@@ -82,6 +82,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * shinywidgets now requires ipywidgets 8.1 or newer, and the bundled JavaScript widget manager was upgraded to `@jupyter-widgets/html-manager` 1.0. Together these fix many long-standing issues with ipywidgets 8 (see the bug fixes below). (#237, #259)
 * shinywidgets now requires shiny 1.9.0 or newer. With it, widget updates made from a background thread (e.g., nglview's, or your own `threading.Thread`) reach the browser right away instead of waiting for the next unrelated input. (#377)
 * shinywidgets now requires plotly 5.12 or newer for plotly widgets. With an older plotly, you now get an error explaining how to upgrade instead of a blank output. (#332)
+* Selection-style accessors with unbounded or streaming payloads are now opt-in: pass `listen_to=["selected"]` (etc.) to the renderer to enable them; reading one that wasn't declared raises an error pointing at `listen_to`. This applies to plotly's `selected()`, `selecting()`, and `hover()`. (#459)
+* Plotly's `selected()`/`selecting()` frames no longer carry `x`/`y` columns — they report `trace_index`, `point_index`, and `customdata` (the key `selected_rows()` joins on). This makes selection messages ~4x smaller, and apps that never opt in no longer receive per-point messages from shinywidgets' event bridge at all. (plotly.py's own `FigureWidget` also mirrors every selection to Python unconditionally — shinywidgets can't gate that channel; see #479.) (#459)
 
 ### Deprecated
 

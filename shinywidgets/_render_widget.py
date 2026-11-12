@@ -4572,9 +4572,11 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     ``@reactive.effect``), which then re-runs whenever the interaction changes:
 
     * ``clicked()``: the clicked points.
-    * ``hover()``: the points under the mouse.
+    * ``hover()``: the points under the mouse (opt in with
+      ``listen_to=["hover"]``; see below).
     * ``selected()``: the points of a box or lasso selection, once the drag ends
-      (``selecting()``: the same, while the user drags).
+      (``selecting()``: the same, while the user drags). Both are opt-in
+      (``listen_to=["selected", "selecting"]``; see below).
     * ``brushed()``: the selected region itself (``brushing()``: while dragging).
     * ``relayout()``: the axis ranges after a zoom, pan, or autoscale.
     * ``double_clicked()``: a pulse on every double-click (e.g. a view reset).
@@ -4611,6 +4613,10 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     * The streaming ones, ``hover()``, ``selecting()``, and ``brushing()``,
       update at most once the user pauses for 250 ms (see ``rate_policy`` and
       ``rate_delay``).
+    * ``selected()``, ``selecting()``, and ``hover()`` are opt-in: their
+      payloads grow with the selection (or stream continuously), so pass
+      ``listen_to=["selected"]`` (etc.) to the decorator to enable them.
+      Reading one that wasn't declared raises an error naming it.
     * They can't be read inside this output's own render function, which builds
       a new plot each time it runs. To change the plot in response to a click,
       modify ``.widget`` from a ``@reactive.effect`` instead (see the example).
@@ -4627,6 +4633,17 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     ``output_widget("id", height="450px", fillable=True)``: without
     ``fillable=True``, the plot renders at plotly's default height (360px)
     regardless of the output's height.
+
+    **Large selections**: selection points are opt-in because their payload
+    grows with the selection. For big data, don't opt in: read ``brushed()``
+    and filter your own frame -- a box is a range filter
+    (``df[(df.x >= lo) & (df.x <= hi) & (df.y >= lo) & (df.y <= hi)]``) and a
+    lasso is a point-in-polygon test over the ``lassoPoints`` vertices (e.g.
+    ``matplotlib.path.Path.contains_points``). Date axes report their bounds as
+    strings; parse them before comparing. Oversized messages from any widget
+    are dropped client-side with a console error rather than disconnecting the
+    session; raise the limit with ``shiny run --ws-max-size <bytes>`` (and set
+    the ``SHINYWIDGETS_WS_MAX_SIZE`` env var to match).
 
     **Typing**: no return-type annotation is needed -- the renderer's value
     type is statically bounded, so type checkers flag unsupported return
@@ -4746,7 +4763,14 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     def selected(self) -> Optional[pd.DataFrame]:
         """
         The points of the most recent box or lasso selection, once the gesture
-        ends, with the same columns as :meth:`clicked`.
+        ends. Opt in with ``listen_to=["selected"]`` (the payload grows with
+        the selection; see **Large selections** above).
+
+        Columns are ``trace_index``, ``point_index`` (the point's position
+        within its trace, not a row of your data), and ``customdata`` when
+        the figure has it -- no ``x``/``y``; recover coordinates from your
+        own data (``df.iloc`` or the ``customdata`` key, as
+        :meth:`selected_rows` does).
 
         Selection must be enabled on the plot: set ``dragmode="select"`` or
         ``"lasso"`` on the figure's layout, or leave the modebar visible so
@@ -4766,8 +4790,8 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     def selecting(self) -> Optional[pd.DataFrame]:
         """
         Like :meth:`selected`, but updates while the user drags the selection.
-        Debounced (250 ms) by default; see the ``rate_policy`` and
-        ``rate_delay`` parameters.
+        Opt in with ``listen_to=["selecting"]``. Debounced (250 ms) by
+        default; see the ``rate_policy`` and ``rate_delay`` parameters.
         """
         return cast(Optional["pd.DataFrame"], self._read_accessor("selecting"))
 
@@ -4813,6 +4837,8 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     def hover(self) -> Optional[pd.DataFrame]:
         """
         The points under the mouse, with the same columns as :meth:`clicked`.
+        Opt in with ``listen_to=["hover"]`` (hover events stream
+        continuously).
 
         Returns ``None`` until the mouse first crosses a point, and again when
         it leaves the points (plotly.js's ``plotly_unhover``), so check for
