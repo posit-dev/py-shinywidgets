@@ -3784,7 +3784,10 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
     def selected(self) -> List[int]:
         """
         The row indices (into the plot's `ColumnDataSource`) of the current
-        selection, from a tap, box, or lasso select tool.
+        selection, from a tap, box, or lasso select tool. A tap on a `line`
+        reports the row of the tapped segment's first point; a tap on a
+        `multi_line` reports its lines. (Box and lasso selects never hit
+        line glyphs -- that's bokeh's own behavior.)
 
         Returns ``[]`` while nothing is selected. Seeded with the plot's
         current selection at render, so a selection made before the first read

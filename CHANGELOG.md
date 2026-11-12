@@ -119,6 +119,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Error messages for objects that can't be rendered as widgets are clearer. Subclasses of supported types (e.g., `leafmap.deck.Map`) get their base package's guidance, unsupported builtins (e.g., a string) get the intended `TypeError` instead of an `AttributeError`, and messages no longer include huge object reprs. (#287)
 * Reading `.widget` or `.value` inside the output's own render function now raises an error instead of silently returning the previous render's widget or value.
 * With shinywidgets imported, constructing a `pydeck.Deck` outside a Shiny session (e.g., at module level) no longer raises "shinywidgets requires that all ipywidgets be constructed within an active Shiny session".
+* With `@render_bokeh`, tapping a `line` glyph now shows up in `selected()` (as the row of the tapped segment's first point) and `selected_rows()`; it previously read as an empty selection because bokeh reports line hits separately from point selections. (#472)
 
 ## [0.8.2] - 2026-10-15
 

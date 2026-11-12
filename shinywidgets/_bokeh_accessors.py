@@ -19,8 +19,15 @@ from ._accessors import AccessorSpec, Emit
 
 if TYPE_CHECKING:
     from bokeh.events import Event
-    from bokeh.models import ColumnDataSource
+    from bokeh.models import ColumnDataSource, Selection
     from jupyter_bokeh import BokehModel
+
+
+# The Selection properties that report what a hit test found. `indices`
+# covers point glyphs and (as line keys) MultiLine taps; `line_indices` is
+# all a Line tap writes; `multiline_indices` never carries a line `indices`
+# doesn't, but a bokehjs path that wrote it alone would be missed otherwise.
+SELECTION_ATTRS = ("indices", "line_indices", "multiline_indices")
 
 
 def attach_selected(widget: BokehModel, emit: Emit) -> Callable[[], None]:
@@ -28,16 +35,40 @@ def attach_selected(widget: BokehModel, emit: Emit) -> Callable[[], None]:
 
     # jupyter_bokeh runs property callbacks twice per browser change; the
     # accessor's input priority drops the repeat.
-    def on_change(attr: str, old: object, new: List[int]) -> None:
-        emit(list(new))
+    def on_change(attr: str, old: object, new: object) -> None:
+        emit(selected_indices(source.selected))
 
-    source.selected.on_change("indices", on_change)
+    for attr in SELECTION_ATTRS:
+        source.selected.on_change(attr, on_change)
     # A selection is retained on the Python-side document (see the module
     # docstring), so seed the accessor with the current one: a selection made
     # before this attach -- e.g. before the first read -- is not lost. An
     # empty selection seeds as [] (there is no "nothing selected yet" value).
-    emit(list(source.selected.indices))
-    return lambda: source.selected.remove_on_change("indices", on_change)
+    emit(selected_indices(source.selected))
+
+    def detach() -> None:
+        for attr in SELECTION_ATTRS:
+            source.selected.remove_on_change(attr, on_change)
+
+    return detach
+
+
+def selected_indices(selection: Selection) -> List[int]:
+    # A Line tap reports the hit segment in line_indices; a Line's source has
+    # one row per point, so the segment's position is the row of its first
+    # point. A MultiLine tap reports its lines in both indices and
+    # multiline_indices' keys, so dedup (order-preserving) to count each
+    # once. Caveat: bokehjs remaps indices to full-source positions under a
+    # CDSView filter but not line_indices, which stay view-space.
+    return list(
+        dict.fromkeys(
+            [
+                *selection.indices,
+                *selection.line_indices,
+                *selection.multiline_indices.keys(),
+            ]
+        )
+    )
 
 
 def event_attach(event: str) -> Callable[[BokehModel, Emit], Callable[[], None]]:

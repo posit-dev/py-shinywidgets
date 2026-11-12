@@ -24,6 +24,20 @@ def plot() -> Tuple[Any, ColumnDataSource]:
     return p, src
 
 
+def line_plot() -> Tuple[Any, ColumnDataSource]:
+    src = ColumnDataSource({"x": [1, 2, 3, 4], "y": [4, 5, 6, 7]})
+    p = figure()
+    p.line("x", "y", source=src)
+    return p, src
+
+
+def multi_line_plot() -> Tuple[Any, ColumnDataSource]:
+    src = ColumnDataSource({"xs": [[1, 2], [3, 4]], "ys": [[4, 5], [6, 7]]})
+    p = figure()
+    p.multi_line("xs", "ys", source=src)
+    return p, src
+
+
 def widget(session: Session, model: Any) -> BokehModel:
     with session_context(session):
         return BokehModel(model)
@@ -53,6 +67,81 @@ def test_selected_seeds_a_selection_made_before_attach(
     emitted: List[object] = []
     sb.SELECTED.attach(w, emitted.append)
     assert emitted == [[1, 2]]
+
+
+def test_selected_reports_a_tap_on_a_line(widget_session: Session) -> None:
+    # bokehjs reports a tap on a Line glyph as line_indices (the segment
+    # position, which doubles as the row of the segment's first point) --
+    # indices stays empty (#472)
+    p, src = line_plot()
+    w = widget(widget_session, p)
+    emitted: List[object] = []
+    detach = sb.SELECTED.attach(w, emitted.append)
+    assert emitted == [[]]
+    src.selected.line_indices = [2]
+    assert emitted == [[], [2]]
+    src.selected.line_indices = []
+    assert emitted == [[], [2], []]
+    detach()
+    src.selected.line_indices = [1]
+    assert emitted == [[], [2], []]
+
+
+def test_selected_seeds_a_line_selection_made_before_attach(
+    widget_session: Session,
+) -> None:
+    p, src = line_plot()
+    src.selected.line_indices = [2]
+    w = widget(widget_session, p)
+    emitted: List[object] = []
+    sb.SELECTED.attach(w, emitted.append)
+    assert emitted == [[2]]
+
+
+def test_selected_reports_a_tap_on_a_multi_line_once(widget_session: Session) -> None:
+    # bokehjs reports a MultiLine tap as both indices (which lines) and
+    # multiline_indices (line -> its points): the merge must count each
+    # selected line once
+    p, src = multi_line_plot()
+    w = widget(widget_session, p)
+    emitted: List[object] = []
+    sb.SELECTED.attach(w, emitted.append)
+    src.selected.multiline_indices = {1: [0]}
+    src.selected.indices = [1]
+    assert emitted[-1] == [1]
+    assert [1, 1] not in emitted
+
+
+def test_selected_rows_after_a_line_tap(widget_session: Session) -> None:
+    from shinywidgets import render_bokeh
+
+    p, src = line_plot()
+    w = widget(widget_session, p)
+    r = render_bokeh(rate_delay=0)
+    r._widget = w  # stands in for _render()
+    r._accessors.on_render(w)
+    src.selected.line_indices = [2]
+    assert r.selected() == [2]
+    assert r.selected_rows()["x"].tolist() == [3]
+
+
+def test_selected_rows_under_a_cds_view(widget_session: Session) -> None:
+    # bokehjs remaps hit results from view-subset to full-source positions
+    # (CDSView.convert_selection_from_subset) for every filter type, so the
+    # indices the browser writes already join against the full source
+    from bokeh.models import CDSView, IndexFilter
+    from shinywidgets import render_bokeh
+
+    src = ColumnDataSource({"x": [1, 2, 3, 4], "y": [4, 5, 6, 7]})
+    p = figure()
+    p.scatter("x", "y", source=src, view=CDSView(filter=IndexFilter([1, 3])))
+    w = widget(widget_session, p)
+    r = render_bokeh(rate_delay=0)
+    r._widget = w  # stands in for _render()
+    r._accessors.on_render(w)
+    # A tap on the second visible point arrives as full-source position 3
+    src.selected.indices = [3]
+    assert r.selected_rows()["x"].tolist() == [4]
 
 
 def test_selected_requires_a_single_source(widget_session: Session) -> None:
