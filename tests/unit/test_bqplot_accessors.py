@@ -146,6 +146,23 @@ def test_selected_seeds_empty_for_a_figure_with_no_marks(
     detach()
 
 
+def test_selected_publishes_when_a_mark_is_replaced_with_an_unselected_one(
+    widget_session: Session,
+) -> None:
+    # Both selections are None, so the dedup can't compare selections alone --
+    # the report carrying the new mark must still be published
+    from bqplot import Scatter
+
+    fig, sc = figure(widget_session)
+    emitted: list[object] = []
+    detach = sb.SELECTED.attach(fig, emitted.append)
+    with session_context(widget_session):
+        new_mark = Scatter(x=[1, 2], y=[3, 4])
+    fig.marks = [new_mark]
+    assert emitted[-1].marks == (new_mark,)
+    detach()
+
+
 def test_selected_publishes_empty_when_marks_are_removed(
     widget_session: Session,
 ) -> None:
@@ -293,6 +310,19 @@ def test_selected_rows_resolves_mark_against_the_reported_selection(
     assert r.selected_rows(DF, mark=a)["c"].tolist() == ["a"]
     s.fire()  # the reordered report
     assert r.selected_rows(DF, mark=a)["c"].tolist() == ["a"]
+
+
+def test_selected_rows_after_replacing_an_unselected_mark(
+    widget_session: Session,
+) -> None:
+    from bqplot import Scatter
+
+    r, fig = bqplot_render(widget_session)
+    with session_context(widget_session):
+        new_mark = Scatter(x=[1, 2, 3], y=[4, 5, 6])
+    fig.marks = [new_mark]
+    # Both selections are None; the report must still pick up the new mark
+    assert len(r.selected_rows(DF, mark=new_mark)) == 0
 
 
 def test_selected_rows_cancels_for_a_mark_awaiting_its_first_report(

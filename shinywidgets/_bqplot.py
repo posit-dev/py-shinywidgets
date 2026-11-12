@@ -139,13 +139,17 @@ def attach_selection(widget: BqplotFigure, emit: Emit) -> Callable[[], None]:
 
     def publish() -> None:
         # bqplot selectors re-send the same selection during a drag, and the
-        # helper's equality check can't compare arrays, so dedup here
+        # helper's equality check can't compare arrays, so dedup here. The
+        # marks must compare too: a swapped-in mark with the same selection
+        # (e.g. both None) is still a new alignment to report
         nonlocal last
         rep = report()
-        if last is not unset and selections_equal(
-            rep.selected, cast(SelectionReport, last).selected
-        ):
-            return
+        if last is not unset:
+            prev = cast(SelectionReport, last)
+            if rep.marks == prev.marks and selections_equal(
+                rep.selected, prev.selected
+            ):
+                return
         last = rep
         emit(rep)
 
