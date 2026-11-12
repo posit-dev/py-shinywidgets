@@ -43,7 +43,7 @@ def test_predicate_attach_seeds_and_emits(widget_session: Session) -> None:
     assert emitted[-1] == "((\"group\" = 'g1'))"
 
 
-def test_predicate_and_selected_accessors(widget_session: Session) -> None:
+def test_predicate_and_selected_rows_accessors(widget_session: Session) -> None:
     from shinywidgets import render_embedding_atlas
 
     w = atlas_widget(widget_session)
@@ -62,7 +62,7 @@ def test_predicate_and_selected_accessors(widget_session: Session) -> None:
     assert r.predicate() is None
 
 
-def test_selected_matches_predicate_through_the_debounce_window(
+def test_selected_rows_matches_predicate_through_the_debounce_window(
     widget_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import shinywidgets._accessors as acc
@@ -81,7 +81,7 @@ def test_selected_matches_predicate_through_the_debounce_window(
 
     w._predicate = "((\"group\" = 'g2'))"
     # Inside the debounce window, predicate() hasn't republished -- and
-    # selected() must describe that same (still unfiltered) state, not the
+    # selected_rows() must describe that same (still unfiltered) state, not the
     # widget's live filter
     assert r.predicate() is None
     assert len(r.selected_rows()) == 4
