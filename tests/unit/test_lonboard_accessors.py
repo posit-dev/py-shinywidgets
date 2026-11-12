@@ -306,6 +306,40 @@ def test_selected_rows_ignores_non_pickable_layers(
     assert r.selected_rows()["name"].tolist() == ["c"]
 
 
+def test_selected_rows_pickable_toggle_invalidates_readers(
+    widget_session: Session,
+) -> None:
+    # Toggling `pickable` at runtime changes which layers a pick can come
+    # from, so readers take a dependency on every layer's pickable trait:
+    # enabling a second pickable layer turns the default frame ambiguous
+    with session_context(widget_session):
+        pick = ScatterplotLayer.from_geopandas(GDF)
+        backdrop = ScatterplotLayer.from_geopandas(GDF, pickable=False)
+    m = geo_map(widget_session, pick, backdrop)
+    r = rows_render(widget_session, m)
+    pick.selected_index = 2  # row "c"
+
+    runs: List[List[str]] = []
+    errors: List[bool] = []
+    with session_context(widget_session):
+
+        @reactive.effect
+        def _() -> None:
+            try:
+                runs.append(r.selected_rows()["name"].tolist())
+            except ValueError:
+                errors.append(True)
+
+        flush()
+        assert runs == [["c"]] and errors == []
+        backdrop.pickable = True
+        flush()
+        assert errors == [True]
+        backdrop.pickable = False
+        flush()
+        assert runs == [["c"], ["c"]]
+
+
 def test_selected_rows_follows_layer_table_replacement(
     widget_session: Session,
 ) -> None:

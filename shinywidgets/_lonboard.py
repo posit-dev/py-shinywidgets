@@ -45,20 +45,23 @@ def pick_frame(
     it doesn't make the pick's origin ambiguous; a map whose pick could
     come from several pickable layers raises, since the pick has no layer
     identity. In a reactive context, reading also takes a dependency on the
-    map's layers and the layer's table, so an in-place table replacement on
-    a long-lived map re-reads the picked row.
+    map's layers, each layer's `pickable` trait, and the layer's table, so
+    in-place changes on a long-lived map re-read the picked row.
     """
-    layers = [
-        layer
-        for layer in widget.layers
-        if layer.has_trait("selected_index") and getattr(layer, "pickable", True)
-    ]
     if has_current_context():
         # Local import: ._shinywidgets imports ._render_widget, which
         # imports this module
         from ._shinywidgets import reactive_read
 
         reactive_read(widget, "layers")
+        for layer in widget.layers:
+            if layer.has_trait("pickable"):
+                reactive_read(layer, "pickable")
+    layers = [
+        layer
+        for layer in widget.layers
+        if layer.has_trait("selected_index") and getattr(layer, "pickable", True)
+    ]
     if len(layers) != 1:
         raise ValueError(
             f"`selected_rows()` can't default `df`: the map has {len(layers)} "
