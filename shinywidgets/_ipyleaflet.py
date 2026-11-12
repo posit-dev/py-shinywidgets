@@ -27,8 +27,10 @@ class NotIpyleaflet:
             f"`.{accessor}()` requires an ipyleaflet map, but the rendered "
             f"widget is a {type(widget).__name__} (leafmap's "
             f"{type(widget).__module__} backend). Read its state with "
-            "`reactive_read()` instead (see the renderer for that backend, "
-            "e.g. `render_maplibre`)."
+            "`.read()` on the output instead (e.g., `.read('view_state')` "
+            "for the maplibre backend) -- unless the trait shares an "
+            "accessor's name (`.read()` prefers the accessor), in which "
+            "case use `reactive_read()` on `.widget`."
         )
 
 
@@ -135,20 +137,44 @@ def draw_control_of(m: "ipyleaflet.Map") -> Optional["ipyleaflet.DrawControl"]:
     return None
 
 
+def report_sentinels(raw: Any) -> Any:
+    # Sentinel raws become read-time TypeErrors (attach runs during render,
+    # where a raise would break the output, so it can't raise itself)
+    if isinstance(raw, NotIpyleaflet):
+        raise TypeError(raw.message)
+    if raw is NO_DRAW_CONTROL:
+        raise TypeError(NO_DRAW_CONTROL_MESSAGE)
+    return raw
+
+
 BOUNDS = AccessorSpec(
     name="bounds",
     kind="state",
     attach=attach_trait("bounds", "bounds"),
+    payload=report_sentinels,
     # () until the browser first reports the viewport
     not_ready=lambda raw: raw == (),
 )
-ZOOM = AccessorSpec(name="zoom", kind="state", attach=attach_trait("zoom", "zoom"))
-CENTER = AccessorSpec(
-    name="center", kind="state", attach=attach_trait("center", "center")
+ZOOM = AccessorSpec(
+    name="zoom",
+    kind="state",
+    attach=attach_trait("zoom", "zoom"),
+    payload=report_sentinels,
 )
-CLICKED = AccessorSpec(name="clicked", kind="event", attach=attach_clicked)
+CENTER = AccessorSpec(
+    name="center",
+    kind="state",
+    attach=attach_trait("center", "center"),
+    payload=report_sentinels,
+)
+CLICKED = AccessorSpec(
+    name="clicked", kind="state", attach=attach_clicked, payload=report_sentinels
+)
 DRAWN_FEATURES = AccessorSpec(
-    name="drawn_features", kind="state", attach=attach_drawn_features
+    name="drawn_features",
+    kind="state",
+    attach=attach_drawn_features,
+    payload=report_sentinels,
 )
 
 IPYLEAFLET_ACCESSORS = (BOUNDS, ZOOM, CENTER, CLICKED, DRAWN_FEATURES)

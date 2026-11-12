@@ -1,21 +1,27 @@
 from __future__ import annotations
 
-import geoarrow.rust.core as gr
+import geopandas as gpd
 import numpy as np
-from arro3.core import Table
 from lonboard import Map, ScatterplotLayer
 from lonboard.view_state import MapViewState
+from shapely.geometry import Point
 from shiny import App, render, ui
 from shinywidgets import output_widget, render_lonboard
 
 # Five points in a tight cluster around (20, 40), so a center click picks one.
 # The distinct longitude/latitude magnitudes make a lat/lng swap fail loudly.
 coords = (20 + np.linspace(-0.02, 0.02, 5), 40 + np.linspace(-0.02, 0.02, 5))
-table = Table.from_arrays([gr.points(coords, crs="EPSG:4326")], names=["geometry"])
+names = ["alpha", "beta", "gamma", "delta", "epsilon"]
+gdf = gpd.GeoDataFrame(
+    {"name": names},
+    geometry=[Point(x, y) for x, y in zip(*coords)],
+    crs="EPSG:4326",
+)
 
 app_ui = ui.page_fillable(
     ui.output_text("view_state"),
     ui.output_text("picked"),
+    ui.output_text("rows"),
     ui.output_text("clicked"),
     ui.output_text("bbox"),
     output_widget("map"),
@@ -23,10 +29,10 @@ app_ui = ui.page_fillable(
 
 
 def server(input, output, session):
-    @render_lonboard
+    @render_lonboard()
     def map():
         return Map(
-            ScatterplotLayer(table=table, radius_min_pixels=15),
+            ScatterplotLayer.from_geopandas(gdf, radius_min_pixels=15),
             view_state=MapViewState(longitude=20, latitude=40, zoom=6),
         )
 
@@ -37,7 +43,12 @@ def server(input, output, session):
 
     @render.text
     def picked():
-        return str(map.selected_index())
+        return str(map.selected())
+
+    @render.text
+    def rows():
+        selected = map.selected_rows()
+        return f"{len(selected)} rows: {','.join(selected['name'])}"
 
     @render.text
     def clicked():

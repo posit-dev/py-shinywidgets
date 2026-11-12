@@ -42,7 +42,8 @@ The core challenge is establishing bidirectional communication between Python ip
 - Widget state is serialized with buffer handling for binary data (base64 encoded since Shiny doesn't support binary messages)
 - `SharedShinyComm` fans one process-global widget's messages out to a `ShinyComm` per session; shared widgets are never closed
 - Global state maps in `_shinywidgets.py`: `SESSIONS`, `COMM_MANAGERS`, `SESSION_WIDGET_ID_MAP`, `WIDGET_INSTANCE_MAP`, `SHARED_WIDGETS` (widgets built in `shared_lifetime()`)
-- `is_process_global()` decides which widgets every session may display (and no render or session may close); `open_shared_in()` opens one in a session, and runs at session start (`init_session()`), at render time (`open_process_global_widgets()`), and when a referencing widget's comm opens
+- A model the browser creates (`open_client_comm()`, e.g. pythreejs light targets, bqplot's toolbar PanZoom) is session-owned until a browser message names it; `claim_browser_created()` then makes it a `KEPT_WIDGETS` entry, so `close_render_widgets()` closes it once nothing live in the session references it. There is one sweep: give a new kind of widget an entry in it rather than a second collector
+- `is_process_global()` decides which widgets every session may display (and no render or session may close); `open_shared_in()` opens one in a session. A session gets one by reference: at render time (`open_process_global_widgets()`), when a referencing widget's comm opens, and when an update names it (`open_shared_references()`). Only widgets a frontend finds without a reference (`EAGERLY_SHARED_PACKAGES`, `_REGISTRY_SOURCES`) are opened at session start (`init_session()`), so a session is never sent a shared widget it doesn't show
 
 **JavaScript side (`js/src/output.ts`, `js/src/comm.ts`):**
 - `OutputManager` extends `@jupyter-widgets/html-manager`'s `HTMLManager` to render widgets
@@ -85,6 +86,7 @@ When adding a `@render_*` decorator for a third-party widget package, add a matc
 - Add a row to the README's extras table
 - Point the decorator's docstring and install-error messages at `pip install 'shinywidgets[<extra>]'`
 - Keep example-specific data packages in the example's own `requirements.txt` (which should use `shinywidgets[<extra>]`, not the raw widget package)
+- Accessor reads (`_read_accessor()`) don't depend on the render, so a re-render that reports an unchanged value doesn't re-run readers. An accessor method that computes its result from the widget itself (e.g. `visible_data()`, `camera()`) must read `self.widget`, not `self._widget`, so its readers follow a re-render
 
 ## Key Files
 

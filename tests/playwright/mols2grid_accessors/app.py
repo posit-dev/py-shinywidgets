@@ -25,7 +25,7 @@ def server(input, output, session):
 
     @render.text
     def selected():
-        return str(grid.selection())
+        return str(grid.selected())
 
     @render.text
     def clicked():

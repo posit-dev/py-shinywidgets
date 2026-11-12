@@ -11,6 +11,8 @@ from shiny.session import session_context
 from shiny.types import SilentException
 from shinywidgets import render_quak
 
+from tests.unit.conftest import reads_across_rerender
+
 pytest.importorskip("quak")
 from quak import Widget as QuakWidget  # noqa: E402
 
@@ -80,3 +82,15 @@ def test_data_runs_the_published_query_not_widget_data(
     # sql() always describe the same state
     with patch.object(QuakWidget, "data", side_effect=AssertionError):
         assert len(r.data().df()) == 3
+
+
+def test_data_follows_a_rerender_with_new_data(widget_session: Session) -> None:
+    # Both widgets name their table "df", so the new one seeds the same query
+    # and the accessor publishes nothing: readers have to follow the widget
+    with session_context(widget_session):
+        bigger = QuakWidget(pd.DataFrame({"x": [1, 2, 3, 4, 5]}))
+    r = render_quak(rate_delay=0)
+    seen = reads_across_rerender(
+        r, widget(widget_session), bigger, lambda: len(r.data().df())
+    )
+    assert seen == [3, 5]

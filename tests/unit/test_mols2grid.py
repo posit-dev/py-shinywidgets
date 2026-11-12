@@ -455,7 +455,7 @@ def test_stale_cached_selection_does_not_return_when_rows_stay_changed(
     assert json.loads(r.grid.widget.selection) == {}
 
 
-def test_selection_accessor_reads_parsed_selection(
+def test_selected_accessor_reads_parsed_selection(
     widget_session: Session,
 ) -> None:
     from shiny.types import SilentException
@@ -464,20 +464,20 @@ def test_selection_accessor_reads_parsed_selection(
     # Before the first render there is no value to read: the accessor
     # req()s, like reading a not-yet-rendered output in a reactive context
     with pytest.raises(SilentException):
-        r.selection()
+        r.selected()
 
     render(r, lambda: DF, widget_session)
     # Reading outside a reactive context returns the current value without
     # taking a dependency (matching .value/.widget)
-    assert r.selection() == {}
+    assert r.selected() == {}
 
     # The accessor parses the widget's repr-string trait into a dict
     assert isinstance(r.grid, MolGrid)
     r.grid.widget.selection = str({0: "CCO"})
-    assert r.selection() == {0: "CCO"}
+    assert r.selected() == {0: "CCO"}
 
 
-def test_selection_accessor_seeds_current_value_on_reattach(
+def test_selected_accessor_seeds_current_value_on_reattach(
     widget_session: Session,
 ) -> None:
     # A state accessor must publish the trait's current value at attach
@@ -487,15 +487,16 @@ def test_selection_accessor_seeds_current_value_on_reattach(
     render(r, lambda: DF, widget_session)
     assert isinstance(r.grid, MolGrid)
     r.grid.widget.selection = str({0: "CCO"})
-    assert r.selection() == {0: "CCO"}
+    assert r.selected() == {0: "CCO"}
 
     render(r, lambda: DF, widget_session)
     assert isinstance(r.grid, MolGrid)
+    # mols2grid 3 serializes the selection trait as JSON
     assert json.loads(r.grid.widget.selection) == {"0": "CCO"}
-    assert r.selection() == {0: "CCO"}
+    assert r.selected() == {0: "CCO"}
 
 
-def test_selection_accessor_reactively_invalidates(
+def test_selected_accessor_reactively_invalidates(
     widget_session: Session,
 ) -> None:
     from shiny import reactive
@@ -509,7 +510,7 @@ def test_selection_accessor_reactively_invalidates(
 
         @reactive.Effect
         def _() -> None:
-            reads.append(r.selection())
+            reads.append(r.selected())
 
         async def main() -> None:
             await reactive.flush()
@@ -517,7 +518,7 @@ def test_selection_accessor_reactively_invalidates(
             assert isinstance(r.grid, MolGrid)
             r.grid.widget.selection = str({0: "CCO"})
             await reactive.flush()
-            # The trait change must invalidate the dependency .selection took
+            # The trait change must invalidate the dependency .selected took
             assert reads == [{}, {0: "CCO"}]
 
         asyncio.run(main())
@@ -742,13 +743,42 @@ def test_grid_name_stable_within_and_unique_across_sessions(
     assert rw.grid_name() == "shiny"
 
 
+def test_clicked_needs_the_click_channel_enabled() -> None:
+    # The clicked() accessor only exists when the grid document was rendered
+    # with the click channel (clicks=True or a Python callback -- a JS
+    # callback runs in the browser and posts nothing to Python)
+    r = rw.render_mols2grid()
+    assert "clicked" not in r._accessors.names()
+    with pytest.raises(RuntimeError, match="clicks=True"):
+        r.clicked()
+
+    assert "clicked" in rw.render_mols2grid(clicks=True)._accessors.names()
+    assert (
+        "clicked" in rw.render_mols2grid(callback=lambda *args: None)._accessors.names()
+    )
+    assert (
+        "clicked"
+        not in rw.render_mols2grid(callback="console.log('clicked')")._accessors.names()
+    )
+
+
+def test_clicked_absent_when_clicks_true_meets_a_js_callback() -> None:
+    # clicks=True normally keeps clicked(), but with a JavaScript callback
+    # the document never posts to Python (clicks=True's injected no-op is
+    # skipped for any explicit callback), so there is no click channel
+    r = rw.render_mols2grid(clicks=True, callback="console.log('clicked')")
+    assert "clicked" not in r._accessors.names()
+    with pytest.raises(RuntimeError, match="clicks=True"):
+        r.clicked()
+
+
 def test_clicked_accessor_reads_clicked_row(widget_session: Session) -> None:
     # Clicking a molecule's image (not its checkbox) posts the whole row to
     # the callback_kwargs trait; .clicked() parses it reactively
     r = rw.render_mols2grid(clicks=True)
     render(r, lambda: DF, widget_session)
 
-    # An event accessor is None until the first click
+    # No click has happened yet
     assert r.clicked() is None
 
     assert isinstance(r.grid, MolGrid)
@@ -757,8 +787,9 @@ def test_clicked_accessor_reads_clicked_row(widget_session: Session) -> None:
     assert r.clicked() == row
 
 
-def test_clicked_accessor_resets_on_rerender(widget_session: Session) -> None:
-    # Events don't survive a re-render (a click refers to the grid as it was)
+def test_clicked_accessor_is_retained_on_rerender(widget_session: Session) -> None:
+    # A re-render keeps the last click (it still happened) until the user
+    # clicks the new grid
     r = rw.render_mols2grid(clicks=True)
     render(r, lambda: DF, widget_session)
     assert isinstance(r.grid, MolGrid)
@@ -766,7 +797,7 @@ def test_clicked_accessor_resets_on_rerender(widget_session: Session) -> None:
     assert r.clicked() is not None
 
     render(r, lambda: DF, widget_session)
-    assert r.clicked() is None
+    assert r.clicked()["ID"] == "ethanol"
 
 
 def test_clicked_accessor_reactively_invalidates(widget_session: Session) -> None:
@@ -851,7 +882,7 @@ def test_clicks_true_does_not_clobber_js_callback(
 def test_clicked_accessor_observes_before_first_read(
     widget_session: Session,
 ) -> None:
-    # The clicked accessor attaches eagerly at render (not on first read):
+    # The clicked accessor attaches at render (not on first read):
     # with no seeding, a click that lands before the first .clicked() read
     # would otherwise never be emitted, and the read would return None
     r = rw.render_mols2grid(clicks=True)
@@ -863,9 +894,10 @@ def test_clicked_accessor_observes_before_first_read(
 
 
 def test_none_render_does_not_raise(widget_session: Session) -> None:
-    # A render function returning None renders nothing; the eager clicked
-    # attach must not choke on the absent widget -- neither on a first render
-    # to None, nor on a re-render to None after a successful render
+    # A render function returning None renders nothing; the render-time
+    # clicked attach must not choke on the absent widget -- neither on a
+    # first render to None, nor on a re-render to None after a successful
+    # render
     r = rw.render_mols2grid(clicks=True)
     assert render(r, lambda: None, widget_session) is None
 
