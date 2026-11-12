@@ -14,7 +14,7 @@ rng = np.random.default_rng(0)
 x, y = rng.normal(size=N), rng.normal(size=N)
 
 
-@render_plotly(listen_to=["selected"])
+@render_plotly
 def plot():
     fig = go.Figure(go.Scattergl(x=x, y=y, mode="markers", marker=dict(size=2)))
     return fig.update_layout(dragmode="lasso")
