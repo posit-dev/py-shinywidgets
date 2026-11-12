@@ -10,7 +10,7 @@ ui.input_action_button("rerender", "rerender")
 
 # The simplest app: one plot, one reader that runs in the same flush as the
 # plot's first render (so before its comm opens)
-@render_plotly
+@render_plotly(listen_to=["selected"])
 def plot():
     input.rerender()
     fig = px.scatter(df, x="x", y="y", custom_data=[df.index])
