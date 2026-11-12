@@ -2,7 +2,9 @@
 Exceptions raised by widget callbacks while handling a browser message are
 caught by ipywidgets and logged to the `traitlets` logger, whose only handler is
 a NullHandler, so outside of IPython they would vanish. shinywidgets re-routes
-them to its own logger so they show up in the server's console.
+them to its own logger so they show up in the server's console, and shows the
+user a sticky error notification (deduplicated per widget), since the error
+usually means their output is blank.
 """
 
 from __future__ import annotations
@@ -208,3 +210,84 @@ def test_deferred_work_after_dispatch_keeps_traitlets_logging(
     [record] = caplog.records
     assert record.name == "traitlets"
     assert record.levelno == logging.WARNING
+
+
+def capture_notifications(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> List[Dict[str, Any]]:
+    sent: List[Dict[str, Any]] = []
+    monkeypatch.setattr(session, "_send_message_sync", sent.append)
+    return sent
+
+
+def failing_slider() -> ShinyComm:
+    def boom(change: object) -> None:
+        raise RuntimeError("observer failed")
+
+    slider = IntSlider(value=1)
+    slider.observe(boom, names="value")
+    comm = open_comm(slider)
+    comm.handle_msg(
+        client_msg(
+            comm.comm_id,
+            {"method": "update", "state": {"value": 5}, "buffer_paths": []},
+        )
+    )
+    return comm
+
+
+def test_observer_error_notifies_browser(
+    widget_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    sent = capture_notifications(widget_session, monkeypatch)
+    with session_context(widget_session), caplog.at_level(logging.WARNING):
+        failing_slider()
+
+    # Still logged server-side (the #304 behavior) ...
+    [record] = caplog.records
+    assert record.name == "shinywidgets"
+    # ... and now also shown to the user as a sticky error notification.
+    [note] = [m for m in sent if "notification" in m]
+    payload = note["notification"]["message"]
+    assert payload["type"] == "error"
+    assert payload["duration"] is None
+    assert "observer failed" in payload["html"]
+
+
+def test_observer_error_notifies_once_per_unique_message(
+    widget_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    sent = capture_notifications(widget_session, monkeypatch)
+    with session_context(widget_session), caplog.at_level(logging.WARNING):
+        comm = failing_slider()
+        comm.handle_msg(
+            client_msg(
+                comm.comm_id,
+                {"method": "update", "state": {"value": 6}, "buffer_paths": []},
+            )
+        )
+
+    # Both failures are logged ...
+    assert len(caplog.records) == 2
+    # ... but the user is notified only once.
+    assert len([m for m in sent if "notification" in m]) == 1
+
+
+def test_observer_error_notification_sanitized_when_app_sanitizes(
+    widget_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    widget_session.app.sanitize_errors = True
+    sent = capture_notifications(widget_session, monkeypatch)
+    with session_context(widget_session), caplog.at_level(logging.WARNING):
+        failing_slider()
+
+    [note] = [m for m in sent if "notification" in m]
+    assert note["notification"]["message"]["html"] == (
+        "An error has occurred. Check your logs or contact the app author for clarification."
+    )

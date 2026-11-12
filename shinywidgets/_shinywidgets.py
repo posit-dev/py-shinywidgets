@@ -323,9 +323,7 @@ def init_shiny_widget(w: Widget):
                 try:
                     close_widget(w)
                 except Exception:
-                    logger.exception(
-                        "Failed to close widget after comm-open failure"
-                    )
+                    logger.exception("Failed to close widget after comm-open failure")
             raise NotifyException(
                 f"Failed to display {type(w).__name__}: {e}",
                 sanitize=session.app.sanitize_errors,

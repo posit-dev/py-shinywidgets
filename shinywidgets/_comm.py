@@ -5,7 +5,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional
 
-from shiny import Session
+from shiny import Session, ui
 
 if TYPE_CHECKING:
     from ipywidgets import Widget
@@ -77,6 +77,8 @@ class ShinyComm:
         self.comm_manager = comm_manager
         self.target_name = target_name
         self.session = session
+        # Error messages already shown to the user (see notify_client_msg_error)
+        self._notified_errors: set[str] = set()
         self.open(data=data, metadata=metadata, buffers=buffers, **keys)
 
     @classmethod
@@ -96,6 +98,7 @@ class ShinyComm:
         comm.comm_manager = comm_manager
         comm.target_name = target_name
         comm.session = session
+        comm._notified_errors = set()
         comm._closed = False
         comm.awaiting_owner = True
         comm_manager.register_comm(comm)
@@ -242,6 +245,7 @@ class ShinyComm:
         """
         self._parent_header = msg.get("header")
         scope = ClientMsgScope()
+        scope.comm = self
         token = handling_client_msg.set(scope)
         traitlets_level_patch.patch()
         try:
@@ -501,6 +505,10 @@ class ClientMsgScope:
     """
 
     active = True
+    # The comm whose message is being dispatched: how a rerouted callback
+    # error finds the session (and per-widget dedup set) for its user-facing
+    # notification (see notify_client_msg_error).
+    comm: Optional["ShinyComm"] = None
 
 
 handling_client_msg: ContextVar[Optional[ClientMsgScope]] = ContextVar(
@@ -551,6 +559,37 @@ class TraitletsLevelPatch:
 traitlets_level_patch = TraitletsLevelPatch()
 
 
+# Cap per comm so a callback that fails with ever-changing messages can't
+# grow the dedup set (or flood the user with notifications) without bound.
+MAX_ERROR_NOTIFICATIONS_PER_COMM = 50
+
+
+def notify_client_msg_error(comm: ShinyComm, record: logging.LogRecord) -> None:
+    """
+    Show a sticky browser notification for a widget-callback error that
+    ipywidgets swallowed (see ClientMsgErrorFilter): the error already
+    reached the server log, but if the failing callback is part of how the
+    widget renders, the user's output is otherwise blank with no
+    explanation. Each unique message is shown once per widget; repeats only
+    go to the server log.
+    """
+    if record.exc_info is not None and record.exc_info[1] is not None:
+        msg = str(record.exc_info[1])
+    else:
+        msg = record.getMessage()
+    notified = comm._notified_errors
+    if msg in notified or len(notified) >= MAX_ERROR_NOTIFICATIONS_PER_COMM:
+        return
+    notified.add(msg)
+    session = comm.session
+    try:
+        if session.app.sanitize_errors:
+            msg = session.app.sanitize_error_msg
+        ui.notification_show(msg, type="error", duration=None, session=session)
+    except Exception:
+        logger.exception("Failed to show widget callback error in the browser")
+
+
 class ClientMsgErrorFilter(logging.Filter):
     """
     Outside IPython, ipywidgets catches exceptions raised by widget callbacks
@@ -560,6 +599,10 @@ class ClientMsgErrorFilter(logging.Filter):
     While handling a browser message, move such records to the `shinywidgets`
     logger (dropping the original, so a configured root handler doesn't show
     them twice). Everywhere else, e.g. in Jupyter, `traitlets` logging is untouched.
+
+    A rerouted record is also shown to the user as a sticky error
+    notification (deduplicated per widget, see notify_client_msg_error): the
+    failing callback often leaves their output blank with no explanation.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -567,6 +610,8 @@ class ClientMsgErrorFilter(logging.Filter):
         if scope is None or not scope.active or record.levelno < logging.WARNING:
             return True
         logger.error(record.getMessage(), exc_info=record.exc_info)
+        if scope.comm is not None:
+            notify_client_msg_error(scope.comm, record)
         return False
 
 
