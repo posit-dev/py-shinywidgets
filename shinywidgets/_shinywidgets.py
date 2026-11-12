@@ -553,12 +553,41 @@ def adopt_process_global(w: Widget, session: Session) -> None:
     open_shared_in(w, session)
 
 
+def ws_max_size() -> int:
+    """
+    The widget->server message size limit (bytes) the client enforces.
+
+    Matches uvicorn's default `ws_max_size`. Shiny doesn't expose the real
+    `--ws-max-size` value to sessions, so apps run with a raised limit
+    should set SHINYWIDGETS_WS_MAX_SIZE to match.
+    """
+    raw = os.environ.get("SHINYWIDGETS_WS_MAX_SIZE")
+    if raw is None:
+        return 16 * 1024 * 1024
+    try:
+        return int(raw)
+    except ValueError:
+        warnings.warn(
+            f"Ignoring invalid SHINYWIDGETS_WS_MAX_SIZE={raw!r} (not an int)"
+        )
+        return 16 * 1024 * 1024
+
+
 def init_session(session: Session) -> None:
     """Set up a (root) session the first time a widget is opened in it."""
     if session in SESSIONS:
         return
     SESSIONS.add(session)
     COMM_MANAGERS[session.id] = ShinyCommManager()
+
+    # Tell the client the message size limit to enforce before sending
+    # (dropping oversized messages instead of letting them kill the session)
+    async def _send_init() -> None:
+        await session.send_custom_message(
+            "shinywidgets_session_init", json.dumps({"ws_max_size": ws_max_size()})
+        )
+
+    session.on_flush(_send_init)
 
     # Somewhere inside ipywidgets, it makes requests for static files
     # under the publicPath set by the webpack.config.js file.
