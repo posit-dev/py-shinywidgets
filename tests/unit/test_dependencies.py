@@ -100,7 +100,7 @@ def test_ipyreact_subclass_in_app_module_resolves_dependencies(
 
     with session_context(widget_session):
         w = ConfettiButton()
-    assert jupyter_extension_destination(w) == "jupyter-react"
+    assert jupyter_extension_destination(w, "_view_module") == "jupyter-react"
     resolved = require_dependencies(w, widget_session)
     assert len(resolved) > 0
     assert resolved[0].name == "@widgetti/jupyter-react"
@@ -123,7 +123,7 @@ def test_ipyreact_subclass_in_another_package_resolves_dependencies(
 
     with session_context(widget_session):
         w = LibraryButton()
-    assert jupyter_extension_destination(w) == "jupyter-react"
+    assert jupyter_extension_destination(w, "_view_module") == "jupyter-react"
     resolved = require_dependencies(w, widget_session)
     assert len(resolved) > 0
     assert resolved[0].name == "@widgetti/jupyter-react"
@@ -150,6 +150,35 @@ def test_subclass_declaring_its_own_npm_module_is_not_served_the_base_bundle(
         assert require_dependencies(w, widget_session) == []
 
 
+@pytest.mark.parametrize(
+    ("attr", "value"),
+    [("_model_module", "my-own-model"), ("_view_module", None)],
+    ids=["model_only", "view_unset"],
+)
+def test_subclass_overriding_one_module_trait_keeps_the_inherited_bundle(
+    attr: str, value: str | None, ipyreact_guard: Any, widget_session: Session
+) -> None:
+    # Either way the browser still loads ipyreact's module (through the trait
+    # the subclass didn't override), so ipyreact's JavaScript is what's needed.
+    ipyreact = ipyreact_guard
+
+    PartialOverride = type(
+        "PartialOverride",
+        (ipyreact.ValueWidget,),
+        {
+            "__module__": "app",
+            "_esm": "export default { render: () => null }",
+            attr: Unicode(value, allow_none=True).tag(sync=True),
+        },
+    )
+
+    with session_context(widget_session):
+        w = PartialOverride()
+    resolved = require_dependencies(w, widget_session)
+    assert len(resolved) > 0
+    assert resolved[0].name == "@widgetti/jupyter-react"
+
+
 def test_anywidget_subclass_in_app_module_dependencies_unchanged(
     widget_session: Session,
 ) -> None:
@@ -165,7 +194,7 @@ def test_anywidget_subclass_in_app_module_dependencies_unchanged(
 
     with session_context(widget_session):
         w = MyWidget()
-    assert jupyter_extension_destination(w) == "anywidget"
+    assert jupyter_extension_destination(w, "_view_module") == "anywidget"
     resolved = require_dependencies(w, widget_session)
     assert len(resolved) > 0
     assert resolved[0].name == "anywidget"
@@ -232,7 +261,7 @@ def test_source_tree_widget_pkg_resolves_to_its_own_nbextension(
 
         with session_context(widget_session):
             w = srcpkg.widget.SourceTreeWidget()
-        assert jupyter_extension_destination(w) == dest
+        assert jupyter_extension_destination(w, "_model_module") == dest
     finally:
         for name in (
             n for n in list(sys.modules) if n == "srcpkg" or n.startswith("srcpkg.")
@@ -317,7 +346,9 @@ def test_require_dependencies_missing_extension_warns_and_returns_empty_list(
     session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
 
     monkeypatch.setattr(deps, "jupyter_extension_path", lambda name: None)
-    monkeypatch.setattr(deps, "jupyter_extension_destination", lambda w: "some-dest")
+    monkeypatch.setattr(
+        deps, "jupyter_extension_destination", lambda w, attr: "some-dest"
+    )
 
     with pytest.warns(
         UserWarning, match="Couldn't find local path to widget extension"
@@ -380,7 +411,9 @@ def test_require_dependencies_falls_back_when_view_module_is_none(
         looked_up.append(module_name)
 
     monkeypatch.setattr(deps, "jupyter_extension_path", spy)
-    monkeypatch.setattr(deps, "jupyter_extension_destination", lambda w: "some-dest")
+    monkeypatch.setattr(
+        deps, "jupyter_extension_destination", lambda w, attr: "some-dest"
+    )
 
     assert require_dependencies(w, session, warn_if_missing=False) == []
     assert looked_up[0] == "jupyter-vue"

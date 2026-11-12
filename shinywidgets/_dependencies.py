@@ -140,10 +140,10 @@ def require_dependencies(
     module_attrs = ["_model_module"]
     if isinstance(w, DOMWidget):
         module_attrs.insert(0, "_view_module")
-    module_name: str = next(
-        (name for attr in module_attrs if (name := getattr(w, attr, None))),
-        widget_pkg(w),
+    module_attr = next(
+        (attr for attr in module_attrs if getattr(w, attr, None)), "_model_module"
     )
+    module_name: str = getattr(w, module_attr, None) or widget_pkg(w)
 
     # ipywidgets (i.e., @jupyter-widgets) come pre-bundled in libembed-amd.js
     # # (i.e., _core() dependencies)
@@ -156,7 +156,9 @@ def require_dependencies(
     # which is why we only use look for it if the npm package isn't installed
     module_dir = jupyter_extension_path(module_name)
     if module_dir is None:
-        module_dir = jupyter_extension_path(jupyter_extension_destination(w))
+        module_dir = jupyter_extension_path(
+            jupyter_extension_destination(w, module_attr)
+        )
         if module_dir is None:
             if warn_if_missing:
                 warnings.warn(
@@ -944,7 +946,11 @@ def jupyter_extension_path(module_name: str) -> Optional[str]:
 # module isn't always the one that ships it. An example is plotly's FigureWidget()
 # pointing to the plotly package, but the actual dependencies actually live in a
 # separate jupyterlab_plotly package.
-def jupyter_extension_destination(w: Widget) -> str:
+def jupyter_extension_destination(w: Widget, module_attr: str) -> str:
+    """
+    The nbextension directory of the package that ships the npm module `w`
+    names in its `module_attr` trait ("_view_module" or "_model_module").
+    """
     # A widget's JavaScript ships with the package whose class declares its npm
     # module, which isn't necessarily the widget's own package:
     # `class ConfettiButton(ipyreact.ValueWidget)` in app.py (or in a component
@@ -953,11 +959,7 @@ def jupyter_extension_destination(w: Widget) -> str:
     # can't answer this: it names the app or library, and its other callers
     # rely on that.)
     owner = next(
-        (
-            cls
-            for cls in type(w).__mro__
-            if "_view_module" in vars(cls) or "_model_module" in vars(cls)
-        ),
+        (cls for cls in type(w).__mro__ if module_attr in vars(cls)),
         type(w),
     )
     pkg = widget_pkg(owner)
