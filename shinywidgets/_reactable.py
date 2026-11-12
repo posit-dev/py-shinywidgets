@@ -64,8 +64,8 @@ def state_attach(key: str, none_as: object = _USE_NATIVE) -> Attach:
     return attach
 
 
-SELECTED_ROWS = AccessorSpec(
-    name="selected_rows",
+SELECTED = AccessorSpec(
+    name="selected",
     kind="state",
     attach=state_attach("selected"),
     not_ready=unreported,
@@ -97,4 +97,4 @@ SEARCH = AccessorSpec(
     not_ready=unreported,
 )
 
-REACTABLE_ACCESSORS = (SELECTED_ROWS, PAGE, SORTED, FILTERED, SEARCH)
+REACTABLE_ACCESSORS = (SELECTED, PAGE, SORTED, FILTERED, SEARCH)

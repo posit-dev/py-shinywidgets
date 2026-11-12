@@ -52,11 +52,11 @@ def test_predicate_and_selected_accessors(widget_session: Session) -> None:
     r._accessors.on_render(w)
     assert r.predicate() is None
     # No filter means all rows (library semantics), with __row_index__
-    assert len(r.selected()) == 4
-    assert "__row_index__" in r.selected().columns
+    assert len(r.selected_rows()) == 4
+    assert "__row_index__" in r.selected_rows().columns
     w._predicate = "((\"group\" = 'g2'))"
     assert r.predicate() == "((\"group\" = 'g2'))"
-    assert r.selected()["text"].tolist() == ["c", "d"]
+    assert r.selected_rows()["text"].tolist() == ["c", "d"]
     # A re-render starts the new widget at no-filter
     r._accessors.on_render(atlas_widget(widget_session))
     assert r.predicate() is None
@@ -77,19 +77,19 @@ def test_selected_matches_predicate_through_the_debounce_window(
     r._widget = w  # stands in for _render()
     r._accessors.on_render(w)
     assert r.predicate() is None
-    assert len(r.selected()) == 4
+    assert len(r.selected_rows()) == 4
 
     w._predicate = "((\"group\" = 'g2'))"
     # Inside the debounce window, predicate() hasn't republished -- and
     # selected() must describe that same (still unfiltered) state, not the
     # widget's live filter
     assert r.predicate() is None
-    assert len(r.selected()) == 4
+    assert len(r.selected_rows()) == 4
 
     # Once the debounce settles, both describe the new filter
     s.fire()
     assert r.predicate() == "((\"group\" = 'g2'))"
-    assert r.selected()["text"].tolist() == ["c", "d"]
+    assert r.selected_rows()["text"].tolist() == ["c", "d"]
 
 
 def test_rows_for_predicate_fails_loudly_without_widget_internals() -> None:
@@ -112,6 +112,6 @@ def test_selection_follows_a_rerender_with_new_data(widget_session: Session) -> 
         )
     r = render_embedding_atlas(rate_delay=0)
     seen = reads_across_rerender(
-        r, atlas_widget(widget_session), smaller, lambda: len(r.selected())
+        r, atlas_widget(widget_session), smaller, lambda: len(r.selected_rows())
     )
     assert seen == [4, 2]
