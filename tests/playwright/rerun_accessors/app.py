@@ -17,6 +17,7 @@ app_ui = ui.page_fillable(
         output_widget("viewer"),
         height="500px",
     ),
+    ui.input_action_button("rerender", "Re-render"),
     ui.output_text_verbatim("selection"),
 )
 
@@ -24,13 +25,14 @@ app_ui = ui.page_fillable(
 def server(input, output, session):
     @render_rerun
     def viewer():
+        input.rerender()
         rec = rr.RecordingStream(application_id="test_rerun_accessors")
         rec.log("points", rr.Points3D([[0, 0, 0], [1, 1, 1], [2, 0, 2]]))
         return Viewer(recording=rec)
 
     @render.text
     def selection():
-        evt = viewer.selection()
+        evt = viewer.selected()
         if evt is None:
             return "(waiting)"
         return "[" + ", ".join(type(item).__name__ for item in evt.items) + "]"

@@ -8,7 +8,7 @@ modules by name. ipyreact treats them as process-wide (it keeps them in
 `ipyreact.module._module_widgets` and `ipyreact.importmap._import_map_widget`),
 and they're usually constructed at import time (e.g. reactable-py calls
 `define_module()` at module level), so they can't belong to one session:
-shinywidgets mirrors them into every session, like shared_lifetime() widgets.
+shinywidgets opens them in every session.
 """
 
 from __future__ import annotations

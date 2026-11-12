@@ -3,6 +3,10 @@ The browser can open a comm of its own (a widget's JavaScript creating a model,
 e.g. bqplot's toolbar PanZoom or pythreejs light targets). Such a comm_open
 constructs the Python counterpart through ipywidgets' own handler, so trait
 references to the model resolve, and a comm_close from the browser closes it.
+
+A browser-created widget takes the lifetime of whatever the browser attaches it
+to: once a browser message names it, it closes when nothing live in the session
+references it anymore.
 """
 
 from __future__ import annotations
@@ -15,11 +19,16 @@ from typing import Any, Dict, List, cast
 import ipywidgets
 import pytest
 import shinywidgets._shinywidgets as sw
-from shiny import Session, reactive
+from shiny import App, Session, reactive, ui
+from shiny._connection import MockConnection
+from shiny.reactive._core import Context
 from shiny.session import session_context
+from shinywidgets import session_lifetime, shared_lifetime
 from shinywidgets._comm import ShinyComm
-from shinywidgets._render_widget_base import is_closed_widget
+from shinywidgets._render_widget_base import WidgetRenderContext, is_closed_widget
 from shinywidgets._widget_registry import WIDGET_INSTANCE_MAP
+
+from tests.unit.conftest import widget_test_server
 
 CONTROLS = ipywidgets._version.__jupyter_widgets_controls_version__
 PROTOCOL = ipywidgets._version.__protocol_version__
@@ -94,6 +103,16 @@ def primed(widget_session: Session) -> Session:
         ipywidgets.IntSlider()
     flush()
     return widget_session
+
+
+@pytest.fixture
+def other_session() -> Any:
+    """A second session, for cross-session cleanup tests."""
+    session = App(ui.page_fluid(), widget_test_server)._create_session(MockConnection())
+    try:
+        yield session
+    finally:
+        asyncio.get_event_loop().run_until_complete(session.close())
 
 
 @pytest.fixture
@@ -254,3 +273,268 @@ def test_comm_open_puts_buffers_into_state(primed: Session) -> None:
     with session_context(primed):
         sw.handle_client_comm_msg(primed, msg)
     assert bytes(cast(ipywidgets.Image, WIDGET_INSTANCE_MAP["img-1"]).value) == png
+
+
+def open_browser_model(
+    session: Session,
+    comm_id: str,
+    model: str = "IntSliderModel",
+    view: str = "IntSliderView",
+    **traits: Any,
+) -> ipywidgets.Widget:
+    """Simulate the browser creating a model (e.g. pythreejs's light target)."""
+    with session_context(session):
+        sw.handle_client_comm_msg(
+            session, open_msg(comm_id, model_state(model, view, **traits))
+        )
+    return cast(ipywidgets.Widget, WIDGET_INSTANCE_MAP[comm_id])
+
+
+def name_from_browser(session: Session, referrer_id: str, *model_ids: str) -> None:
+    """
+    Simulate the browser pointing a container's `children` at models, the way
+    pythreejs's light sends an update naming the target/shadow it just created.
+    """
+    children = [f"IPY_MODEL_{model_id}" for model_id in model_ids]
+    with session_context(session):
+        sw.handle_client_comm_msg(
+            session, update_msg(referrer_id, {"children": children})
+        )
+
+
+def render_owned_box(session: Session) -> tuple[Context, ipywidgets.VBox]:
+    """A container owned by a render (like the light), and that render's Context."""
+    with session_context(session):
+        ctx = Context()
+        with ctx(), WidgetRenderContext():
+            box = ipywidgets.VBox()
+        flush()
+    return ctx, box
+
+
+def session_owned_box(session: Session) -> ipywidgets.VBox:
+    with session_context(session), session_lifetime():
+        box = ipywidgets.VBox()
+    flush()
+    return box
+
+
+def invalidate(session: Session, ctx: Context) -> None:
+    with session_context(session):
+        ctx.invalidate()
+        flush()
+
+
+def test_browser_created_model_closes_with_the_render_that_named_it(
+    primed: Session,
+) -> None:
+    """
+    pythreejs's default DirectionalLight target/shadow: one set used to leak
+    per re-render, living until the session ended.
+    """
+    ctx, parent = render_owned_box(primed)
+    target = open_browser_model(primed, "target-1")
+    name_from_browser(primed, parent.model_id, "target-1")
+    assert parent.children == (target,)
+
+    invalidate(primed, ctx)
+
+    assert is_closed_widget(parent)
+    assert is_closed_widget(target)
+    assert "target-1" not in WIDGET_INSTANCE_MAP
+
+
+def test_browser_created_model_named_by_an_already_closed_widget_is_closed(
+    primed: Session,
+) -> None:
+    """
+    During rapid re-renders the browser is still creating a render's models
+    when the server retires that render, so the update naming them arrives
+    after its widget closed. Nothing can ever reference them; close them then.
+    """
+    ctx, parent = render_owned_box(primed)
+    parent_id = parent.model_id
+    invalidate(primed, ctx)
+    assert is_closed_widget(parent)
+
+    target = open_browser_model(primed, "target-late")
+    name_from_browser(primed, parent_id, "target-late")
+
+    assert is_closed_widget(target)
+    assert "target-late" not in WIDGET_INSTANCE_MAP
+
+
+def test_models_named_in_a_browser_comm_open_close_with_their_referrer(
+    primed: Session,
+) -> None:
+    """
+    A browser-created model can name another in its own comm_open (pythreejs's
+    light shadow names its camera): the whole chain closes together.
+    """
+    ctx, parent = render_owned_box(primed)
+    camera = open_browser_model(primed, "camera-1")
+    shadow = open_browser_model(
+        primed, "shadow-1", "VBoxModel", "VBoxView", children=["IPY_MODEL_camera-1"]
+    )
+    name_from_browser(primed, parent.model_id, "shadow-1")
+
+    invalidate(primed, ctx)
+
+    assert is_closed_widget(shadow)
+    assert is_closed_widget(camera)
+
+
+def test_browser_created_model_nothing_has_named_yet_survives_invalidation(
+    primed: Session,
+) -> None:
+    """
+    The update attaching a new model to its parent is a separate message, so
+    an invalidation can land in between: the model isn't garbage yet.
+    """
+    ctx, _ = render_owned_box(primed)
+    target = open_browser_model(primed, "target-unnamed")
+
+    invalidate(primed, ctx)
+
+    assert not is_closed_widget(target)
+
+
+def test_browser_created_model_survives_while_a_live_widget_references_it(
+    primed: Session,
+) -> None:
+    keeper = session_owned_box(primed)
+    ctx, parent = render_owned_box(primed)
+    target = open_browser_model(primed, "target-2")
+    name_from_browser(primed, parent.model_id, "target-2")
+    keeper.children = (target,)
+
+    invalidate(primed, ctx)
+
+    assert is_closed_widget(parent)
+    assert not is_closed_widget(target)
+
+
+def test_browser_created_model_closes_once_its_last_live_reference_is_dropped(
+    primed: Session,
+) -> None:
+    keeper = session_owned_box(primed)
+    ctx, parent = render_owned_box(primed)
+    target = open_browser_model(primed, "target-3")
+    name_from_browser(primed, parent.model_id, "target-3")
+    keeper.children = (target,)
+    invalidate(primed, ctx)
+    assert not is_closed_widget(target)
+
+    keeper.children = ()
+    unrelated_ctx, _ = render_owned_box(primed)
+    invalidate(primed, unrelated_ctx)
+
+    assert is_closed_widget(target)
+
+
+def test_naming_a_browser_created_model_again_registers_it_once(
+    primed: Session,
+) -> None:
+    """Otherwise every repeat of the update would grow the session's kept list."""
+    _, parent = render_owned_box(primed)
+    target = open_browser_model(primed, "target-twice")
+
+    name_from_browser(primed, parent.model_id, "target-twice")
+    name_from_browser(primed, parent.model_id, "target-twice")
+
+    kept = sw.KEPT_WIDGETS.get(primed.id, [])
+    assert [w for w in kept if w is target] == [target]
+
+
+def test_model_the_browser_closes_is_not_held_until_the_next_sweep(
+    primed: Session,
+) -> None:
+    """
+    bqplot's PanZoom is created each time it's switched on and closed by the
+    browser on reset; without a re-render in between, every closed one would
+    stay referenced here until the session ended.
+    """
+    _, parent = render_owned_box(primed)
+    target = open_browser_model(primed, "target-reset")
+    name_from_browser(primed, parent.model_id, "target-reset")
+
+    with session_context(primed):
+        sw.handle_client_comm_msg(primed, close_msg("target-reset"))
+
+    assert is_closed_widget(target)
+    assert not any(w is target for w in sw.KEPT_WIDGETS.get(primed.id, []))
+
+
+def test_python_created_widget_the_browser_names_keeps_its_own_lifetime(
+    primed: Session,
+) -> None:
+    """Only browser-created models take their lifetime from what names them."""
+    with session_context(primed), session_lifetime():
+        slider = ipywidgets.IntSlider()
+    flush()
+    ctx, parent = render_owned_box(primed)
+    name_from_browser(primed, parent.model_id, slider.model_id)
+    assert parent.children == (slider,)
+
+    invalidate(primed, ctx)
+
+    assert is_closed_widget(parent)
+    assert not is_closed_widget(slider)
+
+
+def test_another_sessions_browser_cannot_close_a_browser_created_model(
+    primed: Session, other_session: Session
+) -> None:
+    target = open_browser_model(primed, "target-x")
+    ctx, parent = render_owned_box(other_session)
+    name_from_browser(other_session, parent.model_id, "target-x")
+
+    invalidate(other_session, ctx)
+
+    assert is_closed_widget(parent)
+    assert not is_closed_widget(target)
+
+
+def test_browser_created_model_of_a_shared_widget_survives_invalidation(
+    primed: Session, shared_state: None
+) -> None:
+    """
+    A shared widget is never closed and isn't one of the session's own
+    widgets, so the sweep can't see its references: what it names must not
+    become a sweep candidate.
+    """
+    with shared_lifetime():
+        scene = ipywidgets.VBox()
+    with session_context(primed):
+        sw.open_shared_in(scene, primed)
+    target = open_browser_model(primed, "target-shared")
+    name_from_browser(primed, scene.model_id, "target-shared")
+    assert scene.children == (target,)
+
+    ctx, _ = render_owned_box(primed)
+    invalidate(primed, ctx)
+
+    assert not is_closed_widget(target)
+
+
+def test_model_named_where_the_sweep_cannot_follow_keeps_session_lifetime(
+    primed: Session,
+) -> None:
+    """
+    The sweep finds references through widget-valued traits. A name the
+    referrer holds any other way (here, as a plain string) is invisible to
+    it, so the model must not become a candidate it would wrongly close.
+    """
+    keeper = session_owned_box(primed)
+    target = open_browser_model(primed, "target-str")
+    with session_context(primed):
+        sw.handle_client_comm_msg(
+            primed,
+            update_msg(keeper.model_id, {"_dom_classes": ["IPY_MODEL_target-str"]}),
+        )
+    assert keeper._dom_classes == ("IPY_MODEL_target-str",)
+
+    ctx, _ = render_owned_box(primed)
+    invalidate(primed, ctx)
+
+    assert not is_closed_widget(target)

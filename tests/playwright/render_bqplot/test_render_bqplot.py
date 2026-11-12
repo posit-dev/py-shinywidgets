@@ -287,18 +287,19 @@ def test_toolbar_figure_rerenders_cleanly(page: Page, local_app_toolbar) -> None
     expect(page.locator("#interaction")).to_have_text("NoneType")
     expect(page.locator("#fig .bqplot svg").first).to_be_visible()
     assert comm_closes(page) == 0
-    # Each PanZoom active at rerender stays until session end, keeping its two
-    # old scales alive. This test activates it only once.
-    assert model_names(page).count("PanZoomModel") == 1
+    # The browser-created PanZoom was referenced only by the old figure's
+    # toolbar, so it closes with the figure (it used to leak until session
+    # end, keeping its two old scales alive too).
+    assert model_names(page).count("PanZoomModel") == 0
     after_first = len(model_names(page))
-    assert after_first == before + 2
+    assert after_first == before - 1
 
     page.click("#rerender")
     expect(page.locator("#interaction")).to_have_text("NoneType")
     expect(page.locator("#fig .bqplot svg").first).to_be_visible()
     page.wait_for_timeout(500)
     assert comm_closes(page) == 0
-    assert model_names(page).count("PanZoomModel") == 1
+    assert model_names(page).count("PanZoomModel") == 0
     assert len(model_names(page)) == after_first
 
     assert_no_unexpected_errors(errors, failed_requests)

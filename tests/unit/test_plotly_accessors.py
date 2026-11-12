@@ -174,6 +174,79 @@ def test_selected_rows_requires_customdata() -> None:
         sp.select_rows(pts, pd.DataFrame({"a": [1]}), key=None)
 
 
+def test_hover_binds_hover_and_unhover_and_emits_points() -> None:
+    w, emitted, _ = attach(sp.HOVER)
+    assert w.sent == [
+        {"shinywidgets": "bind", "events": ["plotly_hover", "plotly_unhover"]}
+    ]
+    w.message(event("plotly_hover", points=CLICK_POINTS))
+    assert emitted == [CLICK_POINTS]
+
+
+def test_hover_cleared_by_unhover_and_debounced() -> None:
+    assert sp.HOVER.rate_policy == "debounce"
+    w, emitted, _ = attach(sp.HOVER)
+    w.message(event("plotly_unhover"))
+    assert emitted == [None]
+
+
+def test_double_clicked_is_a_republishing_pulse() -> None:
+    assert sp.DOUBLE_CLICKED.priority == "event"
+    w, emitted, _ = attach(sp.DOUBLE_CLICKED)
+    assert w.sent == [{"shinywidgets": "bind", "events": ["plotly_doubleclick"]}]
+    w.message(event("plotly_doubleclick"))
+    w.message(event("plotly_doubleclick"))
+    assert emitted == [True, True]
+
+
+LEGEND_TRACES = [
+    {"trace_index": 2, "name": "c", "legendgroup": "g1"},
+    {"trace_index": 0, "name": "a", "legendgroup": "g1"},
+]
+
+VISIBLE_TRACES = [
+    {"trace_index": 0, "name": "a", "visible": True},
+    {"trace_index": 1, "name": "b", "visible": False},
+]
+
+
+def test_legend_clicked_emits_minimal_traces_and_republishes() -> None:
+    assert sp.LEGEND_CLICKED.priority == "event"
+    w, emitted, _ = attach(sp.LEGEND_CLICKED)
+    assert w.sent == [{"shinywidgets": "bind", "events": ["plotly_legendclick"]}]
+    msg = event("plotly_legendclick", legend={"traces": LEGEND_TRACES})
+    w.message(msg)
+    w.message(msg)
+    assert emitted == [LEGEND_TRACES, LEGEND_TRACES]
+
+
+def test_legend_clicked_skips_messages_without_legend_data() -> None:
+    w, emitted, _ = attach(sp.LEGEND_CLICKED)
+    w.message(event("plotly_legendclick"))
+    assert emitted == []
+
+
+def test_visible_traces_binds_restyle_update_and_redraw() -> None:
+    w, emitted, _ = attach(sp.VISIBLE_TRACES)
+    assert w.sent == [
+        {
+            "shinywidgets": "bind",
+            "events": ["plotly_restyle", "plotly_update", "plotly_redraw"],
+        }
+    ]
+    w.message(event("plotly_restyle", traces=VISIBLE_TRACES))
+    assert emitted == [VISIBLE_TRACES]
+    # Plotly.update (plotly.py's batch_update) emits plotly_update instead
+    w.message(event("plotly_update", traces=VISIBLE_TRACES))
+    assert emitted == [VISIBLE_TRACES, VISIBLE_TRACES]
+    # add/delete/moveTraces redraw, emitting plotly_redraw
+    w.message(event("plotly_redraw", traces=VISIBLE_TRACES))
+    assert emitted == [VISIBLE_TRACES] * 3
+    # A restyle message without trace visibility (shouldn't happen) is skipped
+    w.message(event("plotly_restyle"))
+    assert emitted == [VISIBLE_TRACES] * 3
+
+
 def test_specs_have_expected_names() -> None:
     names: List[str] = [s.name for s in sp.PLOTLY_ACCESSORS]
     assert names == [
@@ -183,6 +256,10 @@ def test_specs_have_expected_names() -> None:
         "brushed",
         "brushing",
         "relayout",
+        "hover",
+        "double_clicked",
+        "legend_clicked",
+        "visible_traces",
     ]
 
 
@@ -212,6 +289,49 @@ def test_render_plotly_selected_rows() -> None:
     assert r.selected_rows(df)["a"].tolist() == [10, 30]
 
 
+def test_render_plotly_hover_returns_points_frame() -> None:
+    # rate_delay=0: the debounce is pinned separately on the spec, and the
+    # limiter would need a running event loop here
+    from shinywidgets import render_plotly
+
+    r = render_plotly(rate_delay=0)
+    w = FakeFigureWidget()
+    r._accessors.on_render(w)
+    assert r.hover() is None
+    w.message(event("plotly_hover", points=CLICK_POINTS))
+    hovered = r.hover()
+    assert isinstance(hovered, pd.DataFrame)
+    assert hovered["y"].tolist() == [30, 10]
+    w.message(event("plotly_unhover"))
+    assert r.hover() is None
+
+
+def test_render_plotly_double_clicked_pulses() -> None:
+    r, w = rendered()
+    assert r.double_clicked() is None
+    w.message(event("plotly_doubleclick"))
+    assert r.double_clicked() is True
+
+
+def test_render_plotly_legend_clicked_returns_frame() -> None:
+    r, w = rendered()
+    assert r.legend_clicked() is None
+    w.message(event("plotly_legendclick", legend={"traces": LEGEND_TRACES}))
+    clicked = r.legend_clicked()
+    assert isinstance(clicked, pd.DataFrame)
+    assert list(clicked.columns) == ["trace_index", "name", "legendgroup"]
+    assert clicked["trace_index"].tolist() == [2, 0]
+
+
+def test_render_plotly_visible_traces_returns_frame() -> None:
+    r, w = rendered()
+    assert r.visible_traces() is None
+    w.message(event("plotly_restyle", traces=VISIBLE_TRACES))
+    visible = r.visible_traces()
+    assert isinstance(visible, pd.DataFrame)
+    assert visible["visible"].tolist() == [True, False]
+
+
 def test_render_plotly_brushed_and_relayout() -> None:
     r, w = rendered()
     assert r.brushed() is None and r.relayout() is None
@@ -221,18 +341,31 @@ def test_render_plotly_brushed_and_relayout() -> None:
     assert r.relayout() == {"xaxis.autorange": True}
 
 
-def test_selected_and_brushed_are_state_attached_at_render() -> None:
-    # A selection is state on the graph div, so these attach at render (and
-    # the browser seeds the current selection on bind): a lasso drawn before
-    # the first read is not lost. Clicked/streaming accessors stay events.
+def test_all_accessors_are_retained_and_bind_at_render() -> None:
+    # Every accessor is retained last-interaction state and binds at render:
+    # the browser only reports an event with a listener, and an interaction
+    # made before the first read is not lost.
     r, w = rendered()
-    assert sp.SELECTED.kind == "state" and sp.BRUSHED.kind == "state"
-    assert sp.CLICKED.kind == "event" and sp.RELAYOUT.kind == "event"
-    assert (
-        w.sent
-        == [{"shinywidgets": "bind", "events": ["plotly_selected", "plotly_deselect"]}]
-        * 2
-    )  # selected and brushed
+    for spec in sp.PLOTLY_ACCESSORS:
+        assert spec.kind == "state", spec.name
+    assert w.sent == [
+        {
+            "shinywidgets": "bind",
+            "events": ["plotly_click", "plotly_doubleclick", "plotly_deselect"],
+        },
+        {"shinywidgets": "bind", "events": ["plotly_selected", "plotly_deselect"]},
+        {"shinywidgets": "bind", "events": ["plotly_selecting", "plotly_deselect"]},
+        {"shinywidgets": "bind", "events": ["plotly_selected", "plotly_deselect"]},
+        {"shinywidgets": "bind", "events": ["plotly_selecting", "plotly_deselect"]},
+        {"shinywidgets": "bind", "events": ["plotly_relayout"]},
+        {"shinywidgets": "bind", "events": ["plotly_hover", "plotly_unhover"]},
+        {"shinywidgets": "bind", "events": ["plotly_doubleclick"]},
+        {"shinywidgets": "bind", "events": ["plotly_legendclick"]},
+        {
+            "shinywidgets": "bind",
+            "events": ["plotly_restyle", "plotly_update", "plotly_redraw"],
+        },
+    ]
 
 
 def test_selection_reported_before_first_read_survives() -> None:
@@ -284,3 +417,10 @@ def test_selected_rows_matches_pandas_index_labels() -> None:
     labelled = pd.DataFrame({"a": [1, 2]}, index=["p", "q"])
     pts = [{"trace_index": 0, "point_index": 0, "x": 0, "y": 0, "customdata": ["q"]}]
     assert sp.select_rows(pts, labelled, key=None)["a"].tolist() == [2]
+
+
+def test_event_origin_accessors_are_retained() -> None:
+    from shinywidgets._plotly import BRUSHING, CLICKED, RELAYOUT, SELECTING
+
+    for spec in (CLICKED, SELECTING, BRUSHING, RELAYOUT):
+        assert spec.kind == "state", spec.name

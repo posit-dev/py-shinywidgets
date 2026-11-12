@@ -42,9 +42,12 @@ class AccessorSpec:
     name
         The renderer method's name.
     kind
-        "state" mirrors something the widget always has (it is never reset);
-        "event" reports something that happened, and resets to `None` on
-        re-render.
+        "state" retains the last reported value (it is never reset on
+        re-render) -- the user-facing norm. "event" resets to `None` on
+        re-render; it is internal plumbing for triggers that must not
+        carry state across renders (bokeh's `source_data`), not a
+        user-facing kind. Every accessor attaches at render: a handler
+        registered later could miss interactions that happen first.
     attach
         Registers the library hook on a freshly rendered widget, calling `emit`
         with each raw value, and returns a function that removes the hook.
@@ -57,16 +60,6 @@ class AccessorSpec:
     rate_policy, rate_delay
         Default rate limit (`rate_delay` in seconds), overridable by the
         renderer's kwargs.
-    eager
-        Attach during render rather than on first read, for widgets whose
-        events are lost unless a handler exists before the view is created.
-        The default is True for ``kind="state"`` (attaching seeds the current
-        value, so a change made before the first read -- e.g. a lasso drawn
-        before a chat handler's first read -- is not lost) and False for
-        ``kind="event"``. An event-kind accessor stays lazy unless it opts
-        in, so an app whose first reader is gated (a chat handler, an LLM
-        tool) should warm it up with a ``@reactive.effect`` that reads the
-        accessor once, unconditionally, at startup.
     not_ready
         True for raw values that mean "the widget hasn't reported yet"; reads
         then cancel (`req(False)`) instead of returning a value.
@@ -79,14 +72,9 @@ class AccessorSpec:
     priority: Literal["input", "event"] = "input"
     rate_policy: Optional[RatePolicy] = None
     rate_delay: float = 0.25
-    # None resolves to kind == "state" in __post_init__ (a frozen dataclass
-    # can't default one field from another)
-    eager: Optional[bool] = None
     not_ready: Callable[[Any], bool] = never_ready_check
 
     def __post_init__(self) -> None:
-        if self.eager is None:
-            object.__setattr__(self, "eager", self.kind == "state")
         if self.name == "value":
             raise ValueError(
                 "An accessor can't be named `value`: renderers already use it for the rendered object."
@@ -95,6 +83,11 @@ class AccessorSpec:
             raise ValueError(
                 f"Accessor name {self.name!r} can't start with an underscore."
             )
+
+
+# (accessor name) -> spec, for accessors named at read time (e.g.,
+# render_panel's `param(name)`); returns None when the name isn't supported
+DynamicSpecs = Callable[[str], Optional[AccessorSpec]]
 
 
 def register_rate_policy(
@@ -183,12 +176,19 @@ class Accessors:
     """
     The runtime behind one renderer's accessors: one `reactive.Value` per
     accessor, attached to each newly rendered widget.
+
+    `dynamic_specs` builds a spec the first time an undeclared accessor name
+    is read (for accessors whose names aren't known ahead of time, like
+    `render_panel`'s `param(name)`); the resulting slot then behaves exactly
+    like a declared one. It returns None for names it doesn't support, and
+    the spec it returns must keep the requested name.
     """
 
     def __init__(
         self,
         specs: Sequence[AccessorSpec],
         *,
+        dynamic_specs: Optional[DynamicSpecs] = None,
         rate_policy: Optional[RatePolicy] = None,
         rate_delay: Optional[float] = None,
         schedule: Optional[Schedule] = None,
@@ -197,20 +197,30 @@ class Accessors:
         # Bumped on each render, so emits from an old widget's handlers are
         # dropped even if its detach failed to remove them.
         self._generation = 0
+        self._dynamic_specs = dynamic_specs
         self._slots: Dict[str, Slot] = {}
         self.values: Dict[str, reactive.Value[Box]] = {}
+        # Declared (not inferred) so `self._rate_policy or policy` in
+        # _add_slot keeps the Literal type instead of widening to str
+        self._rate_policy: Optional[RatePolicy] = rate_policy
+        self._rate_delay = rate_delay
+        self._schedule = schedule
         for spec in specs:
-            slot = Slot(spec)
-            policy = spec.rate_policy
-            if policy is not None:
-                slot.limiter = RateLimiter(
-                    lambda slot=slot: self._publish(slot),
-                    policy=rate_policy or policy,
-                    delay=spec.rate_delay if rate_delay is None else rate_delay,
-                    schedule=schedule,
-                )
-            self._slots[spec.name] = slot
-            self.values[spec.name] = reactive.Value(Box(None))
+            self._add_slot(spec)
+
+    def _add_slot(self, spec: AccessorSpec) -> Slot:
+        slot = Slot(spec)
+        policy = spec.rate_policy
+        if policy is not None:
+            slot.limiter = RateLimiter(
+                lambda slot=slot: self._publish(slot),
+                policy=self._rate_policy or policy,
+                delay=spec.rate_delay if self._rate_delay is None else self._rate_delay,
+                schedule=self._schedule,
+            )
+        self._slots[spec.name] = slot
+        self.values[spec.name] = reactive.Value(Box(None))
+        return slot
 
     def names(self) -> Tuple[str, ...]:
         return tuple(self._slots)
@@ -226,16 +236,20 @@ class Accessors:
                 # Drop a value the limiter was holding: the new widget reports
                 # its own state, which must not be deduped against it.
                 slot.latest = self._published(slot)
-            if widget is not None and (slot.spec.eager or slot.activated):
+            if widget is not None:
                 try:
                     self._attach(slot)
                 except Exception:
                     # e.g. a layout this accessor doesn't support: render it
-                    # anyway, and let the next read retry the attach and raise
-                    slot.activated = False
+                    # anyway, and let the next read retry the attach and raise.
+                    # Re-publish so existing readers make that read, rather
+                    # than keep the previous widget's value.
+                    self._publish(slot)
 
     def read(self, name: str, *, raw: bool = False) -> object:
-        slot = self._slots[name]
+        slot = self._slots.get(name)
+        if slot is None:
+            slot = self._resolve_dynamic(name)
         if self._widget is not None and slot.detach is None:
             # Attach before taking the dependency, so a value the attach
             # emits right away doesn't invalidate this reader.
@@ -254,6 +268,12 @@ class Accessors:
             slot.memo = slot.spec.payload(box.raw)
             slot.memo_box = box
         return slot.memo
+
+    def _resolve_dynamic(self, name: str) -> Slot:
+        spec = self._dynamic_specs(name) if self._dynamic_specs is not None else None
+        if spec is None:
+            raise KeyError(name)
+        return self._add_slot(spec)
 
     def close(self) -> None:
         self._generation += 1
@@ -282,9 +302,6 @@ class Accessors:
             slot.detach = slot.spec.attach(self._widget, emit)
         finally:
             attaching = False
-        # Only now: an attach that raised (e.g. an unsupported layout) must
-        # not be retried, and raise, inside a later render.
-        slot.activated = True
 
     def _publish(self, slot: Slot) -> None:
         self.values[slot.spec.name].set(Box(slot.latest))
@@ -306,8 +323,6 @@ class Slot:
         self.spec = spec
         self.limiter: Optional[RateLimiter] = None
         self.detach: Optional[Callable[[], None]] = None
-        # Read at least once, so it re-attaches on every later render.
-        self.activated = False
         # The last raw value emitted (published, or waiting on the limiter).
         self.latest: object = None
         self.memo_box: Optional[Box] = None
