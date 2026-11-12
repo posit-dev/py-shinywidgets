@@ -740,6 +740,16 @@ body > [data-overlay-container] {
 }
 
 /*
+* ipyfilechooser hard-codes its "No selection" status label to black in an
+* inline style (`<span style="color:black">`), leaving black text on the dark
+* page background in dark mode. The label has no class hook, so target the
+* inline style (and beat it with !important).
+*/
+:root[data-bs-theme=dark] .shiny-ipywidget-output span[style*="color:black"] {
+  color: var(--bs-body-color) !important;
+}
+
+/*
 * jupyter-leaflet styles map controls (zoom buttons, attribution, layers, legend, ...)
 * with JupyterLab theme variables, which don't exist outside of JupyterLab (unless
 * some other widget happens to define them), leaving the controls transparent. Derive
