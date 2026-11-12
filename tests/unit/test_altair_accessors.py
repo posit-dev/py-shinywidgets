@@ -71,8 +71,15 @@ def layered_chart() -> alt.JupyterChart:
 def hconcat_chart() -> alt.JupyterChart:
     """Concatenated charts with distinct datasets sharing one selection."""
     brush = alt.selection_interval(name="brush")
-    pts = alt.Chart(POINTS, name="pts").mark_point().encode(x="x", y="y").add_params(brush)
-    lns = alt.Chart(LINES, name="lns").mark_point().encode(x="x", y="z").add_params(brush)
+    pts = (
+        alt.Chart(POINTS, name="pts")
+        .mark_point()
+        .encode(x="x", y="y")
+        .add_params(brush)
+    )
+    lns = (
+        alt.Chart(LINES, name="lns").mark_point().encode(x="x", y="z").add_params(brush)
+    )
     with warnings.catch_warnings():
         # altair warns when it deduplicates the identical params
         warnings.simplefilter("ignore")
@@ -140,8 +147,11 @@ def test_selection_views_reads_the_hoisted_param(widget_session: Session) -> Non
     assert sa.selection_views(concatenated.chart, "brush") == ["pts", "lns"]
     assert sa.selection_views(concatenated.chart, "nope") is None
     assert sa.selection_views(plain.chart, "brush") is None
-    variable = alt.Chart(POINTS).mark_point().encode(x="x").add_params(
-        alt.param(name="v", value=1)
+    variable = (
+        alt.Chart(POINTS)
+        .mark_point()
+        .encode(x="x")
+        .add_params(alt.param(name="v", value=1))
     )
     assert sa.selection_views(variable, "v") is None
 
@@ -381,8 +391,18 @@ def test_selected_rows_shared_data_concat_stays_a_single_frame(
     from shinywidgets import render_altair
 
     brush = alt.selection_interval(name="brush")
-    pts = alt.Chart(POINTS, name="pts").mark_point().encode(x="x", y="y").add_params(brush)
-    dup = alt.Chart(POINTS, name="dup").mark_point().encode(x="x", y="y").add_params(brush)
+    pts = (
+        alt.Chart(POINTS, name="pts")
+        .mark_point()
+        .encode(x="x", y="y")
+        .add_params(brush)
+    )
+    dup = (
+        alt.Chart(POINTS, name="dup")
+        .mark_point()
+        .encode(x="x", y="y")
+        .add_params(brush)
+    )
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         combo = alt.hconcat(pts, dup)

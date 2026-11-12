@@ -667,12 +667,10 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
             # The selection's param isn't readable from the chart object
             # (e.g. a chart built with alt.Chart.from_dict): fall back to the
             # views the store reports
-            views = sorted(
-                {entry.get("unit", "") for entry in selection.store} - {""}
-            )
+            views = sorted({entry.get("unit", "") for entry in selection.store} - {""})
 
         if len(views) <= 1:
-            frame = df
+            frame: Any = df
             if frame is None:
                 data = view_frame(chart, views[0]) if views else None
                 frame = data if is_frame(data) else chart_frame(chart)

@@ -3,7 +3,10 @@ Accessors for `render_altair`.
 
 Altair selections are state the chart declares, so one accessor observes all
 of them (altair's own `JupyterChart.selections`), and `selected_rows()` filters
-a frame by a selection's Vega "store", porting Vega's `selectionTest`.
+a frame by a selection's Vega "store", porting Vega's `selectionTest`. A
+selection whose store spans several views (a layered or concatenated chart)
+is partitioned by the store entries' `unit`, and each view's own data frame is
+filtered.
 """
 
 from __future__ import annotations
@@ -94,7 +97,7 @@ def named_subcharts(chart: Any) -> Dict[str, Any]:
             found[name] = node
             return
         for attr in ("layer", "hconcat", "vconcat", "concat"):
-            children = getattr(node, attr, alt.Undefined)
+            children: Any = getattr(node, attr, alt.Undefined)
             if children is not alt.Undefined:
                 for subchart in children:
                     visit(subchart)
@@ -112,13 +115,13 @@ def selection_views(chart: Any, name: str) -> Optional[List[str]]:
     """
     import altair as alt
 
-    params = getattr(chart, "params", alt.Undefined)
+    params: Any = getattr(chart, "params", alt.Undefined)
     if params is alt.Undefined:
         return None
     for param in params:
         if getattr(param, "name", None) != name:
             continue
-        views = getattr(param, "views", alt.Undefined)
+        views: Any = getattr(param, "views", alt.Undefined)
         if views is alt.Undefined:
             return None
         return [str(view) for view in views]
