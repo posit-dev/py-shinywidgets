@@ -460,7 +460,10 @@ def test_selected_binds_points_payload_and_is_opt_in() -> None:
     assert w.sent == [
         {
             "shinywidgets": "bind",
-            "events": [{"name": "plotly_selected", "payload": "points"}, "plotly_deselect"],
+            "events": [
+                {"name": "plotly_selected", "payload": "points"},
+                "plotly_deselect",
+            ],
         }
     ]
 
@@ -472,7 +475,10 @@ def test_brushed_binds_region_payload_and_is_default_on() -> None:
     assert w.sent == [
         {
             "shinywidgets": "bind",
-            "events": [{"name": "plotly_selected", "payload": "region"}, "plotly_deselect"],
+            "events": [
+                {"name": "plotly_selected", "payload": "region"},
+                "plotly_deselect",
+            ],
         }
     ]
 

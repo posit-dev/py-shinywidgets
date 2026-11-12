@@ -66,7 +66,7 @@ def points_frame(points: List[Point], *, coordinates: bool = True) -> "pd.DataFr
     columns = ["trace_index", "point_index"]
     if coordinates:
         columns += ["x", "y"]
-    for optional in (["z", "customdata"] if coordinates else ["customdata"]):
+    for optional in ["z", "customdata"] if coordinates else ["customdata"]:
         if any(optional in p for p in points):
             columns.append(optional)
     return pd.DataFrame(points, columns=columns)
