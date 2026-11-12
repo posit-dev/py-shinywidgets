@@ -146,7 +146,7 @@ def test_reactable_state_accessors(page: Page, local_app) -> None:  # noqa: ANN0
     assert_no_unexpected_errors(errors, failed_requests)
 
 
-def test_reactable_selected_rows_accessor(page: Page, local_app) -> None:  # noqa: ANN001
+def test_reactable_selected_accessor(page: Page, local_app) -> None:  # noqa: ANN001
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
     wait_for_table(page, "sel")
