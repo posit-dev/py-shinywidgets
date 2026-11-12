@@ -125,6 +125,21 @@ def selection_views(chart: Any, name: str) -> Optional[List[str]]:
     return None
 
 
+def view_frame(chart: Any, view: str, subs: Optional[Dict[str, Any]] = None) -> Any:
+    """
+    The data of the subchart named `view` (a store entry's `unit`), falling
+    back to the chart's own (hoisted) data. Not a frame when neither yields
+    one -- callers decide how to report that.
+    """
+    if subs is None:
+        subs = named_subcharts(chart)
+    subchart = subs.get(view)
+    data = getattr(subchart, "data", None) if subchart is not None else None
+    if is_frame(data):
+        return data
+    return getattr(chart, "data", None)
+
+
 def chart_frame(chart: Any) -> Any:
     data = getattr(chart, "data", None)
     if is_frame(data):

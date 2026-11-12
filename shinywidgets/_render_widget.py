@@ -133,7 +133,17 @@ from shiny.render.renderer import Jsonifiable, ValueFn
 from shiny.session import get_current_session
 
 from ._accessors import AccessorSpec, Emit, RatePolicy
-from ._altair import ALTAIR_ACCESSORS, chart_frame, filter_selection, pick_selection
+from ._altair import (
+    ALTAIR_ACCESSORS,
+    chart_frame,
+    filter_selection,
+    filter_selection_by_unit,
+    is_frame,
+    named_subcharts,
+    pick_selection,
+    selection_views,
+    view_frame,
+)
 from ._as_widget import (
     PYDECK_NO_WIDGET_MESSAGE,
     as_widget_panel,
@@ -615,24 +625,82 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         return pick_selection(selections, name)
 
     def selected_rows(
-        self, name: Optional[str] = None, *, df: Optional[IntoDataFrameT] = None
-    ) -> IntoDataFrameT:
+        self,
+        name: Optional[str] = None,
+        *,
+        df: Optional[Union[IntoDataFrameT, Dict[str, IntoDataFrameT]]] = None,
+    ) -> Union[IntoDataFrameT, Dict[str, IntoDataFrameT]]:
         """
         The rows of `df` in a selection (see :meth:`selected`), evaluated the
         way Vega-Lite does (including binned and temporal fields).
 
-        `df` defaults to the chart's own data frame (pandas or polars); pass it
-        for charts whose data is a URL, or that concatenate charts with
-        different data. For a layered chart, the default only resolves when
-        every layer uses the *identical* data frame object (the same object,
-        not an equal copy) -- otherwise pass `df` explicitly. Returns an empty
-        frame while nothing is selected. Dates are compared in UTC, reading
-        time-zone-naive columns in the browser's time zone, as Vega-Lite does.
+        `df` defaults to the chart's own data frame (pandas or polars); pass
+        it for charts whose data is a URL. When the selection touches several
+        views with different data -- a layered or concatenated chart whose
+        subcharts use different data frames -- each view's data is filtered
+        by its own selection entries and the return is a ``dict`` of frames
+        keyed by view name (give subcharts a ``name=`` for readable keys);
+        `df` may then be passed as a dict keyed by view name. When the
+        selection touches one view, or views sharing the *identical* data
+        frame object, a single frame is returned. Returns an empty frame (or
+        a dict of empty frames) while nothing is selected. Dates are compared
+        in UTC, reading time-zone-naive columns in the browser's time zone,
+        as Vega-Lite does.
         """
         selection = self.selected(name)
         widget = cast(JupyterChart, self.widget)
-        frame = chart_frame(widget.chart) if df is None else df
-        return filter_selection(selection, frame, widget.local_tz)
+        chart = widget.chart
+        views = selection_views(chart, selection.name)
+
+        if isinstance(df, dict):
+            if views is not None and set(df) != set(views):
+                raise ValueError(
+                    f"The keys of `df` ({', '.join(sorted(df))}) don't match "
+                    f"the selection's views ({', '.join(views)})."
+                )
+            return filter_selection_by_unit(selection, df, widget.local_tz)
+
+        if views is None:
+            # The selection's param isn't readable from the chart object
+            # (e.g. a chart built with alt.Chart.from_dict): fall back to the
+            # views the store reports
+            views = sorted(
+                {entry.get("unit", "") for entry in selection.store} - {""}
+            )
+
+        if len(views) <= 1:
+            frame = df
+            if frame is None:
+                data = view_frame(chart, views[0]) if views else None
+                frame = data if is_frame(data) else chart_frame(chart)
+            return filter_selection(selection, frame, widget.local_tz)
+
+        if df is not None:
+            raise ValueError(
+                f"The selection spans several views ({', '.join(views)}), "
+                "each with its own data, so a single data frame can't be "
+                "filtered by it. Pass the frames as a dict keyed by view "
+                "name, e.g. `selected_rows(df={'left': df1, 'right': df2})`."
+            )
+
+        subs = named_subcharts(chart)
+        frames: Dict[str, Any] = {}
+        for view in views:
+            data = view_frame(chart, view, subs)
+            if not is_frame(data):
+                raise ValueError(
+                    f"Can't find a data frame for the view named {view!r} "
+                    "(is it a named subchart of the chart, built from a data "
+                    "frame?). Pass the frames to filter as a dict keyed by "
+                    "view name: `selected_rows(df={...})`."
+                )
+            frames[view] = data
+        first = frames[views[0]]
+        if all(frame is first for frame in frames.values()):
+            # Every view is fed the same data (typically hoisted onto the
+            # chart): one frame to filter, as before
+            return filter_selection(selection, first, widget.local_tz)
+        return filter_selection_by_unit(selection, frames, widget.local_tz)
 
 
 class render_embedding_atlas(

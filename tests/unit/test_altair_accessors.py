@@ -287,6 +287,57 @@ def test_render_altair_selected_and_selected_rows(widget_session: Session) -> No
         r.selected_rows("brush", other)
 
 
+def test_selected_rows_uses_the_selection_views_own_data(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    r = render_altair()
+    with session_context(widget_session):
+        w = layered_chart()
+    r._widget = w
+    r._accessors.on_render(w)
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "b1": interval([uentry("pts", ("x", "R", [1, 2]))]),
+                "b2": interval([uentry("lns", ("z", "R", [150, 250]))]),
+            }
+        )
+    )
+    w.local_tz = "UTC"
+    assert r.selected_rows("b1")["y"].tolist() == [10, 20]
+    assert r.selected_rows("b2")["z"].tolist() == [200]
+
+
+def test_selected_rows_facet_chart_still_filters_the_whole_frame(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    df = pd.DataFrame({"x": range(6), "y": range(6), "g": list("aaabbb")})
+    brush = alt.selection_interval(name="brush")
+    faceted = (
+        alt.Chart(df)
+        .mark_point()
+        .encode(x="x:Q", y="y:Q")
+        .add_params(brush)
+        .facet(column="g:N")
+    )
+    with session_context(widget_session):
+        w = alt.JupyterChart(faceted)
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    # Facet store units carry a `__facet` suffix; the single-view path ignores
+    # them and filters the chart's (hoisted) frame, as before this change
+    r._accessors.values["selected"].set(
+        sa_box({"brush": interval([uentry("view_1_0__facet_g_a", ("x", "R", [1, 2]))])})
+    )
+    w.local_tz = "UTC"
+    assert r.selected_rows("brush")["y"].tolist() == [1, 2]
+
+
 def sa_box(raw: object) -> Any:
     from shinywidgets._accessors import Box
 
