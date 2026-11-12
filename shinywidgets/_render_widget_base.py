@@ -11,6 +11,7 @@ from typing import (
     Generic,
     Iterator,
     Optional,
+    Sequence,
     Tuple,
     TypeVar,
     cast,
@@ -102,6 +103,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         fillable: Optional[bool] = None,
         rate_policy: Optional[RatePolicy] = None,
         rate_delay: Optional[float] = None,
+        listen_to: Optional[Sequence[str]] = None,
     ):
         super().__init__(_fn)
         self.width = width
@@ -126,6 +128,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             dynamic_specs=self._dynamic_accessor_spec,
             rate_policy=rate_policy,
             rate_delay=rate_delay,
+            listen_to=listen_to,
         )
         self._closes_accessors_on_destroy = False
 
