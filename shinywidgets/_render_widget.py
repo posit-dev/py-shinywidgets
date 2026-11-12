@@ -136,13 +136,13 @@ from ._accessors import AccessorSpec, Emit, RatePolicy
 from ._altair import (
     ALTAIR_ACCESSORS,
     chart_frame,
+    check_index_selection,
     filter_selection,
     filter_selection_by_unit,
     is_frame,
-    named_subcharts,
     pick_selection,
     selection_views,
-    view_frame,
+    view_frames,
 )
 from ._as_widget import (
     PYDECK_NO_WIDGET_MESSAGE,
@@ -653,6 +653,7 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         selection = self.selected(name)
         widget = cast(JupyterChart, self.widget)
         chart = widget.chart
+        check_index_selection(selection, chart)
         views = selection_views(chart, selection.name)
 
         if isinstance(df, dict):
@@ -672,10 +673,21 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         if len(views) <= 1:
             frame: Any = df
             if frame is None:
-                data = view_frame(chart, views[0]) if views else None
+                data = view_frames(chart).get(views[0]) if views else None
                 frame = data if is_frame(data) else chart_frame(chart)
             return filter_selection(selection, frame, widget.local_tz)
 
+        # Several views participate. When they all resolve to the same data
+        # frame object (typically hoisted onto the chart), there's one frame
+        # to filter, as before -- and a scalar `df` can stand in for it
+        resolved = view_frames(chart)
+        shared = (
+            all(is_frame(resolved.get(view)) for view in views)
+            and len({id(resolved[view]) for view in views}) == 1
+        )
+        if shared:
+            frame = df if df is not None else resolved[views[0]]
+            return filter_selection(selection, frame, widget.local_tz)
         if df is not None:
             raise ValueError(
                 f"The selection spans several views ({', '.join(views)}), "
@@ -683,11 +695,9 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
                 "filtered by it. Pass the frames as a dict keyed by view "
                 "name, e.g. `selected_rows(df={'left': df1, 'right': df2})`."
             )
-
-        subs = named_subcharts(chart)
         frames: Dict[str, Any] = {}
         for view in views:
-            data = view_frame(chart, view, subs)
+            data = resolved.get(view)
             if not is_frame(data):
                 raise ValueError(
                     f"Can't find a data frame for the view named {view!r} "
@@ -696,11 +706,6 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
                     "view name: `selected_rows(df={...})`."
                 )
             frames[view] = data
-        first = frames[views[0]]
-        if all(frame is first for frame in frames.values()):
-            # Every view is fed the same data (typically hoisted onto the
-            # chart): one frame to filter, as before
-            return filter_selection(selection, first, widget.local_tz)
         return filter_selection_by_unit(selection, frames, widget.local_tz)
 
 
