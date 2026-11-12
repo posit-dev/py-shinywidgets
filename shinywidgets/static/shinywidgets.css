@@ -649,6 +649,57 @@ body > [data-overlay-container] {
 }
 
 /*
+* reactable's stylesheet fixes the table background to #fff (with light-gray
+* borders, stripes, and inputs) but leaves the text color inherited, so in dark
+* mode the page's light body color lands on the white table (#460). Follow the
+* app's color mode, as the itables rule above does. (Sticky-column variants
+* like .rt-tr-striped-sticky, which only appear with sticky columns, are not
+* covered.)
+*
+* The :not([class*="reactable-"]) guard leaves user-supplied themes alone:
+* reactable applies theme= through a generated `reactable-<hash>` class whose
+* single-class specificity would lose to these rules. Unthemed tables only
+* carry the capitalized `Reactable`/`ReactTable`/`rt-*` classes, so the guard
+* (class attribute matching is case-sensitive) excludes exactly themed tables.
+*/
+:root[data-bs-theme=dark] .Reactable:not([class*="reactable-"]) {
+  background-color: transparent;
+}
+
+:root[data-bs-theme=dark] .Reactable:not([class*="reactable-"]) .rt-table,
+:root[data-bs-theme=dark] .Reactable:not([class*="reactable-"]) .rt-th,
+:root[data-bs-theme=dark] .Reactable:not([class*="reactable-"]) .rt-td,
+:root[data-bs-theme=dark] .Reactable:not([class*="reactable-"]) .rt-td-filter {
+  border-color: var(--bs-border-color, hsl(0, 0%, 30%));
+}
+
+:root[data-bs-theme=dark] .Reactable:not([class*="reactable-"]) .rt-th-group::after {
+  background-color: var(--bs-border-color, hsl(0, 0%, 30%));
+}
+
+:root[data-bs-theme=dark] .Reactable:not([class*="reactable-"]) .rt-tr-striped {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+:root[data-bs-theme=dark] .Reactable:not([class*="reactable-"]) .rt-tr-highlight:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+:root[data-bs-theme=dark] .Reactable:not([class*="reactable-"]) .rt-filter,
+:root[data-bs-theme=dark] .Reactable:not([class*="reactable-"]) .rt-search,
+:root[data-bs-theme=dark] .Reactable:not([class*="reactable-"]) .rt-page-size-select,
+:root[data-bs-theme=dark] .Reactable:not([class*="reactable-"]) .rt-page-jump {
+  background-color: var(--bs-body-bg, white);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+:root[data-bs-theme=dark] .Reactable:not([class*="reactable-"]) .rt-page-button:hover,
+:root[data-bs-theme=dark] .Reactable:not([class*="reactable-"]) .rt-page-button:active,
+:root[data-bs-theme=dark] .Reactable:not([class*="reactable-"]) .rt-keyboard-active .rt-page-button:focus {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+/*
 * jupyter-leaflet styles map controls (zoom buttons, attribution, layers, legend, ...)
 * with JupyterLab theme variables, which don't exist outside of JupyterLab (unless
 * some other widget happens to define them), leaving the controls transparent. Derive
