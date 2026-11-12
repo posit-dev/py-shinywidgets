@@ -1301,9 +1301,11 @@ class render_itables(render_widget_base[ValueT, ITable]):
     pass itables options such as ``select=True`` (requires ``pip install
     'shinywidgets[itables]'``).
 
-    In a filling layout, the table fills its container and scrolls its rows; give it
-    roughly 350px or more of height, since smaller containers leave no room for rows
-    below DataTables' controls. `selected_rows` holds row positions in the
+    In a filling layout, the table fills its container and scrolls its rows. In a
+    container shorter than roughly 350px the rows get a minimum height of about two
+    rows and the output scrolls, so DataTables' controls stay reachable; prefer
+    taller containers (or fewer controls, e.g., ``layout={"topStart": None}``) when
+    space is tight. `selected_rows` holds row positions in the
     current data frame; ``ITable.update(df)`` keeps those positions as-is,
     and drops options such as ``columnDefs`` and ``buttons`` unless they are
     passed again.

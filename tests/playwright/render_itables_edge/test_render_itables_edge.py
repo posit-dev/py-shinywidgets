@@ -12,6 +12,7 @@ local_app_nonconfig_dollar = create_app_fixture(
 )
 local_app_formatted = create_app_fixture(Path(__file__).parent / "app_formatted.py")
 local_app_dark = create_app_fixture(Path(__file__).parent / "app_dark.py")
+local_app_short_card = create_app_fixture(Path(__file__).parent / "app_short_card.py")
 
 
 def test_explicit_scroll_y_is_respected_with_scroll_x(page: Page, local_app) -> None:
@@ -162,6 +163,52 @@ def test_dollar_keeps_datatables_helpers_for_js_options(
         )
         == 2
     )
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_short_card_keeps_rows_visible_and_footer_reachable(
+    page: Page, local_app_short_card
+) -> None:
+    # A filling card shorter than ~350px leaves no room for rows below
+    # DataTables' controls; the scroll body gets a min-height floor instead,
+    # and the output scrolls so the paging footer stays reachable
+    errors, failed_requests = collect_errors(page)
+    # Narrow enough that DataTables' controls wrap onto multiple rows,
+    # squeezing the scroll body out of the 300px card entirely
+    page.set_viewport_size({"width": 440, "height": 720})
+    page.goto(local_app_short_card.url)
+
+    body = page.locator("#short .dt-scroll-body")
+    expect(body.locator("tbody tr").first).to_be_visible(timeout=30000)
+
+    geom = page.evaluate(
+        """() => {
+          const out = document.getElementById('short');
+          const body = out.querySelector('.dt-scroll-body');
+          return {
+            bodyHeight: body.getBoundingClientRect().height,
+            canScroll: out.scrollHeight > out.clientHeight,
+          };
+        }"""
+    )
+    # The body floors at about two rows (4rem) instead of collapsing to 0
+    assert geom["bodyHeight"] >= 60, geom
+
+    # Whatever the floor pushes out of the short card (e.g., the paging
+    # footer) is reachable by scrolling the output
+    if geom["canScroll"]:
+        page.evaluate(
+            "() => { const out = document.getElementById('short'); "
+            "out.scrollTop = out.scrollHeight; }"
+        )
+        paging_box = page.locator("#short .dt-paging").bounding_box()
+        out_box = page.locator("#short").bounding_box()
+        assert paging_box is not None and out_box is not None
+        assert (
+            paging_box["y"] + paging_box["height"]
+            <= out_box["y"] + out_box["height"] + 1
+        )
 
     assert_no_unexpected_errors(errors, failed_requests)
 

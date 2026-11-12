@@ -618,9 +618,16 @@ body > [data-overlay-container] {
 
 .shinywidgets-itables-fill .dt-scroll-body {
   flex: 1 1 auto;
-  min-height: 0;
+  /* In a container shorter than ~350px the controls and footer would shrink
+     the body to 0 rows; floor it at about two rows and let the output scroll
+     (below), so rows show and the footer stays reachable */
+  min-height: 4rem;
   max-height: none !important;
   height: auto !important;
+}
+
+.shiny-ipywidget-output:has(> .shinywidgets-itables-fill) {
+  overflow: auto;
 }
 
 /*
