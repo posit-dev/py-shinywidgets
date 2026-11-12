@@ -709,6 +709,37 @@ body > [data-overlay-container] {
 }
 
 /*
+* mosaic-widget tables fix the text color (`#111` headers, `#444` cells) but
+* only give the header a background, so in dark mode the dark cell text lands
+* on the page's dark background. Give the whole table a white background,
+* keeping the table light-consistent in both modes.
+*/
+:root[data-bs-theme=dark] .mosaic-widget table {
+  background-color: #fff;
+}
+
+/*
+* drawdata's BarWidget stylesheet fixes its buttons to a near-white background
+* with no text color, and its axes/gridlines to black/light-gray strokes, so in
+* dark mode the buttons show the page's light text on near-white and the axes
+* vanish into the dark page. Keep the button text dark and let the
+* axes/gridlines follow the page text color. (BarWidget's stylesheet is
+* entirely unscoped generic classes -- .container, button.control, .grid line,
+* .domain -- and its root div carries no class, so these are scoped to the
+* output instead. None of the other widgets shinywidgets renders use these
+* classes.)
+*/
+:root[data-bs-theme=dark] .shiny-ipywidget-output button.control,
+:root[data-bs-theme=dark] .shiny-ipywidget-output button.reset {
+  color: #1f2937;
+}
+
+:root[data-bs-theme=dark] .shiny-ipywidget-output svg .domain,
+:root[data-bs-theme=dark] .shiny-ipywidget-output svg .grid line {
+  stroke: currentColor;
+}
+
+/*
 * jupyter-leaflet styles map controls (zoom buttons, attribution, layers, legend, ...)
 * with JupyterLab theme variables, which don't exist outside of JupyterLab (unless
 * some other widget happens to define them), leaving the controls transparent. Derive
