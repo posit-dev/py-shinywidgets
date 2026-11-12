@@ -743,9 +743,11 @@ body > [data-overlay-container] {
 * ipyfilechooser hard-codes its "No selection" status label to black in an
 * inline style (`<span style="color:black">`), leaving black text on the dark
 * page background in dark mode. The label has no class hook, so target the
-* inline style (and beat it with !important).
+* inline style (and beat it with !important), scoped to the class
+* ipyfilechooser_layout_defaults() adds to the chooser so the override can't
+* restyle unrelated widget content.
 */
-:root[data-bs-theme=dark] .shiny-ipywidget-output span[style*="color:black"] {
+:root[data-bs-theme=dark] .shinywidgets-ipyfilechooser span[style*="color:black"] {
   color: var(--bs-body-color) !important;
 }
 
