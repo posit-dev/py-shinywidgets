@@ -6,7 +6,7 @@ os.environ["SHINYWIDGETS_WS_MAX_SIZE"] = "65536"
 
 import numpy as np
 import plotly.graph_objects as go
-from shiny.express import render, ui
+from shiny.express import render
 from shinywidgets import render_plotly
 
 N = 300_000

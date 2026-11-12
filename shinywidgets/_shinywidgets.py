@@ -567,9 +567,7 @@ def ws_max_size() -> int:
     try:
         return int(raw)
     except ValueError:
-        warnings.warn(
-            f"Ignoring invalid SHINYWIDGETS_WS_MAX_SIZE={raw!r} (not an int)"
-        )
+        warnings.warn(f"Ignoring invalid SHINYWIDGETS_WS_MAX_SIZE={raw!r} (not an int)")
         return 16 * 1024 * 1024
 
 
