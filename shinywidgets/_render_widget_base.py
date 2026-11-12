@@ -77,6 +77,14 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     Subclasses declare accessors (methods such as `clicked()` that read widget
     events reactively) in `_accessor_specs`, and implement each one as
     `self._read_accessor(name)`.
+
+    Parameters
+    ----------
+    listen_to
+        Names of opt-in accessors to enable (e.g. ``listen_to=["selected"]``).
+        Accessors whose payloads can grow without bound or stream continuously
+        are off unless declared; reading one that wasn't declared raises an
+        error naming it. Additive to the always-on accessors.
     """
 
     # Subclasses normally set this at class level; render_mols2grid also
@@ -120,6 +128,21 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._value: ValueT | None = None
         self._widget: WidgetT | None = None
         self._contexts: set[Context] = set()
+        # Fail fast on listen_to typos where the accessor names are all known
+        # (subclasses with dynamic accessor names, e.g. render_panel's
+        # param(), can't be validated here)
+        if (
+            listen_to is not None
+            and type(self)._dynamic_accessor_spec
+            is render_widget_base._dynamic_accessor_spec
+        ):
+            known = {spec.name for spec in self._accessor_specs}
+            unknown = set(listen_to) - known
+            if unknown:
+                raise ValueError(
+                    f"listen_to names unknown accessor(s) {sorted(unknown)}; "
+                    f"this renderer's accessors are {sorted(known)}."
+                )
         # Instance attribute, so a renderer can make its set of accessors
         # conditional on its own kwargs (render_mols2grid drops clicked()
         # unless the click channel is enabled)

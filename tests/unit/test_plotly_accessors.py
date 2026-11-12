@@ -424,3 +424,10 @@ def test_event_origin_accessors_are_retained() -> None:
 
     for spec in (CLICKED, SELECTING, BRUSHING, RELAYOUT):
         assert spec.kind == "state", spec.name
+
+
+def test_listen_to_typo_raises_at_decoration() -> None:
+    from shinywidgets import render_plotly
+
+    with pytest.raises(ValueError, match="selcted"):
+        render_plotly(listen_to=["selcted"])
