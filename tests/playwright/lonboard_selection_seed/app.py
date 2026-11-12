@@ -35,7 +35,7 @@ def server(input, output, session):
     @render.text
     @reactive.event(input.read_pick)
     def picked():
-        return str(map.selected_index())
+        return str(map.selected())
 
 
 app = App(app_ui, server)

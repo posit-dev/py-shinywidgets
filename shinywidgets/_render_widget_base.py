@@ -123,6 +123,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         # unless the click channel is enabled)
         self._accessors = Accessors(
             self._accessor_specs,
+            dynamic_specs=self._dynamic_accessor_spec,
             rate_policy=rate_policy,
             rate_delay=rate_delay,
         )
@@ -155,8 +156,16 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         # `Stream.trigger()` subscribers from `get_plot()`); a reactive read in such
         # a callback must not register this render's Context as a dependent, or the
         # callback's write invalidates the render in progress and loops forever.
-        with isolate():
-            widget = self._as_widget(value)
+        try:
+            with isolate():
+                widget = self._as_widget(value)
+        except Exception:
+            # _value was already replaced above, so on_render() won't run for
+            # this failure: retire the previous widget's attachments here, or
+            # accessors keep watching (and reads keep reporting) the old
+            # object's state while the output has nothing rendered
+            self._accessors.on_render(None)
+            raise
 
         session = get_current_session()
         # _shinywidgets imports WidgetRenderContext and is_closed_widget from
@@ -274,21 +283,44 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             "The `widget` attribute of a @render_widget function is read only."
         )
 
-    def _read_accessor(self, name: str, *, raw: bool = False) -> object:
+    def _dynamic_accessor_spec(self, name: str) -> Optional[AccessorSpec]:
+        """
+        The spec for an accessor named at read time (e.g., `render_panel`'s
+        `param(name)`, whose names aren't known until the user calls it), or
+        None when this renderer has no accessor by that name.
+        """
+        return None
+
+    def _read_accessor(
+        self, name: str, *, raw: bool = False, call: Optional[str] = None
+    ) -> object:
         if rendering_renderer.get() is self:
             # It would cancel (no widget yet) or reset (a new widget), so the
             # output would never render
             raise RuntimeError(
-                f"`{self.output_id}.{name}()` can't be read inside "
+                f"`{self.output_id}.{call or f'{name}()'}` can't be read inside "
                 f"`{self.output_id}`'s own render function, which builds a new "
                 "widget each time it runs. Read it in another output or an effect; "
                 f"to change the plot in response, update `{self.output_id}.widget` "
                 "in place from a `reactive.effect`."
             )
-        # Depend on the widget too, so a re-render invalidates readers even
-        # before the new widget reports anything.
-        self._register_current_context()
-        return self._accessors.read(name, raw=raw)
+        # Readers depend only on the accessor's own reactive.Value (attached
+        # and seeded on each render by `_accessors.on_render()`), NOT on the
+        # render itself: otherwise every re-render would re-run every reader,
+        # and an effect feeding a derived value back into this output's render
+        # would loop forever. An accessor method that computes its result from
+        # the widget itself (e.g. `visible_data()`) reads it through `.widget`,
+        # which does take the render dependency: a new widget can report the
+        # same accessor value as the previous one.
+        try:
+            return self._accessors.read(name, raw=raw)
+        except Exception:
+            # A read that cancelled (nothing rendered yet) or raised (the
+            # attach failed) does depend on the render: the next one can make
+            # it succeed without publishing anything (a click accessor has no
+            # seed)
+            self._register_current_context()
+            raise
 
     def read(self, name: str) -> Any:
         """

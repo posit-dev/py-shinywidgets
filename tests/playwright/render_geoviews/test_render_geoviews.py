@@ -10,10 +10,6 @@ from tests.playwright.conftest import (
     collect_errors,
 )
 
-# jupyter_bokeh's frontend first tries to load its extension JS from a path
-# that 404s (also on pre-existing bokeh apps) before falling back to the CDN.
-BOKEH_404 = "@bokeh/jupyter_bokeh.js"
-
 TILE_URL_GLOB = "**/*.tile.openstreetmap.org/**"
 TILE_RGB = (170, 211, 223)
 
@@ -162,7 +158,7 @@ def test_geoviews_actually_draws_pixels(page: Page, local_app) -> None:
     )
     assert tile_requests
 
-    assert_no_unexpected_errors(errors, failed_requests, allowed_404s=(BOKEH_404,))
+    assert_no_unexpected_errors(errors, failed_requests)
 
 
 def test_geoviews_fills_container_and_respects_explicit_size(
@@ -195,7 +191,7 @@ def test_geoviews_fills_container_and_respects_explicit_size(
     fixed = page.evaluate(CANVAS_RECT_JS, "#fixed")
     assert fixed["width"] == 350 and fixed["height"] == 250, fixed
 
-    assert_no_unexpected_errors(errors, failed_requests, allowed_404s=(BOKEH_404,))
+    assert_no_unexpected_errors(errors, failed_requests)
 
 
 def test_geoviews_fill_tracks_container_resize(page: Page, local_app) -> None:
@@ -215,7 +211,7 @@ def test_geoviews_fill_tracks_container_resize(page: Page, local_app) -> None:
         f"(w) => ({CANVAS_RECT_JS})('#tiles').width < w - 50", arg=wide, timeout=30000
     )
 
-    assert_no_unexpected_errors(errors, failed_requests, allowed_404s=(BOKEH_404,))
+    assert_no_unexpected_errors(errors, failed_requests)
 
 
 def test_geoviews_dynamicmap_widget_roundtrip(page: Page, local_app) -> None:
@@ -243,7 +239,7 @@ def test_geoviews_dynamicmap_widget_roundtrip(page: Page, local_app) -> None:
         timeout=10000,
     )
 
-    assert_no_unexpected_errors(errors, failed_requests, allowed_404s=(BOKEH_404,))
+    assert_no_unexpected_errors(errors, failed_requests)
 
 
 def test_geoviews_rerender_lifecycle(page: Page, local_app) -> None:
@@ -267,4 +263,4 @@ def test_geoviews_rerender_lifecycle(page: Page, local_app) -> None:
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
-    assert_no_unexpected_errors(errors, failed_requests, allowed_404s=(BOKEH_404,))
+    assert_no_unexpected_errors(errors, failed_requests)

@@ -1,3 +1,4 @@
+import json
 import logging
 import threading
 from base64 import b64encode
@@ -131,6 +132,12 @@ class ShinyComm:
         metadata: MetadataType = None,
         buffers: BufferType = None,
     ) -> None:
+        # _shinywidgets imports this module at module scope, so keep its
+        # import function-local (the same trick _render_widget_base uses to
+        # import _shinywidgets in the other direction)
+        from ._shinywidgets import open_shared_references
+
+        open_shared_references(self, data)
         self._publish_msg(
             "shinywidgets_comm_msg", data=data, metadata=metadata, buffers=buffers
         )
@@ -265,9 +272,15 @@ def flush_queued_sends(placeholder: object, comm: "ShinyComm") -> None:
     Deliver, in order, the sends queued on a pre-open placeholder through the
     real comm that replaced it (see OrphanedShinyComm).
     """
+    # Function-local for the same reason as in ShinyComm.send()
+    from ._shinywidgets import open_shared_references
+
     if not isinstance(placeholder, OrphanedShinyComm):
         return
     for msg_txt in placeholder.take_queued_sends():
+        # Queued before ShinyComm.send() could open what it references (e.g.
+        # pythreejs's WebGLRenderer.render(scene, camera) in a render function)
+        open_shared_references(comm, json.loads(msg_txt)["content"]["data"])
         comm.publish_packed("shinywidgets_comm_msg", msg_txt)
 
 
@@ -346,10 +359,10 @@ class SharedShinyComm:
     messages still arrive through each session's own `ShinyComm`, which runs
     the callbacks registered here. A shared widget is never closed.
 
-    Before fanning out, `send()` guards against updates that reference a model
-    some session doesn't have (a browser without it waits forever for it): a
-    process-global one is opened in the sessions missing it, and any other is
-    warned about once per referenced model (see guard_shared_send).
+    Before fanning out, `send()` warns (once per referenced model) about an
+    update that references a model some session can never get, since a browser
+    without it waits forever for it (see guard_shared_send). A process-global
+    one is opened by each session's own `ShinyComm.send()`.
     """
 
     kernel = "Shiny"
@@ -397,9 +410,7 @@ class SharedShinyComm:
         metadata: MetadataType = None,
         buffers: BufferType = None,
     ) -> None:
-        # _shinywidgets imports this module at module scope, so keep the
-        # guard's import function-local (the same trick _render_widget_base
-        # uses to import _shinywidgets in the other direction)
+        # Function-local for the same reason as in ShinyComm.send()
         from ._shinywidgets import guard_shared_send
 
         guard_shared_send(self, data)

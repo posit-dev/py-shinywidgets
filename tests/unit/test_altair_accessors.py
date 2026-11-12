@@ -11,6 +11,8 @@ from altair.utils.selection import IndexSelection, IntervalSelection, PointSelec
 from shiny import Session
 from shiny.session import session_context
 
+from tests.unit.conftest import reads_across_rerender
+
 DATES = pd.DataFrame(
     {"date": pd.date_range("2024-01-01", periods=30, freq="D"), "y": range(30)}
 )
@@ -239,3 +241,21 @@ def test_date_strings_in_a_text_column_raise_a_clear_error() -> None:
     df = pd.DataFrame({"date": ["2024-01-01", "2024-01-02"], "y": [1, 2]})
     with pytest.raises(ValueError, match="parse"):
         sa.filter_selection(interval(DATE_BRUSH), df, "UTC")
+
+
+def test_selected_rows_follows_a_rerender_with_new_data(
+    widget_session: Session,
+) -> None:
+    # A new chart starts with the same (empty) selection as the previous one,
+    # so the accessor publishes nothing: readers have to follow the widget
+    from shinywidgets import render_altair
+
+    other = pd.DataFrame({"date": DATES["date"], "z": range(30)})
+    with session_context(widget_session):
+        first = chart(alt.selection_interval(name="brush"))
+        second = chart(alt.selection_interval(name="brush"), data=other)
+    r = render_altair()
+    seen = reads_across_rerender(
+        r, first, second, lambda: list(r.selected_rows().columns)
+    )
+    assert seen == [["date", "y"], ["date", "z"]]

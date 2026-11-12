@@ -7,10 +7,6 @@ from tests.playwright.conftest import (
     collect_errors,
 )
 
-# jupyter_bokeh's frontend first tries to load its extension JS from a path
-# that 404s before falling back to the CDN (see render_holoviews tests).
-BOKEH_404 = "@bokeh/jupyter_bokeh.js"
-
 # x-extent [x0, x1] (in data units) of the datashader image the browser is
 # currently displaying, from the bokeh Image glyph's data source. (Bokeh.index
 # retains the detached root views of previous renders, so only look at views
@@ -102,7 +98,7 @@ def test_datashader_reaggregates_on_zoom(page: Page, local_app) -> None:
     assert_reaggregates_on_zoom(page)
     assert_reaggregates_on_pan(page)
 
-    assert_no_unexpected_errors(errors, failed_requests, allowed_404s=(BOKEH_404,))
+    assert_no_unexpected_errors(errors, failed_requests)
 
 
 def test_datashader_rerender_lifecycle(page: Page, local_app) -> None:
@@ -123,4 +119,4 @@ def test_datashader_rerender_lifecycle(page: Page, local_app) -> None:
 
     assert not any("widget is not attached" in err.lower() for err in errors)
     assert not any("no comm channel" in err.lower() for err in errors)
-    assert_no_unexpected_errors(errors, failed_requests, allowed_404s=(BOKEH_404,))
+    assert_no_unexpected_errors(errors, failed_requests)
