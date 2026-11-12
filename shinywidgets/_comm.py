@@ -1,3 +1,4 @@
+import json
 import logging
 import threading
 from base64 import b64encode
@@ -271,9 +272,15 @@ def flush_queued_sends(placeholder: object, comm: "ShinyComm") -> None:
     Deliver, in order, the sends queued on a pre-open placeholder through the
     real comm that replaced it (see OrphanedShinyComm).
     """
+    # Function-local for the same reason as in ShinyComm.send()
+    from ._shinywidgets import open_shared_references
+
     if not isinstance(placeholder, OrphanedShinyComm):
         return
     for msg_txt in placeholder.take_queued_sends():
+        # Queued before ShinyComm.send() could open what it references (e.g.
+        # pythreejs's WebGLRenderer.render(scene, camera) in a render function)
+        open_shared_references(comm, json.loads(msg_txt)["content"]["data"])
         comm.publish_packed("shinywidgets_comm_msg", msg_txt)
 
 

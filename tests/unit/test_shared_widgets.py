@@ -999,6 +999,27 @@ def test_session_update_opens_the_shared_widget_it_references(
     assert sent.index(child_open) < sent.index(("shinywidgets_comm_msg", box.model_id))
 
 
+def test_send_queued_before_open_opens_the_shared_widget_it_references(
+    widget_session: Session,
+    flush_to_browser: Callable[[], list[dict[str, Any]]],
+    shared_state: None,
+) -> None:
+    with shared_lifetime():
+        scene = HTML()
+    # Like pythreejs's WebGLRenderer.render(scene, camera), called in a render
+    # function: a custom message naming a widget its own state doesn't hold,
+    # sent before its comm opens
+    with session_context(widget_session), session_lifetime():
+        renderer = HTML()
+        renderer.send({"type": "render", "scene": f"IPY_MODEL_{scene.model_id}"})
+
+    sent = [(m["type"], m["content"]["comm_id"]) for m in flush_to_browser()]
+    scene_open = ("shinywidgets_comm_open", scene.model_id)
+    assert scene_open in sent
+    render_msg = ("shinywidgets_comm_msg", renderer.model_id)
+    assert sent.index(scene_open) < sent.index(render_msg)
+
+
 def test_update_after_session_end_opens_nothing(
     widget_session: Session, shared_state: None
 ) -> None:
