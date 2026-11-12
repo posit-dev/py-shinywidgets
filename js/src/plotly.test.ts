@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eventPayload, visibilitySeed } from "./plotly";
+import { eventPayload, normalizeBindEvents, selectionSeed, visibilitySeed } from "./plotly";
 
 const legendData = {
   curveNumber: 2,
@@ -159,5 +159,102 @@ describe("visibilitySeed", () => {
     expect(eventPayload("plotly_update", {}, plotEl)).toEqual(expected);
     // Plotly.addTraces/deleteTraces/moveTraces redraw, emitting plotly_redraw
     expect(eventPayload("plotly_redraw", undefined, plotEl)).toEqual(expected);
+  });
+});
+
+describe("normalizeBindEvents", () => {
+  it("unions shapes with points winning over region", () => {
+    const m = normalizeBindEvents([
+      { name: "plotly_selected", payload: "region" },
+      { name: "plotly_selected", payload: "points" },
+      "plotly_deselect",
+    ]);
+    expect(m.get("plotly_selected")).toBe("points");
+    expect(m.get("plotly_deselect")).toBe("points");
+  });
+
+  it("keeps region when only region is requested", () => {
+    const m = normalizeBindEvents([{ name: "plotly_selected", payload: "region" }]);
+    expect(m.get("plotly_selected")).toBe("region");
+  });
+});
+
+describe("eventPayload selection slimming", () => {
+  const data = {
+    points: [
+      { curveNumber: 0, pointNumber: 3, x: 1.5, y: 2.5, customdata: "row-3" },
+      { curveNumber: 0, pointNumber: 4, x: 1.6, y: 2.6 },
+    ],
+    range: { x: [1, 2], y: [2, 3] },
+  };
+
+  it("plotly_selected sends slim points and the region when points requested", () => {
+    const out = eventPayload("plotly_selected", data, undefined, true);
+    expect(out.points).toEqual([
+      { trace_index: 0, point_index: 3, customdata: "row-3" },
+      { trace_index: 0, point_index: 4 },
+    ]);
+    expect(out.range).toEqual(data.range);
+  });
+
+  it("plotly_selected omits points but keeps the region when region-only", () => {
+    const out = eventPayload("plotly_selected", data, undefined, false);
+    expect("points" in out).toBe(false);
+    expect(out.range).toEqual(data.range);
+  });
+
+  it("aggregated traces keep per-sample customdata from pointNumbers", () => {
+    const agg = {
+      points: [
+        {
+          curveNumber: 0,
+          pointNumber: 0,
+          pointNumbers: [10, 11],
+          data: { customdata: ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"] },
+        },
+      ],
+    };
+    const out = eventPayload("plotly_selected", agg, undefined, true);
+    expect(out.points).toEqual([
+      { trace_index: 0, point_index: 10, customdata: "k" },
+      { trace_index: 0, point_index: 11, customdata: "l" },
+    ]);
+  });
+
+  it("plotly_click keeps coordinates", () => {
+    const out = eventPayload("plotly_click", data, undefined, false);
+    expect(out.points).toEqual([
+      { trace_index: 0, point_index: 3, x: 1.5, y: 2.5, customdata: "row-3" },
+      { trace_index: 0, point_index: 4, x: 1.6, y: 2.6 },
+    ]);
+  });
+});
+
+describe("selectionSeed slimming", () => {
+  const plotEl: any = {
+    data: [
+      {
+        x: [1, 2, 3],
+        y: [4, 5, 6],
+        customdata: ["a", "b", "c"],
+        selectedpoints: [0, 2],
+      },
+    ],
+    _fullLayout: { selections: [{ xref: "x", yref: "y", x0: 1, x1: 3, y0: 4, y1: 6 }] },
+  };
+
+  it("sends slim points plus the region when points requested", () => {
+    const out = selectionSeed(plotEl, true);
+    expect(out.points).toEqual([
+      { trace_index: 0, point_index: 0, customdata: "a" },
+      { trace_index: 0, point_index: 2, customdata: "c" },
+    ]);
+    expect(out.range).toEqual({ x: [1, 3], y: [4, 6] });
+  });
+
+  it("sends only the region when points are not requested", () => {
+    const out = selectionSeed(plotEl, false);
+    expect("points" in out).toBe(false);
+    expect(out.range).toEqual({ x: [1, 3], y: [4, 6] });
   });
 });
