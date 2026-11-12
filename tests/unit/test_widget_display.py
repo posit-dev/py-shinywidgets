@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any, Dict, List
 
 import pytest
-from ipywidgets import Widget
+from ipywidgets import IntSlider, Widget
 from plotly.graph_objects import FigureWidget, Scatter
 from shiny import Session, reactive
 from shiny.session import session_context
 from shiny.session._session import AppSession
 from shinywidgets._comm import ShinyComm
-from shinywidgets._shinywidgets import SESSION_WIDGET_ID_MAP
+from shinywidgets._shinywidgets import SESSION_WIDGET_ID_MAP, is_closed_widget
 
 
 def test_open_does_not_create_display_previews(widget_session: Session) -> None:
@@ -71,3 +72,49 @@ class PreviewWidget(Widget):
 
 class CustomFigureWidget(FigureWidget):
     pass
+
+
+SANITIZED_MSG = "An error has occurred. Check your logs or contact the app author for clarification."
+
+
+class BrokenStateSlider(IntSlider):
+    def get_state(self, *args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("boom during get_state")
+
+
+def test_comm_open_failure_notifies_user_and_closes_widget(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent: List[Dict[str, Any]] = []
+    monkeypatch.setattr(widget_session, "_send_message_sync", sent.append)
+
+    async def unhandled(e: Exception) -> None:
+        raise AssertionError(f"session must survive a comm-open failure: {e}")
+
+    monkeypatch.setattr(widget_session, "_unhandled_error", unhandled)
+
+    with session_context(widget_session):
+        w = BrokenStateSlider()
+        asyncio.get_event_loop().run_until_complete(reactive.flush())
+
+    [note] = [m for m in sent if "notification" in m]
+    payload = note["notification"]["message"]
+    assert payload["type"] == "error"
+    assert payload["duration"] is None
+    assert "boom during get_state" in payload["html"]
+    assert is_closed_widget(w)
+
+
+def test_comm_open_failure_notification_is_sanitized_with_app_flag(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    widget_session.app.sanitize_errors = True
+    sent: List[Dict[str, Any]] = []
+    monkeypatch.setattr(widget_session, "_send_message_sync", sent.append)
+
+    with session_context(widget_session):
+        _ = BrokenStateSlider()
+        asyncio.get_event_loop().run_until_complete(reactive.flush())
+
+    [note] = [m for m in sent if "notification" in m]
+    assert note["notification"]["message"]["html"] == SANITIZED_MSG
