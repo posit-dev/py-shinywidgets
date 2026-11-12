@@ -581,9 +581,9 @@ def init_session(session: Session) -> None:
     # Tell the client the message size limit to enforce before sending
     # (dropping oversized messages instead of letting them kill the session)
     async def _send_init() -> None:
-        await session.send_custom_message(
-            "shinywidgets_session_init", json.dumps({"ws_max_size": ws_max_size()})
-        )
+        msg = json.dumps({"ws_max_size": ws_max_size()})
+        await session.send_custom_message("shinywidgets_session_init", msg)  # type: ignore
+
 
     session.on_flush(_send_init)
 
