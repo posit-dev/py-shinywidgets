@@ -38,21 +38,44 @@ def test_node_and_edge_clicks(page: Page, local_app) -> None:
 
 
 def test_clicks_still_fire_after_rerender(page: Page, local_app) -> None:
-    # Regression test for the eager attach: ipycytoscape's frontend silently
-    # drops click registrations made after the view exists, so a lazy
-    # (first-read) registration would never fire after a re-render
+    # Regression test for attaching at render: ipycytoscape's frontend
+    # silently drops click registrations made after the view exists, so a
+    # registration deferred to first read would never fire after a re-render
     errors, failed_requests = collect_errors(page)
     goto_drawn(page, local_app)
 
     click_at(page, 100, 175)  # node "a"
     expect(page.locator("#node")).to_have_text("a", timeout=10000)
 
+    # The last click is retained across the re-render (it still happened)
     page.click("#rerender")
-    expect(page.locator("#node")).to_have_text("None", timeout=10000)
+    expect(page.locator("#node")).to_have_text("a", timeout=10000)
     page.wait_for_function(CANVAS_HAS_PIXELS_JS, arg="#graph", timeout=30000)
     page.wait_for_timeout(1000)  # let the new view's layout settle
 
     click_at(page, 300, 175)  # node "b"
     expect(page.locator("#node")).to_have_text("b", timeout=10000)
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_clicks_select_and_sync_to_selected_accessors(page: Page, local_app) -> None:
+    # The app makes nodes/edges selectable, so clicks also select; the
+    # selected_nodes/selected_edges accessors (debounced by default) should
+    # follow
+    errors, failed_requests = collect_errors(page)
+    goto_drawn(page, local_app)
+    expect(page.locator("#selected_nodes")).to_have_text("None")
+    expect(page.locator("#selected_edges")).to_have_text("None")
+
+    click_at(page, 100, 175)  # node "a"
+    expect(page.locator("#selected_nodes")).to_have_text("a", timeout=10000)
+
+    click_at(page, 300, 175)  # node "b" (single selection: "a" deselects)
+    expect(page.locator("#selected_nodes")).to_have_text("b", timeout=10000)
+
+    click_at(page, 200, 175)  # the midpoint of edge a-b
+    expect(page.locator("#selected_edges")).to_have_text("a->b", timeout=10000)
+    expect(page.locator("#selected_nodes")).to_have_text("None", timeout=10000)
 
     assert_no_unexpected_errors(errors, failed_requests)

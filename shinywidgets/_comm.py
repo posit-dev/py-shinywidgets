@@ -1,8 +1,9 @@
+import json
 import logging
 import threading
 from base64 import b64encode
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional
 
 from shiny import Session
@@ -57,6 +58,10 @@ class ShinyComm:
     # a client update with an `echo_update`, and the browser only drops stale
     # echoes if they name the update they answer in `parent_header.msg_id`.
     _parent_header: Optional[object] = None
+    # True for a comm the browser opened (see from_client()), until a browser
+    # message names its widget and so settles what its lifetime follows (see
+    # claim_browser_created() in _shinywidgets.py).
+    awaiting_owner: bool = False
 
     def __init__(
         self,
@@ -93,6 +98,7 @@ class ShinyComm:
         comm.target_name = target_name
         comm.session = session
         comm._closed = False
+        comm.awaiting_owner = True
         comm_manager.register_comm(comm)
         return comm
 
@@ -126,6 +132,12 @@ class ShinyComm:
         metadata: MetadataType = None,
         buffers: BufferType = None,
     ) -> None:
+        # _shinywidgets imports this module at module scope, so keep its
+        # import function-local (the same trick _render_widget_base uses to
+        # import _shinywidgets in the other direction)
+        from ._shinywidgets import open_shared_references
+
+        open_shared_references(self, data)
         self._publish_msg(
             "shinywidgets_comm_msg", data=data, metadata=metadata, buffers=buffers
         )
@@ -167,46 +179,21 @@ class ShinyComm:
         buffers: BufferType = None,
         **keys: object,
     ) -> None:
-        data = {} if data is None else data
-        metadata = {} if metadata is None else metadata
-
-        # Add buffers, if any. Note that this is just here for validation of the buffers
-        # and the buffer paths should be embedded inside data.
-        buffers = [] if buffers is None else buffers
-        for idx, buf in enumerate(buffers):
-            if not isinstance(buf, memoryview):
-                try:
-                    view = memoryview(buf)
-                    if not view.contiguous:
-                        # zmq requires memoryviews to be contiguous
-                        raise ValueError(
-                            "Buffer %i (%r) is not contiguous" % (idx, buf)
-                        )
-                except TypeError as e:
-                    raise TypeError(
-                        "Buffer objects must support the buffer protocol."
-                    ) from e
-
-        # Construct the message payload
-        msg: Dict[str, object] = dict(
-            content=dict(data=data, comm_id=self.comm_id, **keys),
-            metadata=metadata,
-            # Since Shiny doesn't currently have support for sending binary data, we base64 encode
-            # it (and decode whenever it's received).
-            buffers=[b64encode(b).decode("ascii") for b in buffers],
-            # I don't think this value matters unless we decide we want to sign
-            # the message in a similar way to the kernel (since we don't
-            # necessarily execute code from the client, it doesn't seem necessary)
-            # https://github.com/ipython/ipykernel/blob/378af4b/ipykernel/comm/comm.py#L36-L40
-            ident="comm-" + self.comm_id,
-            # I don't think we need this info, but I could be wrong
-            parent={},  # self.kernel.get_parent("shell")
+        self.publish_packed(
+            msg_type,
+            pack_comm_msg(
+                self.comm_id,
+                data=data,
+                metadata=metadata,
+                buffers=buffers,
+                parent_header=self._parent_header,
+                **keys,
+            ),
         )
-        if self._parent_header is not None:
-            msg["parent_header"] = self._parent_header
 
+    def publish_packed(self, msg_type: str, msg_txt: str) -> None:
+        """Schedule an already serialized message (see pack_comm_msg())."""
         session = self.session
-        msg_txt = json_packer(msg)
 
         async def _send():
             if msg_type == "shinywidgets_comm_close":
@@ -280,36 +267,49 @@ class ShinyComm:
             self._close_callback(msg)
 
 
-# Work waiting for a widget's comm to open, by model id (see when_comm_open())
-COMM_OPEN_CALLBACKS: Dict[str, List[Callable[[], None]]] = {}
-
-
-def when_comm_open(widget: object, fn: Callable[[], None]) -> None:
+def flush_queued_sends(placeholder: object, comm: "ShinyComm") -> None:
     """
-    Run `fn` once `widget`'s comm reaches the browser, e.g. to send it a custom
-    message. A widget built during a render gets its real comm only after the
-    render's flush; until then, sends are silently dropped.
+    Deliver, in order, the sends queued on a pre-open placeholder through the
+    real comm that replaced it (see OrphanedShinyComm).
     """
-    comm = getattr(widget, "comm", None)
-    if isinstance(comm, OrphanedShinyComm):
-        COMM_OPEN_CALLBACKS.setdefault(comm.comm_id, []).append(fn)
-    else:
-        fn()
+    # Function-local for the same reason as in ShinyComm.send()
+    from ._shinywidgets import open_shared_references
 
-
-def run_comm_open_callbacks(model_id: str) -> None:
-    for fn in COMM_OPEN_CALLBACKS.pop(model_id, []):
-        fn()
+    if not isinstance(placeholder, OrphanedShinyComm):
+        return
+    for msg_txt in placeholder.take_queued_sends():
+        # Queued before ShinyComm.send() could open what it references (e.g.
+        # pythreejs's WebGLRenderer.render(scene, camera) in a render function)
+        open_shared_references(comm, json.loads(msg_txt)["content"]["data"])
+        comm.publish_packed("shinywidgets_comm_msg", msg_txt)
 
 
 @dataclass
 class OrphanedShinyComm:
     """
-    A 'mock' `ShinyComm`. It's only purpose is to allow one to get
-    the `model_id` (i.e., `comm_id`) of a widget after closing it.
+    A placeholder `ShinyComm`, standing in for a widget's real comm in one of
+    two states:
+
+    * Pre-open (`pending_open=True`): the widget was constructed in a session,
+      but its real comm only opens on a later reactive flush (see
+      `init_shiny_widget()`). `send()` calls made in the meantime queue up and
+      replay, in FIFO order, through the real comm when it opens (see
+      `flush_queued_sends()`), so widget methods that send custom messages
+      (e.g., k3d's `start_auto_play()`) work even when called while their
+      output is still rendering. `widget.send()` reaches the queue too (see
+      `queue_sends_until_comm_open()`). A send is serialized right away, by
+      the serializer an open comm uses (see `pack_comm_msg()`), so what
+      reaches the browser doesn't depend on whether the comm had opened yet.
+    * Post-close (`pending_open=False`): the widget was closed (or was never
+      meant to open); the placeholder only keeps `model_id` working, and
+      sends are no-ops, as they've always been for a closed widget.
     """
 
     comm_id: str
+    # No default: a placeholder left at a close site in the pre-open state
+    # would queue every later send for as long as the widget lives
+    pending_open: bool
+    _queue: List[str] = field(default_factory=lambda: [], repr=False)
 
     # Cross-library contract: ipywidgets treats a comm with `kernel = None`
     # like a `DummyComm`, and ipyvue >= 3 skips caching templates whose comm
@@ -318,20 +318,38 @@ class OrphanedShinyComm:
 
     def send(
         self,
-        *args: object,
-        **kwargs: object,
+        data: DataType = None,
+        metadata: MetadataType = None,
+        buffers: BufferType = None,
     ) -> None:
-        pass
+        if self.pending_open:
+            self._queue.append(
+                pack_comm_msg(
+                    self.comm_id, data=data, metadata=metadata, buffers=buffers
+                )
+            )
 
     def close(
         self,
         *args: object,
         **kwargs: object,
     ) -> None:
-        pass
+        # Closed before it opened: nothing left to wait for or flush
+        self.pending_open = False
+        self._queue.clear()
 
     def on_msg(self, callback: MsgCallback) -> None:
         pass
+
+    def take_queued_sends(self) -> List[str]:
+        """
+        The (serialized) sends queued while pre-open, in FIFO order. Drains the queue and
+        ends the pre-open state (the real comm is taking over), so a later
+        `send()` is a no-op here and goes through the real comm instead.
+        """
+        self.pending_open = False
+        queue, self._queue = self._queue, []
+        return queue
 
 
 class SharedShinyComm:
@@ -341,10 +359,10 @@ class SharedShinyComm:
     messages still arrive through each session's own `ShinyComm`, which runs
     the callbacks registered here. A shared widget is never closed.
 
-    Before fanning out, `send()` guards against updates that reference a model
-    some session doesn't have (a browser without it waits forever for it): a
-    process-global one is opened in the sessions missing it, and any other is
-    warned about once per referenced model (see guard_shared_send).
+    Before fanning out, `send()` warns (once per referenced model) about an
+    update that references a model some session can never get, since a browser
+    without it waits forever for it (see guard_shared_send). A process-global
+    one is opened by each session's own `ShinyComm.send()`.
     """
 
     kernel = "Shiny"
@@ -392,9 +410,7 @@ class SharedShinyComm:
         metadata: MetadataType = None,
         buffers: BufferType = None,
     ) -> None:
-        # _shinywidgets imports this module at module scope, so keep the
-        # guard's import function-local (the same trick _render_widget_base
-        # uses to import _shinywidgets in the other direction)
+        # Function-local for the same reason as in ShinyComm.send()
         from ._shinywidgets import guard_shared_send
 
         guard_shared_send(self, data)
@@ -414,6 +430,59 @@ class SharedShinyComm:
         self._close_callback = callback
         for comm in self.comms.values():
             comm.on_close(callback)
+
+
+def pack_comm_msg(
+    comm_id: str,
+    data: DataType = None,
+    metadata: MetadataType = None,
+    buffers: BufferType = None,
+    parent_header: Optional[object] = None,
+    **keys: object,
+) -> str:
+    """
+    Serialize a comm message for the wire.
+
+    The one serializer for every comm message, whether it's published right
+    away (ShinyComm) or queued until the comm opens (OrphanedShinyComm).
+    """
+    data = {} if data is None else data
+    metadata = {} if metadata is None else metadata
+
+    # Add buffers, if any. Note that this is just here for validation of the buffers
+    # and the buffer paths should be embedded inside data.
+    buffers = [] if buffers is None else buffers
+    for idx, buf in enumerate(buffers):
+        if not isinstance(buf, memoryview):
+            try:
+                view = memoryview(buf)
+                if not view.contiguous:
+                    # zmq requires memoryviews to be contiguous
+                    raise ValueError("Buffer %i (%r) is not contiguous" % (idx, buf))
+            except TypeError as e:
+                raise TypeError(
+                    "Buffer objects must support the buffer protocol."
+                ) from e
+
+    # Construct the message payload
+    msg: Dict[str, object] = dict(
+        content=dict(data=data, comm_id=comm_id, **keys),
+        metadata=metadata,
+        # Since Shiny doesn't currently have support for sending binary data, we base64 encode
+        # it (and decode whenever it's received).
+        buffers=[b64encode(b).decode("ascii") for b in buffers],
+        # I don't think this value matters unless we decide we want to sign
+        # the message in a similar way to the kernel (since we don't
+        # necessarily execute code from the client, it doesn't seem necessary)
+        # https://github.com/ipython/ipykernel/blob/378af4b/ipykernel/comm/comm.py#L36-L40
+        ident="comm-" + comm_id,
+        # I don't think we need this info, but I could be wrong
+        parent={},  # self.kernel.get_parent("shell")
+    )
+    if parent_header is not None:
+        msg["parent_header"] = parent_header
+
+    return json_packer(msg)
 
 
 logger = logging.getLogger("shinywidgets")

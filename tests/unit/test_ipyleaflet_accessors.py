@@ -74,7 +74,8 @@ def test_clicked_reports_clicks_only(widget_session: Session) -> None:
     assert r.clicked() is not None
     assert r.clicked()["coordinates"] == [52.5, -0.1]
     r._accessors.on_render(leaflet_map(widget_session))
-    assert r.clicked() is None  # events reset on re-render
+    # The last click is retained across the re-render (it still happened)
+    assert r.clicked()["coordinates"] == [52.5, -0.1]
 
 
 def test_drawn_features_follows_the_draw_control(widget_session: Session) -> None:
@@ -220,3 +221,9 @@ def test_leafmap_backend_switch_renders_reads_raise_and_recovery(
     r._widget = m2
     r._accessors.on_render(m2)
     assert r.zoom() == 7
+
+
+def test_clicked_is_retained() -> None:
+    from shinywidgets._ipyleaflet import CLICKED
+
+    assert CLICKED.kind == "state"
