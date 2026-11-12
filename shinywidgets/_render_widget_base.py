@@ -77,6 +77,14 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     Subclasses declare accessors (methods such as `clicked()` that read widget
     events reactively) in `_accessor_specs`, and implement each one as
     `self._read_accessor(name)`.
+
+    Parameters
+    ----------
+    listen_to
+        Names of opt-in accessors to enable (e.g. ``listen_to=["selected"]``).
+        Accessors whose payloads can grow without bound or stream continuously
+        are off unless declared; reading one that wasn't declared raises an
+        error naming it. Additive to the always-on accessors.
     """
 
     # Subclasses normally set this at class level; render_mols2grid also
