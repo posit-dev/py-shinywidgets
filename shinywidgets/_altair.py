@@ -9,7 +9,7 @@ a frame by a selection's Vega "store", porting Vega's `selectionTest`.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable, Dict, Literal, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional, Union
 from zoneinfo import ZoneInfo
 
 from ._accessors import AccessorSpec, Emit
@@ -101,6 +101,28 @@ def named_subcharts(chart: Any) -> Dict[str, Any]:
 
     visit(chart)
     return found
+
+
+def selection_views(chart: Any, name: str) -> Optional[List[str]]:
+    """
+    The names of the views selection `name` participates in, per the chart's
+    hoisted selection param (the chart's record of which subcharts the user
+    can gesture on). `None` when the param or its views can't be found --
+    callers then fall back to the store's `unit`s.
+    """
+    import altair as alt
+
+    params = getattr(chart, "params", alt.Undefined)
+    if params is alt.Undefined:
+        return None
+    for param in params:
+        if getattr(param, "name", None) != name:
+            continue
+        views = getattr(param, "views", alt.Undefined)
+        if views is alt.Undefined:
+            return None
+        return [str(view) for view in views]
+    return None
 
 
 def chart_frame(widget: JupyterChart) -> Any:

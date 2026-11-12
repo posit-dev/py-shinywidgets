@@ -92,6 +92,22 @@ def test_named_subcharts_walks_layers_and_concats(widget_session: Session) -> No
     assert sa.named_subcharts(plain.chart) == {}
 
 
+def test_selection_views_reads_the_hoisted_param(widget_session: Session) -> None:
+    with session_context(widget_session):
+        layered = layered_chart()
+        concatenated = hconcat_chart()
+        plain = chart(alt.selection_interval(name="brush"))
+    assert sa.selection_views(layered.chart, "b1") == ["pts"]
+    assert sa.selection_views(layered.chart, "b2") == ["lns"]
+    assert sa.selection_views(concatenated.chart, "brush") == ["pts", "lns"]
+    assert sa.selection_views(concatenated.chart, "nope") is None
+    assert sa.selection_views(plain.chart, "brush") is None
+    variable = alt.Chart(POINTS).mark_point().encode(x="x").add_params(
+        alt.param(name="v", value=1)
+    )
+    assert sa.selection_views(variable, "v") is None
+
+
 def test_named_subcharts_rejects_duplicate_names() -> None:
     a = alt.Chart(POINTS, name="dup").mark_point().encode(x="x")
     b = alt.Chart(LINES, name="dup").mark_point().encode(x="x")
