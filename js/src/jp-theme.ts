@@ -5,18 +5,17 @@
 // freezes the palette. Shiny never sets the attribute, so dark-mode apps got
 // light-palette grids (CSS variables can't fix this: it's an attribute read,
 // not a var read). Emulate JupyterLab here, deriving the value from the app's
-// bslib color mode (`data-bs-theme` on <html>, falling back to
-// `prefers-color-scheme` when no explicit mode is set) and keeping it in
-// sync, so widgets whose JS loads later still see the current mode. This runs
-// at output.js evaluation (in <head>), before any widget JS loads (widget JS
-// loads lazily via require.js at first render).
+// bslib color mode (`data-bs-theme` on <html>) and keeping it in sync, so
+// widgets whose JS loads later still see the current mode. An absent
+// attribute means light: without ui.input_dark_mode() the page uses
+// Bootstrap's default (light) palette regardless of the OS preference. This
+// runs at output.js evaluation (in <head>), before any widget JS loads
+// (widget JS loads lazily via require.js at first render).
 export function installJpThemeLightShim(): void {
-  const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
-
   const sync = (): void => {
     if (!document.body) return;
-    const theme = document.documentElement.getAttribute('data-bs-theme');
-    const dark = theme ? theme === 'dark' : darkQuery.matches;
+    const dark =
+      document.documentElement.getAttribute('data-bs-theme') === 'dark';
     document.body.dataset.jpThemeLight = dark ? 'false' : 'true';
   };
 
@@ -25,7 +24,6 @@ export function installJpThemeLightShim(): void {
       attributes: true,
       attributeFilter: ['data-bs-theme'],
     });
-    darkQuery.addEventListener('change', sync);
   };
 
   // output.js is parsed in <head>, so <body> may not exist yet

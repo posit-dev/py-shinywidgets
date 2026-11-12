@@ -7,6 +7,7 @@ from shiny.pytest import create_app_fixture
 from tests.playwright.conftest import assert_no_unexpected_errors, collect_errors
 
 local_app_light = create_app_fixture(Path(__file__).parent / "app_light.py")
+local_app_plain = create_app_fixture(Path(__file__).parent / "app_plain.py")
 
 # ipydatagrid picks its light/dark palette once, when the grid view is
 # created, by reading JupyterLab's `data-jp-theme-light` attribute on <body>
@@ -60,6 +61,22 @@ def test_light_app_grid_uses_light_palette(page: Page, local_app_light) -> None:
 
     page.wait_for_function(f"() => ({JP_THEME_LIGHT_JS})() === 'true'")
 
+    expect(page.locator("#grid .ipydatagrid-widget.dark")).to_have_count(0)
+    assert not header_is_dark(page)
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_plain_app_ignores_os_dark_preference(page: Page, local_app_plain) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.emulate_media(color_scheme="dark")
+    page.goto(local_app_plain.url)
+    wait_for_grid(page)
+
+    # A page without input_dark_mode() has no data-bs-theme attribute and is
+    # always light (Bootstrap's default), so the OS preference must not leak
+    # into the grid's palette
+    page.wait_for_function(f"() => ({JP_THEME_LIGHT_JS})() === 'true'")
     expect(page.locator("#grid .ipydatagrid-widget.dark")).to_have_count(0)
     assert not header_is_dark(page)
 
