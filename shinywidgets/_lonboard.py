@@ -12,9 +12,9 @@ that attaches at render, so a pick made before its first read isn't lost.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Dict
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable
 
-from ._accessors import AccessorSpec, Emit
+from ._accessors import AccessorSpec, Emit, has_current_context
 
 if TYPE_CHECKING:
     import geopandas
@@ -30,17 +30,35 @@ def attach_view_state(widget: LonboardMap, emit: Emit) -> Callable[[], None]:
     return lambda: widget.unobserve(on_change, "view_state")
 
 
-def pick_frame(widget: LonboardMap) -> "geopandas.GeoDataFrame":
+def pick_frame(
+    widget: LonboardMap, positions: Iterable[int]
+) -> "geopandas.GeoDataFrame":
     """
-    The frame a pick indexes into, for `selected_rows()`'s `df` default: the
-    data table of the map's one pickable layer, round-tripped through
-    `geopandas.GeoDataFrame.from_arrow` (which keeps the layer's rows and
-    columns but gives a fresh RangeIndex). Layers are pickable the way
-    `attach_selected_index` decides it (a `selected_index` trait -- which
-    every lonboard layer has, data-backed or not), so a map whose pick could
-    come from several layers raises: the pick has no layer identity.
+    The rows at `positions` of the frame a pick indexes into, for
+    `selected_rows()`'s `df` default: those rows of the data table of the
+    map's one pickable layer, sliced in Arrow and converted with
+    `geopandas.GeoDataFrame.from_arrow` (slicing first keeps a pick on a
+    large layer from converting rows nobody asked for; the result gets a
+    fresh RangeIndex). A layer counts as pickable when it has the
+    `selected_index` trait (which every lonboard layer has, data-backed or
+    not) and `pickable=True` -- a non-pickable layer can't supply a pick, so
+    it doesn't make the pick's origin ambiguous; a map whose pick could
+    come from several pickable layers raises, since the pick has no layer
+    identity. In a reactive context, reading also takes a dependency on the
+    map's layers and the layer's table, so an in-place table replacement on
+    a long-lived map re-reads the picked row.
     """
-    layers = [layer for layer in widget.layers if layer.has_trait("selected_index")]
+    layers = [
+        layer
+        for layer in widget.layers
+        if layer.has_trait("selected_index") and getattr(layer, "pickable", True)
+    ]
+    if has_current_context():
+        # Local import: ._shinywidgets imports ._render_widget, which
+        # imports this module
+        from ._shinywidgets import reactive_read
+
+        reactive_read(widget, "layers")
     if len(layers) != 1:
         raise ValueError(
             f"`selected_rows()` can't default `df`: the map has {len(layers)} "
@@ -48,6 +66,10 @@ def pick_frame(widget: LonboardMap) -> "geopandas.GeoDataFrame":
             "Pass `df=` (the frame of the layer you mean), or read each "
             'layer\'s pick yourself with `reactive_read(layer, "selected_index")`.'
         )
+    if has_current_context() and layers[0].has_trait("table"):
+        from ._shinywidgets import reactive_read
+
+        reactive_read(layers[0], "table")
     table = getattr(layers[0], "table", None)
     if table is None:
         raise TypeError(
@@ -56,13 +78,21 @@ def pick_frame(widget: LonboardMap) -> "geopandas.GeoDataFrame":
         )
     try:
         import geopandas as gpd
+        import pyarrow as pa
     except ImportError:
         raise ImportError(
             "`selected_rows()` without `df` reconstructs the layer's data "
             "frame with geopandas, which isn't installed "
             "(pip install geopandas). Or pass `df=` explicitly."
         ) from None
-    return gpd.GeoDataFrame.from_arrow(table)
+    idx = [int(p) for p in positions]
+    pt = pa.table(table)
+    if not idx and pt.num_rows:
+        # from_arrow() can't convert an empty interleaved-geometry array (a
+        # numpy reshape bug in geopandas), so build the empty frame by
+        # converting one row and dropping it
+        return gpd.GeoDataFrame.from_arrow(pt.slice(0, 1)).iloc[0:0]
+    return gpd.GeoDataFrame.from_arrow(pt.take(pa.array(idx, type=pa.int64())))
 
 
 def attach_selected_bounds(widget: LonboardMap, emit: Emit) -> Callable[[], None]:

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 from typing import List
 
 import numpy as np
 import pytest
 import shinywidgets._lonboard as sl
-from shiny import Session
+from shiny import Session, reactive
 from shiny.session import session_context
 from shinywidgets import render_lonboard
 from shinywidgets._accessors import Accessors
@@ -16,6 +17,11 @@ pytest.importorskip(
     "lonboard",
     reason="lonboard isn't installed (e.g., it lacks wheels for this Python version)",
 )
+
+
+def flush() -> None:
+    asyncio.get_event_loop().run_until_complete(reactive.flush())
+
 
 import geoarrow.rust.core as gr  # noqa: E402
 import geopandas as gpd  # noqa: E402
@@ -239,6 +245,7 @@ def test_selected_rows_default_frame_follows_the_pick(
     assert isinstance(out, gpd.GeoDataFrame)
     assert out["name"].tolist() == ["c"]
     assert out["value"].tolist() == [30]
+    assert out.geometry.iloc[0].equals(GDF.geometry.iloc[2])
     # The reconstructed frame can't carry the original index
     assert isinstance(out.index, pd.RangeIndex)
 
@@ -283,6 +290,52 @@ def test_selected_rows_several_pickable_layers_raise(
     m.layers[0].selected_index = 1
     with pytest.raises(ValueError, match="selected_index"):
         r.selected_rows()
+
+
+def test_selected_rows_ignores_non_pickable_layers(
+    widget_session: Session,
+) -> None:
+    # A non-pickable layer can never supply a pick, so it doesn't make the
+    # default frame ambiguous
+    with session_context(widget_session):
+        pick = ScatterplotLayer.from_geopandas(GDF)
+        backdrop = ScatterplotLayer.from_geopandas(GDF, pickable=False)
+    m = geo_map(widget_session, pick, backdrop)
+    r = rows_render(widget_session, m)
+    pick.selected_index = 2
+    assert r.selected_rows()["name"].tolist() == ["c"]
+
+
+def test_selected_rows_follows_layer_table_replacement(
+    widget_session: Session,
+) -> None:
+    # A long-lived map can have a layer's data replaced in place; readers
+    # take a dependency on the table, so the picked row follows the
+    # replacement (positionally -- row 1 of the new data)
+    m = geo_map(widget_session)
+    r = rows_render(widget_session, m)
+    m.layers[0].selected_index = 1  # row "b"
+
+    runs: List[List[str]] = []
+    with session_context(widget_session):
+
+        @reactive.effect
+        def _() -> None:
+            runs.append(r.selected_rows()["name"].tolist())
+
+        flush()
+        assert runs == [["b"]]
+
+        other = ScatterplotLayer.from_geopandas(
+            gpd.GeoDataFrame(
+                {"name": list("vwxyz"), "value": [1, 2, 3, 4, 5]},
+                geometry=[Point(i, i) for i in range(5)],
+                crs="EPSG:4326",
+            )
+        )
+        m.layers[0].table = other.table
+        flush()
+        assert runs == [["b"], ["w"]]
 
 
 def test_selected_rows_layer_without_a_table_raises(

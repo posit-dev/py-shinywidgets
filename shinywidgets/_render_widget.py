@@ -2594,13 +2594,13 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         ``df.iloc[map.selected()]``.
 
         `df` defaults to a frame reconstructed from the pickable layer's own
-        data (``geopandas.GeoDataFrame.from_arrow(layer.table)``), which
-        keeps the layer's rows and columns but not the original frame's index
-        (the result gets a fresh ``RangeIndex``); pass `df` when you need
-        the original frame (or it isn't a GeoDataFrame). Any frame type
-        works (pandas, polars, ...); the result has the same type. Empty
-        while nothing is picked, so it can be passed straight to
-        ``@render.data_frame``.
+        data (the picked rows of ``layer.table``, converted with
+        ``geopandas.GeoDataFrame.from_arrow``), which keeps the layer's
+        columns but not the original frame's index (the result gets a fresh
+        ``RangeIndex``); pass `df` when you need the original frame (or it
+        isn't a GeoDataFrame). Any frame type works (pandas, polars, ...);
+        the result has the same type. Empty while nothing is picked, so it
+        can be passed straight to ``@render.data_frame``.
 
         With several pickable layers the default raises, since a pick
         doesn't say which layer it's from; pass `df` (the frame of the layer
@@ -2611,16 +2611,15 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         The match is positional, so after a re-render or in-place data
         replacement (``layer.table = ...`` on a long-lived map), a retained
         position can point at a different row -- carry an ID column and look
-        rows up by it when the data can change.
+        rows up by it when the data can change. (A replacement does re-run
+        readers; it just can't tell which of the new rows is "the same".)
         """
         pick = self.selected()
         positions = [] if pick is None else [pick]
         if df is None:
             # The frame comes from the widget's layers, so read `.widget`
             # (reactive) rather than `._widget`
-            return select_rows_at(
-                pick_frame(cast("LonboardMap", self.widget)), positions
-            )
+            return pick_frame(cast("LonboardMap", self.widget), positions)
         return select_rows_at(df, positions)
 
     def selected_bounds(self) -> Optional[Tuple[float, float, float, float]]:
