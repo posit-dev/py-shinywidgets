@@ -615,3 +615,59 @@ def test_loop_schedule_cancel_also_drops_a_queued_run(
     cancel()  # e.g. a re-render between the timer and the next cycle
     session.queued[0]()
     assert calls == []
+
+
+def _attach_recorder(calls: List[str], name: str) -> acc.Attach:
+    def attach(widget: object, emit: acc.Emit) -> Callable[[], None]:
+        calls.append(name)
+        return lambda: None
+
+    return attach
+
+
+def test_opt_in_accessor_attaches_and_reads_when_listened() -> None:
+    calls: List[str] = []
+    spec = acc.AccessorSpec(
+        name="selected", kind="state", attach=_attach_recorder(calls, "selected"), opt_in=True
+    )
+    a = acc.Accessors([spec], listen_to=["selected"])
+    a.on_render(object())
+    assert calls == ["selected"]
+
+
+def test_opt_in_accessor_not_attached_without_listen_to() -> None:
+    calls: List[str] = []
+    spec = acc.AccessorSpec(
+        name="selected", kind="state", attach=_attach_recorder(calls, "selected"), opt_in=True
+    )
+    a = acc.Accessors([spec])
+    a.on_render(object())
+    assert calls == []
+
+
+def test_opt_in_accessor_read_raises_without_listen_to() -> None:
+    spec = acc.AccessorSpec(
+        name="selected", kind="state", attach=_attach_recorder([], "selected"), opt_in=True
+    )
+    a = acc.Accessors([spec])
+    a.on_render(object())
+    with pytest.raises(RuntimeError, match="listen_to=.*selected"):
+        a.read("selected")
+
+
+def test_listen_to_unknown_name_raises() -> None:
+    spec = acc.AccessorSpec(
+        name="selected", kind="state", attach=_attach_recorder([], "selected"), opt_in=True
+    )
+    with pytest.raises(ValueError, match="bogus"):
+        acc.Accessors([spec], listen_to=["bogus"])
+
+
+def test_default_on_accessor_ignores_listen_to() -> None:
+    calls: List[str] = []
+    spec = acc.AccessorSpec(
+        name="clicked", kind="state", attach=_attach_recorder(calls, "clicked")
+    )
+    a = acc.Accessors([spec], listen_to=[])
+    a.on_render(object())
+    assert calls == ["clicked"]
