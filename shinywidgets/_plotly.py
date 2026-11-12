@@ -54,7 +54,7 @@ SKIP = object()
 AXIS_RANGE_KEY = re.compile(r"^[xy]axis\d*\.(range|autorange)")
 
 
-def points_frame(points: List[Point]) -> "pd.DataFrame":
+def points_frame(points: List[Point], *, coordinates: bool = True) -> "pd.DataFrame":
     try:
         import pandas as pd
     except ImportError as e:  # plotly itself doesn't need pandas
@@ -63,11 +63,19 @@ def points_frame(points: List[Point]) -> "pd.DataFrame":
             "(`pip install 'shinywidgets[plotly]'`)."
         ) from e
 
-    columns = ["trace_index", "point_index", "x", "y"]
-    for optional in ("z", "customdata"):
+    columns = ["trace_index", "point_index"]
+    if coordinates:
+        columns += ["x", "y"]
+    for optional in (["z", "customdata"] if coordinates else ["customdata"]):
         if any(optional in p for p in points):
             columns.append(optional)
     return pd.DataFrame(points, columns=columns)
+
+
+def selection_frame(points: List[Point]) -> "pd.DataFrame":
+    # Selection payloads are slim ({trace_index, point_index, customdata?}):
+    # coordinates would duplicate data the user already has (see #459)
+    return points_frame(points, coordinates=False)
 
 
 def traces_frame(traces: List[Trace], columns: List[str]) -> "pd.DataFrame":
@@ -131,6 +139,7 @@ def bridge_attach(
     fires: Union[str, Sequence[str]],
     shape: Callable[[Dict[str, Any]], object],
     clears: Sequence[str],
+    payload: Optional[str] = None,
 ) -> Callable[[Any, Emit], Callable[[], None]]:
     names = (fires,) if isinstance(fires, str) else tuple(fires)
 
@@ -148,7 +157,12 @@ def bridge_attach(
                 emit(None)
 
         widget.on_msg(on_msg)
-        widget.send({"shinywidgets": "bind", "events": [*names, *clears]})
+        if payload is None:
+            events: List[object] = [*names, *clears]
+        else:
+            named: List[object] = [{"name": n, "payload": payload} for n in names]
+            events = named + list(clears)
+        widget.send({"shinywidgets": "bind", "events": events})
         return lambda: widget.on_msg(on_msg, remove=True)
 
     return attach
@@ -203,25 +217,27 @@ CLICKED = AccessorSpec(
 SELECTED = AccessorSpec(
     name="selected",
     kind="state",
-    attach=bridge_attach("plotly_selected", points_of, (DESELECT,)),
-    payload=points_frame,
+    attach=bridge_attach("plotly_selected", points_of, (DESELECT,), payload="points"),
+    payload=selection_frame,
+    opt_in=True,
 )
 SELECTING = AccessorSpec(
     name="selecting",
     kind="state",
-    attach=bridge_attach("plotly_selecting", points_of, (DESELECT,)),
-    payload=points_frame,
+    attach=bridge_attach("plotly_selecting", points_of, (DESELECT,), payload="points"),
+    payload=selection_frame,
     rate_policy="debounce",
+    opt_in=True,
 )
 BRUSHED = AccessorSpec(
     name="brushed",
     kind="state",
-    attach=bridge_attach("plotly_selected", region_of, (DESELECT,)),
+    attach=bridge_attach("plotly_selected", region_of, (DESELECT,), payload="region"),
 )
 BRUSHING = AccessorSpec(
     name="brushing",
     kind="state",
-    attach=bridge_attach("plotly_selecting", region_of, (DESELECT,)),
+    attach=bridge_attach("plotly_selecting", region_of, (DESELECT,), payload="region"),
     rate_policy="debounce",
 )
 RELAYOUT = AccessorSpec(
@@ -235,6 +251,7 @@ HOVER = AccessorSpec(
     attach=bridge_attach("plotly_hover", points_of, (UNHOVER,)),
     payload=points_frame,
     rate_policy="debounce",
+    opt_in=True,
 )
 DOUBLE_CLICKED = AccessorSpec(
     name="double_clicked",
