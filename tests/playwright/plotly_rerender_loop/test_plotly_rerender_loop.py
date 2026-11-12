@@ -3,12 +3,9 @@ from __future__ import annotations
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, expect
 from tests.playwright.conftest import (
-    ANYWIDGET_INIT_XFAIL,
     assert_no_unexpected_errors,
     collect_errors,
 )
-
-pytestmark = ANYWIDGET_INIT_XFAIL
 
 # Page coordinates of a data point, via plotly.js's axis conversions.
 POINT_JS = """([id, x, y]) => {
