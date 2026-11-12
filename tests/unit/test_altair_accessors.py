@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any, Dict, List
 
 import altair as alt
@@ -39,6 +40,63 @@ def entry(*fields: tuple[str, str, Any]) -> Dict[str, Any]:
         "fields": [{"field": f, "type": t} for f, t, _ in fields],
         "values": [v for _, _, v in fields],
     }
+
+
+POINTS = pd.DataFrame({"x": [1, 2, 3], "y": [10, 20, 30]})
+LINES = pd.DataFrame({"x": [1, 2, 3], "z": [100, 200, 300]})
+
+
+def uentry(unit: str, *fields: tuple[str, str, Any]) -> Dict[str, Any]:
+    """A store entry with a `unit`, as multi-view selections report them."""
+    return {"unit": unit, **entry(*fields)}
+
+
+def layered_chart() -> alt.JupyterChart:
+    """Layers with distinct datasets, each with its own interval selection."""
+    pts = (
+        alt.Chart(POINTS, name="pts")
+        .mark_point()
+        .encode(x="x", y="y")
+        .add_params(alt.selection_interval(name="b1"))
+    )
+    lns = (
+        alt.Chart(LINES, name="lns")
+        .mark_point()
+        .encode(x="x", y="z")
+        .add_params(alt.selection_interval(name="b2"))
+    )
+    return alt.JupyterChart(alt.layer(pts, lns))
+
+
+def hconcat_chart() -> alt.JupyterChart:
+    """Concatenated charts with distinct datasets sharing one selection."""
+    brush = alt.selection_interval(name="brush")
+    pts = alt.Chart(POINTS, name="pts").mark_point().encode(x="x", y="y").add_params(brush)
+    lns = alt.Chart(LINES, name="lns").mark_point().encode(x="x", y="z").add_params(brush)
+    with warnings.catch_warnings():
+        # altair warns when it deduplicates the identical params
+        warnings.simplefilter("ignore")
+        return alt.JupyterChart(alt.hconcat(pts, lns))
+
+
+def test_named_subcharts_walks_layers_and_concats(widget_session: Session) -> None:
+    with session_context(widget_session):
+        layered = layered_chart()
+        concatenated = hconcat_chart()
+    for combo in (layered.chart, concatenated.chart):
+        subs = sa.named_subcharts(combo)
+        assert set(subs) == {"pts", "lns"}
+        assert subs["pts"].data is POINTS and subs["lns"].data is LINES
+    with session_context(widget_session):
+        plain = chart()
+    assert sa.named_subcharts(plain.chart) == {}
+
+
+def test_named_subcharts_rejects_duplicate_names() -> None:
+    a = alt.Chart(POINTS, name="dup").mark_point().encode(x="x")
+    b = alt.Chart(LINES, name="dup").mark_point().encode(x="x")
+    with pytest.raises(ValueError, match="'dup'"):
+        sa.named_subcharts(alt.hconcat(a, b))
 
 
 def test_temporal_range_compares_in_utc() -> None:

@@ -68,6 +68,41 @@ def pick_selection(selections: Dict[str, Selection], name: Optional[str]) -> Sel
     return selections[name]
 
 
+def named_subcharts(chart: Any) -> Dict[str, Any]:
+    """
+    The named unit charts under `chart`, keyed by name -- the name a Vega
+    selection store reports as a store entry's `unit`. Layers and
+    concatenations are walked (recursing into nesting); facet and repeat
+    charts aren't (their subcharts share one dataset). A name used by two
+    subcharts raises.
+    """
+    import altair as alt
+
+    found: Dict[str, Any] = {}
+
+    def visit(node: Any) -> None:
+        if isinstance(node, alt.Chart):
+            name = node.name
+            if name is alt.Undefined:
+                return
+            if name in found:
+                raise ValueError(
+                    f"The chart has two subcharts named {name!r}. Give each "
+                    "one a unique `name=` so `selected_rows()` can tell their "
+                    "data apart."
+                )
+            found[name] = node
+            return
+        for attr in ("layer", "hconcat", "vconcat", "concat"):
+            children = getattr(node, attr, alt.Undefined)
+            if children is not alt.Undefined:
+                for subchart in children:
+                    visit(subchart)
+
+    visit(chart)
+    return found
+
+
 def chart_frame(widget: JupyterChart) -> Any:
     data = getattr(widget.chart, "data", None)
     if is_frame(data):
