@@ -12,6 +12,38 @@ export function setConnected(value: boolean): void {
 
 const IDLE = {content: {execution_state: "idle"}};
 
+// Widget->server messages larger than uvicorn's ws_max_size close the
+// websocket and disconnect the whole session (#459). The server tells us
+// its limit at session start (Python can't introspect shiny's real
+// --ws-max-size, so it sends its default/env-configured value); until then
+// assume uvicorn's default.
+let maxClientMessageBytes = 16 * 1024 * 1024;
+
+export function setMaxClientMessageBytes(n: number): void {
+  maxClientMessageBytes = n;
+}
+
+// True if the message may be sent; otherwise logs an actionable error and
+// returns false. Exported for tests.
+export function messageWithinLimit(msg_txt: string, comm_id?: string): boolean {
+  // A UTF-16 char encodes to at most 3 UTF-8 bytes, so only measure
+  // exactly when it could matter
+  if (msg_txt.length * 3 <= maxClientMessageBytes) return true;
+  const bytes = new TextEncoder().encode(msg_txt).length;
+  if (bytes <= maxClientMessageBytes) return true;
+  const mb = (n: number) => (n / 1024 / 1024).toFixed(1);
+  console.error(
+    `shinywidgets: dropped a ${mb(bytes)} MB message` +
+      (comm_id ? ` from widget ${comm_id}` : "") +
+      `: it exceeds the ${mb(maxClientMessageBytes)} MB websocket limit. ` +
+      "The rest of the app keeps working, but this update was lost. " +
+      "Restart with a larger limit, e.g. `shiny run --ws-max-size " +
+      `${Math.ceil(bytes * 1.1)}` +
+      "` (and set SHINYWIDGETS_WS_MAX_SIZE to match)."
+  );
+  return false;
+}
+
 const comms = new Map<string, ShinyComm>();
 
 export function ack_comm(comm_id: string, msg_id: string): void {
@@ -59,6 +91,14 @@ export class ShinyComm {
   ): string {
     const [msg_id, msg_txt] = this._message("comm_msg", {data: data}, metadata, buffers);
 
+    const onIdle = callbacks?.iopub?.status;
+    if (!messageWithinLimit(msg_txt, this.comm_id)) {
+      // A dropped message is never acked, so report idle ourselves to keep
+      // ipywidgets' one-message-in-flight throttle moving
+      if (onIdle) setTimeout(() => onIdle(IDLE), 0);
+      return msg_id;
+    }
+
     // Since ipyleaflet can send mousemove events very quickly when hovering over the map,
     // we throttle them to ensure that the server doesn't get overwhelmed. Said events
     // generate a payload that looks like this:
@@ -76,7 +116,6 @@ export class ShinyComm {
     // https://github.com/jupyter-widgets/ipywidgets/blob/88cec8b/packages/base/src/widget.ts#L550-L557).
     // The server acks each message after the flush that handled it, and ack()
     // reports idle then, so bursts coalesce under load as they do in Jupyter.
-    const onIdle = callbacks?.iopub?.status;
     if (is_mousemove) {
       this.throttler.throttle(() => {
         Shiny.setInputValue("shinywidgets_comm_send", msg_txt, {priority: "event"});
@@ -103,6 +142,7 @@ export class ShinyComm {
     const [msg_id, msg_txt] = this._message(
       "comm_open", {target_name: this.target_name, data: data}, metadata, buffers
     );
+    if (!messageWithinLimit(msg_txt, this.comm_id)) return msg_id;
     Shiny.setInputValue("shinywidgets_comm_send", msg_txt, {priority: "event"});
     return msg_id;
   }
