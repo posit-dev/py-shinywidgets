@@ -21,6 +21,19 @@ def plot():
     return p
 
 
+@render_bokeh(height="400px")
+def line_plot():
+    src = ColumnDataSource({"x": [1, 2, 3, 4], "y": [1, 4, 2, 3]})
+    p = figure(x_range=(0, 5), y_range=(0, 5), tools="tap")
+    p.line("x", "y", source=src, line_width=5)
+    return p
+
+
+@render.text
+def line_selected():
+    return str(line_plot.selected())
+
+
 @render.text
 def selected():
     return str(plot.selected())
