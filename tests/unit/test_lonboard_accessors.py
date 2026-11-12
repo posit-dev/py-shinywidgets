@@ -18,9 +18,12 @@ pytest.importorskip(
 )
 
 import geoarrow.rust.core as gr  # noqa: E402
+import geopandas as gpd  # noqa: E402
+import pandas as pd  # noqa: E402
 from arro3.core import Table  # noqa: E402
 from lonboard import Map, ScatterplotLayer  # noqa: E402
 from lonboard.view_state import MapViewState  # noqa: E402
+from shapely.geometry import Point  # noqa: E402
 
 
 def layer(session: Session, n: int = 5) -> ScatterplotLayer:
@@ -198,3 +201,117 @@ def test_clicked_is_plain_state() -> None:
     from shinywidgets._lonboard import CLICKED
 
     assert CLICKED.kind == "state"
+
+
+GDF = gpd.GeoDataFrame(
+    {"name": list("abcde"), "value": [10, 20, 30, 40, 50]},
+    geometry=[Point(20 + i, 40 + i) for i in range(5)],
+    crs="EPSG:4326",
+)
+
+
+def geo_map(widget_session: Session, *layers) -> Map:
+    with session_context(widget_session):
+        return Map(list(layers) or [ScatterplotLayer.from_geopandas(GDF)])
+
+
+def rows_render(widget_session: Session, m: Map) -> render_lonboard:
+    r = render_lonboard()
+    r._widget = m  # stands in for _render()
+    r._accessors.on_render(m)
+    return r
+
+
+def test_selected_rows_default_frame_follows_the_pick(
+    widget_session: Session,
+) -> None:
+    m = geo_map(widget_session)
+    r = rows_render(widget_session, m)
+
+    # No pick yet: an empty frame with the layer's columns
+    out = r.selected_rows()
+    assert isinstance(out, gpd.GeoDataFrame)
+    assert len(out) == 0
+    assert list(out.columns) == list(GDF.columns)
+
+    m.layers[0].selected_index = 2
+    out = r.selected_rows()
+    assert isinstance(out, gpd.GeoDataFrame)
+    assert out["name"].tolist() == ["c"]
+    assert out["value"].tolist() == [30]
+    # The reconstructed frame can't carry the original index
+    assert isinstance(out.index, pd.RangeIndex)
+
+
+def test_selected_rows_explicit_frame_keeps_its_type(
+    widget_session: Session,
+) -> None:
+    import polars as pl
+
+    m = geo_map(widget_session)
+    r = rows_render(widget_session, m)
+    m.layers[0].selected_index = 1
+
+    out = r.selected_rows(pl.DataFrame({"value": [10, 20, 30, 40, 50]}))
+    assert isinstance(out, pl.DataFrame)
+    assert out["value"].to_list() == [20]
+
+    out = r.selected_rows(pd.DataFrame({"name": list("abcde")}))
+    assert isinstance(out, pd.DataFrame)
+    assert out["name"].tolist() == ["b"]
+
+
+def test_selected_rows_explicit_frame_no_pick_is_empty(
+    widget_session: Session,
+) -> None:
+    m = geo_map(widget_session)
+    r = rows_render(widget_session, m)
+    df = pd.DataFrame({"name": list("abcde")})
+    out = r.selected_rows(df)
+    assert isinstance(out, pd.DataFrame)
+    assert len(out) == 0
+    assert list(out.columns) == ["name"]
+
+
+def test_selected_rows_several_pickable_layers_raise(
+    widget_session: Session,
+) -> None:
+    with session_context(widget_session):
+        layers = [ScatterplotLayer.from_geopandas(GDF) for _ in range(2)]
+    m = geo_map(widget_session, *layers)
+    r = rows_render(widget_session, m)
+    m.layers[0].selected_index = 1
+    with pytest.raises(ValueError, match="selected_index"):
+        r.selected_rows()
+
+
+def test_selected_rows_layer_without_a_table_raises(
+    widget_session: Session,
+) -> None:
+    # BitmapLayer has a selected_index trait (so the attach treats it as
+    # pickable) but no data table to reconstruct a frame from
+    from lonboard import BitmapLayer
+
+    with session_context(widget_session):
+        m = Map(
+            BitmapLayer(
+                image="https://example.com/tile.png",
+                bounds=[-180, -85, 180, 85],
+            )
+        )
+    r = rows_render(widget_session, m)
+    with pytest.raises(TypeError, match="df="):
+        r.selected_rows()
+
+
+def test_selected_rows_default_frame_needs_geopandas(
+    widget_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    m = geo_map(widget_session)
+    r = rows_render(widget_session, m)
+    m.layers[0].selected_index = 0
+    monkeypatch.setitem(sys.modules, "geopandas", None)
+    with pytest.raises(ImportError, match="geopandas"):
+        r.selected_rows()

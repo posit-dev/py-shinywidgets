@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict
 from ._accessors import AccessorSpec, Emit
 
 if TYPE_CHECKING:
+    import geopandas
     from lonboard import Map as LonboardMap  # pyright: ignore[reportMissingImports]
 
 
@@ -27,6 +28,41 @@ def attach_view_state(widget: LonboardMap, emit: Emit) -> Callable[[], None]:
     widget.observe(on_change, "view_state")
     emit(widget.view_state)  # computed from the layers at construction
     return lambda: widget.unobserve(on_change, "view_state")
+
+
+def pick_frame(widget: LonboardMap) -> "geopandas.GeoDataFrame":
+    """
+    The frame a pick indexes into, for `selected_rows()`'s `df` default: the
+    data table of the map's one pickable layer, round-tripped through
+    `geopandas.GeoDataFrame.from_arrow` (which keeps the layer's rows and
+    columns but gives a fresh RangeIndex). Layers are pickable the way
+    `attach_selected_index` decides it (a `selected_index` trait -- which
+    every lonboard layer has, data-backed or not), so a map whose pick could
+    come from several layers raises: the pick has no layer identity.
+    """
+    layers = [layer for layer in widget.layers if layer.has_trait("selected_index")]
+    if len(layers) != 1:
+        raise ValueError(
+            f"`selected_rows()` can't default `df`: the map has {len(layers)} "
+            "pickable layers and a pick doesn't say which layer it's from. "
+            "Pass `df=` (the frame of the layer you mean), or read each "
+            'layer\'s pick yourself with `reactive_read(layer, "selected_index")`.'
+        )
+    table = getattr(layers[0], "table", None)
+    if table is None:
+        raise TypeError(
+            "`selected_rows()` can't default `df`: the map's pickable layer "
+            "has no data table (e.g. a BitmapLayer). Pass `df=` explicitly."
+        )
+    try:
+        import geopandas as gpd
+    except ImportError:
+        raise ImportError(
+            "`selected_rows()` without `df` reconstructs the layer's data "
+            "frame with geopandas, which isn't installed "
+            "(pip install geopandas). Or pass `df=` explicitly."
+        ) from None
+    return gpd.GeoDataFrame.from_arrow(table)
 
 
 def attach_selected_bounds(widget: LonboardMap, emit: Emit) -> Callable[[], None]:

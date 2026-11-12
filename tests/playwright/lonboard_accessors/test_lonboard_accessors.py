@@ -55,6 +55,29 @@ def test_lonboard_accessors_follow_gestures(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests, allowed_errors=(LUMA_REINIT,))
 
 
+def test_selected_rows_follows_click_pick(page: Page, local_app) -> None:
+    # The app's gdf names, in row order (kept in sync with app.py)
+    names = ["alpha", "beta", "gamma", "delta", "epsilon"]
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    canvas = page.locator("#map .lonboard canvas").first
+    expect(canvas).to_be_visible(timeout=30000)
+    expect(page.locator("#rows")).to_have_text("0 rows: ")
+
+    box = canvas.bounding_box()
+    assert box is not None
+    cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+
+    # Click the cluster: selected_rows() reconstructs the picked row from
+    # the layer's own data (the df default)
+    page.mouse.click(cx, cy)
+    expect(page.locator("#picked")).to_have_text(re.compile(r"^[0-4]$"), timeout=5000)
+    pick = int(page.locator("#picked").inner_text())
+    expect(page.locator("#rows")).to_have_text(f"1 rows: {names[pick]}", timeout=5000)
+
+    assert_no_unexpected_errors(errors, failed_requests, allowed_errors=(LUMA_REINIT,))
+
+
 def test_toolbar_tooltip_does_not_collapse_layout(page: Page, local_app) -> None:
     errors, failed_requests = collect_errors(page)
     page.goto(local_app.url)
