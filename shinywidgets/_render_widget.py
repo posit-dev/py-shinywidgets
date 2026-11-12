@@ -142,7 +142,7 @@ from ._as_widget import (
 )
 from ._bokeh import _bokeh_dependency
 from ._bokeh_accessors import BOKEH_ACCESSORS, selected_frame
-from ._bqplot import BPLOT_ACCESSORS, pick_mark
+from ._bqplot import BPLOT_ACCESSORS, SelectionReport, pick_mark
 from ._cytoscape import CYTOSCAPE_ACCESSORS
 from ._dependencies import widget_pkg
 from ._embedding_atlas import EMBEDDING_ATLAS_ACCESSORS, rows_for_predicate
@@ -1990,9 +1990,14 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
         (``mark.x = ...``), a retained position can point at a different row
         -- carry an ID column and look rows up by it when the data can
         change.
+
+        `mark` resolves against the same report as the selections, which the
+        debounce can leave lagging an in-place change to ``fig.marks``; a
+        mark the report doesn't know yet cancels until it is reported.
         """
+        report = cast(SelectionReport, self._read_accessor("selected", raw=True))
         widget = cast("BqplotFigure", self._widget)
-        positions = self.selected()[pick_mark(widget, mark)]
+        positions = report.selected[pick_mark(widget, report.marks, mark)]
         return select_rows_at(df, [] if positions is None else positions)
 
 

@@ -13,20 +13,52 @@ interaction's overlay intercepts real clicks -- browser-verified), so an
 accessor that is silently dead in the common interactive case is worse than
 none. `mark.on_element_click()` remains the escape hatch for
 interaction-free figures.
+
+The selection attach publishes a `SelectionReport` -- the marks and their
+selections, together -- so `selected_rows()` resolves its `mark` against the
+same (possibly debounce-lagged) alignment as the selections, never the live
+figure, which could pair a mark with another mark's rows.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Tuple, Union, cast
+from dataclasses import dataclass
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+    cast,
+)
+
+from shiny import req
 
 from ._accessors import AccessorSpec, Emit
 
 if TYPE_CHECKING:
+    import numpy as np
     from bqplot import Figure as BqplotFigure
     from bqplot import Mark
 
 
-def selections_equal(a: List[object], b: List[object]) -> bool:
+@dataclass(frozen=True)
+class SelectionReport:
+    """
+    One published ``selected`` value: the figure's marks and their
+    selections, aligned. The report lags live ``fig.marks`` by the debounce;
+    keeping the alignment in the value lets `selected_rows()` resolve a mark
+    against the same report the selections came from.
+    """
+
+    marks: Tuple["Mark", ...]
+    selected: Tuple[Optional["np.ndarray"], ...]
+
+
+def selections_equal(a: Sequence[object], b: Sequence[object]) -> bool:
     """
     Elementwise equality for per-mark selections (`None` or a numpy array),
     which the helper's `payloads_equal` can't compare (arrays' `==` is
@@ -49,25 +81,44 @@ def selections_equal(a: List[object], b: List[object]) -> bool:
     return True
 
 
-def pick_mark(fig: BqplotFigure, mark: Optional[Union[int, "Mark"]]) -> int:
+def pick_mark(
+    fig: BqplotFigure,
+    reported: Tuple["Mark", ...],
+    mark: Optional[Union[int, "Mark"]],
+) -> int:
     """
-    The index into ``fig.marks`` for `selected_rows()`'s `mark` argument:
-    `mark` may be an index or the `Mark` object itself, and may be omitted
-    only when the figure has exactly one mark.
+    The index into a `SelectionReport` for `selected_rows()`'s `mark`
+    argument: `mark` may be an index or the `Mark` object itself, and may be
+    omitted only when the figure has exactly one mark.
+
+    The report lags live ``fig.marks`` by the debounce, so a mark or index
+    that exists only in the live figure can't be read yet: cancel
+    (``req(False)``) until the report catches up rather than pair it with
+    another mark's rows.
     """
+    live = tuple(fig.marks)
     if isinstance(mark, int):
-        return mark
-    n = len(fig.marks)
-    if mark is None:
-        if n == 1:
-            return 0
+        if -len(reported) <= mark < len(reported):
+            return mark
+        if -len(live) <= mark < len(live):
+            req(False)
         raise ValueError(
-            f"The figure has {n} marks; pass `mark=` to `selected_rows()` "
-            "(its index in `fig.marks`, or the `Mark` object itself)."
+            f"`mark` index {mark} is out of range for a figure with "
+            f"{len(live)} mark(s)."
         )
+    if mark is None:
+        if len(live) != 1:
+            raise ValueError(
+                f"The figure has {len(live)} marks; pass `mark=` to "
+                "`selected_rows()` (its index in `fig.marks`, or the `Mark` "
+                "object itself)."
+            )
+        mark = live[0]
     try:
-        return list(fig.marks).index(mark)
+        return reported.index(mark)
     except ValueError:
+        if mark in live:
+            req(False)
         raise ValueError("`mark` is not one of the figure's marks.") from None
 
 
@@ -75,12 +126,13 @@ def attach_selection(widget: BqplotFigure, emit: Emit) -> Callable[[], None]:
     # (mark, handler) pairs, so detach can remove every per-mark observer
     observed: List[Tuple[Any, Any]] = []
 
-    def current() -> List[object]:
-        return [mark.selected for mark in widget.marks]
+    def report() -> SelectionReport:
+        marks = tuple(widget.marks)
+        return SelectionReport(marks, tuple(mark.selected for mark in marks))
 
     # Sentinel for "nothing published yet": the seed publish must always
-    # happen, even for a figure with no marks, where the selection list is []
-    # (an [] baseline would compare equal and suppress the seed, leaving the
+    # happen, even for a figure with no marks, where the report is empty (an
+    # empty baseline would compare equal and suppress the seed, leaving the
     # accessor unseeded -- and a re-rendered figure's stale value in place)
     unset = object()
     last: object = unset
@@ -89,11 +141,13 @@ def attach_selection(widget: BqplotFigure, emit: Emit) -> Callable[[], None]:
         # bqplot selectors re-send the same selection during a drag, and the
         # helper's equality check can't compare arrays, so dedup here
         nonlocal last
-        sel = current()
-        if last is not unset and selections_equal(sel, cast(List[object], last)):
+        rep = report()
+        if last is not unset and selections_equal(
+            rep.selected, cast(SelectionReport, last).selected
+        ):
             return
-        last = list(sel)
-        emit(list(sel))
+        last = rep
+        emit(rep)
 
     def observe_marks() -> None:
         for mark, handler in observed:
@@ -176,6 +230,8 @@ SELECTED = AccessorSpec(
     name="selected",
     kind="state",
     attach=attach_selection,
+    # The raw value is a SelectionReport; the accessor value is its selections
+    payload=lambda report: list(report.selected),
     # Brush selectors update during the drag
     rate_policy="debounce",
 )
