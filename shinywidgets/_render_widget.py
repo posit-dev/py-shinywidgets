@@ -631,7 +631,7 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         """
         selection = self.selected(name)
         widget = cast(JupyterChart, self.widget)
-        frame = chart_frame(widget) if df is None else df
+        frame = chart_frame(widget.chart) if df is None else df
         return filter_selection(selection, frame, widget.local_tz)
 
 

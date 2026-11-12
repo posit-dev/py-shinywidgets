@@ -125,17 +125,17 @@ def selection_views(chart: Any, name: str) -> Optional[List[str]]:
     return None
 
 
-def chart_frame(widget: JupyterChart) -> Any:
-    data = getattr(widget.chart, "data", None)
+def chart_frame(chart: Any) -> Any:
+    data = getattr(chart, "data", None)
     if is_frame(data):
         return data
     found = type(data).__name__
     if isinstance(data, str):
         found = f"a URL ({data!r})"
     raise TypeError(
-        f"`selected_rows()` can only find rows in a chart built from a data frame, "
-        f"but this chart's data is {found}. Pass the frame to filter as "
-        "`selected_rows(df=...)`."
+        f"`selected_rows()` can only find rows in a chart built from a data "
+        f"frame, but this chart's data is {found}. Pass the frame to filter "
+        "as `selected_rows(df=...)`."
     )
 
 
@@ -152,7 +152,9 @@ def filter_selection(
 ) -> IntoDataFrameT:
     """
     The rows of `df` in `selection`. An empty selection selects no rows (unlike
-    Vega's default `empty="all"`).
+    Vega's default `empty="all"`). Every entry is applied to `df`, so use
+    `filter_selection_by_unit()` for a selection whose store spans several
+    views with different data.
     """
     import narwhals as nw
     from altair.utils.selection import IndexSelection
@@ -166,16 +168,26 @@ def filter_selection(
             .drop(row)
             .to_native()
         )
+    return filter_store(selection.store, frame, local_tz).to_native()
+
+
+def filter_store(
+    store: List[Dict[str, Any]],
+    frame: nw.DataFrame[Any],
+    local_tz: Optional[str],
+) -> nw.DataFrame[Any]:
+    """The rows of `frame` selected by `store` (entries of a single view)."""
+    import narwhals as nw
 
     test: Optional[nw.Expr] = None
-    for entry in selection.store:
+    for entry in store:
         match = nw.lit(True)
         for field, value in zip(entry["fields"], entry["values"]):
             match = match & field_test(frame, field, value, local_tz)
         test = match if test is None else test | match
     if test is None:
-        return frame.head(0).to_native()
-    return frame.filter(test).to_native()
+        return frame.head(0)
+    return frame.filter(test)
 
 
 def field_test(

@@ -224,10 +224,10 @@ def test_pick_selection_by_name() -> None:
 
 def test_chart_frame_from_chart_data_or_raises(widget_session: Session) -> None:
     with session_context(widget_session):
-        assert sa.chart_frame(chart()) is DATES
+        assert sa.chart_frame(chart().chart) is DATES
         url_chart = chart(data="https://example.com/data.csv")
     with pytest.raises(TypeError, match="df="):
-        sa.chart_frame(url_chart)
+        sa.chart_frame(url_chart.chart)
 
 
 def test_render_altair_selected_and_selected_rows(widget_session: Session) -> None:
