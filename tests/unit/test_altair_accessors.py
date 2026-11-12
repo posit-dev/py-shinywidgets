@@ -338,6 +338,116 @@ def test_selected_rows_facet_chart_still_filters_the_whole_frame(
     assert r.selected_rows("brush")["y"].tolist() == [1, 2]
 
 
+def test_selected_rows_returns_a_dict_for_multi_dataset_views(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    r = render_altair()
+    with session_context(widget_session):
+        w = hconcat_chart()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+
+    # An empty selection is a dict of empty frames, keyed by view name
+    empty = r.selected_rows("brush")
+    assert isinstance(empty, dict) and set(empty) == {"pts", "lns"}
+    assert all(len(frame) == 0 for frame in empty.values())
+
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "brush": interval(
+                    [
+                        uentry("pts", ("x", "R", [1, 2])),
+                        uentry("lns", ("z", "R", [150, 250])),
+                    ]
+                )
+            }
+        )
+    )
+    out = r.selected_rows("brush")
+    assert isinstance(out, dict)
+    assert out["pts"]["y"].tolist() == [10, 20]
+    assert out["lns"]["z"].tolist() == [200]
+
+
+def test_selected_rows_shared_data_concat_stays_a_single_frame(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    brush = alt.selection_interval(name="brush")
+    pts = alt.Chart(POINTS, name="pts").mark_point().encode(x="x", y="y").add_params(brush)
+    dup = alt.Chart(POINTS, name="dup").mark_point().encode(x="x", y="y").add_params(brush)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        combo = alt.hconcat(pts, dup)
+    with session_context(widget_session):
+        w = alt.JupyterChart(combo)
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box({"brush": interval([uentry("pts", ("x", "R", [1, 2]))])})
+    )
+    out = r.selected_rows("brush")
+    assert isinstance(out, pd.DataFrame)
+    assert out["y"].tolist() == [10, 20]
+
+
+def test_selected_rows_df_dict_filters_each_frame(widget_session: Session) -> None:
+    from shinywidgets import render_altair
+
+    r = render_altair()
+    with session_context(widget_session):
+        w = hconcat_chart()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "brush": IntervalSelection(
+                    name="brush",
+                    value={},
+                    store=[
+                        uentry("pts", ("x", "R", [1, 2])),
+                        uentry("lns", ("z", "R", [150, 250])),
+                    ],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    out = r.selected_rows("brush", df={"pts": POINTS, "lns": LINES})
+    assert isinstance(out, dict)
+    assert out["pts"]["y"].tolist() == [10, 20]
+    assert out["lns"]["z"].tolist() == [200]
+    with pytest.raises(ValueError, match="don't match"):
+        r.selected_rows("brush", df={"pts": POINTS})
+    with pytest.raises(ValueError, match="dict"):
+        r.selected_rows("brush", df=POINTS)
+
+
+def test_selected_rows_unresolvable_view_points_at_df_dict(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    r = render_altair()
+    with session_context(widget_session):
+        w = hconcat_chart()
+    # A view the chart walk can't find (e.g. a chart from alt.Chart.from_dict)
+    w.chart.params[0].views = ["ghost", "lns"]
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    with pytest.raises(ValueError, match="ghost"):
+        r.selected_rows("brush")
+
+
 def sa_box(raw: object) -> Any:
     from shinywidgets._accessors import Box
 
