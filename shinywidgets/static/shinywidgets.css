@@ -700,6 +700,15 @@ body > [data-overlay-container] {
 }
 
 /*
+* MapLibre popups set a fixed white background but no text color, so in dark
+* mode the page's light body color lands on the white popup. Scope the text
+* back to a dark color, keeping the popup light-consistent in both modes.
+*/
+:root[data-bs-theme=dark] .maplibregl-popup-content {
+  color: #18181a;
+}
+
+/*
 * jupyter-leaflet styles map controls (zoom buttons, attribution, layers, legend, ...)
 * with JupyterLab theme variables, which don't exist outside of JupyterLab (unless
 * some other widget happens to define them), leaving the controls transparent. Derive
