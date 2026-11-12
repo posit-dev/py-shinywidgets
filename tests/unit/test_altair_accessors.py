@@ -450,6 +450,17 @@ def test_selected_rows_unresolvable_view_points_at_df_dict(
         r.selected_rows("brush")
 
 
+def test_view_resolution_under_the_vegafusion_transformer(
+    widget_session: Session,
+) -> None:
+    with alt.data_transformers.enable("vegafusion"):
+        with session_context(widget_session):
+            w = hconcat_chart()
+    assert sa.selection_views(w.chart, "brush") == ["pts", "lns"]
+    subs = sa.named_subcharts(w.chart)
+    assert subs["pts"].data is POINTS and subs["lns"].data is LINES
+
+
 def sa_box(raw: object) -> Any:
     from shinywidgets._accessors import Box
 
