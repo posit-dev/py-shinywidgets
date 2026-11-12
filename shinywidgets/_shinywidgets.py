@@ -50,15 +50,14 @@ from ._as_widget import as_widget, pydeck_has_widget
 from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_close
 from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import (
-    COMM_OPEN_CALLBACKS,
     BufferType,
     DataType,
     OrphanedShinyComm,
     SharedShinyComm,
     ShinyComm,
     ShinyCommManager,
+    flush_queued_sends,
     is_sessionless,
-    run_comm_open_callbacks,
 )
 from ._dependencies import (
     custom_elements_dependency,
@@ -221,7 +220,8 @@ def init_shiny_widget(w: Widget):
     # Since the actual ShinyComm() is initialized _after_ the Widget is initialized,
     # and Widget.__init__() includes a call to Widget.open() which opens an unnecessary
     # comm, we just set the comm to a dummy comm for now (to avoid unnecessary work)
-    w.comm = OrphanedShinyComm(id)
+    w.comm = OrphanedShinyComm(id, pending_open=True)
+    queue_sends_until_comm_open(w)
 
     # Capture the render (if any) now, so the deferred open below can re-enter it:
     # widgets created lazily while serializing (e.g. default Layout/Style models)
@@ -254,7 +254,6 @@ def init_shiny_widget(w: Widget):
         # Closed before it was opened (explicitly, or because its render was
         # invalidated): leave it closed rather than reopening it.
         if w is None or WIDGET_INSTANCE_MAP.get(id) is not w:
-            COMM_OPEN_CALLBACKS.pop(id, None)
             return
 
         if is_ipyreact_registry_widget(w):
@@ -265,7 +264,6 @@ def init_shiny_widget(w: Widget):
         # ShinyComm here would cut that session off.
         if isinstance(w.comm, SharedShinyComm):
             open_shared_in(w, session)
-            run_comm_open_callbacks(id)
             return
 
         # A shared widget's lazily created defaults (e.g. its Layout) are shared too
@@ -295,6 +293,7 @@ def init_shiny_widget(w: Widget):
                 open_shared_in(r, session)
 
         # Initialize the comm -- this sends widget state to the frontend
+        placeholder = w.comm
         w.comm = ShinyComm(
             comm_id=id,
             comm_manager=COMM_MANAGERS[session.id],
@@ -309,7 +308,7 @@ def init_shiny_widget(w: Widget):
         )
 
         flush_ipycanvas_manager(w)
-        run_comm_open_callbacks(id)
+        flush_queued_sends(placeholder, w.comm)
 
     # If the widget initialized in a reactive _output_ context, then cleanup the widget
     # when the context gets invalidated. Use the render output's Context (captured by
@@ -412,6 +411,8 @@ def open_shared_in(w: Widget, session: Session) -> None:
     guard_process_global_state(w)
 
     comm = w.comm
+    # A pre-open placeholder may hold queued sends, to be flushed below
+    placeholder = comm if isinstance(comm, OrphanedShinyComm) else None
     if not isinstance(comm, SharedShinyComm):
         shared = SharedShinyComm(w.model_id)
         # Anything else (an inert comm, or one whose session has ended) never
@@ -439,21 +440,27 @@ def open_shared_in(w: Widget, session: Session) -> None:
         localtileserver_layer_proxy(w, session)
         prepare_to_serialize(w)
         state, buffer_paths, buffers = _remove_buffers(w.get_state())
-    comm.add(
-        ShinyComm(
-            comm_id=comm.comm_id,
-            comm_manager=COMM_MANAGERS[session.id],
-            session=session,
-            target_name="jupyter.widget",
-            data={"state": state, "buffer_paths": buffer_paths},
-            buffers=cast(BufferType, buffers),
-            metadata={"version": __protocol_version__},
-            html_deps=session._process_ui(TagList(*widget_deps))["deps"],
-            **open_keys,
-        )
+    new_comm = ShinyComm(
+        comm_id=comm.comm_id,
+        comm_manager=COMM_MANAGERS[session.id],
+        session=session,
+        target_name="jupyter.widget",
+        data={"state": state, "buffer_paths": buffer_paths},
+        buffers=cast(BufferType, buffers),
+        metadata={"version": __protocol_version__},
+        html_deps=session._process_ui(TagList(*widget_deps))["deps"],
+        **open_keys,
     )
+    comm.add(new_comm)
     flush_ipycanvas_manager(w)
     reset_ipycanvas_current_canvas(w)
+    # Sends queued on the pre-open placeholder flush exactly once, through the
+    # first session's comm to open the widget. Sessions that open it later
+    # don't receive the backlog: their comm_open carries the widget's full
+    # current state, and since a shared widget is never closed, retaining the
+    # backlog for every future session would leak it. To reach every session,
+    # send after the open instead (the SharedShinyComm fans out).
+    flush_queued_sends(placeholder, new_comm)
 
     # Sessionless references (e.g. the Layout ipyvue's ForceLoad materialized at
     # import time) are followed too: nothing else would send the browser a model
@@ -494,23 +501,45 @@ def fan_out_ipyreact_registry(w: Widget) -> None:
         open_shared_in(w, s)
 
 
+def open_shared_references(comm: ShinyComm, data: DataType) -> None:
+    """
+    Open, in `comm`'s session, the process-global widgets that a message about
+    to be sent on `comm` references and that session's browser doesn't have.
+
+    A widget that is already open can gain such a reference (e.g.
+    `box.children = [shared]`), and no render or comm-open is left to notice
+    it. The open is sent on flush and the message after it (see
+    ShinyComm.publish_packed()), so the browser has the model by the time it
+    resolves the reference.
+    """
+    # Skipped when the process has nothing shared, since a message's data can
+    # be large. A session that has ended has no browser left to open one in.
+    if not SHARED_WIDGETS or not comm.comm_manager.active:
+        return
+    comms = comm.comm_manager.comms
+    for model_id in ipy_model_references(data):
+        if model_id in comms:
+            continue
+        w = WIDGET_INSTANCE_MAP.get(model_id)
+        # is_swapped_out_default() widgets (e.g. ipycanvas's module-level
+        # manager) must never get a fan-out comm
+        if w is not None and is_process_global(w) and not is_swapped_out_default(w):
+            open_shared_in(w, comm.session)
+
+
 def guard_shared_send(comm: SharedShinyComm, data: DataType) -> None:
     """
-    Keep an update fanned out to several sessions from dangling in any of their
-    browsers. A referenced model every fan-out session has is fine. A
-    process-global one (e.g. a shared widget built lazily, after some session
-    already had this widget open) is opened in the sessions missing it. Any
-    other reference (session-owned or closed) can never reach them, so warn
-    once per referenced model rather than leave those browsers waiting.
+    Warn about an update, fanned out to several sessions, that would dangle in
+    some of their browsers. A referenced model every fan-out session has is
+    fine, and a process-global one (e.g. a shared widget built lazily, after
+    some session already had this widget open) is opened by each session's own
+    send (see open_shared_references()). Any other reference (session-owned or
+    closed) can never reach the sessions missing it, so warn once per
+    referenced model rather than leave those browsers waiting.
     """
     for model_id in ipy_model_references(data):
         w = WIDGET_INSTANCE_MAP.get(model_id)
         if w is not None and is_process_global(w):
-            # is_swapped_out_default() widgets (e.g. ipycanvas's module-level
-            # manager) must never get a fan-out comm
-            if not is_swapped_out_default(w):
-                for session_id in comm.sessions_missing(model_id):
-                    open_shared_in(w, comm.comms[session_id].session)
             continue
         # A session that owns the referenced widget receives its model when
         # the widget's deferred comm-open runs at the next flush; only the
@@ -605,11 +634,17 @@ def init_session(session: Session) -> None:
 
     session.on_ended(_cleanup_session_state)
 
-    # As in Jupyter, where every widget is in the one frontend's manager, since
-    # some views look models up there (e.g. ipyvuetify's finds `theme`). Snapshot
-    # both, since opening can construct widgets.
+    # A process-global widget normally reaches a session by reference: when the
+    # session renders it, opens a widget that references it, or sends an update
+    # naming it (open_shared_in()'s other callers), so a session that never
+    # shows one is never sent it. EAGERLY_SHARED_PACKAGES are the exception:
+    # their frontends find a model without a reference to it, so every session
+    # gets theirs up front. Snapshot both, since opening can construct widgets.
     for w in list(SHARED_WIDGETS.values()):
-        if w.comm is not None:  # not closed by the user
+        if (
+            w.comm is not None  # not closed by the user
+            and widget_pkg(type(w)) in EAGERLY_SHARED_PACKAGES
+        ):
             open_shared_in(w, session)
     for w in list(WIDGET_INSTANCE_MAP.values()):
         if (
@@ -714,6 +749,7 @@ def handle_client_comm_msg(session: Session, msg: Dict[str, Any]) -> None:
             comm = COMM_MANAGERS[session.id].comms.get(msg["content"]["comm_id"])
             if comm is not None:
                 comm.handle_msg(msg)
+        claim_browser_created(session, msg)
     finally:
         msg_id = header.get("msg_id") if isinstance(header, dict) else None
         if isinstance(msg_id, str):
@@ -782,6 +818,60 @@ def close_client_comm(session: Session, msg: Dict[str, Any]) -> None:
     w = WIDGET_INSTANCE_MAP.get(comm_id)
     if w is not None and w.comm is comm:
         close_widget(w)
+        # It may be a sweep candidate (see claim_browser_created()): drop it
+        # rather than hold the closed widget until the session's next sweep
+        kept = KEPT_WIDGETS.get(session.id)
+        if kept:
+            kept[:] = [k for k in kept if k is not w]
+
+
+def claim_browser_created(session: Session, msg: Dict[str, Any]) -> None:
+    """
+    Give the browser-created widgets (see open_client_comm()) that `msg` names
+    the lifetime of what references them, instead of the session's.
+
+    A widget's JS creates such a model for another widget's state (pythreejs's
+    default light target/shadow, bqplot's toolbar PanZoom), then names it in
+    the state it sends for that widget. From then on it's an ordinary
+    KEPT_WIDGETS entry: close_render_widgets() closes it once nothing live in
+    the session references it. Until it's named it stays session-owned, since
+    the message attaching it may still be on its way.
+    """
+    content = msg["content"]
+    data = content.get("data")
+    state = data.get("state") if isinstance(data, dict) else None
+    referrer = WIDGET_INSTANCE_MAP.get(content["comm_id"])
+    # Never closed, and not one of this session's own widgets, so the sweep
+    # can't see what it references: leave those session-owned
+    if referrer is not None and is_process_global(referrer):
+        return
+    comms = COMM_MANAGERS[session.id].comms
+    named = [
+        comm
+        for model_id in ipy_model_references(state)
+        if (comm := comms.get(model_id)) is not None and comm.awaiting_owner
+    ]
+    if not named:
+        return
+    # The sweep only follows widget-valued traits, so only hand it what it can
+    # see `referrer` holding (the state may have been rejected, or held as a
+    # plain string); anything else it would close while still in use
+    held = (
+        None
+        if referrer is None
+        else {id(r) for r in direct_widget_references(referrer)}
+    )
+    for comm in named:
+        w = WIDGET_INSTANCE_MAP.get(comm.comm_id)
+        if w is None or (held is not None and id(w) not in held):
+            continue
+        comm.awaiting_owner = False
+        KEPT_WIDGETS.setdefault(session.id, []).append(w)
+    # Named by a widget that already closed (the browser was still creating a
+    # render's models when the server retired it): no later render
+    # invalidation is tied to these, so collect them now
+    if referrer is None:
+        close_render_widgets(session, [])
 
 
 def importing_lonboard() -> bool:
@@ -1070,7 +1160,7 @@ def _plotly_version() -> Optional[Version]:
 def retire_unused_widget(w: Widget) -> None:
     # An inert comm stops Widget.open() from serializing the widget (which would
     # construct a default Layout widget that also needs a session)
-    w.comm = OrphanedShinyComm(uuid4().hex)
+    w.comm = OrphanedShinyComm(uuid4().hex, pending_open=False)
     # Assigning a comm registers the widget instance; nothing will ever close it
     del WIDGET_INSTANCE_MAP[w.model_id]
 
@@ -1129,11 +1219,22 @@ def shared_lifetime() -> Iterator[None]:
     """
     Construct one widget that every Shiny session displays.
 
+    Experimental: not every widget package behaves well when one widget is
+    mirrored into several browsers (see the caveats below), and this function's
+    behavior may change in a future release.
+
     Widgets constructed inside this block exist once per Python process and are
-    mirrored into every session's browser: any user's interaction with one changes
-    it for everyone, and it is never freed. Use it for static content or state that
-    is deliberately shared between users. To reuse a widget across renders within a
-    single session instead, use `session_lifetime()`.
+    mirrored into the browser of every session that displays them: any user's
+    interaction with one changes it for everyone, and it is never freed. Use it for
+    static content or state that is deliberately shared between users. To reuse a
+    widget across renders within a single session instead, use `session_lifetime()`.
+
+    A session is sent a shared widget the first time it displays it, or displays or
+    updates a widget that references it (e.g., adds a shared layer to its own map),
+    so a large shared widget costs nothing in the sessions that never show it. A
+    shared widget that nothing a session displays references is never sent: create
+    a `jslink()` between shared widgets per session (e.g., in the server function)
+    rather than inside this block.
 
     Works with or without an active session, so a widget can be built at module
     level and returned from any session's render. Layout defaults a renderer
@@ -1145,9 +1246,16 @@ def shared_lifetime() -> Iterator[None]:
     imports, or lazily, cached in a module-level variable. Don't construct one in
     code that runs per render or per session (including the body of a Shiny
     Express app file, which runs once per session): every widget built here is
-    kept forever and sent to every new session, so each run adds one more.
+    kept forever, so each run adds one more.
     Widgets a shared widget references (e.g., a container's children) must be
     constructed inside `shared_lifetime()` too, or other sessions can't show them.
+
+    Share widgets whose appearance is fully described by their state (their
+    synced traits). A session that opens a shared widget receives its current
+    state, not the messages it was sent before that session joined, so a widget
+    that is drawn or changed by messages (e.g., an ipycanvas canvas's drawing
+    commands, or changes made to a Bokeh figure after its widget was created)
+    looks incomplete to sessions that join later.
 
     Don't rely on models a shared widget's JavaScript creates in the browser when
     a trait is left at its default (e.g., pythreejs's light `target` and `shadow`):
@@ -1303,11 +1411,54 @@ def close_widget(w: Widget) -> None:
     # None. Unfortunately, the w.model_id property looks up w.comm.comm_id
     # at runtime, and some packages like ipyleaflet want to use this id
     # to manage references between widgets.
-    w.comm = OrphanedShinyComm(model_id)
+    w.comm = OrphanedShinyComm(model_id, pending_open=False)
     # Assigning a comm has the side-effect of adding back a reference to
     # the widget instance, so remove it again
     if WIDGET_INSTANCE_MAP.get(model_id) is w:
         del WIDGET_INSTANCE_MAP[model_id]
+
+
+def queue_sends_until_comm_open(w: Widget) -> None:
+    """
+    Route custom `widget.send()` messages onto a pre-open OrphanedShinyComm's
+    queue (see OrphanedShinyComm).
+
+    ipywidgets' `Widget._send()` drops the message when `comm.kernel is None`
+    (the placeholder's marker, which ipyvue's template caching also relies
+    on), so widget methods that send custom messages while their output is
+    still rendering (e.g. k3d's `start_auto_play()`) would never reach the
+    queue. Forward them while the placeholder is pre-open; once the real comm
+    replaces it (or it's closed), defer to the original `_send()`. Other
+    message methods (e.g. state updates) keep their drop-on-placeholder
+    behavior: the comm open carries the widget's full current state, so
+    replaying a snapshot taken earlier would risk rolling it back.
+    """
+    class_send = getattr(type(w), "_send", None)
+    # A widget without _send() has no Widget.send() to route
+    if class_send is None:
+        return
+    # Held weakly: the instance attribute assigned below would otherwise tie
+    # the widget into a reference cycle, so a closed widget's memory would wait
+    # for the garbage collector instead of being freed right away
+    w_ref = ref(w)
+
+    def _send(msg: Dict[str, object], buffers: BufferType = None) -> None:
+        w = w_ref()
+        if w is None:
+            return
+        comm = w.comm
+        if (
+            isinstance(comm, OrphanedShinyComm)
+            and comm.pending_open
+            and msg.get("method") == "custom"
+        ):
+            comm.send(data=msg, buffers=buffers)
+        else:
+            class_send(w, msg, buffers=buffers)
+
+    # ipywidgets' kernel check lives on the class and can't be satisfied
+    # without breaking ipyvue's template caching, so patch the instance
+    w._send = _send  # type: ignore[method-assign]
 
 
 def close_comm_on_close(w: Widget) -> None:
@@ -1340,8 +1491,10 @@ IMPORT_TIME_WIDGET_PACKAGES = (
     "nglview",
 )
 
-# The subset whose import-time widgets the frontend expects to simply exist in
-# the browser. ipyvuetify's view finds `theme` by scanning the widget manager;
+# The subset whose process-global widgets the frontend expects to simply exist
+# in the browser, so init_session() opens them in every session. ipyvuetify's
+# view finds `theme` by scanning the widget manager; ipyvue templates name a
+# registered component (register_component_from_string()) by its tag;
 # nglview's ColormakerRegistry must be open (and its view rendered, see
 # js/src/nglview.ts) for its view to register custom color schemes
 EAGERLY_SHARED_PACKAGES = ("ipyvue", "ipyvuetify", "nglview")
@@ -1604,6 +1757,11 @@ def reactive_read(widget: Widget, names: Union[str, Sequence[str]]) -> Any:
     (e.g., a ``@reactive.Calc``, ``@reactive.Effect``, or render function) is
     invalidated whenever the trait's value changes (e.g., in response to user
     interaction with the widget in the browser).
+
+    For outputs of ``@render_*`` decorators, prefer the output's ``.read(name)``
+    method -- it reads accessors and falls through to this function for bare
+    traits. ``reactive_read()`` remains the tool for widgets outside renderer
+    contexts (e.g. a widget you constructed yourself).
 
     Parameters
     ----------

@@ -1,14 +1,18 @@
 import json
 import os
+import sys
 import types
 import warnings
+from collections.abc import Iterator
 from pathlib import Path
-from types import ModuleType
+from typing import Any
 
 import pytest
 import shinywidgets._dependencies as deps
 from htmltools import HTMLDependency
 from ipywidgets.widgets.domwidget import DOMWidget
+from shiny import Session
+from shiny.session import session_context
 from shinywidgets._dependencies import (
     amd_externals,
     jupyter_extension_destination,
@@ -52,6 +56,219 @@ def test_widget_pkg_accepts_classes_and_builtin_instances() -> None:
     assert widget_pkg(object()) == "builtins"
 
 
+@pytest.fixture
+def ipyreact_guard() -> Iterator[Any]:
+    # Importing ipyreact constructs its process-global ImportMap widget, which
+    # our hook registers in SHARED_WIDGETS; don't let it leak into other test
+    # modules (they would try to open it in every session they create). Evict
+    # ipyreact from sys.modules afterwards so test_ipyreact.py re-imports it
+    # fresh and finds the ImportMap widget it expects to be shared.
+    import shinywidgets._shinywidgets as sw
+
+    before = dict(sw.SHARED_WIDGETS)
+    mod = pytest.importorskip("ipyreact")
+    try:
+        yield mod
+    finally:
+        for model_id, w in list(sw.SHARED_WIDGETS.items()):
+            if before.get(model_id) is not w:
+                w.close()
+                sw.SHARED_WIDGETS.pop(model_id, None)
+        for name in (
+            n for n in list(sys.modules) if n == "ipyreact" or n.startswith("ipyreact.")
+        ):
+            del sys.modules[name]
+
+
+def test_ipyreact_subclass_in_app_module_resolves_dependencies(
+    ipyreact_guard: Any, widget_session: Session
+) -> None:
+    # Subclassing a third-party widget in app code (e.g.
+    # `class ConfettiButton(ipyreact.ValueWidget)` in app.py) makes the class's
+    # __module__ the app module; its JavaScript must still resolve to the base
+    # package. ipyreact is the case that actually breaks without this: its
+    # _model_module ("@widgetti/jupyter-react") doesn't match its nbextension
+    # dest ("jupyter-react"), so this fallback path is the only way its JS
+    # dependencies are found (previously require_dependencies() returned []
+    # and the browser failed with `ReferenceError: React is not defined`).
+    ipyreact = ipyreact_guard
+
+    class ConfettiButton(ipyreact.ValueWidget):
+        _esm = "export default { render: () => null }"
+
+    ConfettiButton.__module__ = "app"
+
+    with session_context(widget_session):
+        w = ConfettiButton()
+    assert jupyter_extension_destination(w, "_view_module") == "jupyter-react"
+    resolved = require_dependencies(w, widget_session)
+    assert len(resolved) > 0
+    assert resolved[0].name == "@widgetti/jupyter-react"
+
+
+def test_ipyreact_subclass_in_another_package_resolves_dependencies(
+    ipyreact_guard: Any, widget_session: Session
+) -> None:
+    # A component library built on ipyreact subclasses its widgets in its own
+    # installed package, which ships no JavaScript of its own: the JavaScript
+    # still belongs to ipyreact, the package whose class declares the npm
+    # module name.
+    ipyreact = ipyreact_guard
+
+    class LibraryButton(ipyreact.ValueWidget):
+        _esm = "export default { render: () => null }"
+
+    # htmltools stands in for any installed package without an nbextension
+    LibraryButton.__module__ = "htmltools.components"
+
+    with session_context(widget_session):
+        w = LibraryButton()
+    assert jupyter_extension_destination(w, "_view_module") == "jupyter-react"
+    resolved = require_dependencies(w, widget_session)
+    assert len(resolved) > 0
+    assert resolved[0].name == "@widgetti/jupyter-react"
+
+
+def test_subclass_declaring_its_own_npm_module_is_not_served_the_base_bundle(
+    ipyreact_guard: Any, widget_session: Session
+) -> None:
+    # A subclass that points at its own JavaScript (here, a module that only
+    # exists on a CDN) must not have its base package's bundle served under
+    # that module's name; with no local copy, it's left to the CDN fallback.
+    ipyreact = ipyreact_guard
+
+    class ForkedButton(ipyreact.ValueWidget):
+        _esm = "export default { render: () => null }"
+        _model_module = Unicode("my-cdn-only-fork").tag(sync=True)
+        _view_module = Unicode("my-cdn-only-fork").tag(sync=True)
+
+    ForkedButton.__module__ = "app"
+
+    with session_context(widget_session):
+        w = ForkedButton()
+    with pytest.warns(UserWarning, match="CDN fallback"):
+        assert require_dependencies(w, widget_session) == []
+
+
+@pytest.mark.parametrize(
+    ("attr", "value"),
+    [("_model_module", "my-own-model"), ("_view_module", None)],
+    ids=["model_only", "view_unset"],
+)
+def test_subclass_overriding_one_module_trait_keeps_the_inherited_bundle(
+    attr: str, value: str | None, ipyreact_guard: Any, widget_session: Session
+) -> None:
+    # Either way the browser still loads ipyreact's module (through the trait
+    # the subclass didn't override), so ipyreact's JavaScript is what's needed.
+    ipyreact = ipyreact_guard
+
+    PartialOverride = type(
+        "PartialOverride",
+        (ipyreact.ValueWidget,),
+        {
+            "__module__": "app",
+            "_esm": "export default { render: () => null }",
+            attr: Unicode(value, allow_none=True).tag(sync=True),
+        },
+    )
+
+    with session_context(widget_session):
+        w = PartialOverride()
+    resolved = require_dependencies(w, widget_session)
+    assert len(resolved) > 0
+    assert resolved[0].name == "@widgetti/jupyter-react"
+
+
+def test_anywidget_subclass_in_app_module_dependencies_unchanged(
+    widget_session: Session,
+) -> None:
+    # Regression: anywidget subclasses resolved fine before (their _model_module
+    # matches their nbextension dest, so the first lookup path hits) and must
+    # keep resolving.
+    anywidget = pytest.importorskip("anywidget")
+
+    class MyWidget(anywidget.AnyWidget):
+        _esm = "export default { render: () => null }"
+
+    MyWidget.__module__ = "app"
+
+    with session_context(widget_session):
+        w = MyWidget()
+    assert jupyter_extension_destination(w, "_view_module") == "anywidget"
+    resolved = require_dependencies(w, widget_session)
+    assert len(resolved) > 0
+    assert resolved[0].name == "anywidget"
+
+
+def test_ipyleaflet_subclass_in_app_module_dependencies_unchanged(
+    widget_session: Session,
+) -> None:
+    # Regression: ipyleaflet subclasses resolved fine before (its _model_module,
+    # "jupyter-leaflet", matches its nbextension dest, so resolution succeeds on
+    # the first lookup path) and must keep resolving.
+    ipyleaflet = pytest.importorskip("ipyleaflet")
+
+    class MyMap(ipyleaflet.Map):
+        pass
+
+    MyMap.__module__ = "app"
+
+    with session_context(widget_session):
+        w = MyMap()
+    resolved = require_dependencies(w, widget_session)
+    assert len(resolved) > 0
+    assert resolved[0].name == "jupyter-leaflet"
+
+
+@pytest.mark.parametrize(
+    ("init_src", "dest"),
+    [
+        (
+            "def _jupyter_nbextension_paths():\n"
+            "    return [{'dest': 'srcpkg-nbext'}]\n",
+            "srcpkg-nbext",
+        ),
+        ("", "srcpkg"),
+    ],
+    ids=["registered", "unregistered"],
+)
+def test_source_tree_widget_pkg_resolves_to_its_own_nbextension(
+    init_src: str,
+    dest: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    widget_session: Session,
+) -> None:
+    # A widget package that's importable without distribution metadata (e.g.,
+    # vendored on sys.path, or some editable installs) still owns its
+    # JavaScript: under its _jupyter_nbextension_paths() destination when it
+    # registers one, and under the package's own name otherwise. (The widget's
+    # _model_module, "srcpkg-npm", matches neither, so resolution depends on
+    # the destination lookup.)
+    pkg = tmp_path / "srcpkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text(init_src, encoding="utf-8")
+    (pkg / "widget.py").write_text(
+        "from ipywidgets.widgets.domwidget import DOMWidget\n"
+        "from traitlets import Unicode\n"
+        "class SourceTreeWidget(DOMWidget):\n"
+        "    _model_module = Unicode('srcpkg-npm').tag(sync=True)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    try:
+        import srcpkg.widget
+
+        with session_context(widget_session):
+            w = srcpkg.widget.SourceTreeWidget()
+        assert jupyter_extension_destination(w, "_model_module") == dest
+    finally:
+        for name in (
+            n for n in list(sys.modules) if n == "srcpkg" or n.startswith("srcpkg.")
+        ):
+            del sys.modules[name]
+
+
 def test_jupyter_extension_path_finds_index_js(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -93,57 +310,6 @@ def test_jupyter_extension_path_prefers_first_matching_data_dir(
     assert jupyter_extension_path(module_name) == str(first_dir)
 
 
-def test_jupyter_extension_destination_prefers_nbextension_paths(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class DummyWidget:
-        __module__ = "fakepkg.sub"
-
-    w = DummyWidget()
-
-    mod = ModuleType("fakepkg")
-    mod.__file__ = "/fake/path/__init__.py"
-
-    def _jupyter_nbextension_paths():
-        return [{"dest": "some-dest"}]
-
-    mod._jupyter_nbextension_paths = _jupyter_nbextension_paths  # type: ignore[attr-defined]
-
-    monkeypatch.setattr(deps.importlib, "import_module", lambda *a, **k: mod)
-    assert jupyter_extension_destination(w) == "some-dest"
-
-
-def test_jupyter_extension_destination_falls_back_to_widget_pkg(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class DummyWidget:
-        __module__ = "fakepkg.sub"
-
-    w = DummyWidget()
-
-    mod = ModuleType("fakepkg")
-    mod.__file__ = "/fake/path/__init__.py"
-
-    monkeypatch.setattr(deps.importlib, "import_module", lambda *a, **k: mod)
-    assert jupyter_extension_destination(w) == "fakepkg"
-
-
-def test_jupyter_extension_destination_requires_module_file(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class DummyWidget:
-        __module__ = "fakepkg.sub"
-
-    w = DummyWidget()
-
-    mod = ModuleType("fakepkg")
-    mod.__file__ = None
-
-    monkeypatch.setattr(deps.importlib, "import_module", lambda *a, **k: mod)
-    with pytest.raises(RuntimeError, match="has no __file__ attribute"):
-        jupyter_extension_destination(w)
-
-
 def test_output_binding_dependency_structure() -> None:
     dep = output_binding_dependency()
     assert isinstance(dep, HTMLDependency)
@@ -180,7 +346,9 @@ def test_require_dependencies_missing_extension_warns_and_returns_empty_list(
     session = types.SimpleNamespace(app=types.SimpleNamespace(lib_prefix="/lib"))
 
     monkeypatch.setattr(deps, "jupyter_extension_path", lambda name: None)
-    monkeypatch.setattr(deps, "jupyter_extension_destination", lambda w: "some-dest")
+    monkeypatch.setattr(
+        deps, "jupyter_extension_destination", lambda w, attr: "some-dest"
+    )
 
     with pytest.warns(
         UserWarning, match="Couldn't find local path to widget extension"
@@ -243,7 +411,9 @@ def test_require_dependencies_falls_back_when_view_module_is_none(
         looked_up.append(module_name)
 
     monkeypatch.setattr(deps, "jupyter_extension_path", spy)
-    monkeypatch.setattr(deps, "jupyter_extension_destination", lambda w: "some-dest")
+    monkeypatch.setattr(
+        deps, "jupyter_extension_destination", lambda w, attr: "some-dest"
+    )
 
     assert require_dependencies(w, session, warn_if_missing=False) == []
     assert looked_up[0] == "jupyter-vue"

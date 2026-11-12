@@ -44,13 +44,64 @@ SELECTION_JSON = json.dumps(
     }
 )
 
+# The viewer sends this once when it loads, whether or not the user has
+# selected anything; a later empty event is a real deselection
+EMPTY_SELECTION_JSON = json.dumps(
+    {
+        "type": "selection_change",
+        "application_id": "test",
+        "recording_id": "rec",
+        "segment_id": None,
+        "items": [],
+    }
+)
 
-def test_selection_emits_parsed_event(widget_session: Session) -> None:
+
+def test_selected_ignores_the_load_time_empty_seed(widget_session: Session) -> None:
+    # The first empty selection per attach is the viewer's load-time seed and
+    # must not be emitted (it would clobber a selection kept across a
+    # re-render); a *subsequent* empty event is a real deselection
+    widget = inner_viewer(widget_session)
+    emitted: List[object] = []
+    sr.SELECTED.attach(widget, emitted.append)
+    cb = widget._raw_event_callbacks[-1]
+    cb(EMPTY_SELECTION_JSON)
+    assert emitted == []
+    cb(SELECTION_JSON)
+    assert len(emitted) == 1
+    cb(EMPTY_SELECTION_JSON)
+    assert len(emitted) == 2
+    evt = emitted[-1]
+    assert isinstance(evt, SelectionChangeEvent)
+    assert evt.items == []
+
+
+def test_selected_ignores_a_delayed_load_time_empty_seed(
+    widget_session: Session,
+) -> None:
+    # In the browser, a fast early selection can reach Python before the
+    # viewer's asynchronous load-time empty report. The first empty report is
+    # still that seed; the next empty report is a real deselection.
+    widget = inner_viewer(widget_session)
+    emitted: List[object] = []
+    sr.SELECTED.attach(widget, emitted.append)
+    cb = widget._raw_event_callbacks[-1]
+    cb(SELECTION_JSON)
+    cb(EMPTY_SELECTION_JSON)
+    assert len(emitted) == 1
+    cb(EMPTY_SELECTION_JSON)
+    assert len(emitted) == 2
+    evt = emitted[-1]
+    assert isinstance(evt, SelectionChangeEvent)
+    assert evt.items == []
+
+
+def test_selected_emits_parsed_event(widget_session: Session) -> None:
     # Pins the shape of rerun's private _on_raw_event/_viewer_event_from_json_str
     # APIs (Review Focus 5): an upstream change must fail loudly here
     widget = inner_viewer(widget_session)
     emitted: List[object] = []
-    sr.SELECTION.attach(widget, emitted.append)
+    sr.SELECTED.attach(widget, emitted.append)
     cb = widget._raw_event_callbacks[-1]
     cb(
         json.dumps(
@@ -71,49 +122,54 @@ def test_selection_emits_parsed_event(widget_session: Session) -> None:
     assert evt.items[0].entity_path == "points"
 
 
-def test_selection_spec_is_eager() -> None:
-    # The viewer sends an empty selection at load; only eager attach catches it
-    assert sr.SELECTION.eager
+def test_selected_spec_is_state() -> None:
+    # A selection is user-interaction state, so it is kept across re-renders
+    assert sr.SELECTED.kind == "state"
 
 
-def test_selection_detach_is_a_safe_noop(widget_session: Session) -> None:
+def test_selected_detach_is_a_safe_noop(widget_session: Session) -> None:
     # rerun's _on_raw_event has no remove API (upstream TODO), so the detach
     # must tolerate being called and rely on the helper's generation guard to
     # drop stale callbacks (the guard itself is covered by the helper's tests)
     widget = inner_viewer(widget_session)
     before = len(widget._raw_event_callbacks)
-    detach = sr.SELECTION.attach(widget, lambda raw: None)
+    detach = sr.SELECTED.attach(widget, lambda raw: None)
     assert len(widget._raw_event_callbacks) == before + 1
     detach()
     detach()  # must not raise
     assert len(widget._raw_event_callbacks) == before + 1
 
 
-def test_renderer_selection_round_trips_and_resets(widget_session: Session) -> None:
+def test_renderer_selected_round_trips_and_is_retained(
+    widget_session: Session,
+) -> None:
     widget = inner_viewer(widget_session)
     r = rw.render_rerun()
     r._widget = widget  # stands in for _render()
     r._accessors.on_render(widget)
-    assert r.selection() is None
+    assert r.selected() is None
     widget._raw_event_callbacks[-1](SELECTION_JSON)
-    evt = r.selection()
+    evt = r.selected()
     assert isinstance(evt, SelectionChangeEvent)
-    # Event semantics: a re-render resets the accessor to None
+    # Retained semantics: a re-render keeps the last selection
     r._accessors.on_render(widget)
-    assert r.selection() is None
-    # ...and the eager re-attach still reports selections
+    assert isinstance(r.selected(), SelectionChangeEvent)
+    # ...the new viewer's load-time empty seed doesn't clobber it...
+    widget._raw_event_callbacks[-1](EMPTY_SELECTION_JSON)
+    assert isinstance(r.selected(), SelectionChangeEvent)
+    # ...and the re-attach still reports selections
     widget._raw_event_callbacks[-1](SELECTION_JSON)
-    assert isinstance(r.selection(), SelectionChangeEvent)
+    assert isinstance(r.selected(), SelectionChangeEvent)
 
 
-def test_selection_ignores_events_named_like_the_type_tag(
+def test_selected_ignores_events_named_like_the_type_tag(
     widget_session: Session,
 ) -> None:
     # The cheap prefilter is a substring match, so an application_id of
     # "selection_change" passes it; only the parsed event's type may decide
     widget = inner_viewer(widget_session)
     emitted: List[object] = []
-    sr.SELECTION.attach(widget, emitted.append)
+    sr.SELECTED.attach(widget, emitted.append)
     cb = widget._raw_event_callbacks[-1]
     cb(
         json.dumps(
@@ -127,3 +183,9 @@ def test_selection_ignores_events_named_like_the_type_tag(
         )
     )
     assert emitted == []
+
+
+def test_selected_is_retained() -> None:
+    from shinywidgets._rerun import SELECTED
+
+    assert SELECTED.kind == "state"

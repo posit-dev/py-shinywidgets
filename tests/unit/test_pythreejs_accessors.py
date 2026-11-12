@@ -10,6 +10,8 @@ from shiny import Session
 from shiny.session import session_context
 from shiny.types import SilentException
 
+from tests.unit.conftest import reads_across_rerender
+
 
 @pytest.fixture(autouse=True)
 def in_session(widget_session: Session) -> Iterator[None]:
@@ -158,3 +160,31 @@ def test_equal_pose_camera_replacement_still_invalidates() -> None:
     # snapshot is identical to the last one
     fig.camera.position = list(fig.camera.position)
     assert not context2._invalidated
+
+
+def test_pythreejs_camera_follows_a_rerender_in_the_same_pose() -> None:
+    # The new widget's camera reports the same pose as the previous one, so
+    # the accessor publishes nothing: readers have to follow the widget itself
+    import pythreejs
+
+    def renderer() -> pythreejs.Renderer:
+        camera = pythreejs.PerspectiveCamera(position=[0, 0, 5])
+        return pythreejs.Renderer(scene=pythreejs.Scene(), camera=camera)
+
+    first, second = renderer(), renderer()
+    r = rw.render_pythreejs()
+    seen = reads_across_rerender(r, first, second, r.camera)
+    assert len(seen) == 2
+    assert seen[0] is first.camera
+    assert seen[1] is second.camera
+
+
+def test_ipyvolume_camera_follows_a_rerender_in_the_same_pose() -> None:
+    import ipyvolume as ipv
+
+    first, second = ipv.Figure(), ipv.Figure()
+    r = rw.render_ipyvolume()
+    seen = reads_across_rerender(r, first, second, r.camera)
+    assert len(seen) == 2
+    assert seen[0] is first.camera
+    assert seen[1] is second.camera
