@@ -40,7 +40,7 @@ altair = ["altair>=5.1", "narwhals"]
 bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 # embedding-atlas requires Python 3.11+, so it's not installable on 3.10
 embedding_atlas = ["embedding-atlas>=0.26; python_version >= '3.11'"]
-bqplot = ["bqplot"]
+bqplot = ["bqplot", "narwhals"]
 drawdata = ["drawdata>=0.5"]
 # geolibre requires Python 3.11+
 geolibre = ["geolibre>=3.6.0; python_version >= '3.11'"]

@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from astropy.table import Table
     from bokeh.events import RangesUpdate, Tap
     from bqplot import Figure as BqplotFigure
+    from bqplot import Mark
     from drawdata import BarWidget as DrawdataBarWidget
     from drawdata import ScatterWidget as DrawdataScatterWidget
     from geolibre import Map as GeolibreMap
@@ -141,7 +142,7 @@ from ._as_widget import (
 )
 from ._bokeh import _bokeh_dependency
 from ._bokeh_accessors import BOKEH_ACCESSORS, selected_frame
-from ._bqplot import BPLOT_ACCESSORS
+from ._bqplot import BPLOT_ACCESSORS, SelectionReport, pick_mark
 from ._cytoscape import CYTOSCAPE_ACCESSORS
 from ._dependencies import widget_pkg
 from ._embedding_atlas import EMBEDDING_ATLAS_ACCESSORS, rows_for_predicate
@@ -1875,7 +1876,9 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
     reactive function (a ``@render.*`` function, ``@reactive.calc``, or
     ``@reactive.effect``), which re-runs whenever the user selects or brushes
     (with a brush/lasso `bqplot.interacts.Selector`, or by click-select), much
-    like ``input.my_slider()`` reads an input. A re-render (e.g. when the
+    like ``input.my_slider()`` reads an input. The selections are arrays of
+    row *positions*, not index labels; ``fig.selected_rows(df)`` returns the
+    selected rows of a data frame instead. A re-render (e.g. when the
     render function reads an input) gives the user a new figure, whose marks
     start out unselected. They can't be read inside this output's own render
     function, which builds a new figure each time it runs. To react to one
@@ -1967,6 +1970,37 @@ class render_bqplot(render_widget_base[ValueT, BqplotFigure]):
             Optional[Union["np.ndarray", Dict[str, Any]]],
             self._read_accessor("brush"),
         )
+
+    def selected_rows(
+        self, df: IntoDataFrameT, *, mark: Optional[Union[int, "Mark"]] = None
+    ) -> IntoDataFrameT:
+        """
+        The rows of `df` at the selected positions of one mark (see
+        :meth:`selected`).
+
+        `df` is required: a bqplot figure retains no data frame. Any frame
+        type works (pandas, polars, ...); the result has the same type.
+        `mark` is the mark whose selection maps to `df`'s rows -- its index
+        in ``fig.marks``, or the `Mark` object itself -- and may be omitted
+        when the figure has exactly one mark. Empty while that mark has
+        nothing selected, so it can be passed straight to
+        ``@render.data_frame``. Cancels until the browser first reports,
+        like :meth:`selected`.
+
+        The match is positional (``df.iloc[fig.selected()[i]]``), so after a
+        re-render or in-place data replacement through ``.widget``
+        (``mark.x = ...``), a retained position can point at a different row
+        -- carry an ID column and look rows up by it when the data can
+        change.
+
+        `mark` resolves against the same report as the selections, which the
+        debounce can leave lagging an in-place change to ``fig.marks``; a
+        mark the report doesn't know yet cancels until it is reported.
+        """
+        report = cast(SelectionReport, self._read_accessor("selected", raw=True))
+        widget = cast("BqplotFigure", self._widget)
+        positions = report.selected[pick_mark(widget, report.marks, mark)]
+        return select_rows_at(df, [] if positions is None else positions)
 
 
 class render_geolibre(render_widget_base[GeolibreMap, GeolibreMap]):
