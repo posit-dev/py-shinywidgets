@@ -39,3 +39,47 @@ def brushed_rows():
 @render.text
 def bar_rows():
     return ",".join(str(v) for v in bar_chart.selected_rows()["v"])
+
+
+left_df = pd.DataFrame({"x": range(10), "y": range(10)})
+right_df = pd.DataFrame({"x": range(10), "z": [v * 10 for v in range(10)]})
+
+
+@render_altair(height="250px")
+def multi_chart():
+    import warnings
+
+    brush = alt.selection_interval(name="multi", encodings=["x"])
+    pick = alt.selection_point(name="pick", encodings=["x"])
+    with warnings.catch_warnings():
+        # altair warns when deduplicating the identical params across subcharts
+        warnings.simplefilter("ignore")
+        left = (
+            alt.Chart(left_df, name="left")
+            .mark_point()
+            .encode(x="x:Q", y="y:Q")
+            .add_params(brush, pick)
+        )
+        right = (
+            alt.Chart(right_df, name="right")
+            .mark_point()
+            .encode(x="x:Q", y="z:Q")
+            .add_params(brush, pick)
+        )
+        return alt.hconcat(left, right)
+
+
+@render.text
+def multi_rows():
+    rows = multi_chart.selected_rows("multi")
+    if not isinstance(rows, dict):
+        return "not-a-dict"
+    return ",".join(f"{view}={len(frame)}" for view, frame in sorted(rows.items()))
+
+
+@render.text
+def pick_rows():
+    rows = multi_chart.selected_rows("pick")
+    if not isinstance(rows, dict):
+        return "not-a-dict"
+    return ",".join(f"{view}={len(frame)}" for view, frame in sorted(rows.items()))

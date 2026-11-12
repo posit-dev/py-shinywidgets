@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from playwright.sync_api import Page, expect
 from tests.playwright.conftest import assert_no_unexpected_errors, collect_errors
 
@@ -35,4 +37,43 @@ def test_altair_accessors_follow_real_gestures(page: Page, local_app) -> None:
     )
     # Half-open bins: 3.3 belongs to the next bar
     expect(page.locator("#bar_rows")).to_have_text("2.0,2.4", timeout=5000)
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
+def test_altair_multi_dataset_selections_partition_by_view(
+    page: Page, local_app
+) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    expect(page.locator("#multi_rows")).to_have_text("left=0,right=0", timeout=30000)
+    expect(page.locator("#pick_rows")).to_have_text("left=0,right=0")
+
+    # Brush an x-band in the LEFT chart of the hconcat: only the left view's
+    # data is filtered (the right view has no entries of its own yet)
+    canvas = page.locator("#multi_chart canvas, #multi_chart svg").first
+    box = canvas.bounding_box()
+    assert box is not None
+    y = box["y"] + box["height"] * 0.4
+    page.mouse.move(box["x"] + box["width"] * 0.15, y)
+    page.mouse.down()
+    page.mouse.move(box["x"] + box["width"] * 0.30, y, steps=8)
+    page.mouse.up()
+    expect(page.locator("#multi_rows")).to_have_text(
+        re.compile(r"left=[1-9]\d*,right=0"), timeout=5000
+    )
+
+    # Click a point in the RIGHT chart (Playwright scrolls it into the
+    # viewport and clicks its center): the point selection's entry names the
+    # right view, so only the right view's frame is filtered, to its one row
+    # with that x
+    points = page.locator("#multi_chart path[aria-roledescription='point']")
+    right_point = None
+    for i in range(points.count()):
+        pbox = points.nth(i).bounding_box()
+        if pbox and pbox["x"] + pbox["width"] / 2 > box["x"] + box["width"] / 2:
+            right_point = points.nth(i)
+            break
+    assert right_point is not None
+    right_point.click()
+    expect(page.locator("#pick_rows")).to_have_text("left=0,right=1", timeout=5000)
     assert_no_unexpected_errors(errors, failed_requests)
