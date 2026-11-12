@@ -225,6 +225,16 @@ def filter_selection_by_unit(
     import narwhals as nw
     from altair.utils.selection import IndexSelection
 
+    if isinstance(selection, IndexSelection):
+        raise ValueError(
+            f"The selection {selection.name!r} selects positional row indices "
+            "(a bare `alt.selection_point()` without `fields=`/`encodings=`), "
+            "which can't be mapped back to rows on a chart with several "
+            "datasets. Declare the selection with `fields=` or `encodings=` "
+            "(e.g. `alt.selection_point(encodings=['x'])`) so it selects "
+            "values instead of positions."
+        )
+
     stores: Dict[str, List[Dict[str, Any]]] = {view: [] for view in frames}
     for entry in selection.store:
         unit = entry.get("unit", "")
@@ -236,16 +246,6 @@ def filter_selection_by_unit(
                 "view name."
             )
         stores[unit].append(entry)
-
-    if isinstance(selection, IndexSelection):
-        raise ValueError(
-            f"The selection {selection.name!r} selects positional row indices "
-            "(a bare `alt.selection_point()` without `fields=`/`encodings=`), "
-            "which can't be mapped back to rows on a chart with several "
-            "datasets. Declare the selection with `fields=` or `encodings=` "
-            "(e.g. `alt.selection_point(encodings=['x'])`) so it selects "
-            "values instead of positions."
-        )
 
     out: Dict[str, IntoDataFrameT] = {}
     for view, df in frames.items():

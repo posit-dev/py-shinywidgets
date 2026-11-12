@@ -27,12 +27,12 @@ DATE_BRUSH = [
 ]
 
 
-def interval(store: List[Dict[str, Any]]) -> IntervalSelection:
-    return IntervalSelection(name="s", value={}, store=store)  # type: ignore[arg-type]
+def interval(store: List[Dict[str, Any]], name: str = "s") -> IntervalSelection:
+    return IntervalSelection(name=name, value={}, store=store)  # type: ignore[arg-type]
 
 
-def point(store: List[Dict[str, Any]]) -> PointSelection:
-    return PointSelection(name="s", value=[], store=store)  # type: ignore[arg-type]
+def point(store: List[Dict[str, Any]], name: str = "s") -> PointSelection:
+    return PointSelection(name=name, value=[], store=store)  # type: ignore[arg-type]
 
 
 def entry(*fields: tuple[str, str, Any]) -> Dict[str, Any]:
@@ -312,8 +312,8 @@ def test_selected_rows_uses_the_selection_views_own_data(
     r._accessors.values["selected"].set(
         sa_box(
             {
-                "b1": interval([uentry("pts", ("x", "R", [1, 2]))]),
-                "b2": interval([uentry("lns", ("z", "R", [150, 250]))]),
+                "b1": interval([uentry("pts", ("x", "R", [1, 2]))], name="b1"),
+                "b2": interval([uentry("lns", ("z", "R", [150, 250]))], name="b2"),
             }
         )
     )
@@ -344,7 +344,13 @@ def test_selected_rows_facet_chart_still_filters_the_whole_frame(
     # Facet store units carry a `__facet` suffix; the single-view path ignores
     # them and filters the chart's (hoisted) frame, as before this change
     r._accessors.values["selected"].set(
-        sa_box({"brush": interval([uentry("view_1_0__facet_g_a", ("x", "R", [1, 2]))])})
+        sa_box(
+            {
+                "brush": interval(
+                    [uentry("view_1_0__facet_g_a", ("x", "R", [1, 2]))], name="brush"
+                )
+            }
+        )
     )
     w.local_tz = "UTC"
     assert r.selected_rows("brush")["y"].tolist() == [1, 2]
@@ -374,7 +380,8 @@ def test_selected_rows_returns_a_dict_for_multi_dataset_views(
                     [
                         uentry("pts", ("x", "R", [1, 2])),
                         uentry("lns", ("z", "R", [150, 250])),
-                    ]
+                    ],
+                    name="brush",
                 )
             }
         )
@@ -413,7 +420,7 @@ def test_selected_rows_shared_data_concat_stays_a_single_frame(
     r._accessors.on_render(w)
     w.local_tz = "UTC"
     r._accessors.values["selected"].set(
-        sa_box({"brush": interval([uentry("pts", ("x", "R", [1, 2]))])})
+        sa_box({"brush": interval([uentry("pts", ("x", "R", [1, 2]))], name="brush")})
     )
     out = r.selected_rows("brush")
     assert isinstance(out, pd.DataFrame)
