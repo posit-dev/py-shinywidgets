@@ -190,6 +190,51 @@ def filter_store(
     return frame.filter(test)
 
 
+def filter_selection_by_unit(
+    selection: "Selection",
+    frames: Dict[str, "IntoDataFrameT"],
+    local_tz: Optional[str],
+) -> Dict[str, "IntoDataFrameT"]:
+    """
+    The rows of each view's frame in `selection`, for a selection whose store
+    spans several views: `frames` is keyed by view name (the store entries'
+    `unit`) and each frame is filtered by its own view's entries only. An
+    entry naming a view with no frame raises.
+    """
+    import narwhals as nw
+    from altair.utils.selection import IndexSelection
+
+    stores: Dict[str, List[Dict[str, Any]]] = {view: [] for view in frames}
+    for entry in selection.store:
+        unit = entry.get("unit", "")
+        if unit not in stores:
+            raise ValueError(
+                f"The selection has entries from a view named {unit!r}, which "
+                f"isn't among the chart's views ({', '.join(frames)}). Pass "
+                "the frames to filter as `selected_rows(df=...)` keyed by "
+                "view name."
+            )
+        stores[unit].append(entry)
+
+    out: Dict[str, IntoDataFrameT] = {}
+    for view, df in frames.items():
+        frame = nw.from_native(df, eager_only=True)
+        if isinstance(selection, IndexSelection):
+            # Fields-less point selections store {"unit", "_vgsid_"} tuples;
+            # _vgsid_ is 1-based within each view's own dataset
+            indices = [e["_vgsid_"] - 1 for e in stores[view]]
+            row = "__shinywidgets_row__"
+            out[view] = (
+                frame.with_row_index(row)
+                .filter(nw.col(row).is_in(indices))
+                .drop(row)
+                .to_native()
+            )
+        else:
+            out[view] = filter_store(stores[view], frame, local_tz).to_native()
+    return out
+
+
 def field_test(
     frame: nw.DataFrame[Any], field: Dict[str, Any], value: Any, local_tz: Optional[str]
 ) -> nw.Expr:

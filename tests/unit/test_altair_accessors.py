@@ -79,6 +79,31 @@ def hconcat_chart() -> alt.JupyterChart:
         return alt.JupyterChart(alt.hconcat(pts, lns))
 
 
+def test_filter_by_unit_partitions_entries() -> None:
+    store = [
+        uentry("pts", ("x", "R", [1, 2])),
+        uentry("lns", ("z", "R", [150, 250])),
+    ]
+    out = sa.filter_selection_by_unit(
+        interval(store), {"pts": POINTS, "lns": LINES}, None
+    )
+    assert out["pts"]["y"].tolist() == [10, 20]
+    assert out["lns"]["z"].tolist() == [200]
+
+
+def test_filter_by_unit_empty_store_gives_empty_frames() -> None:
+    out = sa.filter_selection_by_unit(interval([]), {"pts": POINTS, "lns": LINES}, None)
+    assert set(out) == {"pts", "lns"}
+    assert len(out["pts"]) == 0 and len(out["lns"]) == 0
+
+
+def test_filter_by_unit_rejects_unknown_units() -> None:
+    with pytest.raises(ValueError, match="'nope'"):
+        sa.filter_selection_by_unit(
+            interval([uentry("nope", ("x", "R", [1, 2]))]), {"pts": POINTS}, None
+        )
+
+
 def test_named_subcharts_walks_layers_and_concats(widget_session: Session) -> None:
     with session_context(widget_session):
         layered = layered_chart()
