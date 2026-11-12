@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import contextlib
 import io
 from typing import Any
 
 import numpy as np
+import pytest
 from PIL import Image
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, Route, expect
@@ -279,6 +281,28 @@ def wait_for_red_pixels(page: Page, selector: str, timeout_ms: int = 30000) -> N
 KEPLERGL_ALLOWED_ERRORS = (
     "luma.gl: This version of luma.gl has already been initialized",
 )
+
+
+# aladin-lite fetches the properties of its default DSSColor HiPS layer from
+# alasky.cds.unistra.fr as the viewer initializes (and can fail at any point,
+# e.g. on a transient DNS/CDS error). When that fetch fails, aladin-lite
+# raises "starting url ... does not points to a HiPS location", the base
+# layer never initializes, and getViewWCS() then throws inside ipyaladin's
+# interaction handlers -- before model.save_changes() runs, so trait sync
+# (and zoom) silently dies from then on. An external outage, not something
+# shinywidgets can affect, so turn assertion failures into skips whenever the
+# outage signature was recorded, since the outage can begin mid-test.
+@contextlib.contextmanager
+def aladin_hips_outage_as_skip(errors: list[str]) -> Any:
+    try:
+        yield
+    except AssertionError:
+        if any("does not points to a HiPS location" in e for e in errors):
+            pytest.skip(
+                "aladin-lite's HiPS imagery service (alasky.cds.unistra.fr) "
+                "failed to initialize the viewer"
+            )
+        raise
 
 
 def assert_no_unexpected_errors(

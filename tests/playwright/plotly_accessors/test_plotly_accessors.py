@@ -91,6 +91,62 @@ def test_plotly_accessors_follow_real_gestures(page: Page, local_app) -> None:
     assert_no_unexpected_errors(errors, failed_requests)
 
 
+def test_plotly_hover_doubleclick_and_legend_gestures(page: Page, local_app) -> None:
+    errors, failed_requests = collect_errors(page)
+    page.goto(local_app.url)
+    expect(page.locator("#plot .js-plotly-plot")).to_have_count(1, timeout=30000)
+    # visible_traces is seeded at bind: both traces visible before any gesture
+    expect(page.locator("#visible_traces")).to_have_text("True,True", timeout=10000)
+
+    # Hover the point (3, 9): hover reports it (debounced), then clears to
+    # None when the mouse leaves the points
+    page.mouse.move(*point(page, 3, 9), steps=5)
+    expect(page.locator("#hover")).to_have_text("1,0,3,9", timeout=5000)
+    page.mouse.move(*point(page, 1.2, 23), steps=5)
+    expect(page.locator("#hover")).to_have_text("None", timeout=5000)
+
+    # A double-click on the background is a pulse of its own, distinct from
+    # the clears it also causes. In select dragmode a double-click deselects
+    # without emitting plotly_doubleclick, so switch to zoom first.
+    page.evaluate(
+        """() => window.Plotly.relayout(
+            document.querySelector("#plot .js-plotly-plot"), {"dragmode": "zoom"})"""
+    )
+    expect(page.locator("#double_clicked")).to_have_text("None")
+    page.mouse.dblclick(*point(page, 1, 25))
+    expect(page.locator("#double_clicked")).to_have_text("fired", timeout=5000)
+
+    # A legend click reports the clicked trace and hides it (the click lands
+    # on the item's group: its legendtoggle rect covers the text)
+    page.locator("#plot .legend .traces", has_text="b").click()
+    expect(page.locator("#legend_clicked")).to_have_text("1,b", timeout=5000)
+    expect(page.locator("#visible_traces")).to_have_text("True,False", timeout=5000)
+    # Clicking the same item again re-fires and restores visibility
+    page.locator("#plot .legend .traces", has_text="b").click()
+    expect(page.locator("#visible_traces")).to_have_text("True,True", timeout=5000)
+
+    # A batched visibility update from Python (Plotly.update, not restyle)
+    # is reflected too (a visible=False trace leaves the legend, so Python
+    # re-shows it)
+    page.click("#hide_b")
+    expect(page.locator("#visible_traces")).to_have_text("True,False", timeout=5000)
+    page.click("#show_b")
+    expect(page.locator("#visible_traces")).to_have_text("True,True", timeout=5000)
+
+    # Trace-structure changes from Python redraw (Plotly.addTraces/
+    # deleteTraces emit plotly_redraw, not restyle/update) are followed too
+    page.click("#add_trace")
+    expect(page.locator("#visible_traces")).to_have_text("True,True,True", timeout=5000)
+    page.click("#drop_trace")
+    expect(page.locator("#visible_traces")).to_have_text("True,True", timeout=5000)
+
+    # A legend double-click isolates the trace
+    page.locator("#plot .legend .traces", has_text="b").dblclick()
+    expect(page.locator("#visible_traces")).to_have_text("False,True", timeout=5000)
+
+    assert_no_unexpected_errors(errors, failed_requests)
+
+
 def test_plotly_accessors_on_an_app_defined_figure_subclass(
     page: Page, local_app
 ) -> None:

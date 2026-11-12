@@ -40,7 +40,7 @@ def test_selection_and_clicks_reach_python(page: Page, local_app) -> None:
     wait_for_cells(page)
     wait_for_cell_handlers(page)
 
-    # selection() is seeded empty at render; clicked() is None until a click
+    # selected() is seeded empty at render; clicked() is None until a click
     expect(page.locator("#selected")).to_have_text("{}", timeout=TIMEOUT)
     expect(page.locator("#clicked")).to_have_text("", timeout=TIMEOUT)
 

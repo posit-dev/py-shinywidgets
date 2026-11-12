@@ -40,7 +40,7 @@ altair = ["altair>=5.1", "narwhals"]
 bokeh = ["bokeh", "jupyter_bokeh>=4.1"]
 # embedding-atlas requires Python 3.11+, so it's not installable on 3.10
 embedding_atlas = ["embedding-atlas>=0.26; python_version >= '3.11'"]
-bqplot = ["bqplot"]
+bqplot = ["bqplot", "narwhals"]
 drawdata = ["drawdata>=0.5"]
 # geolibre requires Python 3.11+
 geolibre = ["geolibre>=3.6.0; python_version >= '3.11'"]
@@ -59,7 +59,7 @@ ipysigma = ["ipysigma"]
 # ipyvolume 0.6.3 imports ipython_genutils but doesn't declare it
 ipyvolume = ["ipyvolume", "ipython_genutils"]
 itables = ["itables[widget]"]
-jscatter = ["jupyter-scatter"]
+jscatter = ["jupyter-scatter", "narwhals"]
 k3d = ["k3d"]
 # An explicit pre-release specifier, so uv/pip accept it without --pre.
 # keplergl 0.3.x imports pkg_resources (removed in setuptools 82), so 0.4
@@ -69,7 +69,7 @@ keplergl = ["keplergl>=0.4.0rc4"]
 leafmap = ["leafmap", "plotly>=5.12.0,<7"]
 # geoarrow-rust-core (a lonboard dependency) doesn't publish wheels for
 # Python 3.15+ yet, so lonboard can't be installed there
-lonboard = ["lonboard; python_version < '3.15'"]
+lonboard = ["lonboard; python_version < '3.15'", "narwhals"]
 maplibre = ["maplibre[anywidget]"]
 matplotlib = ["matplotlib", "ipympl"]
 mols2grid = ["mols2grid>=2.2.0,<3"]
@@ -81,9 +81,12 @@ panel = ["panel", "jupyter_bokeh>=4.1"]
 # pyarrow is required for pandas DataFrame conversion (perspective-python
 # doesn't depend on it)
 # >=5.7 excluded: the "Better WASM init" change (perspective-dev/perspective#3269)
-# breaks second-viewer init and re-rendering (viewers never display data), seen in
-# tests/playwright/render_perspective. Verified still broken on 5.8.0 and 5.9.0;
-# fix proposed upstream in perspective-dev/perspective#3287.
+# keeps the WASM init registry on globalThis, so when anywidget evaluates the
+# widget's ESM a second time in the same page (a second viewer, or a re-render),
+# the module-scope init() throws "viewer wasm is already initialized" -- seen as
+# flaky console-error failures in tests/playwright/render_perspective. Verified
+# broken on 5.7.0-5.9.0. The fix (perspective-dev/perspective#3287) is merged
+# upstream; relax this pin once a release containing it (>5.9.0) ships.
 perspective = ["perspective-python>=3.0,<5.7", "pyarrow"]
 plotly = ["plotly>=5.12.0", "narwhals", "pandas"]
 plotnine = ["plotnine", "ipympl"]
