@@ -18,7 +18,7 @@ import pytest
 from ipywidgets import Button, IntSlider
 from shiny import Session, reactive
 from shiny.session import session_context
-from shinywidgets._comm import ShinyComm
+from shinywidgets._comm import ClientMsgScope, ShinyComm, handling_client_msg
 
 
 def flush() -> None:
@@ -210,6 +210,33 @@ def test_deferred_work_after_dispatch_keeps_traitlets_logging(
     [record] = caplog.records
     assert record.name == "traitlets"
     assert record.levelno == logging.WARNING
+
+
+def test_scope_releases_comm_after_dispatch(widget_session: Session) -> None:
+    # Deferred work (asyncio tasks, loop.call_soon) shares the dispatch scope
+    # via its copied context, so a strong comm reference on it would keep the
+    # comm -- and its widget callbacks and session -- alive for the lifetime
+    # of that work, even after the widget is closed or replaced.
+    scopes: List[ClientMsgScope] = []
+
+    def grab(change: object) -> None:
+        scope = handling_client_msg.get()
+        assert scope is not None
+        scopes.append(scope)
+
+    with session_context(widget_session):
+        slider = IntSlider(value=1)
+        slider.observe(grab, names="value")
+        comm = open_comm(slider)
+        comm.handle_msg(
+            client_msg(
+                comm.comm_id,
+                {"method": "update", "state": {"value": 5}, "buffer_paths": []},
+            )
+        )
+
+    [scope] = scopes
+    assert scope.comm is None
 
 
 def capture_notifications(

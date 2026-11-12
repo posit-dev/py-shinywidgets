@@ -254,6 +254,10 @@ class ShinyComm:
             self._parent_header = None
             traitlets_level_patch.restore()
             scope.active = False
+            # Deferred work shares this scope via its copied context (see
+            # ClientMsgScope); release the comm so that work can't pin it
+            # (and its widget callbacks and session) after dispatch ends.
+            scope.comm = None
             handling_client_msg.reset(token)
 
     def handle_close(self, msg: Dict[str, object]) -> None:
