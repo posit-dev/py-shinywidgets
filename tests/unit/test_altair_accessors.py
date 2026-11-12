@@ -171,6 +171,33 @@ def test_selection_views_reads_the_hoisted_param(widget_session: Session) -> Non
     assert sa.selection_views(variable, "v") is None
 
 
+def test_view_frames_explicit_non_frame_data_overrides_the_parent() -> None:
+    combo = alt.hconcat(
+        alt.Chart(POINTS, name="pts").mark_point().encode(x="x"),
+        alt.Chart("https://example.com/d.csv", name="url").mark_point().encode(x="x:Q"),
+        data=LINES,
+    )
+    frames = sa.view_frames(combo)
+    assert frames["pts"] is POINTS
+    # The URL dataset isn't a frame; inheriting the parent frame would
+    # silently filter the wrong rows, so df= is required instead
+    assert frames["url"] is None
+
+
+def test_chart_datasets_counts_frames_urls_and_inline_data() -> None:
+    combo = alt.hconcat(
+        alt.Chart(POINTS).mark_point().encode(x="x"),
+        alt.Chart("https://example.com/a.csv").mark_point().encode(x="x"),
+        alt.Chart(alt.Data(values=[{"x": 1}])).mark_point().encode(x="x"),
+    )
+    assert len(sa.chart_datasets(combo)) == 3
+    same_url = alt.hconcat(
+        alt.Chart("https://example.com/a.csv").mark_point().encode(x="x"),
+        alt.Chart("https://example.com/a.csv").mark_point().encode(x="x"),
+    )
+    assert len(sa.chart_datasets(same_url)) == 1
+
+
 def test_view_frames_rejects_duplicate_names() -> None:
     a = alt.Chart(POINTS, name="dup").mark_point().encode(x="x")
     b = alt.Chart(LINES, name="dup").mark_point().encode(x="x")
@@ -574,6 +601,77 @@ def test_selected_rows_bare_point_selection_on_a_single_dataset_chart(
         )
     )
     assert r.selected_rows("pick")["y"].tolist() == [0, 2]
+
+
+def test_selected_rows_single_view_with_unresolvable_data_raises(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    brush = alt.selection_interval(name="b")
+    combo = alt.hconcat(
+        alt.Chart(POINTS, name="pts").mark_point().encode(x="x"),
+        alt.Chart("https://example.com/d.csv", name="url")
+        .mark_point()
+        .encode(x="x:Q")
+        .add_params(brush),
+        data=LINES,
+    )
+    with session_context(widget_session):
+        w = alt.JupyterChart(combo)
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box({"b": interval([uentry("url", ("x", "R", [1, 2]))], name="b")})
+    )
+    # The view's data is a URL: the chart's root frame must not be
+    # substituted for it, but an explicit df rescues the call
+    with pytest.raises(ValueError, match="'url'"):
+        r.selected_rows("b")
+    assert r.selected_rows("b", df=POINTS)["y"].tolist() == [10, 20]
+
+
+def test_selected_rows_bare_point_selection_raises_for_mixed_frame_and_url_data(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    pick = alt.selection_point(name="pick")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        combo = alt.hconcat(
+            alt.Chart(POINTS, name="pts")
+            .mark_point()
+            .encode(x="x", y="y")
+            .add_params(pick),
+            alt.Chart("https://example.com/d.csv", name="url")
+            .mark_point()
+            .encode(x="x:Q", y="y:Q")
+            .add_params(pick),
+        )
+    with session_context(widget_session):
+        w = alt.JupyterChart(combo)
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "pick": IndexSelection(
+                    name="pick",
+                    value=[0],
+                    store=[{"unit": "pts", "_vgsid_": 1}],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="encodings="):
+        r.selected_rows("pick")
+    with pytest.raises(ValueError, match="encodings="):
+        r.selected_rows("pick", df=POINTS)
 
 
 def sa_box(raw: object) -> Any:

@@ -673,8 +673,17 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         if len(views) <= 1:
             frame: Any = df
             if frame is None:
-                data = view_frames(chart).get(views[0]) if views else None
-                frame = data if is_frame(data) else chart_frame(chart)
+                if not views:
+                    frame = chart_frame(chart)
+                else:
+                    frame = view_frames(chart).get(views[0])
+                    if not is_frame(frame):
+                        raise ValueError(
+                            f"Can't find a data frame for the view named "
+                            f"{views[0]!r} (its data isn't a data frame -- "
+                            "maybe a URL or inline `alt.Data`?). Pass the "
+                            "frame to filter as `selected_rows(df=...)`."
+                        )
             return filter_selection(selection, frame, widget.local_tz)
 
         # Several views participate. When they all resolve to the same data

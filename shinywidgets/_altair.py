@@ -77,19 +77,20 @@ def view_frames(chart: Any) -> Dict[str, Any]:
     Vega selection store reports as a store entry's `unit`. A view's frame is
     the nearest data frame declared on its subchart or one of its ancestors
     (altair hoists data shared by a compound chart's subcharts onto the
-    parent). Layers, concatenations, and facet specs are walked (recursing
-    into nesting); repeat charts aren't (their subcharts share one dataset).
-    A view with no data frame declared above it maps to None. A name used by
-    two subcharts raises.
+    parent); an explicit data declaration overrides the parent's even when
+    it isn't a frame (a URL, inline `alt.Data`, ...), in which case the view
+    maps to None and `df=` is required. Layers, concatenations, and facet
+    specs are walked (recursing into nesting); repeat charts aren't (their
+    subcharts share one dataset). A name used by two subcharts raises.
     """
     import altair as alt
 
     found: Dict[str, Any] = {}
 
     def visit(node: Any, data: Any) -> None:
-        node_data = getattr(node, "data", None)
-        if is_frame(node_data):
-            data = node_data
+        node_data: Any = getattr(node, "data", alt.Undefined)
+        if node_data is not alt.Undefined:
+            data = node_data if is_frame(node_data) else None
         if isinstance(node, alt.Chart):
             name = node.name
             if name is alt.Undefined:
@@ -137,15 +138,29 @@ def selection_views(chart: Any, name: str) -> Optional[List[str]]:
 
 
 def chart_datasets(chart: Any) -> List[Any]:
-    """The distinct data frames declared anywhere on `chart` (by identity)."""
+    """
+    The distinct data sources declared anywhere on `chart`: data frames (by
+    identity), URLs (by value), and any other explicit source, such as
+    inline `alt.Data` (by identity). Each one shifts Vega's chart-wide
+    `_vgsid_` ids.
+    """
     import altair as alt
 
     frames: List[Any] = []
+    urls: set[str] = set()
+    other: List[Any] = []
 
     def visit(node: Any) -> None:
-        data = getattr(node, "data", None)
-        if is_frame(data) and not any(data is frame for frame in frames):
-            frames.append(data)
+        data: Any = getattr(node, "data", alt.Undefined)
+        if data is alt.Undefined:
+            pass
+        elif is_frame(data):
+            if not any(data is frame for frame in frames):
+                frames.append(data)
+        elif isinstance(data, str):
+            urls.add(data)
+        elif not any(data is source for source in other):
+            other.append(data)
         for attr in ("layer", "hconcat", "vconcat", "concat"):
             children: Any = getattr(node, attr, alt.Undefined)
             if children is not alt.Undefined:
@@ -155,7 +170,7 @@ def chart_datasets(chart: Any) -> List[Any]:
             visit(node.spec)
 
     visit(chart)
-    return frames
+    return [*frames, *urls, *other]
 
 
 def chart_frame(chart: Any) -> Any:
