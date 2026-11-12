@@ -128,6 +128,21 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._value: ValueT | None = None
         self._widget: WidgetT | None = None
         self._contexts: set[Context] = set()
+        # Fail fast on listen_to typos where the accessor names are all known
+        # (subclasses with dynamic accessor names, e.g. render_panel's
+        # param(), can't be validated here)
+        if (
+            listen_to is not None
+            and type(self)._dynamic_accessor_spec
+            is render_widget_base._dynamic_accessor_spec
+        ):
+            known = {spec.name for spec in self._accessor_specs}
+            unknown = set(listen_to) - known
+            if unknown:
+                raise ValueError(
+                    f"listen_to names unknown accessor(s) {sorted(unknown)}; "
+                    f"this renderer's accessors are {sorted(known)}."
+                )
         # Instance attribute, so a renderer can make its set of accessors
         # conditional on its own kwargs (render_mols2grid drops clicked()
         # unless the click channel is enabled)

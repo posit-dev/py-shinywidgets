@@ -496,3 +496,10 @@ def test_selection_frame_drops_coordinates_keeps_customdata() -> None:
     assert list(frame.columns) == ["trace_index", "point_index", "customdata"]
     full = sp.points_frame(points)
     assert list(full.columns) == ["trace_index", "point_index", "x", "y", "customdata"]
+
+
+def test_listen_to_typo_raises_at_decoration() -> None:
+    from shinywidgets import render_plotly
+
+    with pytest.raises(ValueError, match="selcted"):
+        render_plotly(listen_to=["selcted"])

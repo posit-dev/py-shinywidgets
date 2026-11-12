@@ -576,8 +576,7 @@ type ModuleAssets = {
 };
 
 // The session's message size limit, sent once it starts (see comm.ts)
-Shiny.addCustomMessageHandler("shinywidgets_session_init", (msg_txt) => {
-  const msg = JSON.parse(msg_txt) as { ws_max_size?: number };
+Shiny.addCustomMessageHandler("shinywidgets_session_init", (msg: { ws_max_size?: number }) => {
   if (typeof msg?.ws_max_size === "number") setMaxClientMessageBytes(msg.ws_max_size);
 });
 
