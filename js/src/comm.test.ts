@@ -5,8 +5,17 @@ describe("messageWithinLimit", () => {
   afterEach(() => setMaxClientMessageBytes(16 * 1024 * 1024));
 
   it("accepts messages under the limit", () => {
-    setMaxClientMessageBytes(100);
+    setMaxClientMessageBytes(256);
     expect(messageWithinLimit("x".repeat(99))).toBe(true);
+  });
+
+  it("measures the escaped wire form, not the raw message", () => {
+    // Both raw messages fit a 300-byte limit, but the quote-dense one's
+    // JSON-escaped form (each " becomes \") plus the update envelope
+    // pushes the actual frame over it
+    setMaxClientMessageBytes(300);
+    expect(messageWithinLimit("x".repeat(100))).toBe(true);
+    expect(messageWithinLimit('"'.repeat(100))).toBe(false);
   });
 
   it("rejects messages over the limit and logs the size and workaround", () => {
