@@ -30,6 +30,7 @@ from packaging.version import Version
 if TYPE_CHECKING:
     # duckdb ships with the embedding-atlas extra, so it may be absent
     import duckdb  # pyright: ignore[reportMissingImports]
+    import geopandas as gpd
     import numpy as np
     import pandas as pd
     import plotly.graph_objects as go
@@ -152,7 +153,7 @@ from ._ipyleaflet import IPYLEAFLET_ACCESSORS
 from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS, scatter_frame
 from ._k3d import CAMERA as K3D_CAMERA
-from ._lonboard import LONBOARD_ACCESSORS
+from ._lonboard import LONBOARD_ACCESSORS, pick_frame
 from ._maplibre import MAPLIBRE_ACCESSORS
 from ._matplotlib import CLICKED, LIMITS, MATPLOTLIB_ACCESSORS, AxesLimits
 from ._mosaic_widget import MOSAIC_ACCESSORS
@@ -2485,6 +2486,7 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
     * ``map.view_state()``: the camera (longitude, latitude, zoom, pitch,
       bearing).
     * ``map.selected()``: the most recently picked row, across layers.
+    * ``map.selected_rows()``: the picked row of a data frame.
     * ``map.selected_bounds()``: the bbox dragged with the Select BBox control.
     * ``map.clicked()``: the most recent map click, as ``(lng, lat)`` -- note
       the order; ipyleaflet reports ``[lat, lng]``.
@@ -2581,6 +2583,46 @@ class render_lonboard(render_widget_base[ValueT, LonboardMap]):
         carry an ID column in the geo data frame and look the pick up by it.
         """
         return cast(Optional[int], self._read_accessor("selected"))
+
+    @overload
+    def selected_rows(self, df: None = None) -> "gpd.GeoDataFrame": ...
+    @overload
+    def selected_rows(self, df: IntoDataFrameT) -> IntoDataFrameT: ...
+    def selected_rows(
+        self, df: Optional[IntoDataFrameT] = None
+    ) -> Union["gpd.GeoDataFrame", IntoDataFrameT]:
+        """
+        The picked row of `df` (see :meth:`selected`), as
+        ``df.iloc[map.selected()]``.
+
+        `df` defaults to a frame reconstructed from the pickable layer's own
+        data (the picked rows of ``layer.table``, converted with
+        ``geopandas.GeoDataFrame.from_arrow``), which keeps the layer's
+        columns but not the original frame's index (the result gets a fresh
+        ``RangeIndex``); pass `df` when you need the original frame (or it
+        isn't a GeoDataFrame). Any frame type works (pandas, polars, ...);
+        the result has the same type. Empty while nothing is picked, so it
+        can be passed straight to ``@render.data_frame``.
+
+        With several pickable layers the default raises, since a pick
+        doesn't say which layer it's from; pass `df` (the frame of the layer
+        you mean), or read each layer's pick yourself with
+        ``reactive_read(layer, "selected_index")``, as :meth:`selected`
+        suggests.
+
+        The match is positional, so after a re-render or in-place data
+        replacement (``layer.table = ...`` on a long-lived map), a retained
+        position can point at a different row -- carry an ID column and look
+        rows up by it when the data can change. (A replacement does re-run
+        readers; it just can't tell which of the new rows is "the same".)
+        """
+        pick = self.selected()
+        positions = [] if pick is None else [pick]
+        if df is None:
+            # The frame comes from the widget's layers, so read `.widget`
+            # (reactive) rather than `._widget`
+            return pick_frame(cast("LonboardMap", self.widget), positions)
+        return select_rows_at(df, positions)
 
     def selected_bounds(self) -> Optional[Tuple[float, float, float, float]]:
         """
