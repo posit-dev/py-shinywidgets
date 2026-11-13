@@ -17,6 +17,7 @@ from tests.unit.test_muted_traits import (
     mute_requests_in,
     other_session,
     render_once,
+    rerender,
     session_recorder,
 )
 from tests.unit.test_plotly_accessors import FakeFigureWidget
@@ -278,4 +279,46 @@ def test_a_generic_output_does_not_unregister_the_plotly_mute_reverse_order(
 
     # The plotly output's policy outlives the generic output's stay on fig
     render_once(generic, other, widget_session)
+    assert mute_requests_for(flush_to_browser(), fig)[-1] == MUTE
+
+
+def test_a_failed_native_render_retires_its_policy(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        fig = figure()
+
+    # The muting (default) output shows fig first
+    default = render_plotly()
+    render_once(default, fig, widget_session)
+    assert mute_requests_for(flush_to_browser(), fig)[-1] == MUTE
+
+    class _Boom(Exception):
+        pass
+
+    fail = [False]
+    native = render_plotly(listen_to=["native"])
+
+    @native
+    def _() -> go.FigureWidget:
+        if fail[0]:
+            raise _Boom()
+        return fig
+
+    rerender(native, widget_session)
+
+    # Both outputs show fig: the intersection is empty (the native output
+    # opted into native events)
+    assert mute_requests_for(flush_to_browser(), fig)[-1] == UNMUTED
+
+    # The native output's render function fails: the output shows an error
+    # instead of fig, so its policy retires, and the drop re-sends fig's
+    # set, now the default output's policy alone
+    fail[0] = True
+    with pytest.raises(_Boom):
+        rerender(native, widget_session)
+    assert mute_requests_for(flush_to_browser(), fig)[-1] == MUTE
+
+    # The surviving default output's next render mutes effectively
+    rerender(default, widget_session)
     assert mute_requests_for(flush_to_browser(), fig)[-1] == MUTE
