@@ -63,6 +63,11 @@ class AccessorSpec:
     not_ready
         True for raw values that mean "the widget hasn't reported yet"; reads
         then cancel (`req(False)`) instead of returning a value.
+    opt_in
+        Opt-in accessors only attach (and only read) when the renderer is
+        created with `listen_to=[name, ...]`; use for accessors whose payloads
+        are unbounded or stream continuously, so default apps don't pay for
+        events they never read.
     """
 
     name: str
@@ -73,6 +78,7 @@ class AccessorSpec:
     rate_policy: Optional[RatePolicy] = None
     rate_delay: float = 0.25
     not_ready: Callable[[Any], bool] = never_ready_check
+    opt_in: bool = False
 
     def __post_init__(self) -> None:
         if self.name == "value":
@@ -192,6 +198,7 @@ class Accessors:
         rate_policy: Optional[RatePolicy] = None,
         rate_delay: Optional[float] = None,
         schedule: Optional[Schedule] = None,
+        listen_to: Optional[Sequence[str]] = None,
     ) -> None:
         self._widget: object = None
         # Bumped on each render, so emits from an old widget's handlers are
@@ -205,8 +212,18 @@ class Accessors:
         self._rate_policy: Optional[RatePolicy] = rate_policy
         self._rate_delay = rate_delay
         self._schedule = schedule
+        self._listen_to = frozenset(listen_to or ())
         for spec in specs:
             self._add_slot(spec)
+        # Dynamic specs (render_panel's param()) are named at read time, so
+        # their names can't be validated here
+        if dynamic_specs is None:
+            unknown = self._listen_to.difference(self._slots)
+            if unknown:
+                raise ValueError(
+                    f"listen_to names unknown accessor(s) {sorted(unknown)}; "
+                    f"this renderer's accessors are {sorted(self._slots)}."
+                )
 
     def _add_slot(self, spec: AccessorSpec) -> Slot:
         slot = Slot(spec)
@@ -225,6 +242,9 @@ class Accessors:
     def names(self) -> Tuple[str, ...]:
         return tuple(self._slots)
 
+    def _listened(self, slot: "Slot") -> bool:
+        return not slot.spec.opt_in or slot.spec.name in self._listen_to
+
     def on_render(self, widget: object) -> None:
         self._generation += 1
         self._widget = widget
@@ -236,7 +256,7 @@ class Accessors:
                 # Drop a value the limiter was holding: the new widget reports
                 # its own state, which must not be deduped against it.
                 slot.latest = self._published(slot)
-            if widget is not None:
+            if widget is not None and self._listened(slot):
                 try:
                     self._attach(slot)
                 except Exception:
@@ -250,6 +270,12 @@ class Accessors:
         slot = self._slots.get(name)
         if slot is None:
             slot = self._resolve_dynamic(name)
+        if not self._listened(slot):
+            raise RuntimeError(
+                f'`{name}()` requires opting in: pass `listen_to=["{name}"]` '
+                "to the renderer. Its payload can grow without bound or stream "
+                "continuously, so it's off unless declared."
+            )
         if self._widget is not None and slot.detach is None:
             # Attach before taking the dependency, so a value the attach
             # emits right away doesn't invalidate this reader.
