@@ -4673,8 +4673,10 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     ``on_deselect()``) registered inside the render function are noticed and
     keep working. For callbacks registered later, or to read
     ``.widget.data[i].selectedpoints`` after the user selects, pass
-    ``listen_to=["native"]``. Setting the ``SHINYWIDGETS_NATIVE_EVENTS=1``
-    environment variable does the same for every output in the app.
+    ``listen_to=["native"]``. For backwards compatibility, the
+    ``SHINYWIDGETS_NATIVE_EVENTS=1`` environment variable keeps the
+    pre-muting behavior (native events always sent) for every output in
+    the app.
 
     **Typing**: no return-type annotation is needed -- the renderer's value
     type is statically bounded, so type checkers flag unsupported return

@@ -380,6 +380,84 @@ def test_surviving_outputs_rerender_stays_unmuted_after_the_muting_one_retires(
     }
 
 
+def test_unrender_retires_the_outputs_mute_policy(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        w = ipywidgets.IntSlider()
+
+    muting = render_muting()
+    render_once(muting, w, widget_session)
+
+    current: List[Any] = [w]
+    unmuted = render_widget()
+
+    @unmuted
+    def _() -> Any:
+        return current[0]
+
+    rerender(unmuted, widget_session)
+
+    # Both outputs show w: the intersection is empty
+    assert mute_requests_in(flush_to_browser())[-1] == {
+        "shinywidgets": "mute",
+        "traits": [],
+    }
+
+    # The unmuted output un-renders: its policy retires, and the drop
+    # re-sends w's set, now the muting output's policy alone
+    current[0] = None
+    rerender(unmuted, widget_session)
+    assert mute_requests_for(flush_to_browser(), w)[-1] == {
+        "shinywidgets": "mute",
+        "traits": ["value"],
+    }
+
+    # The muting output's next render mutes effectively
+    rerender(muting, widget_session)
+    assert mute_requests_in(flush_to_browser())[-1] == {
+        "shinywidgets": "mute",
+        "traits": ["value"],
+    }
+
+
+def test_a_failed_replacement_render_retires_the_mute_policy(
+    widget_session: Session,
+    flush_to_browser: Flush,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with session_context(widget_session):
+        w = ipywidgets.IntSlider()
+
+    muting = render_muting()
+    render_once(muting, w, widget_session)
+    assert mute_requests_in(flush_to_browser())[-1] == {
+        "shinywidgets": "mute",
+        "traits": ["value"],
+    }
+
+    # The re-render fails in coercion: no replacement widget exists for the
+    # output, so its policy retires (clearing w's set) rather than keep
+    # muting a model the output no longer shows
+    class _Boom(Exception):
+        pass
+
+    def fail(value: Any) -> Any:
+        raise _Boom()
+
+    import shinywidgets._render_widget_base as rwb
+
+    monkeypatch.setattr(rwb, "as_widget", fail)
+    with pytest.raises(_Boom):
+        rerender(muting, widget_session)
+
+    assert mute_requests_for(flush_to_browser(), w)[-1] == {
+        "shinywidgets": "mute",
+        "traits": [],
+    }
+    assert widget_session.root_scope().id not in sw._MUTE_POLICIES
+
+
 def test_session_end_drops_the_sessions_mute_policies(
     widget_session: Session,  # for its event loop and CDN-only monkeypatch
     monkeypatch: pytest.MonkeyPatch,
