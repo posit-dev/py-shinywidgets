@@ -4661,9 +4661,13 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     (``df[(df.x >= lo) & (df.x <= hi) & (df.y >= lo) & (df.y <= hi)]``) and a
     lasso is a point-in-polygon test over the ``lassoPoints`` vertices (e.g.
     ``matplotlib.path.Path.contains_points``). Date axes report their bounds as
-    strings; parse them before comparing. A message that exceeds the
-    websocket limit (16 MiB by default) disconnects the session; raise the
-    limit with ``shiny run --ws-max-size <bytes>``.
+    strings; parse them before comparing. An update that exceeds the
+    websocket limit (16 MiB by default) is dropped client-side: the session
+    stays connected and the rest of the app keeps working, but that update is
+    lost (with an error logged to the browser console). Raise the limit with
+    ``shiny run --ws-max-size <bytes>`` and set the
+    ``SHINYWIDGETS_WS_MAX_SIZE`` environment variable to the same value, so
+    the client-side guard matches the raised server limit.
 
     **Typing**: no return-type annotation is needed -- the renderer's value
     type is statically bounded, so type checkers flag unsupported return
@@ -4720,7 +4724,8 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     app = App(app_ui, server)
     ```
 
-    Reacting to clicks and selections:
+    Reacting to clicks and selections (``selected_rows()`` reads
+    ``selected()``, so it needs the same ``listen_to`` opt-in):
 
     ```python
     import plotly.express as px
@@ -4731,7 +4736,7 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     df = px.data.iris()
 
 
-    @render_plotly
+    @render_plotly(listen_to=["selected"])
     def plot():
         fig = px.scatter(df, x="sepal_width", y="sepal_length", custom_data=[df.index])
         return fig.update_layout(dragmode="select")
@@ -4945,7 +4950,8 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
           column, add one with ``df.with_row_index("id")``.
 
         Returns an empty frame while nothing is selected, so it can be passed
-        straight to ``@render.data_frame``.
+        straight to ``@render.data_frame``. Like :meth:`selected`, requires
+        opting in with ``listen_to=["selected"]`` on the decorator.
         """
         points = self._read_accessor("selected", raw=True)
         return select_rows(cast(Optional[List[Point]], points), df, key)
