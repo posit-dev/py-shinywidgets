@@ -33,4 +33,39 @@ describe("messageWithinLimit", () => {
     // 2 chars, 6 bytes
     expect(messageWithinLimit("€€")).toBe(false);
   });
+
+  it("shows the user a sticky error notification when Shiny is present", () => {
+    setMaxClientMessageBytes(10);
+    const show = vi.fn();
+    vi.stubGlobal("Shiny", { notifications: { show } });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(messageWithinLimit("x".repeat(11), "w1")).toBe(false);
+    expect(show).toHaveBeenCalledOnce();
+    expect(show.mock.calls[0][0]).toMatchObject({
+      id: "shinywidgets-oversized-w1",
+      type: "error",
+      duration: null,
+    });
+    spy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("re-notifies on repeat drops (Shiny replaces the same-id notification)", () => {
+    setMaxClientMessageBytes(10);
+    const show = vi.fn();
+    vi.stubGlobal("Shiny", { notifications: { show } });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(messageWithinLimit("x".repeat(11), "w1")).toBe(false);
+    expect(messageWithinLimit("x".repeat(11), "w1")).toBe(false);
+    expect(show).toHaveBeenCalledTimes(2);
+    spy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("does not require Shiny to be present", () => {
+    setMaxClientMessageBytes(10);
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(messageWithinLimit("x".repeat(11), "w-no-shiny")).toBe(false);
+    spy.mockRestore();
+  });
 });

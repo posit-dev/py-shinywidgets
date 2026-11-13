@@ -80,6 +80,11 @@ def test_oversized_message_is_dropped_not_disconnected(page: Page, local_app) ->
     assert dropped, "expected a 'dropped a ... MB message' console error"
     assert "--ws-max-size" in dropped[0]
 
+    # The user (not just the console) is told their action was lost
+    note = page.locator("#shiny-notification-panel .shiny-notification")
+    expect(note).to_be_visible(timeout=30000)
+    expect(note).to_contain_text("too large")
+
     # The oversized messages were actually dropped, not just logged: neither
     # the bridge's selection event nor plotly.py's own points callback ever
     # reached the server (a log-but-send bug would pass the checks above,

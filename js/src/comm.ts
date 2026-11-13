@@ -27,8 +27,35 @@ export function setMaxClientMessageBytes(n: number): void {
 // the message travels inside, with margin
 const ENVELOPE_BYTES = 100;
 
-// True if the message may be sent; otherwise logs an actionable error and
-// returns false. Exported for tests.
+// Distinct widgets the user has been notified about, capping how many
+// sticky notifications can pile up (Shiny replaces a notification whose id
+// is already showing, so repeats from the same widget don't stack).
+const oversizedNotified = new Set<string>();
+const MAX_OVERSIZED_NOTIFICATIONS = 50;
+
+// Sticky user-facing companion to the console error below: without it the
+// dropped update is invisible to the app user -- their action just does
+// nothing (console-only is also what the developer-facing --ws-max-size
+// workaround is for, which the user shouldn't see).
+function notifyOversizedDrop(comm_id?: string): void {
+  if (typeof Shiny === "undefined" || !Shiny.notifications) return;
+  const key = comm_id ?? "";
+  if (!oversizedNotified.has(key)) {
+    if (oversizedNotified.size >= MAX_OVERSIZED_NOTIFICATIONS) return;
+    oversizedNotified.add(key);
+  }
+  void Shiny.notifications.show({
+    html:
+      "A widget's update was too large to send to the server, so it was " +
+      "ignored. The app is still running, but that action had no effect.",
+    id: `shinywidgets-oversized-${key}`,
+    type: "error",
+    duration: null,
+  });
+}
+
+// True if the message may be sent; otherwise tells the user their action was
+// lost, logs an actionable error, and returns false. Exported for tests.
 export function messageWithinLimit(msg_txt: string, comm_id?: string): boolean {
   // On the wire msg_txt is a JSON string inside Shiny's update envelope, so
   // every quote/backslash in it is escaped and the frame can be much larger
@@ -48,6 +75,7 @@ export function messageWithinLimit(msg_txt: string, comm_id?: string): boolean {
       `${Math.ceil(bytes * 1.1)}` +
       "` (and set SHINYWIDGETS_WS_MAX_SIZE to match)."
   );
+  notifyOversizedDrop(comm_id);
   return false;
 }
 

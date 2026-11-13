@@ -90,7 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug fixes
 
-* Widget-to-server messages larger than the websocket limit are now dropped client-side with a console error naming the widget and the `--ws-max-size` workaround, instead of disconnecting the whole session. Set `SHINYWIDGETS_WS_MAX_SIZE` if you run with a raised limit. (#459)
+* Widget-to-server messages larger than the websocket limit are now dropped client-side instead of disconnecting the whole session: the user sees a sticky error notification (once per widget), and the console error names the widget and the `--ws-max-size` workaround. Set `SHINYWIDGETS_WS_MAX_SIZE` if you run with a raised limit. (#459)
 * Fixed many issues with widgets nested inside other widgets and with widget outputs inserted dynamically (e.g., `output_widget()` inside `@render.ui`). With ipywidgets 8, these either didn't render at all (e.g., a Plotly `FigureWidget` or a styled `HTML` widget inside an ipyleaflet popup) or rendered while logging errors like `Class HTMLStyleModel not found` (e.g., ipyleaflet popups, `WidgetControl` children, and leafmap legends). (#75, #101, #137, #157, #194, #237)
 * Re-rendering, replacing, hiding/showing, or removing widget outputs no longer leaks memory on the server or in the browser. Re-rendered widgets, and the data they hold, are now freed right away instead of when the session ends. (#246, #258, #260, #261, #262, #263, #303, #405) Related fixes:
   * pythreejs widgets no longer cause Shiny sessions to hang indefinitely with ipywidgets 8. (#244)
