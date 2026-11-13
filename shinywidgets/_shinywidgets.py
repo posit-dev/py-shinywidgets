@@ -588,6 +588,21 @@ def send_mute_policy(
     session_scoped_send(w, session, _mute_message(_effective_muted(consumers)))
 
 
+def drop_mute_policy(consumer: object) -> None:
+    """
+    Retire `consumer`'s registered mute policy, re-sending the model's
+    effective set if dropping it changed the set. A no-op when `consumer`
+    never registered one (or already moved off). A render that un-renders
+    (returns None) or fails leaves no replacement widget for its output, so
+    without this its stale policy would keep suppressing the mute of a
+    surviving output showing the same model.
+    """
+    prev = _MUTE_POLICY_MODELS.get(consumer)
+    if prev is None:
+        return
+    _drop_mute_policy(consumer, prev, None)
+
+
 def _drop_mute_policy(
     consumer: object, prev: tuple[str, str], session: Optional[Session]
 ) -> None:
