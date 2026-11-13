@@ -329,4 +329,18 @@ describe("selectionSeed slimming", () => {
     expect("points" in out).toBe(false);
     expect(out.range).toEqual({ x: [1, 3], y: [4, 6] });
   });
+
+  it("doesn't traverse selectedpoints on the region-only path", () => {
+    const trace: any = {
+      x: [1, 2, 3],
+      y: [4, 5, 6],
+      get selectedpoints(): number[] {
+        throw new Error("selectedpoints should not be read");
+      },
+    };
+    const el: any = { data: [trace], _fullLayout: plotEl._fullLayout };
+    expect(selectionSeed(el, false)).toEqual({ range: { x: [1, 3], y: [4, 6] } });
+    // No region and no data scan means nothing was selected
+    expect(selectionSeed({ data: [trace] } as any, false)).toEqual({});
+  });
 });

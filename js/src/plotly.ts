@@ -181,32 +181,32 @@ export function selectionSeed(
   plotEl: HTMLElement,
   includePoints: boolean = true,
 ): Record<string, unknown> {
+  // Region-only payloads never touch the data: skip the per-trace scan,
+  // which would copy typed selection arrays proportional to selection size
+  if (!includePoints) return regionSeed(plotEl);
   const data = (plotEl as any).data;
   if (!Array.isArray(data)) return {};
-  const points = includePoints
-    ? data.flatMap((trace: any, curveNumber: number) => {
-        // jsonable(): a selection preconfigured from plotly.py arrives as a
-        // typed array, which Array.isArray rejects (and whose .map can't
-        // hold point objects)
-        const selected = jsonable(trace?.selectedpoints);
-        if (!Array.isArray(selected)) return [];
-        return (selected as number[]).map((i) => {
-          const entry: Record<string, unknown> = {
-            trace_index: curveNumber,
-            point_index: i,
-          };
-          const custom = trace.customdata?.[i];
-          if (custom !== undefined) entry.customdata = jsonable(custom);
-          return entry;
-        });
-      })
-    : [];
+  const points = data.flatMap((trace: any, curveNumber: number) => {
+    // jsonable(): a selection preconfigured from plotly.py arrives as a
+    // typed array, which Array.isArray rejects (and whose .map can't
+    // hold point objects)
+    const selected = jsonable(trace?.selectedpoints);
+    if (!Array.isArray(selected)) return [];
+    return (selected as number[]).map((i) => {
+      const entry: Record<string, unknown> = {
+        trace_index: curveNumber,
+        point_index: i,
+      };
+      const custom = trace.customdata?.[i];
+      if (custom !== undefined) entry.customdata = jsonable(custom);
+      return entry;
+    });
+  });
   // An empty drag selection is still a selection: plotly.js reports it as
-  // points: [] plus the region (or, when points weren't requested, as just
-  // the region). So is a preconfigured selectedpoints: [] (plotly dims
-  // every point with unselected styling). No points, no region, and no
-  // trace supplying a selection array means nothing was ever selected (or
-  // a deselect), the no-data case.
+  // points: [] plus the region. So is a preconfigured selectedpoints: []
+  // (plotly dims every point with unselected styling). No points, no
+  // region, and no trace supplying a selection array means nothing was ever
+  // selected (or a deselect), the no-data case.
   const region = regionSeed(plotEl);
   const anySelectionArray = data.some((trace: any) =>
     Array.isArray(jsonable(trace?.selectedpoints)),
@@ -214,9 +214,7 @@ export function selectionSeed(
   if (points.length === 0 && Object.keys(region).length === 0 && !anySelectionArray) {
     return {};
   }
-  const out: Record<string, unknown> = { ...region };
-  if (includePoints) out.points = points;
-  return out;
+  return { ...region, points };
 }
 
 function regionSeed(plotEl: HTMLElement): Record<string, unknown> {
