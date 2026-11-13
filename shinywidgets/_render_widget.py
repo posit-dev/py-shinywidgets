@@ -134,7 +134,18 @@ from shiny.render.renderer import Jsonifiable, ValueFn
 from shiny.session import get_current_session
 
 from ._accessors import AccessorSpec, Emit, RatePolicy
-from ._altair import ALTAIR_ACCESSORS, chart_frame, filter_selection, pick_selection
+from ._altair import (
+    ALTAIR_ACCESSORS,
+    chart_datasets,
+    chart_frame,
+    check_index_selection,
+    filter_selection,
+    filter_selection_by_unit,
+    is_frame,
+    pick_selection,
+    selection_views,
+    view_frames,
+)
 from ._as_widget import (
     PYDECK_NO_WIDGET_MESSAGE,
     as_widget_panel,
@@ -389,7 +400,12 @@ class render_drawdata(render_widget_base[DrawdataWidgetT, DrawdataWidgetT]):
     read-only attributes: `.value` and `.widget`, both the rendered widget.
 
     **Responding to user interaction**: read the drawn points reactively
-    with ``canvas.read("data")``.
+    with ``canvas.read("data")``; each point is a dict with ``x``, ``y``,
+    ``color`` (a hex string), and ``label``. Note that the widget's own
+    ``data_as_X_y`` property reports those hex colors as ``y`` for
+    classification (once more than one class is drawn), not the labels --
+    build class labels from the ``data`` trait (or
+    ``data_as_pandas["label"]``) instead.
 
     **Mutating the widget**: use `.widget` to update the widget in place. For
     `BarWidget`, re-render instead: it ignores Python-side trait updates
@@ -616,24 +632,141 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         return pick_selection(selections, name)
 
     def selected_rows(
-        self, name: Optional[str] = None, *, df: Optional[IntoDataFrameT] = None
-    ) -> IntoDataFrameT:
+        self,
+        name: Optional[str] = None,
+        *,
+        df: Optional[Union[IntoDataFrameT, Dict[str, IntoDataFrameT]]] = None,
+    ) -> Union[IntoDataFrameT, Dict[str, IntoDataFrameT]]:
         """
         The rows of `df` in a selection (see :meth:`selected`), evaluated the
         way Vega-Lite does (including binned and temporal fields).
 
-        `df` defaults to the chart's own data frame (pandas or polars); pass it
-        for charts whose data is a URL, or that concatenate charts with
-        different data. For a layered chart, the default only resolves when
-        every layer uses the *identical* data frame object (the same object,
-        not an equal copy) -- otherwise pass `df` explicitly. Returns an empty
-        frame while nothing is selected. Dates are compared in UTC, reading
-        time-zone-naive columns in the browser's time zone, as Vega-Lite does.
+        `df` defaults to the chart's own data frame (pandas or polars); pass
+        it for charts whose data is a URL. When the selection touches several
+        views with different data -- a layered or concatenated chart whose
+        subcharts use different data frames -- each view's data is filtered
+        by its own selection entries and the return is a ``dict`` of frames
+        keyed by view name (give subcharts a ``name=`` for readable keys);
+        `df` may then be passed as a dict keyed by view name. When the
+        selection touches one view, or views sharing the *identical* data
+        frame object, a single frame is returned. Identical means the same
+        object, not an equal one: layers built from separate copies of one
+        frame (e.g. ``alt.Chart(df.copy())`` per layer) don't count as
+        shared, so the return is a dict -- give every subchart the same
+        frame object, or pass the frames as a dict keyed by view name.
+        Returns an empty frame (or
+        a dict of empty frames) while nothing is selected. Dates are compared
+        in UTC, reading time-zone-naive columns in the browser's time zone,
+        as Vega-Lite does. A bare point selection (positional row indices,
+        from `alt.selection_point()` without ``fields=``/``encodings=``)
+        isn't supported on a chart with several datasets -- declare the
+        selection with ``fields=`` or ``encodings=`` instead.
         """
         selection = self.selected(name)
         widget = cast(JupyterChart, self.widget)
-        frame = chart_frame(widget) if df is None else df
-        return filter_selection(selection, frame, widget.local_tz)
+        chart = widget.chart
+        check_index_selection(selection, chart)
+        views = selection_views(chart, selection.name)
+
+        if isinstance(df, dict):
+            if views is not None and set(df) != set(views):
+                raise ValueError(
+                    f"The keys of `df` ({', '.join(sorted(df))}) don't match "
+                    f"the selection's views ({', '.join(views)})."
+                )
+            return filter_selection_by_unit(selection, df, widget.local_tz)
+
+        if views is None:
+            # The selection's param isn't readable from the chart object
+            # (e.g. a chart built with alt.Chart.from_dict): fall back to the
+            # views the store reports
+            views = sorted({entry.get("unit", "") for entry in selection.store} - {""})
+            if len(chart_datasets(chart)) > 1:
+                # Participation is unknown beyond what the store reports,
+                # so views can't be matched to their datasets safely (the
+                # store only shows views with active selections, and a
+                # scalar df's dataset is anyone's guess)
+                raise ValueError(
+                    "Which views this selection participates in can't be "
+                    "read from the chart (e.g. one built with "
+                    "`alt.Chart.from_dict`), and the chart has several "
+                    "datasets, so the selection can't be mapped to data "
+                    "frames safely. Pass the frames as a dict keyed by "
+                    "view name: `selected_rows(df={...})`."
+                )
+
+        if len(views) <= 1:
+            frame: Any = df
+            if frame is None:
+                if not views:
+                    frame = chart_frame(chart)
+                else:
+                    resolved_view = view_frames(chart)
+                    if views[0] in resolved_view:
+                        frame = resolved_view[views[0]]
+                    else:
+                        # A view view_frames() can't name -- e.g. a repeat
+                        # chart's generated view: resolve it to the chart's
+                        # data frame only when the chart declares exactly
+                        # one dataset (a nested repeat may declare its own)
+                        datasets = chart_datasets(chart)
+                        frame = datasets[0] if len(datasets) == 1 else None
+                    if not is_frame(frame):
+                        raise ValueError(
+                            f"Can't find a data frame for the view named "
+                            f"{views[0]!r} (its data isn't a data frame -- "
+                            "maybe a URL or inline `alt.Data`?). Pass the "
+                            "frame to filter as `selected_rows(df=...)`."
+                        )
+            return filter_selection(selection, frame, widget.local_tz)
+
+        # Several views participate. When they all resolve to the same data
+        # frame object (typically hoisted onto the chart), there's one frame
+        # to filter, as before -- and a scalar `df` can stand in for it
+        resolved = view_frames(chart)
+        datasets = chart_datasets(chart)
+        # Views view_frames() can't name -- e.g. a repeat chart's generated
+        # views: resolve them to the chart's data frame only when the chart
+        # declares exactly one dataset (a nested repeat may declare its
+        # own); otherwise leave them unresolvable rather than risk
+        # filtering the wrong frame
+        unnamed = [view for view in views if view not in resolved]
+        if unnamed:
+            root: Any = (
+                datasets[0] if len(datasets) == 1 and is_frame(datasets[0]) else None
+            )
+            for view in unnamed:
+                resolved[view] = root
+        shared = (
+            all(is_frame(resolved.get(view)) for view in views)
+            and len({id(resolved[view]) for view in views}) == 1
+        )
+        if shared:
+            frame = df if df is not None else resolved[views[0]]
+            return filter_selection(selection, frame, widget.local_tz)
+        if df is not None and len(datasets) == 1:
+            # The views share a single dataset that isn't a data frame (e.g.
+            # subcharts over one URL), so a scalar `df` can stand in for it
+            return filter_selection(selection, df, widget.local_tz)
+        if df is not None:
+            raise ValueError(
+                f"The selection spans several views ({', '.join(views)}), "
+                "each with its own data, so a single data frame can't be "
+                "filtered by it. Pass the frames as a dict keyed by view "
+                "name, e.g. `selected_rows(df={'left': df1, 'right': df2})`."
+            )
+        frames: Dict[str, Any] = {}
+        for view in views:
+            data = resolved.get(view)
+            if not is_frame(data):
+                raise ValueError(
+                    f"Can't find a data frame for the view named {view!r} "
+                    "(is it a named subchart of the chart, built from a data "
+                    "frame?). Pass the frames to filter as a dict keyed by "
+                    "view name: `selected_rows(df={...})`."
+                )
+            frames[view] = data
+        return filter_selection_by_unit(selection, frames, widget.local_tz)
 
 
 class render_embedding_atlas(
@@ -945,7 +1078,14 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
 
     **Network access**: the viewer loads its JavaScript from a CDN and its sky
     imagery (HiPS tiles) from CDS servers at render time, so it requires an
-    internet connection.
+    internet connection. A constructor ``target=`` given as an object *name*
+    (``Aladin(target="M31")``) resolves the name to coordinates with a
+    blocking call to CDS's Sesame service while the render function runs;
+    an unresolvable name (or an unreachable service) raises
+    (``NameResolveError``, or a misleading ``WidgetNotReadyError`` in
+    ipyaladin 0.8.x, whose ``_ready`` trait is never set) and fails the
+    render outright. Prefer coordinate strings (``"83.63 22.01"``, parsed
+    locally) or a `SkyCoord` for anything set programmatically.
 
     Parameters
     ----------
@@ -6020,12 +6160,13 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     * **Clicks (browser -> Python):** with ``clicks=True``, clicking a
       molecule's image (a distinct gesture from the selection checkbox)
       makes its row's data available reactively as ``grid.clicked()`` --
-      every displayed column plus ``mols2grid-id`` -- for click-to-inspect
-      panels and drill-downs. The payload can be wide (it includes the
-      cell's image markup), so pick the keys you display rather than
-      stringifying the whole dict -- and ``clicked()`` raises without
-      ``clicks=True`` or a Python ``callback``. ``clicked()`` is `None`
-      until the first click and
+      the displayed columns plus ``mols2grid-id``, the cell's ``img``
+      markup, the SMILES column, and any tooltip-only columns -- for
+      click-to-inspect panels and drill-downs. The payload can be wide
+      (``img`` alone is the full SVG markup), so pick the keys you
+      display rather than stringifying the whole dict -- and
+      ``clicked()`` raises without ``clicks=True`` or a Python
+      ``callback``. ``clicked()`` is `None` until the first click and
       keeps its value across re-renders (the last click still happened,
       though its row data refers to the previous render's grid).
     **Mutating the widget**: ``grid.grid.filter(mask)`` (a boolean
@@ -6065,9 +6206,11 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       filling container; an explicit ``height`` on the output acts as a viewport
       that clips the grid. Grid data is inlined into the iframe document
       (roughly 0.5-1 KB per molecule, depending on how many columns are
-      shown), so grids in the tens of thousands of molecules can approach
-      Shiny's default 16 MiB websocket message limit (raise it with ``shiny
-      run --ws-max-size``). To bound the *grid* rather than
+      shown), so a grid of tens of thousands of molecules makes each
+      render a large server-to-browser message. No websocket limit
+      rejects it (Shiny's 16 MiB ``--ws-max-size`` limit applies only to
+      browser-to-server messages), so expect a slow first paint, not an
+      error. To bound the *grid* rather than
       its container, pass ``iframe_height`` (e.g.
       ``render_mols2grid(iframe_height="400px")``): it sets the iframe element's
       height, which switches off mols2grid's auto-fit so the grid scrolls
@@ -6110,10 +6253,14 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
-        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
-        this renderer declares a default, so ``rate_policy``/``rate_delay``
-        don't affect :meth:`selected` or :meth:`clicked` (each fires at
-        most once per gesture).
+        ``reactive_read()`` only if ``rate_delay`` is given; in practice
+        both are inert for this renderer -- no accessor declares a
+        default policy, so ``rate_policy``/``rate_delay`` don't affect
+        :meth:`selected` or :meth:`clicked` (each fires at most once per
+        gesture), and the policy registers on the rendered `Box`, not
+        the inner `MolGridWidget` whose ``selection``/``callback_kwargs``
+        traits hold the state, so reads of those aren't rate-limited
+        either.
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
@@ -6313,9 +6460,12 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         ``callback``).
 
         Unlike `.selected()` (the checkbox set), a click is retained
-        last-click state: it carries the clicked row's data (every displayed
-        column, plus ``mols2grid-id``) and keeps its value across re-renders
-        until the user clicks the new grid. All values are
+        last-click state: it carries the clicked row's data and keeps its
+        value across re-renders until the user clicks the new grid. The
+        payload holds every displayed column plus ``mols2grid-id``, and
+        always also includes ``img`` (the cell's full SVG markup) and the
+        SMILES column, even when they aren't displayed, as well as any
+        tooltip-only columns. All values are
         strings except ``mols2grid-id`` (an int), and clicking the same
         molecule twice in a row does not re-fire (a mols2grid limitation:
         the trait only changes when the payload does). Raises without

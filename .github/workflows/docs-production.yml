@@ -1,0 +1,45 @@
+name: Website production deploy
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      # shinywidgets/** because quartodoc builds the API reference from the
+      # package's docstrings.
+      - "website/**/*"
+      - "shinywidgets/**/*"
+      - "Makefile"
+      - "pyproject.toml"
+      - ".github/workflows/docs-*.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # nwtgck/actions-netlify creates a GitHub deployment and commit status
+  deployments: write
+  statuses: write
+
+jobs:
+  build-and-deploy:
+    uses: ./.github/workflows/docs-deploy.yml
+    with:
+      deploy-context: "production"
+    secrets: inherit
+
+  deploy-pages:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # Pages rejects concurrent deployments of the same site
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

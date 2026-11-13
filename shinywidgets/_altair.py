@@ -3,13 +3,16 @@ Accessors for `render_altair`.
 
 Altair selections are state the chart declares, so one accessor observes all
 of them (altair's own `JupyterChart.selections`), and `selected_rows()` filters
-a frame by a selection's Vega "store", porting Vega's `selectionTest`.
+a frame by a selection's Vega "store", porting Vega's `selectionTest`. A
+selection whose store spans several views (a layered or concatenated chart)
+is partitioned by the store entries' `unit`, and each view's own data frame is
+filtered.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable, Dict, Literal, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional, Union
 from zoneinfo import ZoneInfo
 
 from ._accessors import AccessorSpec, Emit
@@ -68,17 +71,146 @@ def pick_selection(selections: Dict[str, Selection], name: Optional[str]) -> Sel
     return selections[name]
 
 
-def chart_frame(widget: JupyterChart) -> Any:
-    data = getattr(widget.chart, "data", None)
+def view_frames(chart: Any) -> Dict[str, Any]:
+    """
+    The data frame each named view is fed, keyed by view name -- the name a
+    Vega selection store reports as a store entry's `unit`. A view's frame is
+    the nearest data frame declared on its subchart or one of its ancestors
+    (altair hoists data shared by a compound chart's subcharts onto the
+    parent); an explicit data declaration overrides the parent's even when
+    it isn't a frame (a URL, inline `alt.Data`, ...), in which case the view
+    maps to None and `df=` is required. Layers, concatenations, and facet
+    specs are walked (recursing into nesting); repeat charts aren't (their
+    subcharts share one dataset). A name used by two subcharts raises.
+    """
+    import altair as alt
+
+    found: Dict[str, Any] = {}
+
+    def visit(node: Any, data: Any) -> None:
+        node_data: Any = getattr(node, "data", alt.Undefined)
+        if node_data is not alt.Undefined:
+            data = node_data if is_frame(node_data) else None
+        if isinstance(node, alt.Chart):
+            name = node.name
+            if name is alt.Undefined:
+                return
+            if name in found:
+                raise ValueError(
+                    f"The chart has two subcharts named {name!r}. Give each "
+                    "one a unique `name=` so `selected_rows()` can tell their "
+                    "data apart."
+                )
+            found[name] = data
+            return
+        for attr in ("layer", "hconcat", "vconcat", "concat"):
+            children: Any = getattr(node, attr, alt.Undefined)
+            if children is not alt.Undefined:
+                for subchart in children:
+                    visit(subchart, data)
+        if isinstance(node, alt.FacetChart):
+            visit(node.spec, data)
+
+    visit(chart, None)
+    return found
+
+
+def selection_views(chart: Any, name: str) -> Optional[List[str]]:
+    """
+    The names of the views selection `name` participates in, per the chart's
+    hoisted selection param (the chart's record of which subcharts the user
+    can gesture on). `None` when the param or its views can't be found --
+    callers then fall back to the store's `unit`s. An empty `views` list
+    means the selection may apply to any view (Vega semantics), which
+    callers can't enumerate, so it's reported as `None` too. Imported
+    charts (`alt.Chart.from_dict`) wrap parameter names in schema objects
+    (e.g. `ParameterName`), which are unwrapped to plain strings.
+    """
+    import altair as alt
+
+    def unwrap(value: Any) -> Any:
+        if isinstance(value, str) or not hasattr(value, "to_dict"):
+            return value
+        return value.to_dict()
+
+    params: Any = getattr(chart, "params", alt.Undefined)
+    if params is alt.Undefined:
+        return None
+    for param in params:
+        if unwrap(getattr(param, "name", None)) != name:
+            continue
+        views: Any = getattr(param, "views", alt.Undefined)
+        if views is alt.Undefined or len(views) == 0:
+            return None
+        return [str(unwrap(view)) for view in views]
+    return None
+
+
+def chart_datasets(chart: Any) -> List[Any]:
+    """
+    The distinct data sources declared anywhere on `chart`: data frames (by
+    identity), URLs (by value), named references like `alt.NamedData` (by
+    dataset name), and any other explicit source, such as inline
+    `alt.Data` (by identity). Each one shifts Vega's chart-wide `_vgsid_`
+    ids.
+    """
+    import altair as alt
+
+    frames: List[Any] = []
+    urls: set[str] = set()
+    named: set[str] = set()
+    other: List[Any] = []
+
+    def visit(node: Any) -> None:
+        data: Any = getattr(node, "data", alt.Undefined)
+        if data is alt.Undefined:
+            pass
+        elif is_frame(data):
+            if not any(data is frame for frame in frames):
+                frames.append(data)
+        elif isinstance(data, str):
+            urls.add(data)
+        else:
+            # A named reference (alt.NamedData, or an imported {"name": ...})
+            # to one dataset may appear as several distinct objects
+            ref: Any = getattr(data, "name", None)
+            if not isinstance(ref, str) and hasattr(ref, "to_dict"):
+                ref = ref.to_dict()
+            if isinstance(ref, str):
+                named.add(ref)
+            elif not any(data is source for source in other):
+                other.append(data)
+        for attr in ("layer", "hconcat", "vconcat", "concat"):
+            children: Any = getattr(node, attr, alt.Undefined)
+            if children is not alt.Undefined:
+                for subchart in children:
+                    visit(subchart)
+        if isinstance(node, (alt.FacetChart, alt.RepeatChart)):
+            visit(node.spec)
+
+    visit(chart)
+    return [*frames, *urls, *named, *other]
+
+
+def chart_frame(chart: Any) -> Any:
+    import altair as alt
+
+    # A repeat chart's subcharts share one dataset, which altair may leave
+    # on the repeated spec instead of hoisting it onto the chart
+    while isinstance(chart, alt.RepeatChart) and not is_frame(
+        getattr(chart, "data", None)
+    ):
+        chart = chart.spec
+    data = getattr(chart, "data", None)
     if is_frame(data):
         return data
     found = type(data).__name__
     if isinstance(data, str):
         found = f"a URL ({data!r})"
     raise TypeError(
-        f"`selected_rows()` can only find rows in a chart built from a data frame, "
-        f"but this chart's data is {found}. Pass the frame to filter as "
-        "`selected_rows(df=...)`."
+        f"`selected_rows()` can only find rows in a chart built from a data "
+        f"frame, but this chart's data is {found}. Pass the frame to filter "
+        "as `selected_rows(df=...)`."
     )
 
 
@@ -95,7 +227,9 @@ def filter_selection(
 ) -> IntoDataFrameT:
     """
     The rows of `df` in `selection`. An empty selection selects no rows (unlike
-    Vega's default `empty="all"`).
+    Vega's default `empty="all"`). Every entry is applied to `df`, so use
+    `filter_selection_by_unit()` for a selection whose store spans several
+    views with different data.
     """
     import narwhals as nw
     from altair.utils.selection import IndexSelection
@@ -109,16 +243,89 @@ def filter_selection(
             .drop(row)
             .to_native()
         )
+    return filter_store(selection.store, frame, local_tz).to_native()
+
+
+def filter_store(
+    store: List[Dict[str, Any]],
+    frame: nw.DataFrame[Any],
+    local_tz: Optional[str],
+) -> nw.DataFrame[Any]:
+    """The rows of `frame` selected by `store` (entries of a single view)."""
+    import narwhals as nw
 
     test: Optional[nw.Expr] = None
-    for entry in selection.store:
+    for entry in store:
         match = nw.lit(True)
         for field, value in zip(entry["fields"], entry["values"]):
             match = match & field_test(frame, field, value, local_tz)
         test = match if test is None else test | match
     if test is None:
-        return frame.head(0).to_native()
-    return frame.filter(test).to_native()
+        return frame.head(0)
+    return frame.filter(test)
+
+
+def filter_selection_by_unit(
+    selection: "Selection",
+    frames: Dict[str, "IntoDataFrameT"],
+    local_tz: Optional[str],
+) -> Dict[str, "IntoDataFrameT"]:
+    """
+    The rows of each view's frame in `selection`, for a selection whose store
+    spans several views: `frames` is keyed by view name (the store entries'
+    `unit`) and each frame is filtered by its own view's entries only. An
+    entry naming a view with no frame raises. So does a bare point selection
+    (an `IndexSelection`): its store holds positional `_vgsid_` ids, which
+    Vega assigns across the whole chart's dataflow, so they can't be mapped
+    back to rows of one view's frame.
+    """
+    import narwhals as nw
+    from altair.utils.selection import IndexSelection
+
+    if isinstance(selection, IndexSelection):
+        raise index_selection_error(selection.name)
+
+    stores: Dict[str, List[Dict[str, Any]]] = {view: [] for view in frames}
+    for entry in selection.store:
+        unit = entry.get("unit", "")
+        if unit not in stores:
+            raise ValueError(
+                f"The selection has entries from a view named {unit!r}, which "
+                f"isn't among the chart's views ({', '.join(frames)}). Pass "
+                "the frames to filter as `selected_rows(df=...)` keyed by "
+                "view name."
+            )
+        stores[unit].append(entry)
+
+    out: Dict[str, IntoDataFrameT] = {}
+    for view, df in frames.items():
+        frame = nw.from_native(df, eager_only=True)
+        out[view] = filter_store(stores[view], frame, local_tz).to_native()
+    return out
+
+
+def check_index_selection(selection: "Selection", chart: Any) -> None:
+    """
+    Raise for a bare point selection (an `IndexSelection` of positional row
+    indices) on a chart with several datasets: Vega assigns the `_vgsid_` ids
+    the indices derive from across the whole chart's dataflow, so they can't
+    be mapped back to rows of one dataset's frame.
+    """
+    from altair.utils.selection import IndexSelection
+
+    if isinstance(selection, IndexSelection) and len(chart_datasets(chart)) > 1:
+        raise index_selection_error(selection.name)
+
+
+def index_selection_error(name: str) -> ValueError:
+    return ValueError(
+        f"The selection {name!r} selects positional row indices (a bare "
+        "`alt.selection_point()` without `fields=`/`encodings=`), which "
+        "can't be mapped back to rows on a chart with several datasets. "
+        "Declare the selection with `fields=` or `encodings=` (e.g. "
+        "`alt.selection_point(encodings=['x'])`) so it selects values "
+        "instead of positions."
+    )
 
 
 def field_test(

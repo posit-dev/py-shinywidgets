@@ -1,0 +1,6 @@
+---
+# The title comes from CHANGELOG.md's own H1; a front-matter title would add a second one.
+pagetitle: Changelog
+---
+
+{{< include ../CHANGELOG.md >}}
