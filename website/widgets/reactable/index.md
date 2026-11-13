@@ -659,6 +659,12 @@ Use re-render when the data genuinely changes shape (different columns, a totall
 want the clean-slate reset. Use the in-place form when you're refreshing values the user is already looking at
 and want to preserve their sort/filter/page/selection -- a live-updating price column, for example.
 
+There's also a middle ground: the `dataKey` prop. The browser uses it as the table's React key, so *changing*
+it forces a full remount -- sort, filters, page, selection, and expanded rows all reset to defaults -- while
+every other prop stays as it was. That's the clean way to reset table state after an in-place data swap,
+without paying for a re-render: put a counter or a hash of the dataset in `dataKey` and bump it when the new
+data should be treated as a different table.
+
 ## Coordinating multiple views
 
 ### Selection drives a detail card
@@ -808,6 +814,9 @@ package.
   comments for a file's metadata header instead.
 - **Row clicks aren't reported state.** No accessor sees a plain click; use the `on_click=JS(...)` +
   `Shiny.setInputValue()` pattern shown above.
+- **Changing `dataKey` remounts the table.** Useful, not a footgun: it's the clean way to reset
+  sort/filter/selection/expanded state after an in-place data swap -- see [Updating the widget from
+  Python](#updating-the-widget-from-python).
 
 ## Gallery candidates
 

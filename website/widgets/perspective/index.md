@@ -18,7 +18,7 @@ loaded, re-aggregating by a different `group_by` or applying a new filter happen
 
 `@render_perspective` accepts a pandas or polars `DataFrame`, a `perspective.Table`, or a configured
 `perspective.widget.PerspectiveWidget`, and hands back a full pivot-table UI: drag-and-drop grouping, a dozen
-chart plugins, computed columns, and an editable grid. The renderer builds each DataFrame's table on a private
+chart plugins, and computed columns. The renderer builds each DataFrame's table on a private
 Perspective server, so two sessions' data never mix even though Perspective itself has no concept of per-user
 isolation (see "Gotchas" below).
 

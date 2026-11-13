@@ -223,6 +223,11 @@ The accessor reference table in each guide's "Reacting to user interaction" sect
 states applies to each of that widget's accessors, and the [cheat sheet](cheatsheet.md)'s "Before any
 interaction" column does the same across all of them.
 
+> **Never leave `req(x)` as a bare statement inside `@render.express`.** `req()` returns its argument, and
+> `render.express` treats every bare top-level expression as UI to display -- so `req(map.clicked())` on its
+> own line renders the value it was meant to gate (or errors trying to render it). Assign the result instead:
+> `clicked = req(map.clicked())`.
+
 ## Across re-renders
 
 A re-render builds a brand new widget. What happens to an accessor's value when that happens depends on
@@ -309,6 +314,14 @@ about a retained row position. The fix is the same one R's `DT` package teaches:
 across a data change, key off something stable instead -- a `customdata` value (plotly), a data frame
 index (ipydatagrid's `.widget.data`), an ID column you added yourself. The [cheat sheet](cheatsheet.md)'s
 "Across re-render" column marks every accessor kept vs. re-seeded, including the ones not shown here.
+
+A kept payload can also dangle outright: the re-render may swap in data where an ID the payload references
+no longer exists at all. Then the failure isn't a silent mis-point but a crash in your own lookup -- an
+unguarded `next(row for row in rows if row["id"] == kept_id)` surfaces as a `RuntimeError` raised from
+`StopIteration` inside the reactive flush. If you keep a payload across a re-render that can change the
+underlying data, guard the lookup: filter first and check `.empty` (pandas), use `.get()` with a default, or
+`req()` a validated result, and treat a payload that no longer resolves as "nothing selected" rather than
+letting it blow up the output.
 
 ## Read on demand
 

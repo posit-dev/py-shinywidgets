@@ -49,8 +49,9 @@ pip install querychat shinychat chatlas anthropic
 every example below uses (`chatlas.ChatAnthropic`); `querychat` is a separate
 natural-language-to-SQL layer used only in the first example. All four examples use
 `anthropic`'s `claude-haiku-5-5` -- small, fast, and inexpensive enough to call on every
-keystroke's worth of chat traffic in a demo app. Swap in any `chatlas` provider; nothing
-below depends on Anthropic specifically.
+keystroke's worth of chat traffic in a demo app. Every example was written and verified against Claude via
+`chatlas.ChatAnthropic`; the patterns are provider-agnostic in principle (any `chatlas` provider should drop
+in), but no other provider has been verified here.
 
 Every example below makes real LLM calls and needs a live API key (`ANTHROPIC_API_KEY` in
 the environment for the `chatlas.ChatAnthropic` client used here). Without one, each app

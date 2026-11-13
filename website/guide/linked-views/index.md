@@ -1497,9 +1497,13 @@ than 18 does at any scale, and driving the identical gesture against the full
 '_hoverlayer')` page errors) -- not just slower, unusable. This is the browser-to-server
 side of [#459](https://github.com/posit-dev/py-shinywidgets/issues/459): a lasso over
 that many points serializes to a single widget-to-server message too large for the
-default websocket frame limit, and the session drops rather than erroring cleanly; `shiny
-run --ws-max-size` is the workaround until it's fixed. Per this task's instructions, that
-row is left blank rather than estimated; 1,000,000 rows is 19's only verified scale.
+default websocket frame limit. That measurement predates the fix in
+[#481](https://github.com/posit-dev/py-shinywidgets/pull/481): since then an oversized
+widget-to-server message is dropped client-side with a sticky error notification (the app
+keeps running, but that action has no effect) instead of taking the session down, and
+restarting with `shiny run --ws-max-size <bytes>` -- plus `SHINYWIDGETS_WS_MAX_SIZE` set
+to match -- raises the limit. Per this task's instructions, that row is left blank rather
+than estimated; 1,000,000 rows is 19's only verified scale.
 
 **Latency/step doesn't tell the same story as bytes**: 18's 526-592 ms is *slower per
 step* than 19's 87 ms, even though 18 ships two orders of magnitude fewer bytes -- because

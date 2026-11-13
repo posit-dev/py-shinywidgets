@@ -781,9 +781,11 @@ jupyter-scatter's whole premise is scale: every point is drawn by the GPU (via
 "large data mode" to opt into -- see [Millions of points, interactively](#millions-of-points-interactively)
 above, which renders and stays responsive to pan, zoom, and lasso with 2,000,000 points. The practical ceiling
 isn't rendering, it's getting a *selection* back to Python: a lasso over roughly 3 million points can exceed
-Shiny's default 16 MiB websocket message limit and disconnect the session (the selection array is base64-encoded
-JSON), documented on the `render_jscatter` class itself; raise it with `shiny run --ws-max-size <bytes>` if you
-lasso at that scale (see [Gotchas and limitations](#gotchas-and-limitations)). This is the "draw it with the GPU
+Shiny's default 16 MiB websocket message limit (the selection array is base64-encoded JSON). Since
+[#481](https://github.com/posit-dev/py-shinywidgets/pull/481) such an oversized message is dropped client-side
+with a sticky error notification -- the app keeps running, but that selection never reaches Python. Raise the
+limit with `shiny run --ws-max-size <bytes>` (and set `SHINYWIDGETS_WS_MAX_SIZE` to match) if you lasso at that
+scale (see [Gotchas and limitations](#gotchas-and-limitations)). This is the "draw it with the GPU
 in the browser" approach from
 [Large data & performance](../../guide/performance/index.md#three-approaches-to-large-data).
 
@@ -841,10 +843,13 @@ Verified on current `main` (shinywidgets, jupyter-scatter 1.0.1):
 - **`selection` holds row positions, not index labels**, unless the `Scatter` was built with
   `data_use_index=True`. Passing index labels from a non-default-indexed frame into `.widget.selection` selects
   the wrong rows silently (no error) and can make `.zoom(to=...)` raise out-of-range errors.
-- **Selections over roughly 3 million points can exceed Shiny's default 16 MiB websocket message limit**,
-  disconnecting the session (the selection array is base64-encoded JSON, not a binary frame). This is documented
-  on the `render_jscatter` class itself; raise the limit with `shiny run --ws-max-size <bytes>` if your app lassoes
-  selections at that scale. Not independently re-triggered at that scale in this pass.
+- **Selections over roughly 3 million points can exceed Shiny's default 16 MiB websocket message limit** (the
+  selection array is base64-encoded JSON, not a binary frame). Since
+  [#481](https://github.com/posit-dev/py-shinywidgets/pull/481) the oversized message is dropped client-side with
+  a sticky error notification rather than disconnecting the session -- the app keeps running, but that selection
+  never reaches Python. Raise the limit with `shiny run --ws-max-size <bytes>` and set
+  `SHINYWIDGETS_WS_MAX_SIZE` to match if your app lassoes selections at that scale. Not independently
+  re-triggered at that scale in this pass.
 - **`jscatter.compose()` and `.link()` return a plain `ipywidgets.GridBox`**, not a `JupyterScatter`, so
   `@render_jscatter` can't render their result directly (it isn't a `Scatter`/`JupyterScatter`). Use
   `@render_widget` instead if you want `compose()`'s side-by-side layout (it won't get fill behavior or the

@@ -322,6 +322,11 @@ module-level `reactive.Value`, and read that value from any reactive function. A
 - **`None` is the normal "nothing yet" state.** `req(bounds_val())` works if you want to wait for the first
   interaction instead of handling `None` explicitly.
 - **It fires once per gesture**, not continuously during a drag (verified for `BoundsXY` and `Tap`).
+- **A `BoundsXY` subscriber's parameter must be named `bounds`.** `BoundsXY` invokes subscribers by keyword
+  (`bounds=...`), so `lambda b: bounds_val.set(b)` raises `TypeError: ... got an unexpected keyword argument
+  'bounds'` -- inside HoloViews' own asyncio task, where it surfaces only as "Task exception was never
+  retrieved" in the server log while the box-select silently does nothing in the browser. Same caveat as the
+  [datashader guide](../datashader/index.md#gotchas-and-limitations) calls out.
 - **`hv.link_selections` follows the same recipe** via its own param event: `links.param.watch(lambda event:
   some_value.set(event.new), "selection_expr")`. See [Coordinating multiple views](#coordinating-multiple-views)
   for a full example.

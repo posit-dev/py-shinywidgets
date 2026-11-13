@@ -503,10 +503,14 @@ follows `selected()`), since none of those declares a default policy of its own 
 `render_lonboard(rate_policy="throttle", rate_delay=1.0)` and inspecting its internal accessor
 slots shows a limiter only on `view_state`'s).
 
-Pass `rate_delay=0` to remove the debounce -- every tick the browser reports publishes right away,
-useful when you want `view_state()` to drive something with no lag and can afford the extra
-re-renders downstream. `map.read("view_state")` and `map.view_state()` are the same read either
-way: `"view_state"` is a declared accessor name, so `read()` just calls the accessor.
+Pass `rate_delay=0` to remove shinywidgets' debounce -- but don't expect a visible change for real
+gestures. lonboard's own bundled JS already debounces its browser-to-Python `view_state` sync at
+~300 ms (`debounce(t => t.save_changes(), 300)` in the installed `lonboard/static/index.js`), upstream of
+anything shinywidgets can see, so a pan/zoom gesture usually arrives in Python already collapsed to one
+message and the kwarg is a practical no-op either way -- measured side by side in
+[Large data & performance](../../guide/performance/index.md#4-rate-limiting). `map.read("view_state")` and
+`map.view_state()` are the same read either way: `"view_state"` is a declared accessor name, so `read()`
+just calls the accessor.
 
 ```{.python file="examples/15_rate_limiting.py"}
 import geopandas as gpd
@@ -520,9 +524,11 @@ CITIES_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/mas
 
 
 # view_state() debounces by default (0.25 s). render_lonboard's rate_policy/
-# rate_delay kwargs now adjust that default too, not just reactive_read() on
-# the map's other traits: rate_delay=0 below removes the debounce entirely, so
-# every tick the browser reports publishes right away.
+# rate_delay kwargs adjust that default too, not just reactive_read() on
+# the map's other traits. But rate_delay=0 below only removes shinywidgets'
+# debounce: lonboard's own JS already debounces its browser-to-Python
+# view_state sync at ~300 ms upstream, so a real gesture arrives already
+# collapsed to about one message either way.
 @render_lonboard(rate_delay=0)
 def map():
     cities = gpd.read_file(CITIES_URL)
@@ -975,6 +981,14 @@ Verified on current `main` (lonboard 0.17.0):
   every frame of a wheel-zoom or double-click-zoom animation, and each one re-arms the 250 ms
   debounce, so `view_state()` doesn't settle until the animation stops producing frames -- longer
   for a multi-frame zoom transition than for a simple drag-pan.
+- **Per-point color traits want a numpy `uint8` array, not a list of RGB tuples.**
+  `get_fill_color=[(255, 0, 0), (0, 255, 0)]` raises `TraitError: ... expected 3 or 4 values if passed a
+  tuple or list` -- lonboard reads a plain list as *one* color, and the per-point intent never reaches the
+  error message. Pass `np.array([[255, 0, 0], [0, 255, 0]], dtype="uint8")` (a float or int64 array fails
+  too, with `Color array must be uint8 type`), or use
+  [`apply_continuous_cmap`](https://developmentseed.org/lonboard/api/colormap/) as in
+  [Choropleths with `apply_continuous_cmap`](#choropleths-with-apply_continuous_cmap), which returns exactly
+  that shape.
 - **`GlobeView` is a private import** (`lonboard._map.GlobeView`) -- there's no public top-level
   export for it yet.
 - An older review of this integration reported that changing `basemap` after a fly-to desynced

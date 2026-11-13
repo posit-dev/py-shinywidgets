@@ -9,9 +9,11 @@ CITIES_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/mas
 
 
 # view_state() debounces by default (0.25 s). render_lonboard's rate_policy/
-# rate_delay kwargs now adjust that default too, not just reactive_read() on
-# the map's other traits: rate_delay=0 below removes the debounce entirely, so
-# every tick the browser reports publishes right away.
+# rate_delay kwargs adjust that default too, not just reactive_read() on
+# the map's other traits. But rate_delay=0 below only removes shinywidgets'
+# debounce: lonboard's own JS already debounces its browser-to-Python
+# view_state sync at ~300 ms upstream, so a real gesture arrives already
+# collapsed to about one message either way.
 @render_lonboard(rate_delay=0)
 def map():
     cities = gpd.read_file(CITIES_URL)
