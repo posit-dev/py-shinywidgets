@@ -802,6 +802,60 @@ def test_selected_rows_nested_repeat_with_its_own_data_is_not_mis_filtered(
         r.selected_rows("b", df=LINES)
 
 
+def test_selection_views_reads_imported_param_names() -> None:
+    brush = alt.selection_interval(name="brush")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        combo = alt.hconcat(
+            alt.Chart(POINTS, name="pts")
+            .mark_point()
+            .encode(x="x", y="y")
+            .add_params(brush),
+            alt.Chart(LINES, name="lns")
+            .mark_point()
+            .encode(x="x", y="z")
+            .add_params(brush),
+        )
+    # from_dict wraps parameter names in schema objects (ParameterName);
+    # the declared views must still be readable
+    imported = alt.Chart.from_dict(combo.to_dict())
+    assert sa.selection_views(imported, "brush") == ["pts", "lns"]
+
+
+def test_selected_rows_unreadable_views_reject_scalar_df_on_multi_dataset(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    r = render_altair()
+    with session_context(widget_session):
+        w = hconcat_chart()
+    # Simulate a chart whose selection participation can't be read (e.g.
+    # alt.Chart.from_dict): selected_rows() falls back to the store's units
+    w.chart.params[0].views = alt.Undefined
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "brush": IntervalSelection(
+                    name="brush",
+                    value={},
+                    store=[uentry("lns", ("z", "R", [150, 250]))],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    # Only "lns" reports entries, but the selection may participate in more
+    # views: a scalar df can't be matched to its dataset safely
+    with pytest.raises(ValueError, match="dict"):
+        r.selected_rows("brush", df=POINTS)
+    out = r.selected_rows("brush", df={"lns": LINES})
+    assert isinstance(out, dict)
+    assert out["lns"]["z"].tolist() == [200]
+
+
 def sa_box(raw: object) -> Any:
     from shinywidgets._accessors import Box
 

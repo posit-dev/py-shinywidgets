@@ -120,20 +120,27 @@ def selection_views(chart: Any, name: str) -> Optional[List[str]]:
     The names of the views selection `name` participates in, per the chart's
     hoisted selection param (the chart's record of which subcharts the user
     can gesture on). `None` when the param or its views can't be found --
-    callers then fall back to the store's `unit`s.
+    callers then fall back to the store's `unit`s. Imported charts
+    (`alt.Chart.from_dict`) wrap parameter names in schema objects (e.g.
+    `ParameterName`), which are unwrapped to plain strings.
     """
     import altair as alt
+
+    def unwrap(value: Any) -> Any:
+        if isinstance(value, str) or not hasattr(value, "to_dict"):
+            return value
+        return value.to_dict()
 
     params: Any = getattr(chart, "params", alt.Undefined)
     if params is alt.Undefined:
         return None
     for param in params:
-        if getattr(param, "name", None) != name:
+        if unwrap(getattr(param, "name", None)) != name:
             continue
         views: Any = getattr(param, "views", alt.Undefined)
         if views is alt.Undefined:
             return None
-        return [str(view) for view in views]
+        return [str(unwrap(view)) for view in views]
     return None
 
 

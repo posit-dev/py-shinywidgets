@@ -670,6 +670,17 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
             # (e.g. a chart built with alt.Chart.from_dict): fall back to the
             # views the store reports
             views = sorted({entry.get("unit", "") for entry in selection.store} - {""})
+            if df is not None and len(chart_datasets(chart)) > 1:
+                # Participation is unknown beyond what the store reports, so
+                # a scalar df can't be matched to its dataset safely
+                raise ValueError(
+                    "Which views this selection participates in can't be "
+                    "read from the chart (e.g. one built with "
+                    "`alt.Chart.from_dict`), and the chart has several "
+                    "datasets, so a single data frame can't be filtered by "
+                    "it safely. Pass the frames as a dict keyed by view "
+                    "name: `selected_rows(df={...})`."
+                )
 
         if len(views) <= 1:
             frame: Any = df
