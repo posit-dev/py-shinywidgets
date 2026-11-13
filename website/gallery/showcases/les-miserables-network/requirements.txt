@@ -1,0 +1,2 @@
+shinywidgets[ipycytoscape]
+networkx

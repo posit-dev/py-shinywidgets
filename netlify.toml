@@ -1,0 +1,7 @@
+# The website is built in GitHub Actions (.github/workflows/docs-deploy.yml)
+# and pushed to Netlify through its API. Netlify itself never builds this
+# repo: if the site is ever Git-connected, `ignore` makes every Netlify-side
+# build a no-op.
+[build]
+  publish = "website/_site"
+  ignore = "exit 0"

@@ -1,0 +1,5 @@
+shinywidgets[embedding_atlas]
+scikit-learn
+pandas
+pillow
+numpy

@@ -1,0 +1,7 @@
+# shinywidgets[ipyleaflet] and shinywidgets[plotly] are already in the base
+# install; chatlas/anthropic are the ones that need adding explicitly.
+shinywidgets[ipyleaflet,plotly]
+shinychat
+chatlas
+anthropic
+pandas
