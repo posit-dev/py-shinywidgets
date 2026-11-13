@@ -257,13 +257,18 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         # that calls _render() directly without a session) there's nothing to
         # compare the returned widgets' ownership against, so only a closed
         # root can be rejected.
+        # An ownership-rejected render leaves no replacement widget (the
+        # output shows the error), so its stale policy retires like a failed
+        # render's does above
         if session is None or session.is_stub_session():
             if is_closed_widget(widget):
+                drop_mute_policy(self)
                 raise ownership_error(widget)
         else:
             root = session.root_scope()
             bad = foreign_or_closed_widget(widget, root)
             if bad is not None:
+                drop_mute_policy(self)
                 raise ownership_error(bad)
             # Only once nothing raised, so a rejected render opens nothing
             open_process_global_widgets(widget, root)

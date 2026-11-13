@@ -209,6 +209,58 @@ def test_mute_policy_reaches_only_the_rendering_session(
     ]
 
 
+def test_a_shared_container_render_does_not_reach_a_foreign_child(
+    widget_session: Session,
+    flush_to_browser: Flush,
+    other_session: Session,
+    shared_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    a, b = widget_session, other_session
+    session_recorder(b, monkeypatch)
+
+    # A's session-owned slider, referenced by a process-global container. The
+    # container may be displayed by any session, but the slider stays A's
+    # (the render's ownership check prunes at process-global widgets, so it
+    # never rejects the slider either)
+    with session_context(a):
+        slider = ipywidgets.IntSlider()
+    with session_context(a), sw.shared_construction():
+        box = ipywidgets.VBox(children=[slider])
+    flush_to_browser()
+
+    muting = render_muting()
+    render_once(muting, slider, a)
+    assert mute_requests_for(flush_to_browser(), slider) == [
+        {"shinywidgets": "mute", "traits": ["value"]}
+    ]
+    sent_a = flush_to_browser()
+    before = len(sent_a)
+
+    # B renders the container: the policy walk reaches the slider through the
+    # process-global box, but a policy for it must not be registered or sent
+    # -- the send would go through the slider's own comm (A's), and the
+    # browser replaces the model's muted set with what it receives, so B's
+    # empty set would clear A's mute. (The shared box referencing a
+    # session-owned widget warns, as any dangling reference does.)
+    with pytest.warns(UserWarning, match="belongs to one Shiny session"):
+        render_once(render_widget(), box, b)
+    flush_to_browser()
+    assert mute_requests_for(sent_a[before:], slider) == []
+
+    # B's consumer never registered for A's model, and A's policy stands
+    assert muting in sw._MUTE_POLICIES[a.root_scope().id][str(slider.model_id)]
+    b_models = sw._MUTE_POLICIES.get(b.root_scope().id, {})
+    assert str(slider.model_id) not in b_models
+
+    # A's next render still mutes effectively
+    rerender(muting, a)
+    assert mute_requests_for(flush_to_browser(), slider)[-1] == {
+        "shinywidgets": "mute",
+        "traits": ["value"],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Per-output mute policies: outputs in one session showing the same widget
 # must not fight over the browser's per-model muted set (which every mute
@@ -502,6 +554,55 @@ def test_a_render_function_error_retires_the_mute_policy(
 
     # The muting output's next render mutes effectively
     rerender(muting, widget_session)
+    assert mute_requests_for(flush_to_browser(), w)[-1] == {
+        "shinywidgets": "mute",
+        "traits": ["value"],
+    }
+
+
+def test_an_ownership_rejected_render_retires_the_mute_policy(
+    widget_session: Session,
+    flush_to_browser: Flush,
+    other_session: Session,
+) -> None:
+    a = widget_session
+    with session_context(a):
+        w = ipywidgets.IntSlider()
+    with session_context(other_session):
+        foreign = ipywidgets.IntSlider()
+
+    muting = render_muting()
+    render_once(muting, w, a)
+
+    current: List[Any] = [w]
+    unmuted = render_widget()
+
+    @unmuted
+    def _() -> Any:
+        return current[0]
+
+    rerender(unmuted, a)
+
+    # Both outputs show w: the intersection is empty
+    assert mute_requests_in(flush_to_browser())[-1] == {
+        "shinywidgets": "mute",
+        "traits": [],
+    }
+
+    # The unmuted output's replacement belongs to another session: the
+    # ownership check rejects it, so the output shows an error and its
+    # policy retires -- re-sending w's set, now the muting output's alone
+    current[0] = foreign
+    with pytest.raises(RuntimeError, match="belongs to another Shiny session"):
+        rerender(unmuted, a)
+    assert unmuted not in sw._MUTE_POLICY_MODELS
+    assert mute_requests_for(flush_to_browser(), w)[-1] == {
+        "shinywidgets": "mute",
+        "traits": ["value"],
+    }
+
+    # The surviving muting output's next render mutes effectively
+    rerender(muting, a)
     assert mute_requests_for(flush_to_browser(), w)[-1] == {
         "shinywidgets": "mute",
         "traits": ["value"],
