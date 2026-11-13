@@ -149,14 +149,16 @@ def selection_views(chart: Any, name: str) -> Optional[List[str]]:
 def chart_datasets(chart: Any) -> List[Any]:
     """
     The distinct data sources declared anywhere on `chart`: data frames (by
-    identity), URLs (by value), and any other explicit source, such as
-    inline `alt.Data` (by identity). Each one shifts Vega's chart-wide
-    `_vgsid_` ids.
+    identity), URLs (by value), named references like `alt.NamedData` (by
+    dataset name), and any other explicit source, such as inline
+    `alt.Data` (by identity). Each one shifts Vega's chart-wide `_vgsid_`
+    ids.
     """
     import altair as alt
 
     frames: List[Any] = []
     urls: set[str] = set()
+    named: set[str] = set()
     other: List[Any] = []
 
     def visit(node: Any) -> None:
@@ -168,8 +170,16 @@ def chart_datasets(chart: Any) -> List[Any]:
                 frames.append(data)
         elif isinstance(data, str):
             urls.add(data)
-        elif not any(data is source for source in other):
-            other.append(data)
+        else:
+            # A named reference (alt.NamedData, or an imported {"name": ...})
+            # to one dataset may appear as several distinct objects
+            ref: Any = getattr(data, "name", None)
+            if not isinstance(ref, str) and hasattr(ref, "to_dict"):
+                ref = ref.to_dict()
+            if isinstance(ref, str):
+                named.add(ref)
+            elif not any(data is source for source in other):
+                other.append(data)
         for attr in ("layer", "hconcat", "vconcat", "concat"):
             children: Any = getattr(node, attr, alt.Undefined)
             if children is not alt.Undefined:
@@ -179,7 +189,7 @@ def chart_datasets(chart: Any) -> List[Any]:
             visit(node.spec)
 
     visit(chart)
-    return [*frames, *urls, *other]
+    return [*frames, *urls, *named, *other]
 
 
 def chart_frame(chart: Any) -> Any:

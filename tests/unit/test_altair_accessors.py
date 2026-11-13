@@ -859,6 +859,67 @@ def test_selected_rows_unreadable_views_reject_scalar_df_on_multi_dataset(
     assert out["lns"]["z"].tolist() == [200]
 
 
+def test_chart_datasets_dedupes_named_references() -> None:
+    same = alt.hconcat(
+        alt.Chart(alt.NamedData("same")).mark_point().encode(x="x:Q"),
+        alt.Chart(alt.NamedData("same")).mark_point().encode(x="x:Q"),
+    )
+    assert len(sa.chart_datasets(same)) == 1
+    imported = alt.Chart.from_dict(same.to_dict())
+    assert len(sa.chart_datasets(imported)) == 1
+    distinct = alt.hconcat(
+        alt.Chart(alt.NamedData("one")).mark_point().encode(x="x:Q"),
+        alt.Chart(alt.NamedData("two")).mark_point().encode(x="x:Q"),
+    )
+    assert len(sa.chart_datasets(distinct)) == 2
+
+
+def test_selected_rows_scalar_df_for_views_sharing_a_named_dataset(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    brush = alt.selection_interval(name="b")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        combo = alt.hconcat(
+            alt.Chart(alt.NamedData("same"), name="a")
+            .mark_point()
+            .encode(x="x:Q")
+            .add_params(brush),
+            alt.Chart(alt.NamedData("same"), name="b")
+            .mark_point()
+            .encode(x="x:Q")
+            .add_params(brush),
+        )
+    with session_context(widget_session):
+        w = alt.JupyterChart(combo)
+    assert sa.selection_views(w.chart, "b") == ["a", "b"]
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "b": IntervalSelection(
+                    name="b",
+                    value={},
+                    store=[
+                        uentry("a", ("x", "R", [1, 2])),
+                        uentry("b", ("x", "R", [1, 2])),
+                    ],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    # Both views reference the same named dataset: a scalar df stands in
+    # for it, just as it did before multi-dataset support
+    assert r.selected_rows("b", df=POINTS)["y"].tolist() == [10, 20]
+    with pytest.raises(ValueError, match="'a'"):
+        r.selected_rows("b")
+
+
 def test_selected_rows_empty_views_means_unknown_participation(
     widget_session: Session,
 ) -> None:
