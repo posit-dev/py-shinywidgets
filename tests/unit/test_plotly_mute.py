@@ -13,8 +13,10 @@ from shinywidgets import render_plotly, render_widget
 from shinywidgets._comm import SharedShinyComm
 
 from tests.unit.test_muted_traits import (
+    mute_requests_for,
     mute_requests_in,
     other_session,
+    render_once,
     session_recorder,
 )
 from tests.unit.test_plotly_accessors import FakeFigureWidget
@@ -22,6 +24,7 @@ from tests.unit.test_plotly_accessors import FakeFigureWidget
 __all__ = ("other_session",)
 
 MUTE = {"shinywidgets": "mute", "traits": ["_js2py_pointsCallback"]}
+UNMUTED = {"shinywidgets": "mute", "traits": []}
 
 Flush = Callable[[], List[Dict[str, Any]]]
 
@@ -201,3 +204,78 @@ def test_mute_policy_reaches_only_the_rendering_session(
         {"shinywidgets": "mute", "traits": []}
     ]
     assert mute_requests_in(flush_b()) == [MUTE]
+
+
+# ---------------------------------------------------------------------------
+# Outputs in one session sharing a FigureWidget: the browser keeps one
+# (last-sent) muted set per model, so every render sends the intersection
+# over the model's consumers -- and a consumer moving off the model restores
+# what the remaining consumers mute
+# ---------------------------------------------------------------------------
+
+
+def test_default_then_native_render_leaves_native_events_unmuted(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        fig = figure()
+
+    # Both renderers are held, so neither mute policy retires mid-test
+    default, native = render_plotly(), render_plotly(listen_to=["native"])
+    render_once(default, fig, widget_session)
+    render_once(native, fig, widget_session)
+    assert mute_requests_for(flush_to_browser(), fig)[-1] == UNMUTED
+
+
+def test_native_then_default_render_leaves_native_events_unmuted(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        fig = figure()
+
+    # The muting render comes last: a per-render send would leave
+    # ["_js2py_pointsCallback"] muted for the output that opted into native
+    # events (the browser keeps the last set it received)
+    native, default = render_plotly(listen_to=["native"]), render_plotly()
+    render_once(native, fig, widget_session)
+    render_once(default, fig, widget_session)
+    assert mute_requests_for(flush_to_browser(), fig)[-1] == UNMUTED
+
+
+def test_a_generic_output_does_not_unregister_the_plotly_mute(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        fig, other = figure(), figure()
+
+    plotly, generic = render_plotly(), render_widget()
+    render_once(plotly, fig, widget_session)
+    assert mute_requests_for(flush_to_browser(), fig)[-1] == MUTE
+
+    # A generic render_widget mutes nothing, so while it shows fig the
+    # intersection is empty -- the plotly output's policy is overlaid, not
+    # dropped
+    render_once(generic, fig, widget_session)
+    assert mute_requests_for(flush_to_browser(), fig)[-1] == UNMUTED
+
+    # ... so the generic output moving to another widget restores it
+    render_once(generic, other, widget_session)
+    assert mute_requests_for(flush_to_browser(), fig)[-1] == MUTE
+
+
+def test_a_generic_output_does_not_unregister_the_plotly_mute_reverse_order(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        fig, other = figure(), figure()
+
+    # The plotly render comes last: a per-render send would leave its
+    # ["_js2py_pointsCallback"] in place for the generic output too
+    generic, plotly = render_widget(), render_plotly()
+    render_once(generic, fig, widget_session)
+    render_once(plotly, fig, widget_session)
+    assert mute_requests_for(flush_to_browser(), fig)[-1] == UNMUTED
+
+    # The plotly output's policy outlives the generic output's stay on fig
+    render_once(generic, other, widget_session)
+    assert mute_requests_for(flush_to_browser(), fig)[-1] == MUTE
