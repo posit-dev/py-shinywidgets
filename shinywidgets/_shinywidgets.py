@@ -24,7 +24,7 @@ from typing import (
     cast,
 )
 from uuid import uuid4
-from weakref import WeakSet, ref
+from weakref import WeakKeyDictionary, WeakSet, ref
 
 import ipywidgets
 from packaging.version import Version
@@ -534,6 +534,112 @@ def session_scoped_send(w: Widget, session: Session, content: object) -> None:
     comm.send(data={"method": "custom", "content": content})
 
 
+# The muted-traits policy of each consumer (renderer instance) that most
+# recently rendered a model in a (root) session: session id -> model id ->
+# {consumer: traits}. The browser REPLACES a model's muted set with every
+# mute message it gets (ShinyComm.setMutedTraits()), so consumers can't each
+# send their own set -- the last render would win, muting a trait another
+# output showing the same model needs. Each render instead sends the
+# intersection over the model's registered consumers (muting is only an
+# optimization, so a trait is muted just while every consumer agrees to it).
+#
+# Consumers are weak keys: Shiny has no output-destroy hook (session.on_ended
+# fires at session end, and a render Context's invalidation retires its
+# widgets, not the renderer), so a dropped renderer's policy leaves the
+# registry only via GC. Nothing is sent then (a send at GC time could hit a
+# torn-down session); the model's next render in the session recomputes the
+# set. A stale entry can only over-suppress a mute (intersecting with an
+# extra policy shrinks the set), never mute a trait a live consumer needs.
+_MUTE_POLICIES: Dict[str, Dict[str, WeakKeyDictionary[object, tuple[str, ...]]]] = {}
+
+# The (session id, model id) each consumer last registered a policy for, so a
+# re-render with a different widget moves the policy off the old model
+_MUTE_POLICY_MODELS: WeakKeyDictionary[object, tuple[str, str]] = WeakKeyDictionary()
+
+
+def send_mute_policy(
+    consumer: object, w: Widget, session: Session, traits: Sequence[str]
+) -> None:
+    """
+    Update `consumer`'s muted-traits policy for `w` in `session` and send the
+    model's effective muted set to `session`'s browser.
+
+    The effective set is the intersection over every consumer that most
+    recently rendered the model in this session (see _MUTE_POLICIES).
+    `consumer` is the renderer instance; when its re-render switches widgets,
+    its policy moves off the old model, whose set is re-sent if removing the
+    policy changed it. The whole set is stated on every render (even an empty
+    one): the browser replaces its set with what it receives, so only a
+    render that sends [] clears the set a reused widget's earlier render left
+    there.
+    """
+    session_id = session.root_scope().id
+    model_id = str(w.model_id)
+
+    prev = _MUTE_POLICY_MODELS.get(consumer)
+    if prev is not None and prev != (session_id, model_id):
+        _drop_mute_policy(consumer, prev, session if prev[0] == session_id else None)
+
+    consumers = _MUTE_POLICIES.setdefault(session_id, {}).setdefault(
+        model_id, WeakKeyDictionary()
+    )
+    consumers[consumer] = tuple(traits)
+    _MUTE_POLICY_MODELS[consumer] = (session_id, model_id)
+    session_scoped_send(w, session, _mute_message(_effective_muted(consumers)))
+
+
+def _drop_mute_policy(
+    consumer: object, prev: tuple[str, str], session: Optional[Session]
+) -> None:
+    """
+    Remove `consumer`'s policy from `prev` (the (session id, model id) it
+    moved away from), re-sending the model's effective set if removing the
+    policy changed it and the session is still around to hear it.
+    """
+    session_id, model_id = prev
+    models = _MUTE_POLICIES.get(session_id)
+    if models is None:
+        return
+    consumers = models.get(model_id)
+    if consumers is None or consumer not in consumers:
+        return
+    before = _effective_muted(consumers)
+    del consumers[consumer]
+    after = _effective_muted(consumers)
+    if not consumers:
+        del models[model_id]
+        if not models:
+            del _MUTE_POLICIES[session_id]
+    if after == before:
+        return
+    if session is None:
+        # A renderer lives in one session, so reaching here means it somehow
+        # rendered in another; send to the old one if it's still active
+        session = next((s for s in SESSIONS if s.id == session_id), None)
+        if session is None:
+            return
+    w = WIDGET_INSTANCE_MAP.get(model_id)
+    # A replaced render's widget may already be closed (a render Context's
+    # invalidation closes render-owned widgets before the re-render runs);
+    # its browser model is then gone, with nothing left to unmute
+    if w is not None:
+        session_scoped_send(w, session, _mute_message(after))
+
+
+def _effective_muted(
+    consumers: WeakKeyDictionary[object, tuple[str, ...]],
+) -> List[str]:
+    """The muted set a model's consumers agree on, sorted for a stable wire value."""
+    policies = [set(p) for p in consumers.values()]
+    if not policies:
+        return []
+    return sorted(set.intersection(*policies))
+
+
+def _mute_message(traits: List[str]) -> Dict[str, object]:
+    return {"shinywidgets": "mute", "traits": traits}
+
+
 def guard_shared_send(comm: SharedShinyComm, data: DataType) -> None:
     """
     Warn about an update, fanned out to several sessions, that would dangle in
@@ -665,6 +771,7 @@ def init_session(session: Session) -> None:
                 close_widget(widget)
         SESSION_WIDGET_ID_MAP.pop(session.id, None)
         KEPT_WIDGETS.pop(session.id, None)
+        _MUTE_POLICIES.pop(session.id, None)
 
     session.on_ended(_cleanup_session_state)
 

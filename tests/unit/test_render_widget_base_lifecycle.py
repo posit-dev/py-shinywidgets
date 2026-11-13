@@ -23,6 +23,8 @@ class FakeLiveComm:
 class FakeLiveWidget:
     """Stands in for a widget whose comm is open."""
 
+    model_id = "fake-live-widget"
+
     def __init__(self) -> None:
         self.comm = FakeLiveComm()
 
@@ -332,6 +334,8 @@ def test_render_attaches_accessors_to_the_coerced_widget(monkeypatch) -> None:
 class ModuleScope:
     """A module's session: destroying it doesn't end the root session."""
 
+    id = "module-scope"
+
     def __init__(self) -> None:
         self.on_destroy_fns: list = []
 
@@ -453,6 +457,11 @@ class SeededWidget:
 
     def __init__(self, current) -> None:  # type: ignore[no-untyped-def]
         self.current = current
+
+    def send(self, content, buffers=None):  # type: ignore[no-untyped-def]
+        # ipywidgets' Widget.send(); every render sends its muted-traits
+        # policy, even an empty one
+        pass
 
 
 def test_reseeded_accessor_reader_reruns_only_when_the_seed_changes(
@@ -589,6 +598,11 @@ class PickyWidget:
 
     def __init__(self, supported: bool) -> None:
         self.supported = supported
+
+    def send(self, content, buffers=None):  # type: ignore[no-untyped-def]
+        # ipywidgets' Widget.send(); every render sends its muted-traits
+        # policy, even an empty one
+        pass
 
 
 def picky_renderer_and_reads(  # type: ignore[no-untyped-def]

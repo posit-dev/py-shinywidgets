@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import json
 from typing import Any, Callable, Dict, Iterator, List, Sequence
 
@@ -204,3 +205,197 @@ def test_mute_policy_reaches_only_the_rendering_session(
         {"shinywidgets": "mute", "traits": ["value"]}
     ]
     assert mute_requests_in(flush_b()) == [{"shinywidgets": "mute", "traits": ["min"]}]
+
+
+# ---------------------------------------------------------------------------
+# Per-output mute policies: outputs in one session showing the same widget
+# must not fight over the browser's per-model muted set (which every mute
+# message replaces wholesale)
+# ---------------------------------------------------------------------------
+
+
+class render_muting_value_min(render_widget[ipywidgets.IntSlider]):
+    def _muted_traits(self, widget: ipywidgets.IntSlider) -> Sequence[str]:
+        return ["value", "min"]
+
+
+def render_once(renderer: render_widget[Any], widget: Any, session: Session) -> None:
+    @renderer
+    def _() -> Any:
+        return widget
+
+    rerender(renderer, session)
+
+
+def rerender(renderer: render_widget[Any], session: Session) -> None:
+    with session_context(session):
+        asyncio.get_event_loop().run_until_complete(renderer._render())
+
+
+def mute_requests_for(
+    sent: List[Dict[str, Any]], widget: ipywidgets.Widget
+) -> List[Dict[str, Any]]:
+    """The mute requests in `sent` addressed to `widget`'s model."""
+    return [
+        m["content"]["data"]["content"]
+        for m in sent
+        if m["type"] == "shinywidgets_comm_msg"
+        and m["content"].get("comm_id") == widget.model_id
+        and m["content"]["data"].get("method") == "custom"
+        and m["content"]["data"]["content"].get("shinywidgets") == "mute"
+    ]
+
+
+def test_outputs_sharing_a_widget_mute_only_what_they_all_mute(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        w = ipywidgets.IntSlider()
+
+    # The muting render comes first; the unmuted one must not inherit it
+    # (both renderers are held, so neither policy retires mid-test)
+    muting, unmuted = render_muting(), render_widget()
+    render_once(muting, w, widget_session)
+    render_once(unmuted, w, widget_session)
+    assert mute_requests_in(flush_to_browser())[-1] == {
+        "shinywidgets": "mute",
+        "traits": [],
+    }
+
+
+def test_mute_intersection_does_not_depend_on_render_order(
+    widget_session: Session,  # for its event loop and CDN-only monkeypatch
+    other_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flush = session_recorder(other_session, monkeypatch)
+    with session_context(other_session):
+        w = ipywidgets.IntSlider()
+
+    # The muting render comes last: a per-render send would leave ["value"]
+    # muted for the output that needs it (the browser keeps the last set)
+    unmuted, muting = render_widget(), render_muting()
+    render_once(unmuted, w, other_session)
+    render_once(muting, w, other_session)
+    assert mute_requests_in(flush())[-1] == {"shinywidgets": "mute", "traits": []}
+
+
+def test_shared_widget_mute_set_is_the_intersection(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        w = ipywidgets.IntSlider()
+
+    value_min, value = render_muting_value_min(), render_muting()
+    render_once(value_min, w, widget_session)
+    render_once(value, w, widget_session)
+    assert mute_requests_in(flush_to_browser())[-1] == {
+        "shinywidgets": "mute",
+        "traits": ["value"],
+    }
+
+
+def test_rerender_with_a_different_widget_reverts_the_old_models_set(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        old, new = ipywidgets.IntSlider(), ipywidgets.IntSlider()
+
+    current = [old]
+    renderer = render_muting()
+
+    @renderer
+    def _() -> ipywidgets.IntSlider:
+        return current[0]
+
+    rerender(renderer, widget_session)
+    assert mute_requests_for(flush_to_browser(), old) == [
+        {"shinywidgets": "mute", "traits": ["value"]}
+    ]
+
+    # The render switches widgets: its policy moves off `old`, whose browser
+    # is told explicitly (a model's set is only ever replaced, never cleared)
+    current[0] = new
+    rerender(renderer, widget_session)
+    sent = flush_to_browser()
+    assert mute_requests_for(sent, old)[-1] == {"shinywidgets": "mute", "traits": []}
+    assert mute_requests_for(sent, new)[-1] == {
+        "shinywidgets": "mute",
+        "traits": ["value"],
+    }
+
+
+def test_a_dropped_renderers_policy_no_longer_shapes_the_mute_set(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        w = ipywidgets.IntSlider()
+
+    unmuted = render_widget()
+    muting = render_muting()
+    render_once(unmuted, w, widget_session)
+    render_once(muting, w, widget_session)
+
+    # The unmuted output suppresses the other's policy (intersection)
+    assert mute_requests_in(flush_to_browser())[-1] == {
+        "shinywidgets": "mute",
+        "traits": [],
+    }
+
+    session_id = widget_session.root_scope().id
+    consumers = sw._MUTE_POLICIES[session_id][str(w.model_id)]
+    assert set(consumers) == {unmuted, muting}
+
+    # The unmuted output retires: its policy leaves the registry, so the
+    # muting output's next render mutes again
+    del unmuted
+    gc.collect()
+    assert set(consumers) == {muting}
+
+    rerender(muting, widget_session)
+    assert mute_requests_in(flush_to_browser())[-1] == {
+        "shinywidgets": "mute",
+        "traits": ["value"],
+    }
+
+
+def test_surviving_outputs_rerender_stays_unmuted_after_the_muting_one_retires(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        w = ipywidgets.IntSlider()
+
+    muting = render_muting()
+    unmuted = render_widget()
+    render_once(muting, w, widget_session)
+    render_once(unmuted, w, widget_session)
+
+    del muting
+    gc.collect()
+
+    rerender(unmuted, widget_session)
+    assert mute_requests_in(flush_to_browser())[-1] == {
+        "shinywidgets": "mute",
+        "traits": [],
+    }
+
+
+def test_session_end_drops_the_sessions_mute_policies(
+    widget_session: Session,  # for its event loop and CDN-only monkeypatch
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = App(ui.page_fluid(), widget_test_server)._create_session(MockConnection())
+
+    async def noop(msg_type: str, msg_txt: str) -> None:
+        pass
+
+    monkeypatch.setattr(session, "send_custom_message", noop)
+
+    with session_context(session):
+        w = ipywidgets.IntSlider()
+    render_once(render_muting(), w, session)
+
+    session_id = session.root_scope().id
+    assert session_id in sw._MUTE_POLICIES
+    asyncio.get_event_loop().run_until_complete(session.close())
+    assert session_id not in sw._MUTE_POLICIES
