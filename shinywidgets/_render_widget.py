@@ -1448,8 +1448,11 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
     ``"lasso_selection_polygon"`` (the lasso path in data coordinates).
 
     **Large selections**: selecting more than about 3 million points sends the
-    server a message larger than the default 16 MiB websocket limit, which
-    disconnects the session. Raise the limit with ``shiny run --ws-max-size``.
+    server a message larger than the default 16 MiB websocket limit, which the
+    client drops (the session stays connected, but that update is lost). Raise
+    the limit with ``shiny run --ws-max-size <bytes>`` and set
+    ``SHINYWIDGETS_WS_MAX_SIZE`` to the same value, so the client-side guard
+    matches it.
 
     **Mutating the widget**: use `.widget` to update the rendered plot in
     place; trait changes on the widget are synced to the browser.
