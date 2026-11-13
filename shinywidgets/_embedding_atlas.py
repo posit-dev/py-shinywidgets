@@ -4,7 +4,7 @@ Accessors for `render_embedding_atlas`.
 The explorer's cross-filter is synced from the browser to the widget's
 (upstream-internal) `_predicate` trait (a DuckDB WHERE expression), so one
 state accessor observes it. `predicate()` returns the expression itself;
-`selected()` reads the same spec (the invalidation trigger) and asks the
+`selected_rows()` reads the same spec (the invalidation trigger) and asks the
 widget for the filtered rows at read time.
 """
 
@@ -34,7 +34,7 @@ def attach_predicate(widget: EmbeddingAtlasWidget, emit: Emit) -> Callable[[], N
     # than silently stop invalidating readers
     if getattr(widget, "_predicate", _MISSING) is _MISSING:
         raise TypeError(
-            "`predicate()` and `selected()` rely on the EmbeddingAtlasWidget's "
+            "`predicate()` and `selected_rows()` rely on the EmbeddingAtlasWidget's "
             "(upstream-internal) `_predicate` trait, which this version of "
             "embedding-atlas doesn't have. If embedding-atlas renamed or "
             "removed this trait, please report it."
@@ -54,7 +54,7 @@ def rows_for_predicate(widget: EmbeddingAtlasWidget, predicate: Optional[str]) -
     `EmbeddingAtlasWidget.selection()`, but for a given predicate rather than
     the live `_predicate`), as the widget's native frame type.
 
-    `selected()` derives from this instead of the widget's own method so it
+    `selected_rows()` derives from this instead of the widget's own method so it
     always describes the same filter as `predicate()` -- the published,
     debounced one -- even mid-debounce, when the widget's live `_predicate`
     is already ahead.
@@ -69,7 +69,7 @@ def rows_for_predicate(widget: EmbeddingAtlasWidget, predicate: Optional[str]) -
     ]
     if missing:
         raise TypeError(
-            "`selected()` relies on the EmbeddingAtlasWidget's (upstream-internal) "
+            "`selected_rows()` relies on the EmbeddingAtlasWidget's (upstream-internal) "
             f"{', '.join(missing)}, which this version of embedding-atlas doesn't "
             "have. If embedding-atlas renamed or removed these attributes, please "
             "report it."

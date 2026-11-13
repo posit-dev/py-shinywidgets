@@ -1,10 +1,11 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
-import { ack_comm, dispose_comm, isMuteRequest, mute_comm, setConnected, ShinyComm } from './comm';
+import { ack_comm, dispose_comm, isMuteRequest, mute_comm, setConnected, setMaxClientMessageBytes, ShinyComm } from './comm';
 import { behaviorForModel, ipyleafletBehavior, WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
 import { isJQuery, jsonParse, lendDataTables, protectPageJQuery } from './utils';
 import { NGLVIEW_COLORMAKER_REGISTRY_MODEL, renderHiddenColormakerRegistry } from './nglview';
 import { isPlotlyBindRequest, requestPlotlyEvents } from './plotly';
 import { isReactableBindRequest, requestReactableState } from './reactable';
+import { installJpThemeLightShim } from './jp-theme';
 import { disposeMols2GridGlobalsOnRemove, disposeNative, disposeNglviewStageOnRemove, finishDetach, hasAncestor, patchBokehView, patchMplCanvasRemove, patchSigmaView, viewParent } from './views';
 import { uuid } from '@jupyter-widgets/base';
 import type { DOMWidgetModel, DOMWidgetView, WidgetModel, WidgetView } from '@jupyter-widgets/base';
@@ -575,6 +576,11 @@ type ModuleAssets = {
   exports?: Record<string, string>;
 };
 
+// The session's message size limit, sent once it starts (see comm.ts)
+Shiny.addCustomMessageHandler("shinywidgets_session_init", (msg: { ws_max_size?: number }) => {
+  if (typeof msg?.ws_max_size === "number") setMaxClientMessageBytes(msg.ws_max_size);
+});
+
 // Initialize the comm and model when a new widget is created
 // This is basically our version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1144-L1176
 Shiny.addCustomMessageHandler("shinywidgets_comm_open", async (msg_txt) => {
@@ -700,6 +706,11 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_close", async (msg_txt) => {
     console.error("Error during model cleanup:", err);
   }
 });
+
+// Emulate JupyterLab's `data-jp-theme-light` body attribute for widgets that
+// sniff it (e.g. ipydatagrid); see jp-theme.ts. Must run before any widget JS
+// loads, which is guaranteed since widget JS loads lazily via require.js.
+installJpThemeLightShim();
 
 $(document).on("shiny:connected", () => {
   setConnected(true);

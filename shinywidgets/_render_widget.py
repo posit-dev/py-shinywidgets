@@ -687,7 +687,7 @@ class render_embedding_atlas(
 
     **Responding to user interaction**: the filter a user builds in the
     browser is synced to the widget's (upstream-internal) `_predicate`
-    trait: read ``atlas.selected()`` for the filtered rows, or
+    trait: read ``atlas.selected_rows()`` for the filtered rows, or
     ``atlas.predicate()`` for the filter as a SQL expression, reactively
     (``atlas.read("_predicate")`` remains available for the raw trait).
 
@@ -717,14 +717,20 @@ class render_embedding_atlas(
         connection lets any visitor run arbitrary SQL with the server process's
         permissions.
     rate_policy
-        How to rate-limit :meth:`predicate` and :meth:`selected` (debounced
-        by default) and :func:`~shinywidgets.reactive_read` on the widget:
+        How to rate-limit :meth:`predicate` and :meth:`selected_rows`
+        (debounced by default) and :func:`~shinywidgets.reactive_read` on the widget:
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) keeps the
         debounce, and debounces ``reactive_read()`` only if ``rate_delay`` is
         given.
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+    listen_to
+        Names of opt-in accessors to enable (e.g. ``listen_to=["predicate"]``).
+        Accessors whose payloads can grow without bound or stream
+        continuously are off unless declared; reading one that wasn't
+        declared raises an error naming it. Additive to the always-on
+        accessors. Unknown names raise at decoration time.
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -759,6 +765,7 @@ class render_embedding_atlas(
         fillable: Optional[bool] = None,
         rate_policy: Optional[RatePolicy] = None,
         rate_delay: Optional[float] = None,
+        listen_to: Optional[Sequence[str]] = None,
         allow_unrestricted_connection: bool = False,
     ):
         super().__init__(
@@ -769,6 +776,7 @@ class render_embedding_atlas(
             fillable=fillable,
             rate_policy=rate_policy,
             rate_delay=rate_delay,
+            listen_to=listen_to,
         )
         self.allow_unrestricted_connection = allow_unrestricted_connection
 
@@ -782,13 +790,13 @@ class render_embedding_atlas(
         and brushes and the embedding view's lasso.
 
         For pushing the filter into your own SQL or aggregation; use
-        :meth:`selected` for the filtered rows themselves. Debounced
+        :meth:`selected_rows` for the filtered rows themselves. Debounced
         (250 ms) by default; see the ``rate_policy`` and ``rate_delay``
         parameters.
         """
         return cast(Optional[str], self._read_accessor("predicate"))
 
-    def selected(self) -> Any:
+    def selected_rows(self) -> Any:
         """
         The rows passing the explorer's current cross-filter (see
         :meth:`predicate`), as the same frame type (pandas or polars) the
@@ -1323,7 +1331,7 @@ class render_itables(render_widget_base[ValueT, ITable]):
     (a shortcut for :func:`~shinywidgets.reactive_read` on `.widget`).
 
     **Responding to user interaction**: read the selected rows reactively
-    with ``.selected_rows()``.
+    with ``.selected()``.
 
     **Mutating the widget**: use `.widget` to update the rendered table in
     place; trait changes on the widget are synced to the browser.
@@ -1351,7 +1359,7 @@ class render_itables(render_widget_base[ValueT, ITable]):
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
 
-    Each accessor can also be read by name -- ``out.read("selected_rows")`` --
+    Each accessor can also be read by name -- ``out.read("selected")`` --
     which also accepts the widget's bare synced-trait names.
 
     See also
@@ -1363,10 +1371,10 @@ class render_itables(render_widget_base[ValueT, ITable]):
 
     _accessor_specs = ITABLES_ACCESSORS
 
-    def selected_rows(self) -> List[int]:
+    def selected(self) -> List[int]:
         """
         The currently selected rows as a list of positions into the table's
-        data frame (use ``df.iloc[table.selected_rows()]``), or ``[]`` while
+        data frame (use ``df.iloc[table.selected()]``), or ``[]`` while
         nothing is selected.
 
         Positions are in data order, not display order: they survive sorting
@@ -1375,7 +1383,7 @@ class render_itables(render_widget_base[ValueT, ITable]):
         `itables.widget.ITable` (a plain data frame return has no selection).
         Not rate-limited.
         """
-        return cast(List[int], self._read_accessor("selected_rows"))
+        return cast(List[int], self._read_accessor("selected"))
 
     def _as_widget(self, value: ValueT) -> ITable:
         if isinstance(value, Widget):
@@ -3292,6 +3300,12 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+    listen_to
+        Names of opt-in accessors to enable (e.g. ``listen_to=["params"]``).
+        Accessors whose payloads can grow without bound or stream
+        continuously are off unless declared; reading one that wasn't
+        declared raises an error naming it. Additive to the always-on
+        accessors. Unknown names raise at decoration time.
 
     Each accessor can also be read by name -- ``out.read("params")`` --
     which also accepts the widget's bare synced-trait names.
@@ -3313,6 +3327,7 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         fillable: Optional[bool] = None,
         rate_policy: Optional[RatePolicy] = None,
         rate_delay: Optional[float] = None,
+        listen_to: Optional[Sequence[str]] = None,
         allow_unrestricted_connection: bool = False,
     ):
         super().__init__(
@@ -3323,6 +3338,7 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
             fillable=fillable,
             rate_policy=rate_policy,
             rate_delay=rate_delay,
+            listen_to=listen_to,
         )
         self.allow_unrestricted_connection = allow_unrestricted_connection
 
@@ -4285,6 +4301,10 @@ class render_ipydatagrid(render_widget_base[ValueT, DataGrid]):
     * `selections` index the grid as displayed (after any sort or filter), so map
       them through ``.widget.get_visible_data()``; ``.visible_data()`` returns
       those displayed rows as a data frame, reactively.
+    * The grid's light/dark palette follows the app's bslib color mode (e.g.,
+      `ui.input_dark_mode`). ipydatagrid freezes the palette when a grid view is
+      created, so toggling dark mode re-themes only grids rendered after the
+      toggle (re-render the output to re-theme an existing grid).
     * ``DataGrid.select()``, ``DataGrid.clear_selection()`` and cell edits modify the
       widget's state in place, which doesn't trigger
       :func:`~shinywidgets.reactive_read`. Assign a new list to ``.widget.selections``
@@ -5687,6 +5707,12 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+    listen_to
+        Names of opt-in accessors to enable (e.g. ``listen_to=["sql"]``).
+        Accessors whose payloads can grow without bound or stream
+        continuously are off unless declared; reading one that wasn't
+        declared raises an error naming it. Additive to the always-on
+        accessors. Unknown names raise at decoration time.
 
     Each accessor can also be read by name -- ``out.read("sql")`` --
     which also accepts the widget's bare synced-trait names.
@@ -5708,6 +5734,7 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
         fillable: Optional[bool] = None,
         rate_policy: Optional[RatePolicy] = None,
         rate_delay: Optional[float] = None,
+        listen_to: Optional[Sequence[str]] = None,
         allow_unrestricted_connection: bool = False,
     ):
         super().__init__(
@@ -5718,6 +5745,7 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
             fillable=fillable,
             rate_policy=rate_policy,
             rate_delay=rate_delay,
+            listen_to=listen_to,
         )
         self.allow_unrestricted_connection = allow_unrestricted_connection
 
@@ -6097,6 +6125,12 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+    listen_to
+        Names of opt-in accessors to enable (e.g. ``listen_to=["clicked"]``).
+        Accessors whose payloads can grow without bound or stream
+        continuously are off unless declared; reading one that wasn't
+        declared raises an error naming it. Additive to the always-on
+        accessors. Unknown names raise at decoration time.
     kwargs
         Extra keyword arguments forwarded to mols2grid (split between
         `MolGrid()` and its rendering, as described above). The split is by
@@ -6172,6 +6206,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         fillable: Optional[bool] = None,
         rate_policy: Optional[RatePolicy] = None,
         rate_delay: Optional[int] = None,
+        listen_to: Optional[Sequence[str]] = None,
         **kwargs: Any,
     ):
         # The click channel only exists when the grid document is rendered
@@ -6194,6 +6229,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             fillable=fillable,
             rate_policy=rate_policy,
             rate_delay=rate_delay,
+            listen_to=listen_to,
         )
         self.smiles_col = smiles_col
         self.mol_col = mol_col
@@ -6998,7 +7034,7 @@ class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
     `.widget`, the rendered `ReactableWidget` instance.
 
     **Responding to user interaction**: read the output's accessors in a
-    reactive context, e.g. ``tbl.selected_rows()`` or ``tbl.sorted()`` (see
+    reactive context, e.g. ``tbl.selected()`` or ``tbl.sorted()`` (see
     the methods below). Each silently cancels (like ``req(False)``) until
     the browser has reported the table's state, shortly after the table first
     renders.
@@ -7083,7 +7119,7 @@ class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
         )
     ```
 
-    Each accessor can also be read by name -- ``out.read("selected_rows")`` --
+    Each accessor can also be read by name -- ``out.read("selected")`` --
     which also accepts the widget's bare synced-trait names.
 
     See also
@@ -7095,7 +7131,7 @@ class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
 
     _accessor_specs = REACTABLE_ACCESSORS
 
-    def selected_rows(self) -> List[int]:
+    def selected(self) -> List[int]:
         """
         The currently selected rows, as 0-based positions in the table's data.
 
@@ -7111,9 +7147,9 @@ class render_reactable(render_widget_base[ReactableValueT, ReactableWidget]):
         can point at a different row until the table re-reports. To track
         rows across data changes, include an ID column and resolve positions
         against the data the table currently shows
-        (``df.iloc[tbl.selected_rows()]["id"]``).
+        (``df.iloc[tbl.selected()]["id"]``).
         """
-        return cast("List[int]", self._read_accessor("selected_rows"))
+        return cast("List[int]", self._read_accessor("selected"))
 
     def page(self) -> int:
         """

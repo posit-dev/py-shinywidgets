@@ -927,6 +927,15 @@ def ipycanvas_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     return fill
 
 
+def ipyfilechooser_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
+    # Mark the chooser so shinywidgets.css can scope its dark-mode label fix
+    # to it (the "No selection" label has no class hook of its own). Without
+    # this handler the chooser would early-return above as an input-like
+    # controls widget, so preserve that: it doesn't fill.
+    widget.add_class("shinywidgets-ipyfilechooser")
+    return False
+
+
 def maplibre_layout_defaults(widget: DOMWidget, fill: bool) -> bool:
     from maplibre.ipywidget import MapWidget
 
@@ -1118,6 +1127,7 @@ _LAYOUT_DEFAULTS: dict[str, Callable[[DOMWidget, bool], bool]] = {
     "ipyvolume": ipyvolume_layout_defaults,
     "ipyaladin": ipyaladin_layout_defaults,
     "ipycanvas": ipycanvas_layout_defaults,
+    "ipyfilechooser": ipyfilechooser_layout_defaults,
     "ipysigma": ipysigma_layout_defaults,
     "itables": itables_layout_defaults,
     "jscatter": jscatter_layout_defaults,

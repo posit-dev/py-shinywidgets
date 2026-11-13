@@ -38,7 +38,7 @@ def server(input, output, session):
 
     @render.text
     def nsel():
-        return str(len(atlas.selected()))
+        return str(len(atlas.selected_rows()))
 
 
 app = App(app_ui, server)

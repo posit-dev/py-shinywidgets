@@ -24,10 +24,10 @@ def attach_selected_rows(widget: ITable, emit: Emit) -> Callable[[], None]:
     return lambda: widget.unobserve(on_change, "selected_rows")
 
 
-SELECTED_ROWS = AccessorSpec(
-    name="selected_rows",
+SELECTED = AccessorSpec(
+    name="selected",
     kind="state",
-    attach=attach_selected_rows,
+    attach=attach_selected_rows,  # still observes the widget's selected_rows trait
 )
 
-ITABLES_ACCESSORS = (SELECTED_ROWS,)
+ITABLES_ACCESSORS = (SELECTED,)

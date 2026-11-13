@@ -86,3 +86,9 @@ def test_data_follows_a_rerender_with_new_data(widget_session: Session) -> None:
         r, widget(widget_session), bigger, lambda: len(r.data().df())
     )
     assert seen == [3, 5]
+
+
+def test_listen_to_accepted_and_validated() -> None:
+    render_mosaic_widget(listen_to=["params"])
+    with pytest.raises(ValueError, match="paramz"):
+        render_mosaic_widget(listen_to=["paramz"])

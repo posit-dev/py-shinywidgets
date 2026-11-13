@@ -43,6 +43,7 @@ from shiny.reactive._core import (
     get_current_context,  # pyright: ignore[reportPrivateImportUsage]
 )
 from shiny.session import get_current_session, require_active_session, session_context
+from shiny.types import NotifyException
 
 from ._accessors import rate_policy_for
 from ._as_widget import as_widget, pydeck_has_widget
@@ -250,59 +251,78 @@ def init_shiny_widget(w: Widget):
         if w is None or WIDGET_INSTANCE_MAP.get(id) is not w:
             return
 
-        if is_ipyreact_registry_widget(w):
-            fan_out_ipyreact_registry(w)
-            return
+        try:
+            if is_ipyreact_registry_widget(w):
+                fan_out_ipyreact_registry(w)
+                return
 
-        # Already opened in another session by open_shared_in(); a plain
-        # ShinyComm here would cut that session off.
-        if isinstance(w.comm, SharedShinyComm):
-            open_shared_in(w, session)
-            return
+            # Already opened in another session by open_shared_in(); a plain
+            # ShinyComm here would cut that session off.
+            if isinstance(w.comm, SharedShinyComm):
+                open_shared_in(w, session)
+                return
 
-        # A shared widget's lazily created defaults (e.g. its Layout) are shared too
-        with (
-            shared_construction() if shared else WidgetRenderContext.resumed(render_ctx)
-        ):
-            prepare_to_serialize(w)
-            # Serve geolibre's bundled app from the Shiny app and switch the
-            # widget to the mode that probes that route. This must happen here
-            # (not in init_shiny_widget()): that hook runs inside
-            # Widget.__init__(), and geolibre's Map.__init__() sets
-            # _remote_mode after super().__init__() returns, overwriting it.
-            if any(widget_pkg(cls) == "geolibre" for cls in type(w).__mro__):
-                geolibre_app_mount(w, session)
-            # Mount a guarded loopback proxy for localtileserver-backed
-            # ipyleaflet layers and route their tile URLs through it (no-op
-            # for other widgets). Must run before get_state() so the browser
-            # only ever sees the rewritten (same-origin) URL.
-            localtileserver_layer_proxy(w, session)
-            state, buffer_paths, buffers = _remove_buffers(w.get_state())
+            # A shared widget's lazily created defaults (e.g. its Layout) are shared too
+            with (
+                shared_construction()
+                if shared
+                else WidgetRenderContext.resumed(render_ctx)
+            ):
+                prepare_to_serialize(w)
+                # Serve geolibre's bundled app from the Shiny app and switch the
+                # widget to the mode that probes that route. This must happen here
+                # (not in init_shiny_widget()): that hook runs inside
+                # Widget.__init__(), and geolibre's Map.__init__() sets
+                # _remote_mode after super().__init__() returns, overwriting it.
+                if any(widget_pkg(cls) == "geolibre" for cls in type(w).__mro__):
+                    geolibre_app_mount(w, session)
+                # Mount a guarded loopback proxy for localtileserver-backed
+                # ipyleaflet layers and route their tile URLs through it (no-op
+                # for other widgets). Must run before get_state() so the browser
+                # only ever sees the rewritten (same-origin) URL.
+                localtileserver_layer_proxy(w, session)
+                state, buffer_paths, buffers = _remove_buffers(w.get_state())
 
-        # Covers widgets that are opened but never displayed (so no render-time
-        # walk opens their references); the browser would otherwise wait for a
-        # model it never gets. Foreign references are left for the render to reject.
-        for r in direct_widget_references(w):
-            if is_process_global(r):
-                open_shared_in(r, session)
+            # Covers widgets that are opened but never displayed (so no render-time
+            # walk opens their references); the browser would otherwise wait for a
+            # model it never gets. Foreign references are left for the render to reject.
+            for r in direct_widget_references(w):
+                if is_process_global(r):
+                    open_shared_in(r, session)
 
-        # Initialize the comm -- this sends widget state to the frontend
-        placeholder = w.comm
-        w.comm = ShinyComm(
-            comm_id=id,
-            comm_manager=COMM_MANAGERS[session.id],
-            session=session,
-            target_name="jupyter.widget",
-            data={"state": state, "buffer_paths": buffer_paths},
-            buffers=cast(BufferType, buffers),
-            # TODO: should this be hard-coded?
-            metadata={"version": __protocol_version__},
-            html_deps=session._process_ui(TagList(*widget_deps))["deps"],
-            **open_keys,
-        )
+            # Initialize the comm -- this sends widget state to the frontend
+            placeholder = w.comm
+            w.comm = ShinyComm(
+                comm_id=id,
+                comm_manager=COMM_MANAGERS[session.id],
+                session=session,
+                target_name="jupyter.widget",
+                data={"state": state, "buffer_paths": buffer_paths},
+                buffers=cast(BufferType, buffers),
+                # TODO: should this be hard-coded?
+                metadata={"version": __protocol_version__},
+                html_deps=session._process_ui(TagList(*widget_deps))["deps"],
+                **open_keys,
+            )
 
-        flush_ipycanvas_manager(w)
-        flush_queued_sends(placeholder, w.comm)
+            flush_ipycanvas_manager(w)
+            flush_queued_sends(placeholder, w.comm)
+        except Exception as e:
+            # The render already returned, so Shiny's render-error display
+            # never sees this failure; unhandled, the output stays blank
+            # forever. NotifyException makes Shiny print the traceback and
+            # show a sticky error notification while the session survives --
+            # it fires even though this effect destroyed itself above.
+            #
+            # A session-owned widget's comm can no longer open, so stop its
+            # placeholder queuing sends. A process-global one's placeholder is
+            # still drained when another session opens it (open_shared_in()).
+            if not is_process_global(w) and isinstance(w.comm, OrphanedShinyComm):
+                w.comm.close()
+            raise NotifyException(
+                f"Failed to display {type(w).__name__}: {e}",
+                sanitize=session.app.sanitize_errors,
+            ) from e
 
     # If the widget initialized in a reactive _output_ context, then cleanup the widget
     # when the context gets invalidated. Use the render output's Context (captured by
@@ -553,12 +573,39 @@ def adopt_process_global(w: Widget, session: Session) -> None:
     open_shared_in(w, session)
 
 
+def ws_max_size() -> int:
+    """
+    The widget->server message size limit (bytes) the client enforces.
+
+    Matches uvicorn's default `ws_max_size`. Shiny doesn't expose the real
+    `--ws-max-size` value to sessions, so apps run with a raised limit
+    should set SHINYWIDGETS_WS_MAX_SIZE to match.
+    """
+    raw = os.environ.get("SHINYWIDGETS_WS_MAX_SIZE")
+    if raw is None:
+        return 16 * 1024 * 1024
+    try:
+        return int(raw)
+    except ValueError:
+        warnings.warn(f"Ignoring invalid SHINYWIDGETS_WS_MAX_SIZE={raw!r} (not an int)")
+        return 16 * 1024 * 1024
+
+
 def init_session(session: Session) -> None:
     """Set up a (root) session the first time a widget is opened in it."""
     if session in SESSIONS:
         return
     SESSIONS.add(session)
     COMM_MANAGERS[session.id] = ShinyCommManager()
+
+    # Tell the client the message size limit to enforce before sending
+    # (dropping oversized messages instead of letting them kill the session)
+    async def _send_init() -> None:
+        await session.send_custom_message(
+            "shinywidgets_session_init", {"ws_max_size": ws_max_size()}
+        )
+
+    session.on_flush(_send_init)
 
     # Somewhere inside ipywidgets, it makes requests for static files
     # under the publicPath set by the webpack.config.js file.
