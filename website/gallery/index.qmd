@@ -1,0 +1,21 @@
+---
+title: Gallery
+description: Complete apps built with shinywidgets, from single-widget templates to multi-widget showcases.
+listing:
+  id: gallery
+  contents:
+    - "showcases/*/index.md"
+    - "templates/*/index.md"
+  type: grid
+  grid-columns: 2
+  categories: true
+  sort: false
+  image-height: 230px
+  max-description-length: 180
+  page-size: 50
+  fields: [image, title, description, categories]
+---
+
+Every app here runs as-is: open its page for the source, the widgets it uses, and how to run it. Showcases
+combine several widgets into a full app; templates are small starting points for one pattern. Filter by kind
+of widget with the categories on the right.

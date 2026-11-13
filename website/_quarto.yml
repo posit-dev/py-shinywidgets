@@ -1,0 +1,200 @@
+project:
+  type: website
+  output-dir: _site
+  # Explicit, so working files beside the pages (NOTES.md, README.md, ...) never render.
+  render:
+    - index.qmd
+    - changelog.qmd
+    - gallery/index.qmd
+    - guide/*/index.md
+    - guide/*/cheatsheet.md
+    - widgets/*/index.md
+    - gallery/*/*/index.md
+    - reference/*.qmd
+  # Runnable files the pages link to ship with the site.
+  resources:
+    - "**/examples/**"
+    - "**/gallery/**/*.py"
+    - "gallery/**/app.py"
+    - "assets/**"
+
+# quartodoc writes the Reference sidebar here (make docs runs `quartodoc build` first).
+metadata-files:
+  - reference/_sidebar.yml
+
+website:
+  title: shinywidgets
+  site-url: https://posit-dev.github.io/py-shinywidgets/
+  page-navigation: true
+  # Draft pages (vitessce, until render_vitessce ships) are not rendered at all.
+  draft-mode: gone
+  search:
+    location: navbar
+    type: overlay
+  navbar:
+    # The wordmark: "widgets" in the accent color. Only the navbar gets the markup, so
+    # browser tab titles stay plain text.
+    title: "shiny<span class='sw-accent'>widgets</span>"
+    left:
+      - text: Guide
+        href: guide/why/index.md
+      - text: Gallery
+        href: gallery/index.qmd
+      - text: Reference
+        href: reference/index.qmd
+      - text: Changelog
+        href: changelog.qmd
+    right:
+      - icon: github
+        href: https://github.com/posit-dev/py-shinywidgets
+        aria-label: GitHub
+  sidebar:
+    - id: guide
+      style: docked
+      collapse-level: 2
+      contents:
+        - section: Get started
+          contents:
+            - guide/why/index.md
+            - guide/installation/index.md
+            - guide/first-app/index.md
+            - guide/troubleshooting/index.md
+            - guide/deployment/index.md
+        - section: Concepts
+          contents:
+            - guide/reacting-to-widgets/index.md
+            - guide/updating-in-place/index.md
+            - guide/linked-views/index.md
+            - guide/layout-and-theming/index.md
+            - text: Any widget
+              href: guide/any-widget/index.md
+        - section: Going further
+          contents:
+            - guide/choosing-a-widget/index.md
+            - guide/performance/index.md
+            - guide/ai-exploration/index.md
+            - guide/core-and-modules/index.md
+        - section: Widgets
+          contents:
+            - section: Charts
+              contents:
+                - widgets/plotly/index.md
+                - widgets/altair/index.md
+                - widgets/bokeh/index.md
+                - widgets/matplotlib/index.md
+                - widgets/plotnine/index.md
+                - widgets/bqplot/index.md
+                - widgets/holoviews/index.md
+                - widgets/datashader/index.md
+                - widgets/jscatter/index.md
+                - widgets/obsplot/index.md
+                - widgets/panel/index.md
+            - section: "Tables & grids"
+              contents:
+                - widgets/itables/index.md
+                - widgets/reactable/index.md
+                - widgets/ipydatagrid/index.md
+                - widgets/perspective/index.md
+            - section: Data exploration
+              contents:
+                - widgets/pygwalker/index.md
+                - widgets/quak/index.md
+                - widgets/mosaic/index.md
+                - widgets/embedding-atlas/index.md
+            - section: "Maps & geospatial"
+              contents:
+                - widgets/ipyleaflet/index.md
+                - widgets/leafmap/index.md
+                - widgets/maplibre/index.md
+                - widgets/lonboard/index.md
+                - widgets/geolibre/index.md
+                - widgets/keplergl/index.md
+                - widgets/geoviews/index.md
+                - widgets/localtileserver/index.md
+                - widgets/pydeck/index.md
+            - section: 3D
+              contents:
+                - widgets/k3d/index.md
+                - widgets/pythreejs/index.md
+                - widgets/pyvista/index.md
+                - widgets/ipyvolume/index.md
+            - section: Scientific
+              contents:
+                - widgets/mols2grid/index.md
+                - widgets/nglview/index.md
+                - widgets/vizarr/index.md
+                - widgets/niivue/index.md
+                - widgets/ipyaladin/index.md
+                - widgets/rerun/index.md
+            - section: Networks
+              contents:
+                - widgets/ipycytoscape/index.md
+                - widgets/ipysigma/index.md
+            - section: "Input & drawing"
+              contents:
+                - widgets/drawdata/index.md
+                - widgets/ipycanvas/index.md
+                - widgets/ipyfilechooser/index.md
+  page-footer:
+    left: "shinywidgets · MIT"
+    right:
+      - text: "Shiny for Python docs ↗"
+        href: https://shiny.posit.co/py/
+
+# Header bar + Shinylive links on ```{.python file=...} example blocks.
+filters:
+  - _filters/example-header/example-header.lua
+
+format:
+  html:
+    theme:
+      light: [cosmo, styles/brand.scss]
+      # The dark file goes first: SCSS defaults are first-wins, so listing brand.scss
+      # first would compile the dark theme with light colors.
+      dark: [cosmo, styles/brand-dark.scss, styles/brand.scss]
+    respect-user-color-scheme: true
+    # GitHub-style heading ids, which the pages' #anchors were written against.
+    from: markdown+gfm_auto_identifiers
+    toc: true
+    toc-title: On this page
+    highlight-style: github-dark
+
+quartodoc:
+  package: shinywidgets
+  dir: reference
+  title: Reference
+  sidebar:
+    file: reference/_sidebar.yml
+    style: docked
+    collapse-level: 2
+  parser: numpy
+  render_interlinks: false
+  renderer:
+    style: _renderer.py
+    table_style: description-list
+    show_signature_annotations: true
+  sections:
+    - title: Core
+      desc: "Render any widget, and read any widget's state."
+      contents: [render_widget, output_widget, reactive_read, as_widget]
+    - title: Lifetimes
+      desc: "Choose whether a widget belongs to one session or is shared by all of them."
+      contents: [session_lifetime, shared_lifetime]
+    - title: Charts
+      contents: [render_plotly, render_altair, render_bokeh, render_matplotlib, render_plotnine, render_bqplot, render_holoviews, render_jscatter, render_obsplot, render_panel]
+    - title: "Tables & grids"
+      contents: [render_itables, render_reactable, render_ipydatagrid, render_perspective]
+    - title: Data exploration
+      contents: [render_pygwalker, render_quak, render_mosaic_widget, render_embedding_atlas]
+    - title: "Maps & geospatial"
+      contents: [render_ipyleaflet, render_leafmap, render_maplibre, render_lonboard, render_geolibre, render_keplergl, render_pydeck]
+    - title: 3D
+      contents: [render_k3d, render_pythreejs, render_pyvista, render_ipyvolume]
+    - title: Scientific
+      contents: [render_mols2grid, render_nglview, render_vizarr, render_niivue, render_ipyaladin, render_rerun]
+    - title: Networks
+      contents: [render_ipycytoscape, render_ipysigma]
+    - title: "Input & drawing"
+      contents: [render_drawdata, render_ipycanvas, render_ipyfilechooser]
+    - title: Other
+      contents: [register_widget, bokeh_dependency]
