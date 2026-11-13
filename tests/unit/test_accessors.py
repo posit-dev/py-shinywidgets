@@ -617,9 +617,13 @@ def test_loop_schedule_cancel_also_drops_a_queued_run(
     assert calls == []
 
 
-def _attach_recorder(calls: List[str], name: str) -> acc.Attach:
+def _attach_recorder(
+    calls: List[str], name: str, emits: Optional[List[acc.Emit]] = None
+) -> acc.Attach:
     def attach(widget: object, emit: acc.Emit) -> Callable[[], None]:
         calls.append(name)
+        if emits is not None:
+            emits.append(emit)
         return lambda: None
 
     return attach
@@ -627,15 +631,18 @@ def _attach_recorder(calls: List[str], name: str) -> acc.Attach:
 
 def test_opt_in_accessor_attaches_and_reads_when_listened() -> None:
     calls: List[str] = []
+    emits: List[acc.Emit] = []
     spec = acc.AccessorSpec(
         name="selected",
         kind="state",
-        attach=_attach_recorder(calls, "selected"),
+        attach=_attach_recorder(calls, "selected", emits),
         opt_in=True,
     )
     a = acc.Accessors([spec], listen_to=["selected"])
     a.on_render(object())
     assert calls == ["selected"]
+    emits[0]({"ids": [1, 2]})
+    assert a.read("selected") == {"ids": [1, 2]}
 
 
 def test_opt_in_accessor_not_attached_without_listen_to() -> None:
