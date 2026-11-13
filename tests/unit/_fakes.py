@@ -223,6 +223,13 @@ class FakeWidget:
     def has_trait(self, name: str) -> bool:
         return name in {"value", "x", "a", "b"}
 
+    # ipywidgets' Widget.send() (a no-op here unless a test gives the widget a
+    # comm with a send())
+    def send(self, content: Any, buffers: Any = None) -> None:
+        self.calls.append(f"send:{content}")
+        if self.comm is not None and hasattr(self.comm, "send"):
+            self.comm.send({"method": "custom", "content": content}, buffers=buffers)
+
     def observe(self, fn: Any, names: Any, type: Any) -> None:
         self.calls.append(f"observe:{names}:{type}")
         self._observed = (fn, names, type)

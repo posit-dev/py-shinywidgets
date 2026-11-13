@@ -511,6 +511,29 @@ def open_shared_references(comm: ShinyComm, data: DataType) -> None:
             open_shared_in(w, comm.session)
 
 
+def session_scoped_send(w: Widget, session: Session, content: object) -> None:
+    """
+    Like `Widget.send()`, but to `session`'s browser only.
+
+    A process-global widget's comm is a SharedShinyComm, whose send() fans out
+    to every active session; a per-render message (e.g. the muted-traits
+    policy) belongs to the session that rendered it alone, so it goes through
+    that session's own ShinyComm. A session widget's ShinyComm already reaches
+    exactly one session (the render rejects foreign widgets before this), and
+    a pre-open placeholder queues the send for the comm that opens in it.
+    """
+    # ipywidgets types Widget.comm as Optional; a widget that passed the
+    # render's ownership check always has one of our comms
+    comm = cast(Union[ShinyComm, OrphanedShinyComm, SharedShinyComm], w.comm)
+    if isinstance(comm, SharedShinyComm):
+        # The render opened the widget in this session before sending
+        # (open_process_global_widgets()), so its comm is present
+        comm = comm.comms[session.root_scope().id]
+    # The same envelope Widget.send() uses (the browser's custom-message
+    # handlers, e.g. isMuteRequest in js/src/output.ts, expect it)
+    comm.send(data={"method": "custom", "content": content})
+
+
 def guard_shared_send(comm: SharedShinyComm, data: DataType) -> None:
     """
     Warn about an update, fanned out to several sessions, that would dangle in
