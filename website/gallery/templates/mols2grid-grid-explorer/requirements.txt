@@ -1,0 +1,2 @@
+shinywidgets[mols2grid]
+pandas

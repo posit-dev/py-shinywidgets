@@ -1,0 +1,6 @@
+# shinywidgets[lonboard] pulls lonboard itself; these are the showcase's own
+# data/plotting dependencies, not part of that extra.
+shinywidgets[lonboard]
+geopandas
+matplotlib
+shapely

@@ -1,0 +1,2 @@
+shinywidgets[nglview,plotly]
+mdtraj
