@@ -128,7 +128,6 @@ else:
     MouseEvent = PickEvent = SelectionChangeEvent = object
     Angle = Latitude = Longitude = SkyCoord = Table = Camera = object
 
-from ipywidgets.widgets import HTML, Box, Layout
 from shiny.render.renderer import Jsonifiable, ValueFn
 from shiny.session import get_current_session
 
@@ -5839,32 +5838,47 @@ class render_vizarr(render_widget_base[ValueT, VizarrViewer]):
     """
 
 
-def _grid_widget_of(box: Widget) -> Any:
+def _grid_widget_of(widget: Widget) -> Any:
     """
-    The MolGridWidget inside the composite Box that _as_widget() returns
-    (Box([grid.widget, html])).
+    The MolGridWidget that _as_widget() returns.
 
-    Attach functions for render_mols2grid's accessors receive the composite
-    Box, so they locate the bridge widget structurally; an isinstance check
-    (rather than children[0]) fails loudly if the composite ever changes.
+    With mols2grid 3.0 the rendered widget is the MolGridWidget itself (its
+    frontend renders the grid directly), though a composite wrapper holding one
+    is accepted too. Attach functions for render_mols2grid's accessors receive
+    the rendered widget, so an isinstance check (rather than blind trust) fails
+    loudly if _as_widget() ever changes shape.
     """
     # local import: mols2grid is an optional extra
     from mols2grid.widget import MolGridWidget
 
-    for child in getattr(box, "children", ()):
+    if isinstance(widget, MolGridWidget):
+        return widget
+    for child in getattr(widget, "children", ()):
         if isinstance(child, MolGridWidget):
             return child
     raise RuntimeError(
-        "render_mols2grid's composite widget does not hold a MolGridWidget; "
-        "the Box structure in _as_widget() must have changed."
+        "render_mols2grid's rendered widget does not hold a MolGridWidget; "
+        "the widget structure in _as_widget() must have changed."
     )
 
 
 def _parse_trait_dict(raw: object) -> object:
-    # The selection/callback_kwargs traits are repr strings with unquoted
-    # keys, not JSON, so parse them with ast.literal_eval, as mols2grid itself
-    # does
+    # The selection/callback_kwargs traits hold dicts serialized as strings:
+    # JSON from mols2grid's frontend, a Python repr when set from Python.
+    # ast.literal_eval parses both, as mols2grid's own handler does
     return ast.literal_eval(str(raw))
+
+
+def _parse_selection_dict(raw: object) -> object:
+    # Selection keys are row positions, but JSON stringifies them, so the
+    # frontend's {"0": "CCO"} must read back as {0: "CCO"}
+    parsed = _parse_trait_dict(raw)
+    if not isinstance(parsed, dict):
+        return parsed
+    return {
+        int(k) if isinstance(k, str) and k.isdigit() else k: v
+        for k, v in parsed.items()
+    }
 
 
 def _attach_selection(widget: Widget, emit: Emit) -> Callable[[], None]:
@@ -5925,8 +5939,8 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     `pandas.DataFrame` with a SMILES column (``smiles_col``, ``"SMILES"`` by
     default) or an RDKit molecule column (``mol_col``), which is coerced to a
     `MolGrid` (requires ``pip install 'shinywidgets[mols2grid]'``). Don't return
-    the object returned by ``mols2grid.display()`` -- it's an IPython HTML
-    object, not a grid.
+    the object returned by ``mols2grid.display()`` -- it's the grid's widget,
+    not a grid.
 
     Extra keyword arguments are forwarded to mols2grid, split the way
     ``mols2grid.display()`` splits them: the rendering options (``subset``,
@@ -5936,17 +5950,15 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     options (``size``, ``useSVG``, ``prerender``, ``cache_selection``,
     ``removeHs``, ``use_coords``, ``coordGen``, ``MolDrawOptions``, ``name``,
     ``rename``), or, for any other name, an RDKit draw option
-    (``addStereoAnnotation=True``, ``addAtomIndices=True``, ...). The grid is
-    always displayed in an iframe (``use_iframe=True``), which keeps its
-    jQuery/Bootstrap globals out of your app's page.
+    (``addStereoAnnotation=True``, ``addAtomIndices=True``, ...).
 
     Note
     ---
     **Accessing the rendered widget**: the render function gains three
     read-only attributes: `.value`, the value it most recently returned,
-    `.widget`, the rendered `ipywidgets.Box` holding the output, and `.grid`,
-    the `MolGrid` instance backing it. The `MolGridWidget` that syncs
-    selection state is `.grid.widget`.
+    `.widget`, the rendered `mols2grid.widget.MolGridWidget` (whose frontend
+    renders the grid itself), and `.grid`, the `MolGrid` instance backing it.
+    `.widget` and `.grid.widget` are the same object.
 
     **Responding to user interaction**: ``grid.selected()`` gives the
     current molecule selection, and ``grid.clicked()`` the most recently
@@ -5955,9 +5967,11 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     * **Selection (browser -> Python):** ``grid.selected()`` gives the selected
       rows reactively, as a dict, e.g. ``{0: "CCO"}``. Row indices are
       positional against the rows *as rendered*. ``grid.grid.get_selection()``
-      returns the selected rows as a DataFrame. (If you read the underlying
-      ``grid.grid.widget.selection`` trait directly with `reactive_read()`,
-      parse it with `ast.literal_eval` -- it's a repr string, not JSON.)
+      returns the selected rows as a DataFrame. (The underlying
+      ``grid.grid.widget.selection`` trait is a JSON string; if you read it
+      directly with `reactive_read()`, parse it with `json.loads` -- or
+      `ast.literal_eval`, as mols2grid's own handler does, which also covers
+      repr strings set from Python.)
     * **Clicks (browser -> Python):** with ``clicks=True``, clicking a
       molecule's image (a distinct gesture from the selection checkbox)
       makes its row's data available reactively as ``grid.clicked()`` --
@@ -5995,27 +6009,21 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       across multiple grids on a page), and note that a `MolGrid` is
       itself process-global state, so construct it inside the render
       function, not at the top level of the app.
-    * **Network access**: the grid's JavaScript (list.js, jQuery, RDKit
-      MinimalLib, Bootstrap) loads from CDNs at render time, so the grid needs
-      an internet connection (it renders empty, without an error, when the CDNs
-      are unreachable). mols2grid hardcodes those URLs inside the iframe's
-      document, so they can't be served from the app's own assets; if you need
-      an offline or air-gapped deployment, please open an issue.
-    * **Sizing**: the grid sizes its own height to fit its contents (mols2grid's
-      ``fitIframe``), so it scrolls with the page rather than stretching to a
-      filling container; an explicit ``height`` on the output acts as a viewport
-      that clips the grid. Grid data is inlined into the iframe document
-      (roughly 0.5-1 KB per molecule, depending on how many columns are
-      shown), so grids in the tens of thousands of molecules can approach
-      Shiny's default 16 MiB websocket message limit (raise it with ``shiny
-      run --ws-max-size``). To bound the *grid* rather than
-      its container, pass ``iframe_height`` (e.g.
-      ``render_mols2grid(iframe_height="400px")``): it sets the iframe element's
-      height, which switches off mols2grid's auto-fit so the grid scrolls
-      inside the iframe. ``iframe_height`` bounds the iframe, not the output,
-      so pair it with ``fill=False`` to actually shrink the output in a
-      filling container. (``iframe_width``, ``iframe_allow``, and
-      ``iframe_sandbox`` are forwarded to the iframe the same way.)
+    * **Network access**: most of the grid's JavaScript (list.js and the RDKit
+      JS bindings) is bundled with the widget, but the RDKit MinimalLib wasm
+      binary still loads from a CDN (unpkg.com) at render time, so the grid
+      needs an internet connection (it renders empty, without an error, when
+      the CDN is unreachable). mols2grid hardcodes that URL inside its own
+      bundle, so it can't be served from the app's own assets; if you need an
+      offline or air-gapped deployment, please open an issue.
+    * **Sizing**: the grid lays itself out in the page and grows with its
+      contents, so it scrolls with the page rather than stretching to a
+      filling container; an explicit ``height`` on the output acts as a
+      viewport that scrolls the grid. Grid data is inlined into the widget's
+      ``options`` trait (roughly 1 KB per molecule, depending on how many
+      columns are shown), so grids in the tens of thousands of molecules can
+      approach Shiny's default 16 MiB websocket message limit (raise it with
+      ``shiny run --ws-max-size``).
 
     Parameters
     ----------
@@ -6024,7 +6032,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         using ``mol_col`` instead.
     mol_col
         The DataFrame column holding RDKit molecules (e.g., from
-        ``mols2grid.sdf_to_dataframe()``, which produces both). With
+        ``mols2grid.read_mols_to_df()``, which produces both). With
         ``smiles_col=None``, a SMILES column named ``"SMILES"`` is generated
         from the molecules (mols2grid itself mis-renders a ``None`` SMILES
         column).
@@ -6074,7 +6082,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     from shiny import App, reactive, render, ui
     from shinywidgets import output_widget, render_mols2grid
 
-    mols = mols2grid.sdf_to_dataframe(mols2grid.datafiles.SOLUBILITY_SDF)
+    mols = mols2grid.read_mols_to_df(mols2grid.datafiles.SOLUBILITY_SDF)
 
     app_ui = ui.page_fluid(
         output_widget("grid"),
@@ -6110,7 +6118,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             name="selected",
             kind="state",
             attach=_attach_selection,
-            payload=_parse_trait_dict,
+            payload=_parse_selection_dict,
         ),
         AccessorSpec(
             name="clicked",
@@ -6279,11 +6287,10 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         if isinstance(value, MolGrid):
             # A user-supplied MolGrid keeps its own name; mols2grid's default
             # name lives in a process-global selection registry, so it collides
-            # across sessions (and across multiple grids on one page).
-            # mols2grid 2.2.0 private trait: the 3.0 refactor
-            # (https://github.com/cbouy/mols2grid/pull/71) renames `grid_id`
-            # to `name`
-            if value.widget.grid_id == "default":
+            # across sessions (and across multiple grids on one page). The name
+            # is read from the grid itself: its widget only exists after render
+            # (and its `name` trait isn't populated from the grid's name)
+            if value._grid_id == "default":  # pyright: ignore[reportPrivateUsage]
                 raise ValueError(
                     "This mols2grid.MolGrid uses the default grid name ('default'), "
                     "which mols2grid stores in a process-global selection registry: "
@@ -6298,6 +6305,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
                 )
             # local imports: _shinywidgets imports this module
             from ._shinywidgets import (
+                SESSION_WIDGET_ID_MAP,
                 foreign_or_closed_widget,
                 is_process_global,
                 ownership_error,
@@ -6306,31 +6314,48 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             # The base renderer rejects foreign/closed widgets, but only after
             # _as_widget() returns -- and the cleanup registration below is a
             # side effect on the owning session's state, so validate ownership
-            # first: a rejected render must not touch another session's registry
+            # first: a rejected render must not touch another session's registry.
+            # mols2grid 3.0 only gives a grid its widget at render() time (2.x
+            # built it in the constructor), so a not-yet-rendered grid has
+            # nothing to validate yet
             session = get_current_session()
-            if session is not None and not session.is_stub_session():
-                bad = foreign_or_closed_widget(value.widget, session.root_scope())
-                if bad is not None:
+            widget = getattr(value, "widget", None)
+            if (
+                session is not None
+                and not session.is_stub_session()
+                and widget is not None
+            ):
+                bad = foreign_or_closed_widget(widget, session.root_scope())
+                # Except the grid's own widget when this session's render
+                # invalidation retired it: display() (called after this) builds
+                # the replacement. A foreign or user-closed widget (no comm)
+                # is still rejected.
+                render_retired = (
+                    bad is widget
+                    and widget.comm is not None
+                    and widget.model_id in SESSION_WIDGET_ID_MAP.get(session.id, ())
+                )
+                if bad is not None and not render_retired:
                     raise ownership_error(bad)
             # A supplied grid's selection entry lives in the same process-global
             # registry, so prune it at session end too -- unless the grid is
             # process-global itself (deliberately shared across sessions), where
             # the one entry is bounded and still in use
-            if not is_process_global(value.widget):
-                self._cleanup_selection_registry(value.widget.grid_id)
+            if widget is None or not is_process_global(widget):
+                self._cleanup_selection_registry(value._grid_id)  # pyright: ignore[reportPrivateUsage]
             return value
         if not is_pandas_dataframe(value):
             raise TypeError(
                 "A @render_mols2grid render function should return a "
                 f"mols2grid.MolGrid or a pandas.DataFrame, not an object of type "
                 f"'{type(value).__name__}'. (Note that mols2grid.display() returns "
-                "an IPython HTML object, which can't be rendered; return the "
-                "MolGrid or DataFrame instead.)"
+                "the grid's widget, not a grid; return the MolGrid or DataFrame "
+                "instead.)"
             )
         # A name passed to the decorator overrides the default, which is
         # unique per session *and* output: two grids in the same session share
         # the window, so a shared name would cross-wire their selections
-        # (mols2grid keys models and lists by name on window)
+        # (mols2grid keys selections by grid name in a process-global registry)
         # (_grid_output_id/output_id are only set once the renderer decorates a
         # function)
         output_id = self._grid_output_id or getattr(self, "output_id", "grid")
@@ -6362,7 +6387,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
                     "One of `smiles_col` or `mol_col` must be set for "
                     "@render_mols2grid."
                 )
-            # mols2grid 2.2.0 creates a column named NaN (which its rendering
+            # mols2grid creates a column named NaN (which its rendering
             # then chokes on) when smiles_col is None, so name the SMILES it
             # generates from the molecules instead
             smiles_col = "SMILES"
@@ -6382,6 +6407,14 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
                 and fingerprint != self._row_fingerprint
             ):
                 grid_kwargs["cache_selection"] = False
+                # Upstream seeds the uncached widget "{}" but keeps the
+                # previous rows' registry entry, so a later cacheable render
+                # of these rows would restore row positions onto different
+                # molecules (and get_selection() would expose the stale rows
+                # in the meantime). Reset the entry with the cache.
+                from mols2grid.select import register
+
+                register.SELECTIONS[grid_kwargs["name"]] = {}
             self._row_fingerprint = fingerprint
         return MolGrid(
             value,
@@ -6427,41 +6460,40 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             # JS string, or a _JSCallback from mols2grid.callbacks) is
             # non-callable, so a `callable()` guard would clobber it
             render_kwargs["callback"] = _noop_click_callback
-        if not render_kwargs.pop("use_iframe", True):
+        if render_kwargs.pop("use_iframe", None) is not None:
             warnings.warn(
-                "@render_mols2grid always renders the grid in an iframe "
-                "(use_iframe=True), so the `use_iframe` argument is ignored.",
+                "mols2grid no longer renders the grid as an iframed HTML "
+                "document (its widget frontend renders the grid directly), so "
+                "the `use_iframe` argument is deprecated and ignored.",
                 stacklevel=3,
             )
 
-        # MolGridWidget's own frontend is a 0x0 element that only bridges
-        # selection/filter state; the grid itself is a separate HTML document.
-        # mols2grid's marimo integration displays the two stacked, and an
-        # ipywidgets Box does the same here. display() (rather than render())
-        # escapes the document for the iframe's srcdoc attribute.
-        # mols2grid 2.2.0 internals: https://github.com/cbouy/mols2grid/pull/71
-        # ignores `use_iframe` and makes the widget render the grid itself, so
-        # render `grid.widget` directly instead of this stacking then.
-        if callable(render_kwargs.get("callback")):
-            _unobserve_mols2grid_callbacks(grid.widget)
-        # mols2grid 2.2.0 private attr: display() renders checkbox state from
-        # the constructor-time _cached_selection, but a supplied grid may have
-        # been displayed before, with a newer selection on its widget -- sync
-        # it, or the re-rendered document shows stale checkboxes while the
-        # widget trait says otherwise (parsed like mols2grid's own handler)
-        grid._cached_selection = ast.literal_eval(grid.widget.selection)
-        iframe = grid.display(use_iframe=True, **render_kwargs)
-        # The inner width hint is load-bearing: ipywidgets renders HTML as an
-        # inline-flex container, so without it the iframe collapses to its
-        # 300px replaced-element default instead of filling the output
-        html = HTML(str(iframe.data), layout=Layout(width="100%"))
-        return Box(
-            [grid.widget, html],
-            layout=Layout(width="100%", height="auto"),
-        )
+        # Reject the static template before display() routes to to_static(),
+        # which would otherwise raise its own ValueError about prerender when
+        # prerender=False
+        if render_kwargs.get("template") == "static":
+            raise TypeError(
+                "@render_mols2grid can only render mols2grid's interactive "
+                "grid; the 'static' template produces a static HTML document "
+                "(e.g. for printing), which can't be rendered as a Shiny "
+                "output. Save it to a file with grid.save() instead."
+            )
+        # The widget's frontend renders the grid itself: display() serializes
+        # the rendering options into the widget's `options` trait and returns
+        # the MolGridWidget (the same widget mols2grid's marimo integration
+        # displays)
+        widget = grid.display(**render_kwargs)
+        if not isinstance(widget, Widget):
+            raise TypeError(
+                "@render_mols2grid can only render mols2grid's interactive "
+                "grid; the 'static' template produces a static HTML document "
+                "(e.g. for printing), which can't be rendered as a Shiny "
+                "output. Save it to a file with grid.save() instead."
+            )
+        return widget
 
 
-# What MolGrid's rendering accepts, per mols2grid 2.2.0 (the fallback for
+# What MolGrid's rendering accepts (the fallback for
 # _mols2grid_render_kwargs() when mols2grid isn't importable yet, e.g. because
 # the app is being rendered before the extra is installed)
 _MOLS2GRID_RENDER_KWARGS_FALLBACK = frozenset(
@@ -6556,29 +6588,6 @@ def _mols2grid_row_fingerprint(
         return ""
     # SMILES don't contain null bytes, so the joined values are unambiguous
     return hashlib.sha256("\x00".join(map(str, col)).encode()).hexdigest()
-
-
-def _unobserve_mols2grid_callbacks(widget: Widget) -> None:
-    """
-    Remove the callback observers mols2grid's display() installed on `widget`.
-
-    display() observes ``callback_kwargs`` with a fresh
-    ``partial(callback_handler, callback)`` every time and never unobserves,
-    so re-displaying a supplied grid would invoke the callback once per past
-    display. Remove only those partials -- not application observers of the
-    same trait (``unobserve_all()`` would also drop ``widget.observe()``
-    subscriptions the app added itself).
-    """
-    # unobserve() needs the exact partial object, so read traitlets' notifier
-    # registry (private, but stable across traitlets 5). mols2grid 2.2.0
-    # private function: callback_handler is what to_interactive() partials in
-    from mols2grid.utils import callback_handler
-
-    notifiers = widget._trait_notifiers.get("callback_kwargs", {})  # pyright: ignore[reportPrivateUsage]
-    for handlers in notifiers.values():
-        for handler in list(handlers):
-            if isinstance(handler, partial) and handler.func is callback_handler:
-                widget.unobserve(handler, names=["callback_kwargs"])
 
 
 def grid_name() -> str:

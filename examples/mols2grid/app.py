@@ -7,7 +7,7 @@ from shinywidgets import output_widget, render_mols2grid
 
 
 def load_molecules() -> pd.DataFrame:
-    df = mols2grid.sdf_to_dataframe(mols2grid.datafiles.SOLUBILITY_SDF)
+    df = mols2grid.read_mols_to_df(mols2grid.datafiles.SOLUBILITY_SDF)
     df = df.rename(columns={"SOL": "LogS", "SOL_classification": "Class"})
     keep = [c for c in ("SMILES", "ID", "LogS", "Class") if c in df.columns]
     df = df[keep].reset_index(drop=True)
