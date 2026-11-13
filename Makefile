@@ -137,6 +137,7 @@ pyright: check-types ## run pyright type checks
 DOCS_PORT ?= 8780
 
 docs: ## build the website into website/_site (log: website/_render.log)
+	uv run --no-sync python website/_tools/sync_landing_counts.py
 	cd website && uv run --no-sync quartodoc build --config _quarto.yml > _render.log 2>&1 || { tail -40 _render.log; exit 1; }
 	cd website && uv run --no-sync quarto render >> _render.log 2>&1 || { tail -40 _render.log; exit 1; }
 	@if grep -q "Unable to resolve link target" website/_render.log; then \
