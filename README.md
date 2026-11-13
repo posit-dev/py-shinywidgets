@@ -57,6 +57,7 @@ everything it needs:
 | `@render_quak` | `pip install 'shinywidgets[quak]'` |
 | `@render_reactable` | `pip install 'shinywidgets[reactable]'` |
 | `@render_vizarr` | `pip install 'shinywidgets[vizarr]'` |
+| `@render_vitessce` | `pip install 'shinywidgets[vitessce]'` |
 | `@render_rerun` | `pip install 'shinywidgets[rerun]'` (Python >= 3.11) |
 
 ## Development
