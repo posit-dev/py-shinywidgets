@@ -1,0 +1,79 @@
+name: Build and deploy the website
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to check out. Defaults to the SHA that triggered the workflow."
+        type: string
+        default: ""
+      deploy-context:
+        description: "'production' or 'preview'"
+        type: string
+        required: true
+    secrets:
+      NETLIFY_AUTH_TOKEN:
+        required: true
+      NETLIFY_SITE_ID:
+        required: true
+    outputs:
+      deploy-url:
+        description: "Netlify deploy URL"
+        value: ${{ jobs.build-and-deploy.outputs.deploy-url }}
+
+env:
+  UV_VERSION: "0.13.x"
+  PYTHON_VERSION: "3.12"
+  QUARTO_VERSION: "1.9.37"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy-url: ${{ steps.netlify.outputs.deploy-url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-suffix: docs
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: ${{ env.QUARTO_VERSION }}
+
+      # The build needs only the project (quartodoc imports it) plus the docs
+      # group; the site's code blocks are listings, never executed.
+      - name: Install dependencies
+        run: uv sync --python ${{ env.PYTHON_VERSION }} --no-default-groups --group docs
+
+      - name: Check website content
+        run: uv run --no-sync python website/_tools/check_docs.py
+
+      - name: Build the website
+        run: make docs
+
+      - name: Deploy to Netlify
+        id: netlify
+        uses: nwtgck/actions-netlify@v3
+        with:
+          publish-dir: "./website/_site"
+          production-deploy: ${{ inputs.deploy-context == 'production' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          deploy-message: "Deploy from GitHub Actions"
+          enable-pull-request-comment: ${{ inputs.deploy-context == 'preview' }}
+          enable-commit-comment: false
+          overwrites-pull-request-comment: true
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        timeout-minutes: 15
