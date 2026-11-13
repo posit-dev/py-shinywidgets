@@ -40,7 +40,7 @@ The docs site is a Quarto project in `website/`: widget guides in `website/widge
 - `website/_tools/check_docs.py` checks that code snippets match their example files and that links resolve; it must report nothing.
 - Example code blocks name their file: ` ```{.python file="examples/x.py" files="helper.py" collapse="true"} ` (`files` = extra files the app needs, `collapse` defaults to expanded). `website/_filters/example-header/` renders the header bar (open / copy / Shinylive) and turns prose links to example `.py` files into Shinylive links. Shinylive installs the page's `extra` front matter; set `shinylive-requirements: [...]` on pages without one.
 - Landing images are generated from the pages' own screenshots by `website/_tools/make_landing_images.py`; re-run it after re-shooting a screenshot it uses.
-- vitessce's guide is `draft: true` until `render_vitessce` ships. To publish it, remove `draft`, add it to the Scientific sidebar group and the quartodoc sections in `website/_quarto.yml`, and bump the landing page's integration counts (43 → 44).
+- vitessce's guide is `draft: true` until `render_vitessce` ships. To publish it, remove `draft`, add it to the Scientific sidebar group and the quartodoc sections in `website/_quarto.yml`, and bump the sidebar-link count in `website/_tools/check_site.py`.
 
 ## Architecture
 

@@ -1,7 +1,7 @@
 ---
 # No `title`: Quarto would add a title block above the hero. pagetitle sets <title> only.
 pagetitle: shinywidgets
-description: Bring your Jupyter widgets to Shiny. Render plotly, altair, lonboard, k3d, itables, and dozens more in a reactive Shiny for Python app, and read what users do with them as Python values.
+description: Bring your Jupyter widgets to Shiny. Render plotly, altair, and dozens more in a reactive web app, and read what users do with them as Python values.
 page-layout: custom
 toc: false
 body-classes: sw-home
@@ -19,9 +19,10 @@ include-after-body:
   <div class="wall" id="wall" aria-hidden="true"></div>
   <div class="veil"></div>
   <div class="copy">
-    <div class="eyebrow">SHINY FOR PYTHON × JUPYTER WIDGETS</div>
+    <div class="eyebrow">SHINY 🤝 JUPYTER WIDGETS</div>
     <h1>Bring your Jupyter widgets to Shiny.</h1>
-    <p class="lede">Keep the libraries you already know: plotly, altair, lonboard, k3d, itables, and dozens more. One decorator puts them in a reactive web app, and what users do with them comes back as Python values.</p>
+    <p class="lede">Bring the Python libraries you already know (plotly, altair, etc) into a reactive web app with one decorator. Build rich and delightful experiences with <a class="see" href="guide/reacting-to-widgets/index.html">user interaction</a> and <a class="see" href="guide/performance/index.html">performant updates</a>.</p>
+
     <div class="ctas"><a class="btn primary" href="guide/why/index.html">Get started</a><a class="btn ghost" href="gallery/index.html">Browse the gallery →</a></div>
     <div class="install">$ <b>pip install shinywidgets</b></div>
   </div>
@@ -29,7 +30,7 @@ include-after-body:
 
 <section>
   <div class="sec-k">Widgets</div>
-  <h2>43 integrations, grouped by what you're building.</h2>
+  <h2>Dozens of integrations, grouped by what you're building.</h2>
   <p class="sub">Each group opens a set of guides. Every guide shows the widget rendering, the user's gestures flowing back to Python, and the widget updating in place.</p>
   <div class="cats">
     <a class="cat" href="widgets/plotly/index.html"><img src="assets/landing/img/cat-charts.webp" alt="" loading="lazy" style="object-position:30% 40%"><span class="n">11</span><div><h3>Charts</h3><p>plotly · altair · bokeh · matplotlib …</p></div></a>
@@ -52,13 +53,13 @@ include-after-body:
     <div class="code"><div class="file"><span>app.py</span><a id="src"></a></div><pre id="code"></pre></div>
     <div class="out"><img id="shot" alt=""><div class="ctrl" id="ctrl"><button type="button" data-s="0">before</button><button type="button" data-s="1">after</button></div><div class="gesture" id="gesture"></div></div>
   </div>
-  <p class="more">Every example runs as-is: <code class="ic">shiny run app.py</code>. <a href="guide/choosing-a-widget/index.html">See all 43 guides →</a></p>
+  <p class="more">Every example runs as-is: <code class="ic">shiny run app.py</code>. <a href="guide/choosing-a-widget/index.html">See all the guides →</a></p>
 </section>
 
 <section>
   <div class="sec-k">How it works</div>
   <h2>Three ideas, every widget.</h2>
-  <p class="sub">Learn them once with one widget and they carry over to the other 42. Each one is a page in the guide.</p>
+  <p class="sub">Learn them once with one widget and they carry over to all the others. Each one is a page in the guide.</p>
   <div class="steps">
     <a class="step" href="guide/first-app/index.html"><img class="shot" src="assets/landing/img/step-1.webp" alt="A Gapminder bubble chart rendered by @render_plotly" loading="lazy"><div class="num">01</div><h3>Render</h3>
       <p>Return a figure, map, or scene from a decorated function. It fills its card like any Shiny output.</p>

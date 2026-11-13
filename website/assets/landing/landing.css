@@ -105,7 +105,8 @@ body.sw-home .sw-landing :not(pre) > code { background: none !important; color: 
 
 /* ---------- 5. Gallery stage ---------- */
 .sw-landing .head-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; }
-.sw-landing .see { color: var(--accent); font-size: 15px; white-space: nowrap; padding-bottom: 6px; }
+.sw-landing .see { color: var(--accent); }
+.sw-landing .head-row .see { font-size: 15px; white-space: nowrap; padding-bottom: 6px; }
 .sw-landing .gal { position: relative; }
 .sw-landing .gal::before { content: ""; position: absolute; left: 50%; top: 52%; width: 1100px; max-width: 100vw; height: 700px;
   transform: translate(-30%, -30%); pointer-events: none; z-index: 0;

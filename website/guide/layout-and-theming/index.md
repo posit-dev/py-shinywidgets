@@ -21,8 +21,8 @@ Every `@render_*` decorator in shinywidgets runs the same widget through one gen
 function is why every guide's "Layout and sizing" section tells a similar story -- "fills its card unless you
 give it a height" -- no matter which library the page is about: the fill logic lives in one place, and most
 widgets only layer a small, package-specific adjustment on top of it (how to tell their own default height
-apart from a real one). This page states the shared story once, generalized from reading all 45 guides'
-"Layout and sizing" sections; go to a specific guide's own section for that widget's exceptions and numbers.
+apart from a real one). This page states the shared story once, generalized from reading every guide's
+"Layout and sizing" section; go to a specific guide's own section for that widget's exceptions and numbers.
 
 Dark mode and theming are the other half of this page. There's no shinywidgets-wide dark mode feature --
 `ui.input_dark_mode()` is a plain Shiny input, and each widget decides for itself whether it listens to the

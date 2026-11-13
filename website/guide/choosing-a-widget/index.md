@@ -1,7 +1,7 @@
 ---
 title: Choosing a widget
 summary: >
-  A by-task guide to the roughly 40 widget libraries shinywidgets integrates: which one to reach
+  A by-task guide to the dozens of widget libraries shinywidgets integrates: which one to reach
   for selection/brushing, tables, maps, big data, 3D and scientific visualization, networks,
   drawing input, embedding exploration, and the "bring your own widget" escape hatch -- with the
   trade-offs that actually matter in Shiny (accessors, in-place updates, measured scale, first-load
@@ -16,11 +16,11 @@ widgets: [plotly, altair, bokeh, matplotlib, plotnine, bqplot, holoviews, panel,
   ipyaladin, rerun, vizarr, vitessce, ipycytoscape, ipysigma, drawdata, ipycanvas, ipyfilechooser,
   render-widget]
 hero: img/01_selection_after.webp
-description: "A by-task guide to the roughly 40 widget libraries shinywidgets integrates: which one to reach for selection/brushing, tables, maps, big data, 3D and scientific visualization, networks, drawing input, embedding exploration, and the \"bring your own widget\" escape hatch -- with the trade-offs that actually matter in Shiny (accessors, in-place updates, measured scale, first-load cost, and maturity)."
+description: "A by-task guide to the dozens of widget libraries shinywidgets integrates: which one to reach for selection/brushing, tables, maps, big data, 3D and scientific visualization, networks, drawing input, embedding exploration, and the \"bring your own widget\" escape hatch -- with the trade-offs that actually matter in Shiny (accessors, in-place updates, measured scale, first-load cost, and maturity)."
 shinylive-requirements: [altair, bokeh, geopandas, ipydatagrid, ipyleaflet, itables, lonboard, plotly, shinywidgets]
 ---
 
-shinywidgets integrates roughly 40 widget libraries. Almost none of them compete head-to-head --
+shinywidgets integrates dozens of widget libraries. Almost none of them compete head-to-head --
 each earns its place in the roster by doing one task well: GPU scatter plots at a scale DOM-based
 charts choke on, a full desktop-GIS map embedded in a Shiny card, a neuroimaging viewer, a
 molecule grid. The hard part isn't learning any one of them (each has its own guide for that);

@@ -350,7 +350,7 @@ def landing(page: Page, base: str) -> list[str]:
         )
 
     h2 = page.locator(".sw-landing h2").first.inner_text()
-    if "43 integrations" not in h2:
+    if "integrations" not in h2:
         problems.append(f"section 2 heading is {h2!r}")
     cats = page.locator(".sw-landing a.cat").all()
     if len(cats) != 8:
