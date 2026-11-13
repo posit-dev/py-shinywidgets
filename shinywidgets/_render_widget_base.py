@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import difflib
 import os
 import warnings
@@ -28,6 +29,7 @@ from shiny.reactive._core import (
 )
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
 from shiny.session import get_current_session
+from shiny.types import SilentCancelOutputException, SilentOperationInProgressException
 
 from ._accessors import Accessors, AccessorSpec, RatePolicy, register_rate_policy
 from ._as_widget import as_widget, refresh_stale_mpl_canvases
@@ -64,6 +66,22 @@ T = TypeVar("T", bound=object)
 # renders don't see each other)
 rendering_renderer: ContextVar[Optional[object]] = ContextVar(
     "rendering_renderer", default=None
+)
+
+# Render-function exceptions after which Shiny keeps the output's previous
+# view (per the session's output handling): SilentCancelOutputException
+# (req(..., cancel_output=True)) sends nothing, SilentOperationInProgress-
+# Exception (cancel_output="progress") only a progress message, and an
+# asyncio.CancelledError unwinds the render task before anything is sent --
+# so the browser keeps showing the last widget. A mute policy must survive
+# these: it still describes what the output shows. Every other exception
+# (including a plain SilentException from req(False), which sends None, and
+# errors, which render an error message) replaces the view, so the policy
+# retires (see _render()).
+_OUTPUT_RETAINING_EXCEPTIONS = (
+    SilentCancelOutputException,
+    SilentOperationInProgressException,
+    asyncio.CancelledError,
 )
 
 
@@ -170,9 +188,28 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             return await self._render()
 
     async def _render(self) -> Jsonifiable | None:
+        # _shinywidgets imports from this module at module scope, so
+        # importing it back the same way would be circular (see the import
+        # below); keep this one function-local too. It must precede the
+        # early exits: an un-render or a failed render leaves no replacement
+        # widget for this output, so its mute policy retires here, or the
+        # stale policy keeps suppressing a surviving output's mute on the
+        # shared model.
+        from ._shinywidgets import drop_mute_policy
+
         token = rendering_renderer.set(self)
         try:
             value = await self.fn()
+        except _OUTPUT_RETAINING_EXCEPTIONS:
+            # The output keeps its previous view (see
+            # _OUTPUT_RETAINING_EXCEPTIONS), so its mute policy stays
+            raise
+        except Exception:
+            # The render function failed: the output shows an error (or, for
+            # a plain req(False), nothing) instead of the previous widget,
+            # so its mute policy retires like an un-render's does below
+            drop_mute_policy(self)
+            raise
         finally:
             rendering_renderer.reset(token)
 
@@ -182,15 +219,6 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
 
         # Invalidate any reactive contexts that have read these attributes
         self._invalidate_contexts()
-
-        # _shinywidgets imports from this module at module scope, so
-        # importing it back the same way would be circular (see the import
-        # below); keep this one function-local too. It must precede the
-        # early exits: an un-render or a failed render leaves no replacement
-        # widget for this output, so its mute policy retires here, or the
-        # stale policy keeps suppressing a surviving output's mute on the
-        # shared model.
-        from ._shinywidgets import drop_mute_policy
 
         if value is None:
             drop_mute_policy(self)
