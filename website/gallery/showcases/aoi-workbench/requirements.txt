@@ -1,0 +1,10 @@
+# shinywidgets[leafmap] pulls leafmap + a pinned plotly; rioxarray and
+# localtileserver are needed for the local-raster + zonal-stats path and are
+# not part of that extra.
+shinywidgets[leafmap]
+rioxarray
+localtileserver
+scipy
+shapely
+pandas
+xarray

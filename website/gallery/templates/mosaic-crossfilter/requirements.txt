@@ -1,0 +1,2 @@
+shinywidgets[mosaic]
+pandas

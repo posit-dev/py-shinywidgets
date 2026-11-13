@@ -128,3 +128,5 @@ sandbox/
 
 # uv lockfile: library CI resolves fresh against PyPI (see #319)
 uv.lock
+
+.superpowers/

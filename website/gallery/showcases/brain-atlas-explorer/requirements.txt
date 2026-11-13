@@ -1,0 +1,3 @@
+shinywidgets[niivue]
+nibabel
+numpy

@@ -1,0 +1,3 @@
+shinywidgets[perspective]
+pandas
+numpy
