@@ -120,9 +120,11 @@ def selection_views(chart: Any, name: str) -> Optional[List[str]]:
     The names of the views selection `name` participates in, per the chart's
     hoisted selection param (the chart's record of which subcharts the user
     can gesture on). `None` when the param or its views can't be found --
-    callers then fall back to the store's `unit`s. Imported charts
-    (`alt.Chart.from_dict`) wrap parameter names in schema objects (e.g.
-    `ParameterName`), which are unwrapped to plain strings.
+    callers then fall back to the store's `unit`s. An empty `views` list
+    means the selection may apply to any view (Vega semantics), which
+    callers can't enumerate, so it's reported as `None` too. Imported
+    charts (`alt.Chart.from_dict`) wrap parameter names in schema objects
+    (e.g. `ParameterName`), which are unwrapped to plain strings.
     """
     import altair as alt
 
@@ -138,7 +140,7 @@ def selection_views(chart: Any, name: str) -> Optional[List[str]]:
         if unwrap(getattr(param, "name", None)) != name:
             continue
         views: Any = getattr(param, "views", alt.Undefined)
-        if views is alt.Undefined:
+        if views is alt.Undefined or len(views) == 0:
             return None
         return [str(unwrap(view)) for view in views]
     return None

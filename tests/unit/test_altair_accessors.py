@@ -848,12 +848,46 @@ def test_selected_rows_unreadable_views_reject_scalar_df_on_multi_dataset(
         )
     )
     # Only "lns" reports entries, but the selection may participate in more
-    # views: a scalar df can't be matched to its dataset safely
+    # views: neither a scalar df nor the chart's own frames can be matched
+    # to their views safely
     with pytest.raises(ValueError, match="dict"):
         r.selected_rows("brush", df=POINTS)
+    with pytest.raises(ValueError, match="dict"):
+        r.selected_rows("brush")
     out = r.selected_rows("brush", df={"lns": LINES})
     assert isinstance(out, dict)
     assert out["lns"]["z"].tolist() == [200]
+
+
+def test_selected_rows_empty_views_means_unknown_participation(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    r = render_altair()
+    with session_context(widget_session):
+        w = hconcat_chart()
+    # An empty views list means the selection may apply to any view (Vega
+    # semantics): participation is unknown, not "no views"
+    w.chart.params[0].views = []
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "brush": IntervalSelection(
+                    name="brush",
+                    value={},
+                    store=[uentry("lns", ("z", "R", [150, 250]))],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    # The store entry belongs to "lns": filtering the chart's root frame
+    # would silently return the wrong rows
+    with pytest.raises(ValueError, match="dict"):
+        r.selected_rows("brush")
 
 
 def sa_box(raw: object) -> Any:
