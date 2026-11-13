@@ -5,10 +5,9 @@ from shinywidgets import render_plotly
 
 # The #459 repro: a big point cloud, and only the selection *region* read.
 # With no listen_to, shinywidgets' bridge is never asked for per-point
-# selection payloads, so none of its messages grow with the selection.
-# (plotly.py's own FigureWidget channel still reports selections over its
-# `_js2py_pointsCallback` trait -- shinywidgets can't gate that; the
-# client-side size guard is the backstop there.)
+# selection payloads, so none of its messages grow with the selection. And
+# with no plotly.py callback registered, plotly.py's own per-point report of
+# the selection (its `_js2py_pointsCallback` trait, #479) is muted too.
 N = 300_000
 rng = np.random.default_rng(0)
 x, y = rng.normal(size=N), rng.normal(size=N)

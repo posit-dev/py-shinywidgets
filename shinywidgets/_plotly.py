@@ -54,6 +54,40 @@ SKIP = object()
 AXIS_RANGE_KEY = re.compile(r"^[xy]axis\d*\.(range|autorange)")
 
 
+def muted_traits(widget: Any) -> List[str]:
+    """
+    The FigureWidget traits the browser shouldn't sync to Python.
+
+    plotly.py's widget reports every click, hover and selection through
+    `_js2py_pointsCallback`, per point, whether or not a plotly.py callback
+    is registered to receive it (#479), so it is muted unless one is.
+    Callbacks registered after the render aren't seen; those, and reads of
+    plotly.py's Python-side `selectedpoints` (which the same trait keeps
+    current), need render_plotly's `listen_to=["native"]`.
+    """
+    for trace in widget.data:
+        for callbacks in TRACE_CALLBACK_LISTS:
+            # A missing list means a plotly.py this wasn't written against:
+            # keep its native events rather than guess
+            if getattr(trace, callbacks, True):
+                return []
+    return [POINTS_CALLBACK_TRAIT]
+
+
+POINTS_CALLBACK_TRAIT = "_js2py_pointsCallback"
+
+# Where a plotly.py trace keeps its on_click()/on_hover()/on_unhover()/
+# on_selection()/on_deselect() callbacks (private, but there's no public way
+# to ask whether any are registered)
+TRACE_CALLBACK_LISTS = (
+    "_click_callbacks",
+    "_hover_callbacks",
+    "_unhover_callbacks",
+    "_select_callbacks",
+    "_deselect_callbacks",
+)
+
+
 def points_frame(points: List[Point], *, coordinates: bool = True) -> "pd.DataFrame":
     try:
         import pandas as pd

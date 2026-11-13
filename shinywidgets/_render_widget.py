@@ -173,6 +173,7 @@ from ._niivue import LOCATION
 from ._panel import PARAM_PREFIX, dynamic_accessor_spec
 from ._perspective import PERSPECTIVE_ACCESSORS
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
+from ._plotly import muted_traits as plotly_muted_traits
 from ._pythreejs import CAMERA as PYTHREEJS_CAMERA
 from ._quak import QUAK_ACCESSORS
 from ._reactable import REACTABLE_ACCESSORS
@@ -4812,6 +4813,18 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     ``SHINYWIDGETS_WS_MAX_SIZE`` environment variable to the same value, so
     the client-side guard matches the raised server limit.
 
+    **plotly.py's own events**: plotly.py's widget can also report every
+    click, hover, and selection to the server itself, with an entry for each
+    point, so that is off unless something needs it. Trace callbacks
+    (``on_click()``, ``on_hover()``, ``on_unhover()``, ``on_selection()``,
+    ``on_deselect()``) registered inside the render function are noticed and
+    keep working. For callbacks registered later, or to read
+    ``.widget.data[i].selectedpoints`` after the user selects, pass
+    ``listen_to=["native"]``. For backwards compatibility, the
+    ``SHINYWIDGETS_NATIVE_EVENTS=1`` environment variable keeps the
+    pre-muting behavior (native events always sent) for every output in
+    the app.
+
     **Typing**: no return-type annotation is needed -- the renderer's value
     type is statically bounded, so type checkers flag unsupported return
     values at decoration time, and the output's `.value` attribute is
@@ -4908,6 +4921,12 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     """
 
     _accessor_specs = PLOTLY_ACCESSORS
+    _listen_to_names = ("native",)
+
+    def _muted_traits(self, widget: FigureWidget) -> Sequence[str]:
+        if "native" in self._listen_to:
+            return ()
+        return plotly_muted_traits(widget)
 
     def clicked(self) -> Optional[pd.DataFrame]:
         """
