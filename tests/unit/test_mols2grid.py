@@ -914,3 +914,13 @@ def test_none_render_does_not_raise(widget_session: Session) -> None:
     assert isinstance(r.grid, MolGrid)
     assert render(r, lambda: None, widget_session) is None
     assert r.grid is None
+
+
+def test_listen_to_not_routed_to_widget_kwargs() -> None:
+    # listen_to is a renderer kwarg: it must not leak into the **kwargs split
+    # between MolGrid() and the grid's rendering
+    r = rw.render_mols2grid(listen_to=["selected"])
+    assert "listen_to" not in r.render_kwargs
+    assert "listen_to" not in r.grid_kwargs
+    with pytest.raises(ValueError, match="bogus"):
+        rw.render_mols2grid(listen_to=["bogus"])

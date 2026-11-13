@@ -94,3 +94,9 @@ def test_data_follows_a_rerender_with_new_data(widget_session: Session) -> None:
         r, widget(widget_session), bigger, lambda: len(r.data().df())
     )
     assert seen == [3, 5]
+
+
+def test_listen_to_accepted_and_validated() -> None:
+    render_quak(listen_to=["sql"])
+    with pytest.raises(ValueError, match="sqll"):
+        render_quak(listen_to=["sqll"])

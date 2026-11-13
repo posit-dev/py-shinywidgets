@@ -16,6 +16,7 @@ from typing import (
     Iterable,
     List,
     Optional,
+    Sequence,
     Tuple,
     TypeVar,
     Union,
@@ -856,6 +857,12 @@ class render_embedding_atlas(
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+    listen_to
+        Names of opt-in accessors to enable (e.g. ``listen_to=["predicate"]``).
+        Accessors whose payloads can grow without bound or stream
+        continuously are off unless declared; reading one that wasn't
+        declared raises an error naming it. Additive to the always-on
+        accessors. Unknown names raise at decoration time.
     width
         A CSS length unit (e.g., ``"400px"`` or ``"100%"``) for the output's width.
     height
@@ -890,6 +897,7 @@ class render_embedding_atlas(
         fillable: Optional[bool] = None,
         rate_policy: Optional[RatePolicy] = None,
         rate_delay: Optional[float] = None,
+        listen_to: Optional[Sequence[str]] = None,
         allow_unrestricted_connection: bool = False,
     ):
         super().__init__(
@@ -900,6 +908,7 @@ class render_embedding_atlas(
             fillable=fillable,
             rate_policy=rate_policy,
             rate_delay=rate_delay,
+            listen_to=listen_to,
         )
         self.allow_unrestricted_connection = allow_unrestricted_connection
 
@@ -3436,6 +3445,12 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+    listen_to
+        Names of opt-in accessors to enable (e.g. ``listen_to=["params"]``).
+        Accessors whose payloads can grow without bound or stream
+        continuously are off unless declared; reading one that wasn't
+        declared raises an error naming it. Additive to the always-on
+        accessors. Unknown names raise at decoration time.
 
     Each accessor can also be read by name -- ``out.read("params")`` --
     which also accepts the widget's bare synced-trait names.
@@ -3457,6 +3472,7 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
         fillable: Optional[bool] = None,
         rate_policy: Optional[RatePolicy] = None,
         rate_delay: Optional[float] = None,
+        listen_to: Optional[Sequence[str]] = None,
         allow_unrestricted_connection: bool = False,
     ):
         super().__init__(
@@ -3467,6 +3483,7 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
             fillable=fillable,
             rate_policy=rate_policy,
             rate_delay=rate_delay,
+            listen_to=listen_to,
         )
         self.allow_unrestricted_connection = allow_unrestricted_connection
 
@@ -5794,6 +5811,12 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+    listen_to
+        Names of opt-in accessors to enable (e.g. ``listen_to=["sql"]``).
+        Accessors whose payloads can grow without bound or stream
+        continuously are off unless declared; reading one that wasn't
+        declared raises an error naming it. Additive to the always-on
+        accessors. Unknown names raise at decoration time.
 
     Each accessor can also be read by name -- ``out.read("sql")`` --
     which also accepts the widget's bare synced-trait names.
@@ -5815,6 +5838,7 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
         fillable: Optional[bool] = None,
         rate_policy: Optional[RatePolicy] = None,
         rate_delay: Optional[float] = None,
+        listen_to: Optional[Sequence[str]] = None,
         allow_unrestricted_connection: bool = False,
     ):
         super().__init__(
@@ -5825,6 +5849,7 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
             fillable=fillable,
             rate_policy=rate_policy,
             rate_delay=rate_delay,
+            listen_to=listen_to,
         )
         self.allow_unrestricted_connection = allow_unrestricted_connection
 
@@ -6211,6 +6236,12 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
+    listen_to
+        Names of opt-in accessors to enable (e.g. ``listen_to=["clicked"]``).
+        Accessors whose payloads can grow without bound or stream
+        continuously are off unless declared; reading one that wasn't
+        declared raises an error naming it. Additive to the always-on
+        accessors. Unknown names raise at decoration time.
     kwargs
         Extra keyword arguments forwarded to mols2grid (split between
         `MolGrid()` and its rendering, as described above). The split is by
@@ -6286,6 +6317,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         fillable: Optional[bool] = None,
         rate_policy: Optional[RatePolicy] = None,
         rate_delay: Optional[int] = None,
+        listen_to: Optional[Sequence[str]] = None,
         **kwargs: Any,
     ):
         # The click channel only exists when the grid document is rendered
@@ -6308,6 +6340,7 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
             fillable=fillable,
             rate_policy=rate_policy,
             rate_delay=rate_delay,
+            listen_to=listen_to,
         )
         self.smiles_col = smiles_col
         self.mol_col = mol_col
