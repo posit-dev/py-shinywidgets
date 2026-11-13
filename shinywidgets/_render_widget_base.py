@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import difflib
+import os
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
@@ -27,6 +29,7 @@ from shiny.reactive._core import (
 )
 from shiny.render.renderer import Jsonifiable, Renderer, ValueFn
 from shiny.session import get_current_session
+from shiny.types import SilentCancelOutputException, SilentOperationInProgressException
 
 from ._accessors import Accessors, AccessorSpec, RatePolicy, register_rate_policy
 from ._as_widget import as_widget, refresh_stale_mpl_canvases
@@ -63,6 +66,22 @@ T = TypeVar("T", bound=object)
 # renders don't see each other)
 rendering_renderer: ContextVar[Optional[object]] = ContextVar(
     "rendering_renderer", default=None
+)
+
+# Render-function exceptions after which Shiny keeps the output's previous
+# view (per the session's output handling): SilentCancelOutputException
+# (req(..., cancel_output=True)) sends nothing, SilentOperationInProgress-
+# Exception (cancel_output="progress") only a progress message, and an
+# asyncio.CancelledError unwinds the render task before anything is sent --
+# so the browser keeps showing the last widget. A mute policy must survive
+# these: it still describes what the output shows. Every other exception
+# (including a plain SilentException from req(False), which sends None, and
+# errors, which render an error message) replaces the view, so the policy
+# retires (see _render()).
+_OUTPUT_RETAINING_EXCEPTIONS = (
+    SilentCancelOutputException,
+    SilentOperationInProgressException,
+    asyncio.CancelledError,
 )
 
 
@@ -148,7 +167,16 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         # unless the click channel is enabled)
         self._accessors = Accessors(
             self._accessor_specs,
-            dynamic_specs=self._dynamic_accessor_spec,
+            # The base method is a no-op; storing it bound would pin the
+            # renderer for as long as anything keeps the Accessors (a
+            # session's on_destroy() registration does), defeating weak-key
+            # cleanup keyed on the renderer (see _MUTE_POLICIES)
+            dynamic_specs=(
+                None
+                if type(self)._dynamic_accessor_spec
+                is render_widget_base._dynamic_accessor_spec
+                else self._dynamic_accessor_spec
+            ),
             rate_policy=rate_policy,
             rate_delay=rate_delay,
             listen_to=listen_to,
@@ -160,9 +188,28 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             return await self._render()
 
     async def _render(self) -> Jsonifiable | None:
+        # _shinywidgets imports from this module at module scope, so
+        # importing it back the same way would be circular (see the import
+        # below); keep this one function-local too. It must precede the
+        # early exits: an un-render or a failed render leaves no replacement
+        # widget for this output, so its mute policy retires here, or the
+        # stale policy keeps suppressing a surviving output's mute on the
+        # shared model.
+        from ._shinywidgets import drop_mute_policy
+
         token = rendering_renderer.set(self)
         try:
             value = await self.fn()
+        except _OUTPUT_RETAINING_EXCEPTIONS:
+            # The output keeps its previous view (see
+            # _OUTPUT_RETAINING_EXCEPTIONS), so its mute policy stays
+            raise
+        except Exception:
+            # The render function failed: the output shows an error (or, for
+            # a plain req(False), nothing) instead of the previous widget,
+            # so its mute policy retires like an un-render's does below
+            drop_mute_policy(self)
+            raise
         finally:
             rendering_renderer.reset(token)
 
@@ -174,6 +221,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._invalidate_contexts()
 
         if value is None:
+            drop_mute_policy(self)
             self._accessors.on_render(None)
             return None
 
@@ -191,6 +239,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             # accessors keep watching (and reads keep reporting) the old
             # object's state while the output has nothing rendered
             self._accessors.on_render(None)
+            drop_mute_policy(self)
             raise
 
         session = get_current_session()
@@ -201,19 +250,25 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             foreign_or_closed_widget,
             open_process_global_widgets,
             ownership_error,
+            send_mute_policy,
         )
 
         # Outside a real session (the Express UI-discovery pass, or a unit test
         # that calls _render() directly without a session) there's nothing to
         # compare the returned widgets' ownership against, so only a closed
         # root can be rejected.
+        # An ownership-rejected render leaves no replacement widget (the
+        # output shows the error), so its stale policy retires like a failed
+        # render's does above
         if session is None or session.is_stub_session():
             if is_closed_widget(widget):
+                drop_mute_policy(self)
                 raise ownership_error(widget)
         else:
             root = session.root_scope()
             bad = foreign_or_closed_widget(widget, root)
             if bad is not None:
+                drop_mute_policy(self)
                 raise ownership_error(bad)
             # Only once nothing raised, so a rejected render opens nothing
             open_process_global_widgets(widget, root)
@@ -233,6 +288,21 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         for w in self._rate_policy_widgets(self._widget):
             register_rate_policy(w, self._rate_policy, self._rate_delay)
         self._accessors.on_render(widget)
+        muted = (
+            [] if native_events_enabled() else list(self._muted_traits(self._widget))
+        )
+        if session is not None and not session.is_stub_session():
+            # Other outputs in this session may show the same widget, and the
+            # browser keeps one (last-sent) muted set per model: send the
+            # intersection over all the model's consumers, not this render's
+            # policy alone (and move the policy off the widget a re-render
+            # switched away from)
+            send_mute_policy(self, widget, session, muted)
+        else:
+            # No session to scope to (the Express UI-discovery pass, or a test
+            # calling _render() directly): the widget's comm is inert, or
+            # queues the send for the comm that opens in its own session
+            widget.send({"shinywidgets": "mute", "traits": muted})
         if (
             session is not None
             and not session.is_stub_session()
@@ -268,6 +338,15 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         (e.g., ipycytoscape's Node/Edge widgets).
         """
         return (widget,)
+
+    def _muted_traits(self, widget: WidgetT) -> Sequence[str]:
+        """
+        Traits of the rendered widget whose browser-side changes aren't
+        synced to Python (the browser drops them before sending; see
+        `ShinyComm.setMutedTraits()` in `js/src/comm.ts`). For traits that
+        cost a lot to sync and that nothing on the server reads.
+        """
+        return ()
 
     @property
     def value(self) -> ValueT | None:
@@ -423,6 +502,16 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             # dependencies; still let it reach `.widget` (e.g. to call
             # geolibre's blocking methods)
             self._contexts.discard(ctx)
+
+
+def native_events_enabled() -> bool:
+    """
+    Whether SHINYWIDGETS_NATIVE_EVENTS asks for every widget's own events to
+    reach Python, restoring what renderers mute by default (see
+    `render_widget_base._muted_traits()`). Read per render, so a deployment
+    can set it without touching app code.
+    """
+    return os.environ.get("SHINYWIDGETS_NATIVE_EVENTS", "").lower() in ("1", "true")
 
 
 def has_current_context() -> bool:

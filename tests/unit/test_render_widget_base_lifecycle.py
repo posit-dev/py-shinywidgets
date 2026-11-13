@@ -10,10 +10,28 @@ from shiny.reactive._core import Context
 from shiny.reactive._extended_task import DenialContext
 
 
+class FakeLiveComm:
+    """Stands in for an open ShinyComm (what a render's sends go through)."""
+
+    def __init__(self) -> None:
+        self.sent: list = []
+
+    def send(self, data=None, metadata=None, buffers=None):  # type: ignore[no-untyped-def]
+        self.sent.append(data)
+
+
 class FakeLiveWidget:
     """Stands in for a widget whose comm is open."""
 
-    comm = object()
+    model_id = "fake-live-widget"
+
+    def __init__(self) -> None:
+        self.comm = FakeLiveComm()
+
+    def send(self, content, buffers=None):  # type: ignore[no-untyped-def]
+        # ipywidgets' Widget.send(); every render sends its muted-traits
+        # policy, even an empty one
+        pass
 
 
 class FakeContext:
@@ -142,6 +160,7 @@ def test_render_of_unsupported_builtin_raises_helpful_type_error() -> None:
 def test_render_includes_widget_package_for_domwidgets(monkeypatch) -> None:
     class FakeDOMWidget(FakeLiveWidget):
         def __init__(self) -> None:
+            super().__init__()
             self.model_id = "widget-1"
 
     widget = FakeDOMWidget()
@@ -315,6 +334,8 @@ def test_render_attaches_accessors_to_the_coerced_widget(monkeypatch) -> None:
 class ModuleScope:
     """A module's session: destroying it doesn't end the root session."""
 
+    id = "module-scope"
+
     def __init__(self) -> None:
         self.on_destroy_fns: list = []
 
@@ -436,6 +457,11 @@ class SeededWidget:
 
     def __init__(self, current) -> None:  # type: ignore[no-untyped-def]
         self.current = current
+
+    def send(self, content, buffers=None):  # type: ignore[no-untyped-def]
+        # ipywidgets' Widget.send(); every render sends its muted-traits
+        # policy, even an empty one
+        pass
 
 
 def test_reseeded_accessor_reader_reruns_only_when_the_seed_changes(
@@ -572,6 +598,11 @@ class PickyWidget:
 
     def __init__(self, supported: bool) -> None:
         self.supported = supported
+
+    def send(self, content, buffers=None):  # type: ignore[no-untyped-def]
+        # ipywidgets' Widget.send(); every render sends its muted-traits
+        # policy, even an empty one
+        pass
 
 
 def picky_renderer_and_reads(  # type: ignore[no-untyped-def]
