@@ -82,7 +82,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * shinywidgets now requires ipywidgets 8.1 or newer, and the bundled JavaScript widget manager was upgraded to `@jupyter-widgets/html-manager` 1.0. Together these fix many long-standing issues with ipywidgets 8 (see the bug fixes below). (#237, #259)
 * shinywidgets now requires shiny 1.9.0 or newer. With it, widget updates made from a background thread (e.g., nglview's, or your own `threading.Thread`) reach the browser right away instead of waiting for the next unrelated input. (#377)
 * shinywidgets now requires plotly 5.12 or newer for plotly widgets. With an older plotly, you now get an error explaining how to upgrade instead of a blank output. (#332)
-* Renamed accessors to align the descriptor/data convention (none of this API has shipped yet): embedding-atlas's `selected()` is now `selected_rows()`, and itables'/reactable's `selected_rows()` (which return row positions) is now `selected()`. (#459)
 
 ### Deprecated
 
