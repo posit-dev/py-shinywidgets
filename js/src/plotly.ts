@@ -18,30 +18,55 @@ export function findPlotlyGraphDiv(root: HTMLElement): HTMLElement | null {
 // The plotly event bridge (see shinywidgets/_plotly.py): forwards plotly.js
 // events that plotly.py's widget doesn't, as custom messages to Python. Python
 // asks for the events its accessors need; nothing is bound until then.
+export type PlotlyPayloadShape = "region" | "points";
+
 export interface PlotlyBindRequest {
   shinywidgets: "bind";
-  events: string[];
+  events: (string | { name: string; payload?: PlotlyPayloadShape })[];
 }
 
-// The events requested for each model, applied to every view of it
-const requestedEvents = new WeakMap<WidgetModel, Set<string>>();
-// The events already bound on each graph div
-const boundEvents = new WeakMap<HTMLElement, Set<string>>();
+// Union the bind requests' payload shapes per event; "points" wins over
+// "region". Bare string entries (clears, non-selection events) mean full
+// payloads, so they normalize to "points".
+export function normalizeBindEvents(
+  events: PlotlyBindRequest["events"],
+): Map<string, PlotlyPayloadShape> {
+  const out = new Map<string, PlotlyPayloadShape>();
+  for (const e of events) {
+    const name = typeof e === "string" ? e : e.name;
+    const payload = (typeof e === "object" && e.payload) || "points";
+    if (out.get(name) !== "points") out.set(name, payload);
+  }
+  return out;
+}
+
+// The payload shape requested for each event of each model, applied to
+// every view of it ("points" wins over "region" for the same event)
+const requestedEvents = new WeakMap<WidgetModel, Map<string, PlotlyPayloadShape>>();
+// The events already bound on each graph div, with the payload shape they
+// bound at (a shape upgrade re-seeds the event without re-binding it)
+const boundEvents = new WeakMap<HTMLElement, Map<string, PlotlyPayloadShape>>();
 
 export function isPlotlyBindRequest(content: unknown): content is PlotlyBindRequest {
   return (
     !!content &&
     (content as any).shinywidgets === "bind" &&
-    Array.isArray((content as any).events)
+    Array.isArray((content as any).events) &&
+    (content as any).events.every(
+      (e: unknown) => typeof e === "string" || (!!e && typeof (e as any).name === "string"),
+    )
   );
 }
 
 export async function requestPlotlyEvents(
   model: WidgetModel,
-  events: string[],
+  events: PlotlyBindRequest["events"],
 ): Promise<void> {
-  const requested = requestedEvents.get(model) ?? new Set<string>();
-  events.forEach((e) => requested.add(e));
+  const incoming = normalizeBindEvents(events);
+  const requested = requestedEvents.get(model) ?? new Map<string, PlotlyPayloadShape>();
+  for (const [name, payload] of incoming) {
+    if (requested.get(name) !== "points") requested.set(name, payload);
+  }
   requestedEvents.set(model, requested);
 
   // Views that render later bind in bindPlotlyEvents(), via plotlyBehavior
@@ -91,17 +116,34 @@ export function waitForPlotlyGraphDiv(
 export function bindPlotlyEvents(plotEl: HTMLElement, model: WidgetModel): void {
   const requested = requestedEvents.get(model);
   if (!requested || !hasMethod<PlotlyEventEmitter, "on">(plotEl, "on")) return;
-  const bound = boundEvents.get(plotEl) ?? new Set<string>();
+  const bound = boundEvents.get(plotEl) ?? new Map<string, PlotlyPayloadShape>();
   boundEvents.set(plotEl, bound);
   let boundSelected = false;
   let boundVisibility = false;
-  for (const event of requested) {
-    if (bound.has(event)) continue;
-    bound.add(event);
+  let upgradedSelected = false;
+  for (const [event, shape] of requested) {
+    const boundShape = bound.get(event);
+    if (boundShape === shape) continue;
+    bound.set(event, shape);
+    if (boundShape !== undefined) {
+      // The listener stays bound (it reads its shape live from `requested`);
+      // a region -> points upgrade just needs the selection re-seeded with
+      // points, since the bind-time seed omitted them. (A downgrade can't
+      // happen: "points" wins over "region" in requestPlotlyEvents.)
+      if (event === "plotly_selected") upgradedSelected = true;
+      continue;
+    }
     if (event === "plotly_selected") boundSelected = true;
     if (VISIBILITY_EVENTS.has(event)) boundVisibility = true;
     plotEl.on(event, (data?: any) => {
-      model.send({ shinywidgets: "event", event, ...eventPayload(event, data, plotEl) }, {});
+      model.send(
+        {
+          shinywidgets: "event",
+          event,
+          ...eventPayload(event, data, plotEl, requested.get(event) === "points"),
+        },
+        {},
+      );
     });
   }
   // Like the selection seed below: trace visibility is state on the graph
@@ -116,27 +158,38 @@ export function bindPlotlyEvents(plotEl: HTMLElement, model: WidgetModel): void 
   // A selection is state on the graph div (trace `selectedpoints`), not just
   // an event: a lasso drawn before this bind (e.g. before an accessor's first
   // read asked for the event) is still recoverable, so report the current
-  // selection as if plotly.js had just fired it. An empty payload is a
-  // no-data `plotly_selected`, which plotly.js itself sends for an empty
-  // selection and Python reads as "nothing selected".
-  if (boundSelected) {
+  // selection as if plotly.js had just fired it. A region -> points upgrade
+  // re-seeds the same way, adding the points the bind-time seed left out. An
+  // empty payload is a no-data `plotly_selected`, which plotly.js itself
+  // sends for an empty selection and Python reads as "nothing selected".
+  if (boundSelected || upgradedSelected) {
     model.send(
-      { shinywidgets: "event", event: "plotly_selected", ...selectionSeed(plotEl) },
+      {
+        shinywidgets: "event",
+        event: "plotly_selected",
+        ...selectionSeed(plotEl, requested.get("plotly_selected") === "points"),
+      },
       {},
     );
   }
 }
 
-// Rebuilds a plotly_selected payload from graph-div state: one entry per
-// selected point, plus the region (box range or lasso vertices) plotly.js
-// keeps on the last layout selection.
-function selectionSeed(plotEl: HTMLElement): Record<string, unknown> {
+// Rebuilds a plotly_selected payload from graph-div state: one slim entry
+// per selected point, plus the region (box range or lasso vertices)
+// plotly.js keeps on the last layout selection.
+export function selectionSeed(
+  plotEl: HTMLElement,
+  includePoints: boolean = true,
+): Record<string, unknown> {
+  // Region-only payloads never touch the data: skip the per-trace scan,
+  // which would copy typed selection arrays proportional to selection size
+  if (!includePoints) return regionSeed(plotEl);
   const data = (plotEl as any).data;
   if (!Array.isArray(data)) return {};
   const points = data.flatMap((trace: any, curveNumber: number) => {
     // jsonable(): a selection preconfigured from plotly.py arrives as a
-    // typed array, which Array.isArray rejects (and whose .map can't hold
-    // point objects)
+    // typed array, which Array.isArray rejects (and whose .map can't
+    // hold point objects)
     const selected = jsonable(trace?.selectedpoints);
     if (!Array.isArray(selected)) return [];
     return (selected as number[]).map((i) => {
@@ -144,30 +197,16 @@ function selectionSeed(plotEl: HTMLElement): Record<string, unknown> {
         trace_index: curveNumber,
         point_index: i,
       };
-      for (const key of ["x", "y", "z", "customdata"]) {
-        let value = trace[key]?.[i];
-        // A multicategory axis stores one array per category level (so the
-        // trace array's length is the level count, not the point count, and
-        // indexing it by sample is wrong); the coordinate combines each
-        // level's value at i
-        if (key !== "customdata" && Array.isArray(trace[key]) && Array.isArray(trace[key][0])) {
-          value = (trace[key] as any[]).map((level) => level?.[i]);
-        } else if (value === undefined && key !== "customdata") {
-          // Coordinates the trace doesn't carry explicitly (implicit x,
-          // bar x0/dx) are resolved on calcdata, matching the live event's
-          // point objects
-          value = calcCoord(plotEl, curveNumber, i, key, trace?.type);
-        }
-        if (value !== undefined) entry[key] = jsonable(value);
-      }
+      const custom = trace.customdata?.[i];
+      if (custom !== undefined) entry.customdata = jsonable(custom);
       return entry;
     });
   });
   // An empty drag selection is still a selection: plotly.js reports it as
   // points: [] plus the region. So is a preconfigured selectedpoints: []
   // (plotly dims every point with unselected styling). No points, no
-  // region, and no trace supplying a selection array means nothing was
-  // ever selected (or a deselect), the no-data case.
+  // region, and no trace supplying a selection array means nothing was ever
+  // selected (or a deselect), the no-data case.
   const region = regionSeed(plotEl);
   const anySelectionArray = data.some((trace: any) =>
     Array.isArray(jsonable(trace?.selectedpoints)),
@@ -175,7 +214,7 @@ function selectionSeed(plotEl: HTMLElement): Record<string, unknown> {
   if (points.length === 0 && Object.keys(region).length === 0 && !anySelectionArray) {
     return {};
   }
-  return { points, ...region };
+  return { ...region, points };
 }
 
 function regionSeed(plotEl: HTMLElement): Record<string, unknown> {
@@ -210,31 +249,16 @@ function regionSeed(plotEl: HTMLElement): Record<string, unknown> {
   return {};
 }
 
-// Resolved coordinates from calcdata, for the trace types where its layout
-// is verified: scatter and bar align one calc point per data index
-// (implicit x, x0/dx); scattergl keeps one calc entry whose .t holds typed
-// coordinate arrays. Others don't align by sample index (histograms bin
-// them) or are unverified, so their missing keys stay missing, as in live
-// payloads.
-function calcCoord(
-  plotEl: HTMLElement,
-  curveNumber: number,
-  i: number,
-  key: string,
-  type: string | undefined,
-): unknown {
-  const cd = (plotEl as any).calcdata?.[curveNumber];
-  if (!Array.isArray(cd)) return undefined;
-  if (type === "scattergl") return cd[0]?.t?.[key]?.[i];
-  if (type === "scatter" || type === "bar") return cd[i]?.[key];
-  return undefined;
-}
-
 function lassoValue(token: string): unknown {
   const t = token.trim();
   const n = Number(t);
   return Number.isNaN(n) ? t.replace("_", " ") : n;
 }
+
+// Selection events ship slim points ({trace_index, point_index,
+// customdata?}) — coordinates would duplicate data the server already has
+// (#459)
+const SLIM_EVENTS = new Set(["plotly_selected", "plotly_selecting"]);
 
 // Shaped like R plotly's event_data(): one entry per point, with its trace
 // index, its index within the trace, coordinates, and customdata.
@@ -242,6 +266,7 @@ export function eventPayload(
   event: string,
   data: any,
   plotEl?: HTMLElement,
+  includePoints: boolean = true,
 ): Record<string, unknown> {
   if (event === "plotly_relayout") return { relayout: data };
   // The event args themselves aren't useful; what matters is the
@@ -256,7 +281,13 @@ export function eventPayload(
   if (event === "plotly_legendclick") return legendPayload(data);
   const out: Record<string, unknown> = {};
   if (!data) return out;
-  if (Array.isArray(data.points)) out.points = data.points.flatMap(pointEntries);
+  if (Array.isArray(data.points)) {
+    if (SLIM_EVENTS.has(event)) {
+      if (includePoints) out.points = data.points.flatMap(slimPointEntries);
+    } else {
+      out.points = data.points.flatMap(pointEntries);
+    }
+  }
   if (data.range) out.range = data.range;
   if (data.lassoPoints) out.lassoPoints = data.lassoPoints;
   return out;
@@ -335,6 +366,20 @@ function traceName(fullData: any, traces: any[], i: number): string {
   const full = Array.isArray(fullData) ? fullData[i] : undefined;
   if (full?.index === i && typeof full.name === "string") return full.name;
   return traces[i]?.name ?? `trace ${i}`;
+}
+
+// Like pointEntries, but without coordinates: the join key (customdata) is
+// all selected_rows() needs, and coordinates are what made selection
+// messages big enough to kill sessions
+function slimPointEntries(p: any): Record<string, unknown>[] {
+  const aggregated = Array.isArray(p.pointNumbers);
+  const indices: number[] = aggregated ? p.pointNumbers : [p.pointNumber ?? p.pointIndex];
+  return indices.map((i) => {
+    const entry: Record<string, unknown> = { trace_index: p.curveNumber, point_index: i };
+    const custom = aggregated ? p.data?.customdata?.[i] : p.customdata;
+    if (custom !== undefined) entry.customdata = jsonable(custom);
+    return entry;
+  });
 }
 
 function pointEntries(p: any): Record<string, unknown>[] {
