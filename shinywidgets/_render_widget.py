@@ -133,7 +133,18 @@ from shiny.render.renderer import Jsonifiable, ValueFn
 from shiny.session import get_current_session
 
 from ._accessors import AccessorSpec, Emit, RatePolicy
-from ._altair import ALTAIR_ACCESSORS, chart_frame, filter_selection, pick_selection
+from ._altair import (
+    ALTAIR_ACCESSORS,
+    chart_datasets,
+    chart_frame,
+    check_index_selection,
+    filter_selection,
+    filter_selection_by_unit,
+    is_frame,
+    pick_selection,
+    selection_views,
+    view_frames,
+)
 from ._as_widget import (
     PYDECK_NO_WIDGET_MESSAGE,
     as_widget_panel,
@@ -615,24 +626,136 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         return pick_selection(selections, name)
 
     def selected_rows(
-        self, name: Optional[str] = None, *, df: Optional[IntoDataFrameT] = None
-    ) -> IntoDataFrameT:
+        self,
+        name: Optional[str] = None,
+        *,
+        df: Optional[Union[IntoDataFrameT, Dict[str, IntoDataFrameT]]] = None,
+    ) -> Union[IntoDataFrameT, Dict[str, IntoDataFrameT]]:
         """
         The rows of `df` in a selection (see :meth:`selected`), evaluated the
         way Vega-Lite does (including binned and temporal fields).
 
-        `df` defaults to the chart's own data frame (pandas or polars); pass it
-        for charts whose data is a URL, or that concatenate charts with
-        different data. For a layered chart, the default only resolves when
-        every layer uses the *identical* data frame object (the same object,
-        not an equal copy) -- otherwise pass `df` explicitly. Returns an empty
-        frame while nothing is selected. Dates are compared in UTC, reading
-        time-zone-naive columns in the browser's time zone, as Vega-Lite does.
+        `df` defaults to the chart's own data frame (pandas or polars); pass
+        it for charts whose data is a URL. When the selection touches several
+        views with different data -- a layered or concatenated chart whose
+        subcharts use different data frames -- each view's data is filtered
+        by its own selection entries and the return is a ``dict`` of frames
+        keyed by view name (give subcharts a ``name=`` for readable keys);
+        `df` may then be passed as a dict keyed by view name. When the
+        selection touches one view, or views sharing the *identical* data
+        frame object, a single frame is returned. Returns an empty frame (or
+        a dict of empty frames) while nothing is selected. Dates are compared
+        in UTC, reading time-zone-naive columns in the browser's time zone,
+        as Vega-Lite does. A bare point selection (positional row indices,
+        from `alt.selection_point()` without ``fields=``/``encodings=``)
+        isn't supported on a chart with several datasets -- declare the
+        selection with ``fields=`` or ``encodings=`` instead.
         """
         selection = self.selected(name)
         widget = cast(JupyterChart, self.widget)
-        frame = chart_frame(widget) if df is None else df
-        return filter_selection(selection, frame, widget.local_tz)
+        chart = widget.chart
+        check_index_selection(selection, chart)
+        views = selection_views(chart, selection.name)
+
+        if isinstance(df, dict):
+            if views is not None and set(df) != set(views):
+                raise ValueError(
+                    f"The keys of `df` ({', '.join(sorted(df))}) don't match "
+                    f"the selection's views ({', '.join(views)})."
+                )
+            return filter_selection_by_unit(selection, df, widget.local_tz)
+
+        if views is None:
+            # The selection's param isn't readable from the chart object
+            # (e.g. a chart built with alt.Chart.from_dict): fall back to the
+            # views the store reports
+            views = sorted({entry.get("unit", "") for entry in selection.store} - {""})
+            if len(chart_datasets(chart)) > 1:
+                # Participation is unknown beyond what the store reports,
+                # so views can't be matched to their datasets safely (the
+                # store only shows views with active selections, and a
+                # scalar df's dataset is anyone's guess)
+                raise ValueError(
+                    "Which views this selection participates in can't be "
+                    "read from the chart (e.g. one built with "
+                    "`alt.Chart.from_dict`), and the chart has several "
+                    "datasets, so the selection can't be mapped to data "
+                    "frames safely. Pass the frames as a dict keyed by "
+                    "view name: `selected_rows(df={...})`."
+                )
+
+        if len(views) <= 1:
+            frame: Any = df
+            if frame is None:
+                if not views:
+                    frame = chart_frame(chart)
+                else:
+                    resolved_view = view_frames(chart)
+                    if views[0] in resolved_view:
+                        frame = resolved_view[views[0]]
+                    else:
+                        # A view view_frames() can't name -- e.g. a repeat
+                        # chart's generated view: resolve it to the chart's
+                        # data frame only when the chart declares exactly
+                        # one dataset (a nested repeat may declare its own)
+                        datasets = chart_datasets(chart)
+                        frame = datasets[0] if len(datasets) == 1 else None
+                    if not is_frame(frame):
+                        raise ValueError(
+                            f"Can't find a data frame for the view named "
+                            f"{views[0]!r} (its data isn't a data frame -- "
+                            "maybe a URL or inline `alt.Data`?). Pass the "
+                            "frame to filter as `selected_rows(df=...)`."
+                        )
+            return filter_selection(selection, frame, widget.local_tz)
+
+        # Several views participate. When they all resolve to the same data
+        # frame object (typically hoisted onto the chart), there's one frame
+        # to filter, as before -- and a scalar `df` can stand in for it
+        resolved = view_frames(chart)
+        datasets = chart_datasets(chart)
+        # Views view_frames() can't name -- e.g. a repeat chart's generated
+        # views: resolve them to the chart's data frame only when the chart
+        # declares exactly one dataset (a nested repeat may declare its
+        # own); otherwise leave them unresolvable rather than risk
+        # filtering the wrong frame
+        unnamed = [view for view in views if view not in resolved]
+        if unnamed:
+            root: Any = (
+                datasets[0] if len(datasets) == 1 and is_frame(datasets[0]) else None
+            )
+            for view in unnamed:
+                resolved[view] = root
+        shared = (
+            all(is_frame(resolved.get(view)) for view in views)
+            and len({id(resolved[view]) for view in views}) == 1
+        )
+        if shared:
+            frame = df if df is not None else resolved[views[0]]
+            return filter_selection(selection, frame, widget.local_tz)
+        if df is not None and len(datasets) == 1:
+            # The views share a single dataset that isn't a data frame (e.g.
+            # subcharts over one URL), so a scalar `df` can stand in for it
+            return filter_selection(selection, df, widget.local_tz)
+        if df is not None:
+            raise ValueError(
+                f"The selection spans several views ({', '.join(views)}), "
+                "each with its own data, so a single data frame can't be "
+                "filtered by it. Pass the frames as a dict keyed by view "
+                "name, e.g. `selected_rows(df={'left': df1, 'right': df2})`."
+            )
+        frames: Dict[str, Any] = {}
+        for view in views:
+            data = resolved.get(view)
+            if not is_frame(data):
+                raise ValueError(
+                    f"Can't find a data frame for the view named {view!r} "
+                    "(is it a named subchart of the chart, built from a data "
+                    "frame?). Pass the frames to filter as a dict keyed by "
+                    "view name: `selected_rows(df={...})`."
+                )
+            frames[view] = data
+        return filter_selection_by_unit(selection, frames, widget.local_tz)
 
 
 class render_embedding_atlas(
