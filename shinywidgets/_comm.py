@@ -6,7 +6,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional
 
-from shiny import Session
+from shiny import Session, ui
 
 if TYPE_CHECKING:
     from ipywidgets import Widget
@@ -258,6 +258,8 @@ class ShinyComm:
             traitlets_level_patch.restore()
             scope.active = False
             handling_client_msg.reset(token)
+        if scope.errors:
+            notify_client_msg_error(self, scope.errors[0])
 
     def handle_close(self, msg: Dict[str, object]) -> None:
         """The browser closed this comm: a later close() has nothing to publish."""
@@ -513,6 +515,13 @@ class ClientMsgScope:
 
     active = True
 
+    def __init__(self) -> None:
+        # The callback errors rerouted during dispatch, for its user-facing
+        # notification (see notify_client_msg_error). Their messages, not the
+        # exceptions: deferred work can outlive the dispatch holding this
+        # scope, and a traceback's frames would pin the widget and session.
+        self.errors: List[str] = []
+
 
 handling_client_msg: ContextVar[Optional[ClientMsgScope]] = ContextVar(
     "shinywidgets_handling_client_msg", default=None
@@ -562,6 +571,27 @@ class TraitletsLevelPatch:
 traitlets_level_patch = TraitletsLevelPatch()
 
 
+def notify_client_msg_error(comm: ShinyComm, msg: str) -> None:
+    """
+    Show a sticky browser notification for a widget-callback error that
+    ipywidgets swallowed (see ClientMsgErrorFilter): the error already
+    reached the server log, but if the failing callback is part of how the
+    widget renders, the user's output is otherwise blank with no
+    explanation. The browser replaces a notification whose id it already
+    shows, so a callback that fails on every message leaves one per widget.
+    """
+    session = comm.session
+    if session.app.sanitize_errors:
+        msg = session.app.sanitize_error_msg
+    ui.notification_show(
+        msg,
+        type="error",
+        duration=None,
+        id=f"shinywidgets-error-{comm.comm_id}",
+        session=session,
+    )
+
+
 class ClientMsgErrorFilter(logging.Filter):
     """
     Outside IPython, ipywidgets catches exceptions raised by widget callbacks
@@ -571,6 +601,9 @@ class ClientMsgErrorFilter(logging.Filter):
     While handling a browser message, move such records to the `shinywidgets`
     logger (dropping the original, so a configured root handler doesn't show
     them twice). Everywhere else, e.g. in Jupyter, `traitlets` logging is untouched.
+
+    A rerouted exception is also noted on the dispatch's scope, so the
+    dispatch can show it to the user (see notify_client_msg_error).
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -578,6 +611,9 @@ class ClientMsgErrorFilter(logging.Filter):
         if scope is None or not scope.active or record.levelno < logging.WARNING:
             return True
         logger.error(record.getMessage(), exc_info=record.exc_info)
+        exc = record.exc_info[1] if record.exc_info else None
+        if exc is not None:
+            scope.errors.append(str(exc))
         return False
 
 
