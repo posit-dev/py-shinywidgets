@@ -58,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   @render.data_frame
   def picked():
-      return plot.selected()
+      return plot.clicked()
   ```
 
   `@render_plotly` has `clicked()`, `hover()`, `selected()`, `brushed()`, `relayout()`, `double_clicked()`, `legend_clicked()`, and `visible_traces()`. `@render_altair` has `selected(name)` and `selected_rows(name)`. `@render_bokeh` has `selected()`, `selected_rows()`, `tapped()`, and `zoomed()`. Many of the new renderers have their own (see above). Accessors keep their value across re-renders. Continuous streams, such as a selection while the user drags, are debounced by 250 ms by default; adjust this with the decorator's `rate_policy` and `rate_delay` parameters. `.read(name)` reads an accessor, or any widget trait, by name. (#379, #437, #443)
