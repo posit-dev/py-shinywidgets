@@ -680,33 +680,37 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
                     resolved_view = view_frames(chart)
                     if views[0] in resolved_view:
                         frame = resolved_view[views[0]]
-                        if not is_frame(frame):
-                            raise ValueError(
-                                f"Can't find a data frame for the view named "
-                                f"{views[0]!r} (its data isn't a data frame -- "
-                                "maybe a URL or inline `alt.Data`?). Pass the "
-                                "frame to filter as `selected_rows(df=...)`."
-                            )
                     else:
                         # A view view_frames() can't name -- e.g. a repeat
-                        # chart's generated view, whose repeated subcharts
-                        # share one dataset -- is fed the chart's own frame
-                        frame = chart_frame(chart)
+                        # chart's generated view: resolve it to the chart's
+                        # data frame only when the chart declares exactly
+                        # one dataset (a nested repeat may declare its own)
+                        datasets = chart_datasets(chart)
+                        frame = datasets[0] if len(datasets) == 1 else None
+                    if not is_frame(frame):
+                        raise ValueError(
+                            f"Can't find a data frame for the view named "
+                            f"{views[0]!r} (its data isn't a data frame -- "
+                            "maybe a URL or inline `alt.Data`?). Pass the "
+                            "frame to filter as `selected_rows(df=...)`."
+                        )
             return filter_selection(selection, frame, widget.local_tz)
 
         # Several views participate. When they all resolve to the same data
         # frame object (typically hoisted onto the chart), there's one frame
         # to filter, as before -- and a scalar `df` can stand in for it
         resolved = view_frames(chart)
+        datasets = chart_datasets(chart)
         # Views view_frames() can't name -- e.g. a repeat chart's generated
-        # views, whose repeated subcharts share one dataset -- are fed the
-        # chart's own frame
+        # views: resolve them to the chart's data frame only when the chart
+        # declares exactly one dataset (a nested repeat may declare its
+        # own); otherwise leave them unresolvable rather than risk
+        # filtering the wrong frame
         unnamed = [view for view in views if view not in resolved]
         if unnamed:
-            try:
-                root: Any = chart_frame(chart)
-            except TypeError:
-                root = None
+            root: Any = (
+                datasets[0] if len(datasets) == 1 and is_frame(datasets[0]) else None
+            )
             for view in unnamed:
                 resolved[view] = root
         shared = (
@@ -716,7 +720,7 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         if shared:
             frame = df if df is not None else resolved[views[0]]
             return filter_selection(selection, frame, widget.local_tz)
-        if df is not None and len(chart_datasets(chart)) == 1:
+        if df is not None and len(datasets) == 1:
             # The views share a single dataset that isn't a data frame (e.g.
             # subcharts over one URL), so a scalar `df` can stand in for it
             return filter_selection(selection, df, widget.local_tz)

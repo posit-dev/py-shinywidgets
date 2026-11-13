@@ -758,6 +758,50 @@ def test_selected_rows_scalar_df_for_views_sharing_a_url(
         r.selected_rows("b")
 
 
+def test_selected_rows_nested_repeat_with_its_own_data_is_not_mis_filtered(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    brush = alt.selection_interval(name="b")
+    combo = alt.hconcat(
+        alt.Chart(POINTS, name="pts").mark_point().encode(x="x", y="y"),
+        alt.Chart(LINES)
+        .mark_point()
+        .encode(x="x:Q", y="z:Q")
+        .add_params(brush)
+        .repeat(column=["x", "y"]),
+        data=POINTS,
+    )
+    with session_context(widget_session):
+        w = alt.JupyterChart(combo)
+    views = sa.selection_views(w.chart, "b")
+    assert views is not None and len(views) == 2
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "b": IntervalSelection(
+                    name="b",
+                    value={},
+                    store=[uentry(view, ("x", "R", [1, 2])) for view in views],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    # The repeat declares its own data (LINES) but the concat's root is
+    # POINTS: resolving the generated views to the root frame would
+    # silently filter the wrong rows, so the call must raise instead
+    with pytest.raises(ValueError, match="df="):
+        r.selected_rows("b")
+    # A scalar df can't stand in for two distinct datasets either
+    with pytest.raises(ValueError, match="dict"):
+        r.selected_rows("b", df=LINES)
+
+
 def sa_box(raw: object) -> Any:
     from shinywidgets._accessors import Box
 
