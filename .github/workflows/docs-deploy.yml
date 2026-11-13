@@ -62,6 +62,14 @@ jobs:
       - name: Build the website
         run: make docs
 
+      # Picked up by the actions/deploy-pages job in docs-production.yml.
+      # Previews don't deploy to Pages, so skip the artifact there.
+      - name: Upload GitHub Pages artifact
+        if: inputs.deploy-context == 'production'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: "./website/_site"
+
       - name: Deploy to Netlify
         id: netlify
         uses: nwtgck/actions-netlify@v4
