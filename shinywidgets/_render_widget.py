@@ -4640,10 +4640,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     (``df[(df.x >= lo) & (df.x <= hi) & (df.y >= lo) & (df.y <= hi)]``) and a
     lasso is a point-in-polygon test over the ``lassoPoints`` vertices (e.g.
     ``matplotlib.path.Path.contains_points``). Date axes report their bounds as
-    strings; parse them before comparing. Oversized messages from any widget
-    are dropped client-side with a console error rather than disconnecting the
-    session; raise the limit with ``shiny run --ws-max-size <bytes>`` (and set
-    the ``SHINYWIDGETS_WS_MAX_SIZE`` env var to match).
+    strings; parse them before comparing. A message that exceeds the
+    websocket limit (16 MiB by default) disconnects the session; raise the
+    limit with ``shiny run --ws-max-size <bytes>``.
 
     **Typing**: no return-type annotation is needed -- the renderer's value
     type is statically bounded, so type checkers flag unsupported return
