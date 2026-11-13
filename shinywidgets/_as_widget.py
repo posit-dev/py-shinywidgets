@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from bokeh.models import LayoutDOM
     from ipympl.backend_nbagg import Canvas
     from ipysigma import Sigma
+    from ipyvolume.widgets import Figure as IpyvolumeFigure
     from jupyter_bokeh import BokehModel
     from matplotlib.figure import Figure
     from panel.viewable import Viewable
@@ -204,11 +205,12 @@ def as_widget_ipyvolume(x: object) -> Widget:
     # ipyvolume is guaranteed to be installed here since this function is only
     # called when x comes from the ipyvolume package
     from ipyvolume.ui import Container
+    from ipyvolume.widgets import Figure
 
     # quickscatter() and friends return the Container (figure plus control
     # widgets); the Figure is the renderable part
     if isinstance(x, Container):
-        return x.figure
+        x = x.figure
 
     if not isinstance(x, DOMWidget):
         raise TypeError(
@@ -217,7 +219,43 @@ def as_widget_ipyvolume(x: object) -> Widget:
             "`ipv.gcf()` after drawing, or `ipv.figure()`)."
         )
 
+    if isinstance(x, Figure):
+        _reject_ipyvolume_string_color_arrays(x)
+
     return x
+
+
+def _reject_ipyvolume_string_color_arrays(fig: IpyvolumeFigure) -> None:
+    import numpy as np
+
+    # Scatter.color/color_selected and Mesh.color serialize through ipyvolume's
+    # color_to_binary_or_json(), which walks value[0][0]... until indexing
+    # raises; indexing into a string never raises ("tomato"[0] == "t", then
+    # "t"[0] == "t", ...), so a per-point string array infinite-loops and hangs
+    # the whole process the first time the widget's state is serialized
+    color_traits: list[Tuple[Widget, str]] = [
+        *[(scatter, "color") for scatter in fig.scatters],
+        *[(scatter, "color_selected") for scatter in fig.scatters],
+        *[(mesh, "color") for mesh in fig.meshes],
+    ]
+    for mark, trait in color_traits:
+        value: object = getattr(mark, trait)
+        if not (isinstance(value, np.ndarray) and value.ndim > 0):
+            continue
+        is_string_array = value.dtype.kind in ("U", "S") or (
+            value.dtype.kind == "O"
+            and value.size > 0
+            and isinstance(value.flat[0], str)
+        )
+        if is_string_array:
+            raise TypeError(
+                f"ipyvolume `{type(mark).__name__}.{trait}` was given an array "
+                f"of strings (dtype={value.dtype}, shape={value.shape}), which "
+                "ipyvolume's serializer infinite-loops on, hanging the entire "
+                "Shiny app. Pass a single color (e.g., color='red') or "
+                "per-point numeric data (e.g., values to map through a "
+                "colormap, or an (N, 3) RGB float array) instead."
+            )
 
 
 def as_widget_lonboard(x: object) -> Widget:

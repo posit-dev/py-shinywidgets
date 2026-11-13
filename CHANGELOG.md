@@ -90,6 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug fixes
 
+* An ipyvolume scatter or mesh given a per-point array of color strings (e.g., `ipv.scatter(x, y, z, color=['tomato', 'seagreen'])`) now raises a clear `TypeError` pointing to the working alternatives (a single color, or per-point numeric data with a colormap), instead of hanging the entire Shiny app with no error. (#493)
 * Widget-to-server messages larger than the websocket limit are now dropped client-side instead of disconnecting the whole session: the user sees a sticky error notification (once per widget), and the console error names the widget and the `--ws-max-size` workaround. Set `SHINYWIDGETS_WS_MAX_SIZE` if you run with a raised limit. (#459)
 * A widget that fails after its render function returns (e.g., an Altair/VegaFusion chart without `vl-convert-python` installed) now shows the user an error notification instead of leaving the output blank. (#320)
 * Fixed many issues with widgets nested inside other widgets and with widget outputs inserted dynamically (e.g., `output_widget()` inside `@render.ui`). With ipywidgets 8, these either didn't render at all (e.g., a Plotly `FigureWidget` or a styled `HTML` widget inside an ipyleaflet popup) or rendered while logging errors like `Class HTMLStyleModel not found` (e.g., ipyleaflet popups, `WidgetControl` children, and leafmap legends). (#75, #101, #137, #157, #194, #237)
