@@ -299,15 +299,21 @@ type Buffers = ArrayBuffer[] | ArrayBufferView[] | undefined;
 // An ipywidgets "update" message without the given traits, or null if it
 // sets nothing else. A trait's binary values travel apart from the state:
 // buffer_paths[i] is the path into the state (starting with the trait name)
-// where buffers[i] belongs.
+// where buffers[i] belongs. A top-level binary trait appears ONLY there
+// (ipywidgets' remove_buffers() deletes it from the state object), so both
+// early returns must consider buffer paths too -- otherwise a muted buffer
+// goes out unchanged, or an unmuted binary update is discarded with the
+// muted JSON traits.
 function withoutTraits(data: any, buffers: Buffers, traits: Set<string>): [any, Buffers] | null {
   const state = data.state ?? {};
   const keptKeys = Object.keys(state).filter((k) => !traits.has(k));
-  if (keptKeys.length === Object.keys(state).length) return [data, buffers];
-  if (keptKeys.length === 0) return null;
-
   const paths: unknown[][] = data.buffer_paths ?? [];
   const keptBuffers = paths.map((path) => !traits.has(path[0] as string));
+  if (keptKeys.length === Object.keys(state).length && keptBuffers.every(Boolean)) {
+    return [data, buffers];
+  }
+  if (keptKeys.length === 0 && !keptBuffers.some(Boolean)) return null;
+
   return [
     {
       ...data,

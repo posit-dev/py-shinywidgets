@@ -156,6 +156,67 @@ describe("ShinyComm muted traits", () => {
     expect(atob(msg.buffers[0])).toBe(String.fromCharCode(9));
   });
 
+  // ipywidgets' remove_buffers() deletes a top-level binary trait from the
+  // state, so it shows up only in buffer_paths
+  it("drops a muted binary trait even when the update's JSON traits are all unmuted", () => {
+    const comm = new ShinyComm("m6");
+    comm.setMutedTraits(["img"]);
+    const img = new Uint8Array([1, 2]).buffer;
+    const other = new Uint8Array([9]).buffer;
+
+    comm.send(
+      {
+        method: "update",
+        state: { light: 1 },
+        buffer_paths: [["img"], ["other"]],
+      },
+      {},
+      {},
+      [img, other],
+    );
+
+    const [msg] = sentMessages(setInputValue);
+    expect(msg.content.data.state).toEqual({ light: 1 });
+    expect(msg.content.data.buffer_paths).toEqual([["other"]]);
+    expect(msg.buffers).toHaveLength(1);
+    expect(atob(msg.buffers[0])).toBe(String.fromCharCode(9));
+  });
+
+  it("doesn't send an update that only sets a muted binary trait, and reports idle", () => {
+    const comm = new ShinyComm("m7");
+    comm.setMutedTraits(["img"]);
+    const status = vi.fn();
+
+    comm.send(
+      { method: "update", state: {}, buffer_paths: [["img"]] },
+      { iopub: { status } },
+      {},
+      [new Uint8Array([1]).buffer],
+    );
+
+    expect(setInputValue).not.toHaveBeenCalled();
+    vi.runAllTimers();
+    expect(status).toHaveBeenCalledOnce();
+  });
+
+  it("still sends an unmuted binary trait when the update's JSON traits are all muted", () => {
+    const comm = new ShinyComm("m8");
+    comm.setMutedTraits(["clicked"]);
+    const img = new Uint8Array([7]).buffer;
+
+    comm.send(
+      { method: "update", state: { clicked: 3 }, buffer_paths: [["img"]] },
+      {},
+      {},
+      [img],
+    );
+
+    const [msg] = sentMessages(setInputValue);
+    expect(msg.content.data.state).toEqual({});
+    expect(msg.content.data.buffer_paths).toEqual([["img"]]);
+    expect(atob(msg.buffers[0])).toBe(String.fromCharCode(7));
+  });
+
   it("leaves custom messages alone, even ones that mention a muted trait", () => {
     const comm = new ShinyComm("m4");
     comm.setMutedTraits(["heavy"]);
