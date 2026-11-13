@@ -56,12 +56,12 @@ def attach(
 
 
 def test_attach_sends_bind_request() -> None:
-    w, _, _ = attach(sr.SELECTED_ROWS)
+    w, _, _ = attach(sr.SELECTED)
     assert w.sent == [{"shinywidgets": "bind-reactable"}]
 
 
-def test_selected_rows_emits_its_slice() -> None:
-    w, emitted, _ = attach(sr.SELECTED_ROWS)
+def test_selected_emits_its_slice() -> None:
+    w, emitted, _ = attach(sr.SELECTED)
     w.message(state_message(page=1, selected=[4, 82]))
     assert emitted == [[4, 82]]
 
@@ -84,7 +84,7 @@ def test_each_accessor_slices_its_key(
 
 
 def test_ignores_foreign_and_malformed_messages() -> None:
-    w, emitted, _ = attach(sr.SELECTED_ROWS)
+    w, emitted, _ = attach(sr.SELECTED)
     w.message({"shinywidgets": "event", "event": "plotly_click"})
     w.message({"shinywidgets": "reactable-state", "state": "not-a-dict"})
     w.message({"shinywidgets": "reactable-state"})
@@ -93,7 +93,7 @@ def test_ignores_foreign_and_malformed_messages() -> None:
 
 
 def test_detach_removes_handler() -> None:
-    w, emitted, detach = attach(sr.SELECTED_ROWS)
+    w, emitted, detach = attach(sr.SELECTED)
     detach()
     w.message(state_message(selected=[1]))
     assert emitted == [] and w.handlers == []
@@ -112,7 +112,7 @@ def test_specs_are_state_kind_and_cancel_before_first_report() -> None:
 def test_text_streams_debounce_but_clicks_dont() -> None:
     assert sr.FILTERED.rate_policy == "debounce"
     assert sr.SEARCH.rate_policy == "debounce"
-    assert sr.SELECTED_ROWS.rate_policy is None
+    assert sr.SELECTED.rate_policy is None
     assert sr.PAGE.rate_policy is None
     assert sr.SORTED.rate_policy is None
 
@@ -159,7 +159,7 @@ def test_renderer_declares_the_accessors() -> None:
     # The original bug: the specs sat on a dead `accessor_specs` attribute
     assert not hasattr(r, "accessor_specs")
     assert set(r._accessors.values) == {s.name for s in sr.REACTABLE_ACCESSORS}
-    for name in ("selected_rows", "page", "sorted", "filtered", "search"):
+    for name in ("selected", "page", "sorted", "filtered", "search"):
         assert callable(getattr(r, name))
 
 
