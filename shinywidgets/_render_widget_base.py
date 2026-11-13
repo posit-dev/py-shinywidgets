@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import difflib
+import os
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
@@ -233,6 +234,9 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         for w in self._rate_policy_widgets(self._widget):
             register_rate_policy(w, self._rate_policy, self._rate_delay)
         self._accessors.on_render(widget)
+        muted = () if native_events_enabled() else self._muted_traits(self._widget)
+        if muted:
+            widget.send({"shinywidgets": "mute", "traits": list(muted)})
         if (
             session is not None
             and not session.is_stub_session()
@@ -268,6 +272,15 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         (e.g., ipycytoscape's Node/Edge widgets).
         """
         return (widget,)
+
+    def _muted_traits(self, widget: WidgetT) -> Sequence[str]:
+        """
+        Traits of the rendered widget whose browser-side changes aren't
+        synced to Python (the browser drops them before sending; see
+        `ShinyComm.setMutedTraits()` in `js/src/comm.ts`). For traits that
+        cost a lot to sync and that nothing on the server reads.
+        """
+        return ()
 
     @property
     def value(self) -> ValueT | None:
@@ -423,6 +436,16 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             # dependencies; still let it reach `.widget` (e.g. to call
             # geolibre's blocking methods)
             self._contexts.discard(ctx)
+
+
+def native_events_enabled() -> bool:
+    """
+    Whether SHINYWIDGETS_NATIVE_EVENTS asks for every widget's own events to
+    reach Python, restoring what renderers mute by default (see
+    `render_widget_base._muted_traits()`). Read per render, so a deployment
+    can set it without touching app code.
+    """
+    return os.environ.get("SHINYWIDGETS_NATIVE_EVENTS", "").lower() in ("1", "true")
 
 
 def has_current_context() -> bool:

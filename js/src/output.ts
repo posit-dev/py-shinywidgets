@@ -1,5 +1,5 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
-import { ack_comm, dispose_comm, setConnected, ShinyComm } from './comm';
+import { ack_comm, dispose_comm, isMuteRequest, mute_comm, setConnected, ShinyComm } from './comm';
 import { behaviorForModel, ipyleafletBehavior, WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
 import { isJQuery, jsonParse, lendDataTables, protectPageJQuery } from './utils';
 import { NGLVIEW_COLORMAKER_REGISTRY_MODEL, renderHiddenColormakerRegistry } from './nglview';
@@ -624,6 +624,10 @@ Shiny.addCustomMessageHandler("shinywidgets_comm_msg", async (msg_txt) => {
       // Not awaited: binding waits for the plot to draw, which mustn't hold up
       // Shiny's queue of later messages
       void requestPlotlyEvents(m, data.content.events);
+      return;
+    }
+    if (data?.method === "custom" && isMuteRequest(data.content)) {
+      mute_comm(id, data.content.traits);
       return;
     }
     if (data?.method === "custom" && isReactableBindRequest(data.content)) {
