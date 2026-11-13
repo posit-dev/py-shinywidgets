@@ -183,7 +183,17 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         # Invalidate any reactive contexts that have read these attributes
         self._invalidate_contexts()
 
+        # _shinywidgets imports from this module at module scope, so
+        # importing it back the same way would be circular (see the import
+        # below); keep this one function-local too. It must precede the
+        # early exits: an un-render or a failed render leaves no replacement
+        # widget for this output, so its mute policy retires here, or the
+        # stale policy keeps suppressing a surviving output's mute on the
+        # shared model.
+        from ._shinywidgets import drop_mute_policy
+
         if value is None:
+            drop_mute_policy(self)
             self._accessors.on_render(None)
             return None
 
@@ -201,6 +211,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             # accessors keep watching (and reads keep reporting) the old
             # object's state while the output has nothing rendered
             self._accessors.on_render(None)
+            drop_mute_policy(self)
             raise
 
         session = get_current_session()
