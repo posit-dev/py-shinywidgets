@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Iterator, List, Sequence
 import ipywidgets
 import pytest
 import shinywidgets._shinywidgets as sw
-from shiny import App, Session, reactive, ui
+from shiny import App, Session, reactive, req, ui
 from shiny._connection import MockConnection
 from shiny.session import session_context
 from shinywidgets import render_widget
@@ -201,10 +201,12 @@ def test_mute_policy_reaches_only_the_rendering_session(
 
     # Each session's browser got only its own renderer's policy: with the
     # fan-out send, both would have received both
-    assert mute_requests_in(flush_to_browser()) == [
+    assert mute_requests_for(flush_to_browser(), w) == [
         {"shinywidgets": "mute", "traits": ["value"]}
     ]
-    assert mute_requests_in(flush_b()) == [{"shinywidgets": "mute", "traits": ["min"]}]
+    assert mute_requests_for(flush_b(), w) == [
+        {"shinywidgets": "mute", "traits": ["min"]}
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +355,7 @@ def test_a_dropped_renderers_policy_no_longer_shapes_the_mute_set(
     assert set(consumers) == {muting}
 
     rerender(muting, widget_session)
-    assert mute_requests_in(flush_to_browser())[-1] == {
+    assert mute_requests_for(flush_to_browser(), w)[-1] == {
         "shinywidgets": "mute",
         "traits": ["value"],
     }
@@ -415,7 +417,7 @@ def test_unrender_retires_the_outputs_mute_policy(
 
     # The muting output's next render mutes effectively
     rerender(muting, widget_session)
-    assert mute_requests_in(flush_to_browser())[-1] == {
+    assert mute_requests_for(flush_to_browser(), w)[-1] == {
         "shinywidgets": "mute",
         "traits": ["value"],
     }
@@ -456,6 +458,186 @@ def test_a_failed_replacement_render_retires_the_mute_policy(
         "traits": [],
     }
     assert widget_session.root_scope().id not in sw._MUTE_POLICIES
+
+
+def test_a_render_function_error_retires_the_mute_policy(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        w = ipywidgets.IntSlider()
+
+    muting = render_muting()
+    render_once(muting, w, widget_session)
+
+    class _Boom(Exception):
+        pass
+
+    fail = [False]
+    unmuted = render_widget()
+
+    @unmuted
+    def _() -> ipywidgets.IntSlider:
+        if fail[0]:
+            raise _Boom()
+        return w
+
+    rerender(unmuted, widget_session)
+
+    # Both outputs show w: the intersection is empty
+    assert mute_requests_in(flush_to_browser())[-1] == {
+        "shinywidgets": "mute",
+        "traits": [],
+    }
+
+    # The unmuted output's render function fails: the output shows an error
+    # instead of w, so its policy retires, and the drop re-sends w's set,
+    # now the muting output's policy alone
+    fail[0] = True
+    with pytest.raises(_Boom):
+        rerender(unmuted, widget_session)
+    assert mute_requests_for(flush_to_browser(), w)[-1] == {
+        "shinywidgets": "mute",
+        "traits": ["value"],
+    }
+
+    # The muting output's next render mutes effectively
+    rerender(muting, widget_session)
+    assert mute_requests_for(flush_to_browser(), w)[-1] == {
+        "shinywidgets": "mute",
+        "traits": ["value"],
+    }
+
+
+def test_a_cancelled_render_keeps_the_mute_policy(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    from shiny.types import SilentCancelOutputException
+
+    with session_context(widget_session):
+        w = ipywidgets.IntSlider()
+
+    cancel = [False]
+    muting = render_muting()
+
+    @muting
+    def _() -> ipywidgets.IntSlider:
+        if cancel[0]:
+            # Keeps the output's previous view (the browser is sent
+            # nothing), unlike a plain req(False), which clears it
+            req(False, cancel_output=True)
+        return w
+
+    rerender(muting, widget_session)
+    session_id = widget_session.root_scope().id
+    assert muting in sw._MUTE_POLICIES[session_id][str(w.model_id)]
+
+    # The view (and so the policy's reason to exist) survives the
+    # cancellation, so the policy stays registered and nothing is re-sent
+    cancel[0] = True
+    with pytest.raises(SilentCancelOutputException):
+        rerender(muting, widget_session)
+    assert muting in sw._MUTE_POLICIES[session_id][str(w.model_id)]
+
+
+# ---------------------------------------------------------------------------
+# Container renders: an output showing a container also shows every widget
+# reachable from it, so the consumer registers (an empty policy) for each
+# reachable model, not just the container's own
+# ---------------------------------------------------------------------------
+
+
+def test_a_container_render_unmutes_a_child_another_output_mutes(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        slider = ipywidgets.IntSlider()
+        box = ipywidgets.VBox(children=[slider])
+
+    muting, container = render_muting(), render_widget()
+
+    # The muting output renders the slider directly, first
+    render_once(muting, slider, widget_session)
+    assert mute_requests_for(flush_to_browser(), slider)[-1] == {
+        "shinywidgets": "mute",
+        "traits": ["value"],
+    }
+
+    # The container output shows the slider too: its (empty) policy joins the
+    # slider model's consumers, so the intersection un-mutes the slider in
+    # both views
+    render_once(container, box, widget_session)
+    assert mute_requests_for(flush_to_browser(), slider)[-1] == {
+        "shinywidgets": "mute",
+        "traits": [],
+    }
+
+
+def test_a_container_render_unmutes_a_child_another_output_mutes_reversed(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        slider = ipywidgets.IntSlider()
+        box = ipywidgets.VBox(children=[slider])
+
+    container, muting = render_widget(), render_muting()
+
+    # The container render comes first; the muting output's direct render of
+    # the slider must still leave the model unmuted (the browser keeps the
+    # last set it heard)
+    render_once(container, box, widget_session)
+    render_once(muting, slider, widget_session)
+    assert mute_requests_for(flush_to_browser(), slider)[-1] == {
+        "shinywidgets": "mute",
+        "traits": [],
+    }
+
+
+def test_leaving_a_container_retires_its_child_model_registrations(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        slider = ipywidgets.IntSlider()
+        box = ipywidgets.VBox(children=[slider])
+        other = ipywidgets.IntSlider()
+
+    muting = render_muting()
+    render_once(muting, slider, widget_session)
+
+    current: List[Any] = [box]
+    container = render_widget()
+
+    @container
+    def _() -> Any:
+        return current[0]
+
+    rerender(container, widget_session)
+
+    session_id = widget_session.root_scope().id
+    models = sw._MUTE_POLICIES[session_id]
+    # The container's empty policy is registered on its own model and the
+    # slider's alike
+    assert container in models[str(box.model_id)]
+    assert container in models[str(slider.model_id)]
+
+    # Switching widgets moves every registration off the old tree, and the
+    # slider model's set reverts to the direct output's policy
+    current[0] = other
+    rerender(container, widget_session)
+    models = sw._MUTE_POLICIES[session_id]
+    assert container not in models.get(str(box.model_id), {})
+    assert container not in models.get(str(slider.model_id), {})
+    assert container in models[str(other.model_id)]
+    assert mute_requests_for(flush_to_browser(), slider)[-1] == {
+        "shinywidgets": "mute",
+        "traits": ["value"],
+    }
+
+    # Un-rendering retires the registrations the same way
+    current[0] = None
+    rerender(container, widget_session)
+    assert container not in sw._MUTE_POLICY_MODELS
+    models = sw._MUTE_POLICIES[session_id]
+    assert container not in models.get(str(other.model_id), {})
 
 
 def test_session_end_drops_the_sessions_mute_policies(
