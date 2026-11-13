@@ -552,40 +552,58 @@ def session_scoped_send(w: Widget, session: Session, content: object) -> None:
 # extra policy shrinks the set), never mute a trait a live consumer needs.
 _MUTE_POLICIES: Dict[str, Dict[str, WeakKeyDictionary[object, tuple[str, ...]]]] = {}
 
-# The (session id, model id) each consumer last registered a policy for, so a
-# re-render with a different widget moves the policy off the old model
-_MUTE_POLICY_MODELS: WeakKeyDictionary[object, tuple[str, str]] = WeakKeyDictionary()
+# The (session id, model ids) each consumer last registered policies for:
+# the rendered widget's own model plus every model reachable from it. A
+# consumer mutes only its top-level widget's traits, but its output still
+# DISPLAYS the whole tree, so each reachable child model needs the consumer's
+# (empty) policy registered too -- otherwise a model shown directly by one
+# output and inside a container by another sees only the direct output's
+# policy and stays muted in the container's view. The set moves wholesale
+# when a re-render switches widgets
+_MUTE_POLICY_MODELS: WeakKeyDictionary[object, tuple[str, frozenset[str]]] = (
+    WeakKeyDictionary()
+)
 
 
 def send_mute_policy(
     consumer: object, w: Widget, session: Session, traits: Sequence[str]
 ) -> None:
     """
-    Update `consumer`'s muted-traits policy for `w` in `session` and send the
-    model's effective muted set to `session`'s browser.
+    Update `consumer`'s muted-traits policy for `w` in `session` and send
+    every displayed model's effective muted set to `session`'s browser.
 
     The effective set is the intersection over every consumer that most
     recently rendered the model in this session (see _MUTE_POLICIES).
-    `consumer` is the renderer instance; when its re-render switches widgets,
-    its policy moves off the old model, whose set is re-sent if removing the
-    policy changed it. The whole set is stated on every render (even an empty
+    `consumer` is the renderer instance; it registers `traits` for `w`'s own
+    model and an empty policy for every model reachable from `w` (see
+    _MUTE_POLICY_MODELS), since a renderer mutes only its own top-level
+    traits. When its re-render switches widgets, its policies move off the
+    old models, whose sets are re-sent if removing the policy changed them.
+    The whole set is stated on every render (even an empty or unchanged
     one): the browser replaces its set with what it receives, so only a
-    render that sends [] clears the set a reused widget's earlier render left
-    there.
+    render that sends [] clears the set a reused widget's earlier render
+    left there.
     """
     session_id = session.root_scope().id
     model_id = str(w.model_id)
+    # A module-level default (e.g. ipycanvas's shared manager) is never
+    # opened in the session (open_process_global_widgets() skips it), so
+    # there's no browser model for a policy to govern
+    widgets = [x for x in walk_widget_tree([w]) if not is_swapped_out_default(x)]
+    model_ids = frozenset(str(x.model_id) for x in widgets)
 
     prev = _MUTE_POLICY_MODELS.get(consumer)
-    if prev is not None and prev != (session_id, model_id):
+    if prev is not None and prev != (session_id, model_ids):
         _drop_mute_policy(consumer, prev, session if prev[0] == session_id else None)
 
-    consumers = _MUTE_POLICIES.setdefault(session_id, {}).setdefault(
-        model_id, WeakKeyDictionary()
-    )
-    consumers[consumer] = tuple(traits)
-    _MUTE_POLICY_MODELS[consumer] = (session_id, model_id)
-    session_scoped_send(w, session, _mute_message(_effective_muted(consumers)))
+    models = _MUTE_POLICIES.setdefault(session_id, {})
+    for mid in model_ids:
+        consumers = models.setdefault(mid, WeakKeyDictionary())
+        consumers[consumer] = tuple(traits) if mid == model_id else ()
+    _MUTE_POLICY_MODELS[consumer] = (session_id, model_ids)
+    for x in widgets:
+        consumers = models[str(x.model_id)]
+        session_scoped_send(x, session, _mute_message(_effective_muted(consumers)))
 
 
 def drop_mute_policy(consumer: object) -> None:
@@ -597,48 +615,51 @@ def drop_mute_policy(consumer: object) -> None:
     without this its stale policy would keep suppressing the mute of a
     surviving output showing the same model.
     """
-    prev = _MUTE_POLICY_MODELS.get(consumer)
+    prev = _MUTE_POLICY_MODELS.pop(consumer, None)
     if prev is None:
         return
     _drop_mute_policy(consumer, prev, None)
 
 
 def _drop_mute_policy(
-    consumer: object, prev: tuple[str, str], session: Optional[Session]
+    consumer: object, prev: tuple[str, frozenset[str]], session: Optional[Session]
 ) -> None:
     """
-    Remove `consumer`'s policy from `prev` (the (session id, model id) it
-    moved away from), re-sending the model's effective set if removing the
+    Remove `consumer`'s policies from `prev` (the (session id, model ids) it
+    moved away from), re-sending each model's effective set if removing the
     policy changed it and the session is still around to hear it.
     """
-    session_id, model_id = prev
+    session_id, model_ids = prev
     models = _MUTE_POLICIES.get(session_id)
     if models is None:
         return
-    consumers = models.get(model_id)
-    if consumers is None or consumer not in consumers:
-        return
-    before = _effective_muted(consumers)
-    del consumers[consumer]
-    after = _effective_muted(consumers)
-    if not consumers:
-        del models[model_id]
-        if not models:
-            del _MUTE_POLICIES[session_id]
-    if after == before:
-        return
-    if session is None:
-        # A renderer lives in one session, so reaching here means it somehow
-        # rendered in another; send to the old one if it's still active
-        session = next((s for s in SESSIONS if s.id == session_id), None)
+    for model_id in model_ids:
+        consumers = models.get(model_id)
+        if consumers is None or consumer not in consumers:
+            continue
+        before = _effective_muted(consumers)
+        del consumers[consumer]
+        after = _effective_muted(consumers)
+        if not consumers:
+            del models[model_id]
+        if after == before:
+            continue
         if session is None:
-            return
-    w = WIDGET_INSTANCE_MAP.get(model_id)
-    # A replaced render's widget may already be closed (a render Context's
-    # invalidation closes render-owned widgets before the re-render runs);
-    # its browser model is then gone, with nothing left to unmute
-    if w is not None:
-        session_scoped_send(w, session, _mute_message(after))
+            # A renderer lives in one session, so reaching here means it
+            # somehow rendered in another; send to the old one if it's
+            # still active
+            session = next((s for s in SESSIONS if s.id == session_id), None)
+            if session is None:
+                return
+        w = WIDGET_INSTANCE_MAP.get(model_id)
+        # A replaced render's widget may already be closed (a render
+        # Context's invalidation closes render-owned widgets before the
+        # re-render runs); its browser model is then gone, with nothing
+        # left to unmute
+        if w is not None:
+            session_scoped_send(w, session, _mute_message(after))
+    if not models:
+        del _MUTE_POLICIES[session_id]
 
 
 def _effective_muted(
