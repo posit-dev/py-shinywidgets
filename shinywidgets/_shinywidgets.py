@@ -26,6 +26,7 @@ from typing import (
 from uuid import uuid4
 from weakref import WeakSet, ref
 
+import anywidget
 import ipywidgets
 from packaging.version import Version
 
@@ -225,9 +226,14 @@ def init_shiny_widget(w: Widget):
     # Capture the render (if any) now, so the deferred open below can re-enter it:
     # widgets created lazily while serializing (e.g. default Layout/Style models)
     # then get the same cleanup as this widget instead of living until session end.
+    # An anywidget shared asset is the session's cache entry for a class's
+    # `_esm`/`_css` (see is_anywidget_asset): keep it session-owned so a
+    # re-render doesn't close it out from under the cache.
     render_ctx = (
         WidgetRenderContext.get_render_context()
-        if WidgetRenderContext.is_rendering_widget() and not shared
+        if WidgetRenderContext.is_rendering_widget()
+        and not shared
+        and not is_anywidget_asset(w)
         else None
     )
 
@@ -357,6 +363,36 @@ def init_shiny_widget(w: Widget):
 
 # TODO: can we restore the widget constructor in a sensible way?
 Widget.on_widget_constructed(init_shiny_widget)  # type: ignore
+
+
+def anywidget_asset_scope() -> Optional[Session]:
+    """
+    The scope anywidget caches shared `_esm`/`_css` asset models under (see
+    the configure() call below): the root Shiny session, so one browser gets
+    one asset cache (a module-scoped session shares its root's browser);
+    or None (the whole process) during shared construction, since a
+    process-global widget's asset scoped to the constructing session couldn't
+    be resolved by other sessions and would close when that session ends.
+    """
+    if constructing_shared.get():
+        return None
+    session = get_current_session()
+    if session is None:
+        return None
+    return session.root_scope()
+
+
+# anywidget (0.12+, PR #1037) can send each class's `_esm`/`_css` as one shared
+# asset model per front end instead of inlining the source in every widget. It
+# refuses to when a host hooks Widget.on_widget_constructed (as we do above)
+# without naming a scope, since such a host binds each comm to one session --
+# so name ours (see anywidget_asset_scope): one asset cache per root session,
+# dropped when the session is collected, and a process-wide one for shared
+# widgets. Whether the sharing is on stays with the user
+# (ANYWIDGET_SHARED_ASSETS / their own configure() call); upstream ships it off.
+_anywidget_configure = getattr(getattr(anywidget, "hosts", None), "configure", None)
+if _anywidget_configure is not None:
+    _anywidget_configure(scope=anywidget_asset_scope)
 
 
 def open_shared_in(w: Widget, session: Session) -> None:
@@ -937,6 +973,19 @@ def is_pyvista_viewer_page(w: Widget) -> bool:
         sys.modules.get("trame_pyvista.jupyter"), "_ViewerPage", None
     )
     return viewer_page_cls is not None and isinstance(w, viewer_page_cls)
+
+
+def is_anywidget_asset(w: Widget) -> bool:
+    """
+    Is `w` one of anywidget's shared asset models (PR #1037's `_AssetModel`)?
+
+    Matches the front end's own check. Such a widget is anywidget's per-session
+    cache entry for a class's `_esm`/`_css`, so it must stay session-owned (not
+    render-owned): anywidget only replaces a cached asset whose comm is None,
+    and close_widget() leaves an OrphanedShinyComm, so a render invalidation
+    closing it would leave the cache handing out a dead asset.
+    """
+    return getattr(w, "_model_name", None) == "AnyAssetModel"
 
 
 def is_process_global_construction(w: Widget) -> bool:
