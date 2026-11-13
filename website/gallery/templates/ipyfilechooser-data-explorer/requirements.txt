@@ -1,0 +1,2 @@
+shinywidgets[ipyfilechooser,itables,plotly]
+pandas

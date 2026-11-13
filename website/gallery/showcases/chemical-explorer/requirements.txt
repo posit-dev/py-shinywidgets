@@ -1,0 +1,5 @@
+# RDKit ships as a mols2grid dependency, so no extra packages are needed
+# beyond the two renderer extras plus matplotlib for the depiction panel.
+shinywidgets[mols2grid,plotly]
+matplotlib
+pandas
