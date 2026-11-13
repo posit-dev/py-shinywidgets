@@ -1,5 +1,5 @@
 import { HTMLManager, requireLoader } from '@jupyter-widgets/html-manager';
-import { ack_comm, dispose_comm, setConnected, ShinyComm } from './comm';
+import { ack_comm, dispose_comm, setConnected, setMaxClientMessageBytes, ShinyComm } from './comm';
 import { behaviorForModel, ipyleafletBehavior, WIDGET_BEHAVIORS, type PostDisplayContext } from './fill';
 import { isJQuery, jsonParse, lendDataTables, protectPageJQuery } from './utils';
 import { NGLVIEW_COLORMAKER_REGISTRY_MODEL, renderHiddenColormakerRegistry } from './nglview';
@@ -575,6 +575,11 @@ type ModuleAssets = {
   // the global.
   exports?: Record<string, string>;
 };
+
+// The session's message size limit, sent once it starts (see comm.ts)
+Shiny.addCustomMessageHandler("shinywidgets_session_init", (msg: { ws_max_size?: number }) => {
+  if (typeof msg?.ws_max_size === "number") setMaxClientMessageBytes(msg.ws_max_size);
+});
 
 // Initialize the comm and model when a new widget is created
 // This is basically our version of https://github.com/jupyterlab/jupyterlab/blob/d33de15/packages/services/src/kernel/default.ts#L1144-L1176
