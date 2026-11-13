@@ -202,6 +202,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             foreign_or_closed_widget,
             open_process_global_widgets,
             ownership_error,
+            session_scoped_send,
         )
 
         # Outside a real session (the Express UI-discovery pass, or a unit test
@@ -234,9 +235,23 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         for w in self._rate_policy_widgets(self._widget):
             register_rate_policy(w, self._rate_policy, self._rate_delay)
         self._accessors.on_render(widget)
-        muted = () if native_events_enabled() else self._muted_traits(self._widget)
-        if muted:
-            widget.send({"shinywidgets": "mute", "traits": list(muted)})
+        # The whole muted set is stated on every render (even an empty one):
+        # the browser replaces its set with what it receives, so only a render
+        # that sends [] clears the set a reused widget's earlier render left
+        # there.
+        muted = (
+            [] if native_events_enabled() else list(self._muted_traits(self._widget))
+        )
+        mute_msg = {"shinywidgets": "mute", "traits": muted}
+        if session is not None and not session.is_stub_session():
+            # widget.send() would fan a process-global widget's policy out to
+            # every active session; this render's policy is this session's alone
+            session_scoped_send(widget, session, mute_msg)
+        else:
+            # No session to scope to (the Express UI-discovery pass, or a test
+            # calling _render() directly): the widget's comm is inert, or
+            # queues the send for the comm that opens in its own session
+            widget.send(mute_msg)
         if (
             session is not None
             and not session.is_stub_session()
