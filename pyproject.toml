@@ -86,8 +86,9 @@ panel = ["panel", "jupyter_bokeh>=4.1"]
 # the module-scope init() throws "viewer wasm is already initialized" -- seen as
 # flaky console-error failures in tests/playwright/render_perspective. Verified
 # broken on 5.7.0-5.9.0. The fix (perspective-dev/perspective#3287) is merged
-# upstream; relax this pin once a release containing it (>5.9.0) ships.
-perspective = ["perspective-python>=3.0,<5.7", "pyarrow"]
+# upstream; the !=-exclusions let CI pick up a release containing it (>5.9.0)
+# automatically and re-validate.
+perspective = ["perspective-python>=3.0,!=5.7.0,!=5.8.0,!=5.9.0", "pyarrow"]
 plotly = ["plotly>=5.12.0", "narwhals", "pandas"]
 plotnine = ["plotnine", "ipympl"]
 # duckdb is listed because the security model requires apps to `import duckdb`
@@ -163,7 +164,7 @@ test = [
   "networkx",
   "mosaic-widget; python_version < '3.15'",
   "panel",
-  "perspective-python>=3.0,<5.7",
+  "perspective-python>=3.0,!=5.7.0,!=5.8.0,!=5.9.0",
   "playwright>=1.40.0",
   "pyobsplot>=0.5.0",
   "plotly>=5.12.0",
@@ -235,7 +236,7 @@ dev = [
   "networkx",
   "mosaic-widget; python_version < '3.15'",
   "panel",
-  "perspective-python>=3.0,<5.7",
+  "perspective-python>=3.0,!=5.7.0,!=5.8.0,!=5.9.0",
   "playwright>=1.40.0",
   "pyobsplot>=0.5.0",
   "plotly>=5.12.0",
@@ -313,7 +314,7 @@ test = [
   "networkx",
   "mosaic-widget; python_version < '3.15'",
   "panel",
-  "perspective-python>=3.0,<5.7",
+  "perspective-python>=3.0,!=5.7.0,!=5.8.0,!=5.9.0",
   "playwright>=1.40.0",
   "pyobsplot>=0.5.0",
   "plotly>=5.12.0",
