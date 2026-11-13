@@ -399,7 +399,12 @@ class render_drawdata(render_widget_base[DrawdataWidgetT, DrawdataWidgetT]):
     read-only attributes: `.value` and `.widget`, both the rendered widget.
 
     **Responding to user interaction**: read the drawn points reactively
-    with ``canvas.read("data")``.
+    with ``canvas.read("data")``; each point is a dict with ``x``, ``y``,
+    ``color`` (a hex string), and ``label``. Note that the widget's own
+    ``data_as_X_y`` property reports those hex colors as ``y`` for
+    classification (once more than one class is drawn), not the labels --
+    build class labels from the ``data`` trait (or
+    ``data_as_pandas["label"]``) instead.
 
     **Mutating the widget**: use `.widget` to update the widget in place. For
     `BarWidget`, re-render instead: it ignores Python-side trait updates
@@ -643,7 +648,12 @@ class render_altair(render_widget_base[ValueT, JupyterChart]):
         keyed by view name (give subcharts a ``name=`` for readable keys);
         `df` may then be passed as a dict keyed by view name. When the
         selection touches one view, or views sharing the *identical* data
-        frame object, a single frame is returned. Returns an empty frame (or
+        frame object, a single frame is returned. Identical means the same
+        object, not an equal one: layers built from separate copies of one
+        frame (e.g. ``alt.Chart(df.copy())`` per layer) don't count as
+        shared, so the return is a dict -- give every subchart the same
+        frame object, or pass the frames as a dict keyed by view name.
+        Returns an empty frame (or
         a dict of empty frames) while nothing is selected. Dates are compared
         in UTC, reading time-zone-naive columns in the browser's time zone,
         as Vega-Lite does. A bare point selection (positional row indices,
@@ -1059,7 +1069,14 @@ class render_ipyaladin(render_widget_base[ValueT, Aladin]):
 
     **Network access**: the viewer loads its JavaScript from a CDN and its sky
     imagery (HiPS tiles) from CDS servers at render time, so it requires an
-    internet connection.
+    internet connection. A constructor ``target=`` given as an object *name*
+    (``Aladin(target="M31")``) resolves the name to coordinates with a
+    blocking call to CDS's Sesame service while the render function runs;
+    an unresolvable name (or an unreachable service) raises
+    (``NameResolveError``, or a misleading ``WidgetNotReadyError`` in
+    ipyaladin 0.8.x, whose ``_ready`` trait is never set) and fails the
+    render outright. Prefer coordinate strings (``"83.63 22.01"``, parsed
+    locally) or a `SkyCoord` for anything set programmatically.
 
     Parameters
     ----------
@@ -1562,8 +1579,14 @@ class render_jscatter(render_widget_base[ValueT, JupyterScatter]):
     ``"lasso_selection_polygon"`` (the lasso path in data coordinates).
 
     **Large selections**: selecting more than about 3 million points sends the
-    server a message larger than the default 16 MiB websocket limit, which
-    disconnects the session. Raise the limit with ``shiny run --ws-max-size``.
+    server a message larger than the default 16 MiB websocket limit. The
+    message is dropped client-side before it can close the connection: the
+    session stays up and the rest of the app keeps working, but the
+    selection is lost and the user sees a sticky error notification. Raise
+    the limit with ``shiny run --ws-max-size`` and set the
+    ``SHINYWIDGETS_WS_MAX_SIZE`` environment variable to match (Shiny
+    doesn't expose its real limit to sessions, so the client enforces the
+    env var's value).
 
     **Mutating the widget**: use `.widget` to update the rendered plot in
     place; trait changes on the widget are synced to the browser.
@@ -6084,12 +6107,13 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     * **Clicks (browser -> Python):** with ``clicks=True``, clicking a
       molecule's image (a distinct gesture from the selection checkbox)
       makes its row's data available reactively as ``grid.clicked()`` --
-      every displayed column plus ``mols2grid-id`` -- for click-to-inspect
-      panels and drill-downs. The payload can be wide (it includes the
-      cell's image markup), so pick the keys you display rather than
-      stringifying the whole dict -- and ``clicked()`` raises without
-      ``clicks=True`` or a Python ``callback``. ``clicked()`` is `None`
-      until the first click and
+      the displayed columns plus ``mols2grid-id``, the cell's ``img``
+      markup, the SMILES column, and any tooltip-only columns -- for
+      click-to-inspect panels and drill-downs. The payload can be wide
+      (``img`` alone is the full SVG markup), so pick the keys you
+      display rather than stringifying the whole dict -- and
+      ``clicked()`` raises without ``clicks=True`` or a Python
+      ``callback``. ``clicked()`` is `None` until the first click and
       keeps its value across re-renders (the last click still happened,
       though its row data refers to the previous render's grid).
     **Mutating the widget**: ``grid.grid.filter(mask)`` (a boolean
@@ -6129,9 +6153,11 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
       filling container; an explicit ``height`` on the output acts as a viewport
       that clips the grid. Grid data is inlined into the iframe document
       (roughly 0.5-1 KB per molecule, depending on how many columns are
-      shown), so grids in the tens of thousands of molecules can approach
-      Shiny's default 16 MiB websocket message limit (raise it with ``shiny
-      run --ws-max-size``). To bound the *grid* rather than
+      shown), so a grid of tens of thousands of molecules makes each
+      render a large server-to-browser message. No websocket limit
+      rejects it (Shiny's 16 MiB ``--ws-max-size`` limit applies only to
+      browser-to-server messages), so expect a slow first paint, not an
+      error. To bound the *grid* rather than
       its container, pass ``iframe_height`` (e.g.
       ``render_mols2grid(iframe_height="400px")``): it sets the iframe element's
       height, which switches off mols2grid's auto-fit so the grid scrolls
@@ -6174,10 +6200,14 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
     rate_policy
         How to rate-limit :func:`~shinywidgets.reactive_read` on the widget:
         ``"debounce"`` or ``"throttle"``. ``None`` (the default) debounces
-        ``reactive_read()`` only if ``rate_delay`` is given; no accessor on
-        this renderer declares a default, so ``rate_policy``/``rate_delay``
-        don't affect :meth:`selected` or :meth:`clicked` (each fires at
-        most once per gesture).
+        ``reactive_read()`` only if ``rate_delay`` is given; in practice
+        both are inert for this renderer -- no accessor declares a
+        default policy, so ``rate_policy``/``rate_delay`` don't affect
+        :meth:`selected` or :meth:`clicked` (each fires at most once per
+        gesture), and the policy registers on the rendered `Box`, not
+        the inner `MolGridWidget` whose ``selection``/``callback_kwargs``
+        traits hold the state, so reads of those aren't rate-limited
+        either.
     rate_delay
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
@@ -6369,9 +6399,12 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         ``callback``).
 
         Unlike `.selected()` (the checkbox set), a click is retained
-        last-click state: it carries the clicked row's data (every displayed
-        column, plus ``mols2grid-id``) and keeps its value across re-renders
-        until the user clicks the new grid. All values are
+        last-click state: it carries the clicked row's data and keeps its
+        value across re-renders until the user clicks the new grid. The
+        payload holds every displayed column plus ``mols2grid-id``, and
+        always also includes ``img`` (the cell's full SVG markup) and the
+        SMILES column, even when they aren't displayed, as well as any
+        tooltip-only columns. All values are
         strings except ``mols2grid-id`` (an int), and clicking the same
         molecule twice in a row does not re-fire (a mols2grid limitation:
         the trait only changes when the payload does). Raises without
