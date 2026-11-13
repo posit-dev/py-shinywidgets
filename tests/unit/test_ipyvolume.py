@@ -63,6 +63,88 @@ def test_as_widget_errors_helpfully_for_a_bare_scene_object(
             as_widget(scatter)
 
 
+def test_as_widget_rejects_per_point_string_colors(widget_session: Session) -> None:
+    ipv = pytest.importorskip("ipyvolume")
+
+    with session_context(widget_session):
+        fig = ipv.figure()
+        scatter = ipv.scatter(
+            [0.0, 1.0], [0.0, 1.0], [0.0, 1.0], color=["tomato", "seagreen"]
+        )
+        with pytest.raises(TypeError, match=r"Scatter\.color.*array of strings"):
+            as_widget(fig)
+        # A string array left in place would hang a later flush in ipyvolume's
+        # serializer
+        scatter.color = "red"
+
+
+def test_as_widget_rejects_string_colors_from_the_quickscatter_container(
+    widget_session: Session,
+) -> None:
+    ipv = pytest.importorskip("ipyvolume")
+
+    with session_context(widget_session):
+        container = ipv.quickscatter(
+            [0.0, 1.0], [0.0, 1.0], [0.0, 1.0], color=["tomato", "seagreen"]
+        )
+        with pytest.raises(TypeError, match=r"Scatter\.color.*array of strings"):
+            as_widget(container)
+        container.figure.scatters[0].color = "red"
+
+
+def test_as_widget_rejects_string_color_selected(widget_session: Session) -> None:
+    ipv = pytest.importorskip("ipyvolume")
+
+    with session_context(widget_session):
+        fig = ipv.figure()
+        scatter = ipv.scatter([0.0, 1.0], [0.0, 1.0], [0.0, 1.0])
+        scatter.color_selected = ["tomato", "seagreen"]
+        with pytest.raises(
+            TypeError, match=r"Scatter\.color_selected.*array of strings"
+        ):
+            as_widget(fig)
+        scatter.color_selected = "green"
+
+
+def test_as_widget_rejects_mesh_string_colors(widget_session: Session) -> None:
+    ipv = pytest.importorskip("ipyvolume")
+    import numpy as np
+
+    with session_context(widget_session):
+        mesh = ipv.widgets.Mesh(
+            x=np.zeros((2, 2)), y=np.zeros((2, 2)), z=np.zeros((2, 2)), color="red"
+        )
+        mesh.color = ["tomato", "seagreen"]
+        fig = ipv.Figure(meshes=[mesh])
+        with pytest.raises(TypeError, match=r"Mesh\.color.*array of strings"):
+            as_widget(fig)
+        mesh.color = "red"
+
+
+def test_as_widget_accepts_a_scalar_string_color(widget_session: Session) -> None:
+    ipv = pytest.importorskip("ipyvolume")
+
+    with session_context(widget_session):
+        fig = ipv.figure()
+        ipv.scatter([0.0, 1.0], [0.0, 1.0], [0.0, 1.0], color="tomato")
+        assert as_widget(fig) is fig
+
+
+def test_as_widget_accepts_numeric_per_point_colors(widget_session: Session) -> None:
+    ipv = pytest.importorskip("ipyvolume")
+    import numpy as np
+
+    with session_context(widget_session):
+        fig = ipv.figure()
+        ipv.scatter(
+            [0.0, 1.0],
+            [0.0, 1.0],
+            [0.0, 1.0],
+            color=np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+        )
+        assert as_widget(fig) is fig
+
+
 def test_vuetify_widget_open_serves_jupyter_vue(
     widget_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
