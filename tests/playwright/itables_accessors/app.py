@@ -20,7 +20,7 @@ def server(input, output, session):
 
     @render.text
     def sel():
-        return str(table.selected_rows())
+        return str(table.selected())
 
 
 app = App(app_ui, server)

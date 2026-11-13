@@ -18,7 +18,7 @@ def itable(session: Session) -> object:
 def test_selection_rows_attach_seeds_and_emits(widget_session: Session) -> None:
     w = itable(widget_session)
     emitted: list[object] = []
-    detach = si.SELECTED_ROWS.attach(w, emitted.append)
+    detach = si.SELECTED.attach(w, emitted.append)
     assert emitted == [[]]  # seeded; [] until something is selected
     w.selected_rows = [1, 3]
     assert emitted[-1] == [1, 3]
@@ -34,6 +34,6 @@ def test_selection_rows_accessor(widget_session: Session) -> None:
     r = render_itables()
     r._widget = w  # stands in for _render()
     r._accessors.on_render(w)
-    assert r.selected_rows() == []
+    assert r.selected() == []
     w.selected_rows = [49]  # positions are .iloc positions of the table's df
-    assert r.selected_rows() == [49]
+    assert r.selected() == [49]

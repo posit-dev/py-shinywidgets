@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added more than 30 new `@render_*` decorators, bringing many more visualization and widget ecosystems into Shiny. Unless noted, each output fills its container in filling layouts and respects an explicit `output_widget(height=...)`, and the methods listed are reactive accessors (see the next item). Install each one's dependencies with its extra, e.g., `pip install 'shinywidgets[holoviews]'` (see the README for the full list).
   * `@render_bqplot` for [bqplot](https://bqplot.github.io/bqplot/) figures, including those built with `bqplot.pyplot`. Figures follow Shiny's light/dark theme. Accessors: `selected()`, `brush()`, and `selected_rows()` (the selected rows of a data frame at a mark's selected positions, ready for a table or download). (#278)
   * `@render_drawdata` for [drawdata](https://github.com/koaning/drawdata) drawing canvases. Users draw a dataset (or sculpt histogram bars), and Python sees every stroke via `reactive_read(widget, "data")`. See `examples/drawdata`. (#278)
-  * `@render_embedding_atlas` for [Embedding Atlas](https://apple.github.io/embedding-atlas/) explorers (Python 3.11+). Accessors: `selected()`, `predicate()`. (#278, #294)
+  * `@render_embedding_atlas` for [Embedding Atlas](https://apple.github.io/embedding-atlas/) explorers (Python 3.11+). Accessors: `selected_rows()`, `predicate()`. (#278, #294)
   * `@render_geolibre` for the [GeoLibre](https://geolibre.app) GIS workbench. Project changes (e.g., `add_geojson()`, `set_center()`) update the live map in place, `on_click()` and `reactive_read(widget, "project")` bring interactions back to Python, and it works deployed, including layers read from the server's disk. (#341, #360)
   * `@render_holoviews` for [HoloViews](https://holoviews.org), [hvPlot](https://hvplot.holoviz.org), and [geoviews](https://geoviews.org) objects, including [datashader](https://datashader.org) plots that re-aggregate as you zoom and pan. Pass `responsive=True` to make plots fill their container. (#87, #250, #253, #278)
   * `@render_ipyaladin` for [ipyaladin](https://cds-astro.github.io/ipyaladin/) sky viewers. Accessors: `clicked_object()`, `selected()`, `target()`, `fov()`. (#278)
@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * `@render_ipyleaflet` for [ipyleaflet](https://ipyleaflet.readthedocs.io) maps and subclasses. Accessors: `bounds()`, `zoom()`, `center()`, `clicked()`, `drawn_features()`. Maps now respect an explicit `height` instead of always being 400px tall. (#278)
   * `@render_ipysigma` for WebGL network graphs with [ipysigma](https://github.com/medialab/ipysigma), from a networkx graph or a `Sigma` widget. The selected node is readable with `reactive_read()`. This is a widget-based option for [pyvis](https://pyvis.readthedocs.io) users. (#63, #278)
   * `@render_ipyvolume` for [ipyvolume](https://ipyvolume.readthedocs.io) 3D scatter, quiver, and volume plots, built with either the pylab API or direct construction. Accessor: `camera()`. (#278)
-  * `@render_itables` for pandas and polars data frames as interactive [itables](https://itables.org) tables. Return an `itables.widget.ITable` to pass options such as `select=True`. Accessor: `selected_rows()`. (#54, #278)
+  * `@render_itables` for pandas and polars data frames as interactive [itables](https://itables.org) tables. Return an `itables.widget.ITable` to pass options such as `select=True`. Accessor: `selected()`. (#54, #278)
   * `@render_jscatter` for [jupyter-scatter](https://jupyter-scatter.dev) GPU-accelerated scatter plots. Accessors: `selected()` (e.g., to link brushing across plots and tables) and `selected_rows()` (the selected rows of the plot's data frame, ready for a table or download). (#278, #293)
   * `@render_k3d` for [k3d](https://k3d-jupyter.org) 3D plots. Accessor: `camera()`. (#278)
   * `@render_keplergl` for [kepler.gl](https://kepler.gl) maps, from a pandas `DataFrame`, a geopandas `GeoDataFrame`, or a `KeplerGl` widget. Use `reactive_read()` to react to the map's configuration. (#278)
@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * `@render_pythreejs` for [pythreejs](https://pythreejs.readthedocs.io) 3D scenes. Accessor: `camera()`, which follows `OrbitControls` gestures. (#278)
   * `@render_pyvista` for [pyvista](https://pyvista.org) 3D plots (Python 3.11+). Scenes rotate, zoom, and pan in the browser without running a separate trame server. (#278)
   * `@render_quak` for [quak](https://github.com/manzt/quak) data tables, from any DataFrame-like object. Accessors: `sql()` (the current sort and filter as a SQL query), `data()`. (#278, #286)
-  * `@render_reactable` for [reactable](https://machow.github.io/reactable-py/) tables, with client-side sorting, filtering, searching, pagination, selection, grouping, and expandable details. Accessors: `selected_rows()`, `page()`, `sorted()`, `filtered()`, `search()`.
+  * `@render_reactable` for [reactable](https://machow.github.io/reactable-py/) tables, with client-side sorting, filtering, searching, pagination, selection, grouping, and expandable details. Accessors: `selected()`, `page()`, `sorted()`, `filtered()`, `search()`.
   * `@render_rerun` for [rerun](https://rerun.io) viewers of time-indexed multimodal data (Python 3.11+). Data logged to the viewer's `RecordingStream` streams live to the browser. Create the `RecordingStream` inside the render function, since rerun's global recording is shared by every session. Accessor: `selected()`. (#362)
   * `@render_vizarr` for [vizarr](https://github.com/hms-dbmi/vizarr) viewers of OME-NGFF (zarr) bioimages, from a local store or a URL. The camera syncs both ways via the `view_state` trait, and `add_image()` adds layers in place. Requires an internet connection. (#358)
 
@@ -92,6 +92,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug fixes
 
+* Widget-to-server messages larger than the websocket limit are now dropped client-side instead of disconnecting the whole session: the user sees a sticky error notification (once per widget), and the console error names the widget and the `--ws-max-size` workaround. Set `SHINYWIDGETS_WS_MAX_SIZE` if you run with a raised limit. (#459)
+* A widget that fails after its render function returns (e.g., an Altair/VegaFusion chart without `vl-convert-python` installed) now shows the user an error notification instead of leaving the output blank. (#320)
 * Fixed many issues with widgets nested inside other widgets and with widget outputs inserted dynamically (e.g., `output_widget()` inside `@render.ui`). With ipywidgets 8, these either didn't render at all (e.g., a Plotly `FigureWidget` or a styled `HTML` widget inside an ipyleaflet popup) or rendered while logging errors like `Class HTMLStyleModel not found` (e.g., ipyleaflet popups, `WidgetControl` children, and leafmap legends). (#75, #101, #137, #157, #194, #237)
 * Re-rendering, replacing, hiding/showing, or removing widget outputs no longer leaks memory on the server or in the browser. Re-rendered widgets, and the data they hold, are now freed right away instead of when the session ends. (#246, #258, #260, #261, #262, #263, #303, #405) Related fixes:
   * pythreejs widgets no longer cause Shiny sessions to hang indefinitely with ipywidgets 8. (#244)
@@ -121,6 +123,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Error messages for objects that can't be rendered as widgets are clearer. Subclasses of supported types (e.g., `leafmap.deck.Map`) get their base package's guidance, unsupported builtins (e.g., a string) get the intended `TypeError` instead of an `AttributeError`, and messages no longer include huge object reprs. (#287)
 * Reading `.widget` or `.value` inside the output's own render function now raises an error instead of silently returning the previous render's widget or value.
 * With shinywidgets imported, constructing a `pydeck.Deck` outside a Shiny session (e.g., at module level) no longer raises "shinywidgets requires that all ipywidgets be constructed within an active Shiny session".
+* ipydatagrid grids (and other widgets that detect JupyterLab's theme) now follow the app's light/dark color mode instead of always rendering light. Toggling the mode re-themes grids rendered after the toggle; grids already on screen keep their palette, an ipydatagrid limitation. (#439)
 
 ## [0.8.2] - 2026-10-15
 

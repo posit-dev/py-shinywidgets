@@ -55,7 +55,7 @@ def test_reactable_bind_sent_while_rendering_is_delivered(
         # The bridge only needs a widget's on_msg()/send()
         w = HTML()
         assert isinstance(w.comm, OrphanedShinyComm)
-        sr.SELECTED_ROWS.attach(w, lambda raw: None)
+        sr.SELECTED.attach(w, lambda raw: None)
 
     assert custom_messages_after_open(flush_to_browser(), w.model_id) == [
         sr.BIND_MESSAGE
