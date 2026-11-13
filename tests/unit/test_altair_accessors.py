@@ -674,6 +674,90 @@ def test_selected_rows_bare_point_selection_raises_for_mixed_frame_and_url_data(
         r.selected_rows("pick", df=POINTS)
 
 
+def test_selected_rows_repeat_chart_filters_the_shared_frame(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    brush = alt.selection_interval(name="b")
+    rep = (
+        alt.Chart(POINTS, name="pts")
+        .mark_point()
+        .encode(x="x:Q", y="y:Q")
+        .add_params(brush)
+        .repeat(column=["x", "y"])
+    )
+    with session_context(widget_session):
+        w = alt.JupyterChart(rep)
+    views = sa.selection_views(w.chart, "b")
+    assert views is not None and len(views) == 2
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "b": IntervalSelection(
+                    name="b",
+                    value={},
+                    store=[uentry(view, ("x", "R", [1, 2])) for view in views],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    # A selection spans the repeat's generated views, which all share the
+    # chart's one data frame: no per-view dict, and a scalar df= works
+    assert r.selected_rows("b")["y"].tolist() == [10, 20]
+    assert r.selected_rows("b", df=POINTS)["y"].tolist() == [10, 20]
+
+
+def test_selected_rows_scalar_df_for_views_sharing_a_url(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    brush = alt.selection_interval(name="b")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        combo = alt.hconcat(
+            alt.Chart("https://example.com/d.csv", name="a")
+            .mark_point()
+            .encode(x="x:Q")
+            .add_params(brush),
+            alt.Chart("https://example.com/d.csv", name="b")
+            .mark_point()
+            .encode(x="x:Q")
+            .add_params(brush),
+        )
+    with session_context(widget_session):
+        w = alt.JupyterChart(combo)
+    assert sa.selection_views(w.chart, "b") == ["a", "b"]
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "b": IntervalSelection(
+                    name="b",
+                    value={},
+                    store=[
+                        uentry("a", ("x", "R", [1, 2])),
+                        uentry("b", ("x", "R", [1, 2])),
+                    ],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    # Both views are fed the same URL: a scalar df stands in for it, and
+    # without one there is nothing to filter
+    assert r.selected_rows("b", df=POINTS)["y"].tolist() == [10, 20]
+    with pytest.raises(ValueError, match="'a'"):
+        r.selected_rows("b")
+
+
 def sa_box(raw: object) -> Any:
     from shinywidgets._accessors import Box
 

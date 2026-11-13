@@ -166,7 +166,7 @@ def chart_datasets(chart: Any) -> List[Any]:
             if children is not alt.Undefined:
                 for subchart in children:
                     visit(subchart)
-        if isinstance(node, alt.FacetChart):
+        if isinstance(node, (alt.FacetChart, alt.RepeatChart)):
             visit(node.spec)
 
     visit(chart)
@@ -174,6 +174,14 @@ def chart_datasets(chart: Any) -> List[Any]:
 
 
 def chart_frame(chart: Any) -> Any:
+    import altair as alt
+
+    # A repeat chart's subcharts share one dataset, which altair may leave
+    # on the repeated spec instead of hoisting it onto the chart
+    while isinstance(chart, alt.RepeatChart) and not is_frame(
+        getattr(chart, "data", None)
+    ):
+        chart = chart.spec
     data = getattr(chart, "data", None)
     if is_frame(data):
         return data
