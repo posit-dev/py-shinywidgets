@@ -149,7 +149,16 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         # unless the click channel is enabled)
         self._accessors = Accessors(
             self._accessor_specs,
-            dynamic_specs=self._dynamic_accessor_spec,
+            # The base method is a no-op; storing it bound would pin the
+            # renderer for as long as anything keeps the Accessors (a
+            # session's on_destroy() registration does), defeating weak-key
+            # cleanup keyed on the renderer (see _MUTE_POLICIES)
+            dynamic_specs=(
+                None
+                if type(self)._dynamic_accessor_spec
+                is render_widget_base._dynamic_accessor_spec
+                else self._dynamic_accessor_spec
+            ),
             rate_policy=rate_policy,
             rate_delay=rate_delay,
             listen_to=listen_to,
@@ -202,7 +211,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             foreign_or_closed_widget,
             open_process_global_widgets,
             ownership_error,
-            session_scoped_send,
+            send_mute_policy,
         )
 
         # Outside a real session (the Express UI-discovery pass, or a unit test
@@ -235,23 +244,21 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         for w in self._rate_policy_widgets(self._widget):
             register_rate_policy(w, self._rate_policy, self._rate_delay)
         self._accessors.on_render(widget)
-        # The whole muted set is stated on every render (even an empty one):
-        # the browser replaces its set with what it receives, so only a render
-        # that sends [] clears the set a reused widget's earlier render left
-        # there.
         muted = (
             [] if native_events_enabled() else list(self._muted_traits(self._widget))
         )
-        mute_msg = {"shinywidgets": "mute", "traits": muted}
         if session is not None and not session.is_stub_session():
-            # widget.send() would fan a process-global widget's policy out to
-            # every active session; this render's policy is this session's alone
-            session_scoped_send(widget, session, mute_msg)
+            # Other outputs in this session may show the same widget, and the
+            # browser keeps one (last-sent) muted set per model: send the
+            # intersection over all the model's consumers, not this render's
+            # policy alone (and move the policy off the widget a re-render
+            # switched away from)
+            send_mute_policy(self, widget, session, muted)
         else:
             # No session to scope to (the Express UI-discovery pass, or a test
             # calling _render() directly): the widget's comm is inert, or
             # queues the send for the comm that opens in its own session
-            widget.send(mute_msg)
+            widget.send({"shinywidgets": "mute", "traits": muted})
         if (
             session is not None
             and not session.is_stub_session()
