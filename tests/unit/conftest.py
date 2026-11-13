@@ -52,7 +52,10 @@ def flush_to_browser(
     sent: list[dict[str, Any]] = []
 
     async def record(msg_type: str, msg_txt: str) -> None:
-        sent.append({"type": msg_type, **json.loads(msg_txt)})
+        # Only comm messages belong in the stream; session-init (and any
+        # other one-off custom messages) aren't part of it
+        if msg_type.startswith("shinywidgets_comm_"):
+            sent.append({"type": msg_type, **json.loads(msg_txt)})
 
     monkeypatch.setattr(widget_session, "send_custom_message", record)
 

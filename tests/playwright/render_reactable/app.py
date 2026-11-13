@@ -71,7 +71,7 @@ def server(input, output, session):
 
     @render.text
     def sel_state():
-        return f"selected={sel.selected_rows()}"
+        return f"selected={sel.selected()}"
 
     @reactive.effect
     def _():
