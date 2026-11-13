@@ -44,6 +44,20 @@ def test_render_ipyfilechooser_passes_chooser_through(widget_session) -> None:
     assert res["fill"] is False
 
 
+def test_chooser_marked_for_dark_mode_css(widget_session) -> None:
+    from ipyfilechooser import FileChooser
+
+    with session_context(widget_session):
+        chooser = FileChooser()
+        widget, fill = rwb.set_layout_defaults(chooser)
+
+    # The class scopes shinywidgets.css's dark-mode label fix to the chooser
+    # (its "No selection" label has no class hook of its own)
+    assert "shinywidgets-ipyfilechooser" in widget._dom_classes
+    # The chooser is a form control with a natural size, so it doesn't fill
+    assert fill is False
+
+
 def shared_default_layout():
     import inspect
 
