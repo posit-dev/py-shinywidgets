@@ -586,10 +586,29 @@ def send_mute_policy(
     """
     session_id = session.root_scope().id
     model_id = str(w.model_id)
+    own_ids = set(SESSION_WIDGET_ID_MAP.get(session_id, ()))
+
+    def displayable(x: Widget) -> bool:
+        # The walk descends into process-global descendants, which any
+        # session may display -- but the render's ownership check
+        # (foreign_or_closed_widget()) prunes at them, so they can reference
+        # widgets owned by OTHER sessions (or already closed) without the
+        # render being rejected. Registering a policy for one would send
+        # this session's effective set through its own comm, clearing the
+        # owning session's mute on it. Exclude it, and prune its subtree:
+        # what it references is its owner's to govern, not this render's.
+        return is_process_global(x) or (
+            not is_closed_widget(x) and x._model_id in own_ids
+        )
+
     # A module-level default (e.g. ipycanvas's shared manager) is never
     # opened in the session (open_process_global_widgets() skips it), so
     # there's no browser model for a policy to govern
-    widgets = [x for x in walk_widget_tree([w]) if not is_swapped_out_default(x)]
+    widgets = [
+        x
+        for x in walk_widget_tree([w], prune=lambda x: not displayable(x))
+        if displayable(x) and not is_swapped_out_default(x)
+    ]
     model_ids = frozenset(str(x.model_id) for x in widgets)
 
     prev = _MUTE_POLICY_MODELS.get(consumer)
