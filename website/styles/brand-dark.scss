@@ -1,0 +1,33 @@
+/*-- scss:defaults --*/
+$body-bg: #07080c;
+$body-color: #eef0f6;
+$text-muted: #8b90a0;
+$border-color: #1c1f2a;
+$primary: #7cf2c9;
+$link-color: #7cf2c9;
+$sw-side: #0a0b10;
+$sw-accent-bg: #0c1a17;
+$navbar-bg: $body-bg;
+$navbar-fg: $body-color;
+$navbar-hl: $primary;
+$sidebar-bg: $sw-side;
+$sidebar-fg: $body-color;
+$sidebar-hl: $primary;
+$code-color: $body-color;
+$code-bg: #141722;
+// Bootstrap's reboot colors plain `pre` blocks (fenced blocks with no language)
+// with $pre-color, which defaults to $body-emphasis-color = #000 in both bundles.
+$pre-color: $body-color;
+
+/* Reference pages: dark signature panels and parameter colors */
+html body.sw-ref .ref-usage div.sourceCode, html body.sw-ref .ref-usage-member div.sourceCode, html body.sw-ref dl dt code { background: #0e1017 !important; }
+html body.sw-ref .ref-usage div.sourceCode pre, html body.sw-ref .ref-usage div.sourceCode code, html body.sw-ref .ref-usage-member code { color: #c9cfdd !important; }
+html body.sw-ref .parameter-name strong { color: #8aa8ff; }
+html body.sw-ref .parameter-annotation { color: #8b90a0; }
+html body.sw-ref .parameter-default, html body.sw-ref .ref-usage code span.cn { color: #f0a46c !important; }
+html body.sw-ref .ref-kind-function { color: #7cf2c9; border-color: rgba(124, 242, 201, .35); background: rgba(124, 242, 201, .07); }
+html body.sw-ref .ref-kind-class { color: #c4a6ff; border-color: rgba(196, 166, 255, .35); background: rgba(196, 166, 255, .08); }
+html body.sw-ref .ref-usage code span, html body.sw-ref .ref-usage-member code span { color: #c9cfdd !important; }
+html body.sw-ref .ref-usage code span.cn, html body.sw-ref .ref-usage code span.va, html body.sw-ref .ref-usage code span.dv { color: #f0a46c !important; }
+html body.sw-ref .ref-usage code span.bu, html body.sw-ref .ref-usage code span.dt { color: #c4a6ff !important; }
+html body.sw-ref .ref-usage code span.op, html body.sw-ref .ref-usage code span.ot { color: #6b7288 !important; }

@@ -1,0 +1,3 @@
+shinywidgets[k3d]
+scikit-learn
+numpy

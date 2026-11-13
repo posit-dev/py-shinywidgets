@@ -1,0 +1,13 @@
+/_site/
+/.quarto/
+/_render.log
+/objects.json
+/reference/*.qmd
+/reference/_sidebar.yml
+**/*.quarto_ipynb
+
+# Stray output from rendering a single page directly (quarto render page.md)
+# instead of the whole project: HTML lands beside the source, not in _site/.
+**/*.html
+/site_libs/
+**/*-listing.json

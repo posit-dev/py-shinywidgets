@@ -1,0 +1,202 @@
+/*-- scss:defaults --*/
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+
+$body-bg: #fbfbfd;
+$body-color: #12141b;
+$text-muted: #5d6273;
+$border-color: #e7e8ee;
+$primary: #0a8f6c;
+$link-color: #0a7d5f;
+$sw-side: #f5f6f9;
+$sw-accent-bg: #e5f6f0;
+
+$font-family-sans-serif: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+$headings-font-family: "Space Grotesk", Inter, sans-serif;
+$headings-font-weight: 700;
+$font-family-monospace: "JetBrains Mono", ui-monospace, monospace;
+$font-size-root: 16px;
+
+$navbar-bg: $body-bg;
+$navbar-fg: $body-color;
+$navbar-hl: $primary;
+$sidebar-bg: $sw-side;
+$sidebar-fg: $body-color;
+$sidebar-hl: $primary;
+$toc-color: $text-muted;
+$code-color: $body-color;
+$code-bg: #eef0f4;
+// Wide enough that "Large data & performance" fits on one line.
+$grid-sidebar-width: 350px;
+
+/*-- scss:rules --*/
+h1, h2, h3, .title { letter-spacing: -0.02em; }
+h1.title { font-size: 2.8rem; }
+// Matches the specificity of Quarto's own rule, which zeroes this margin.
+#title-block-header.quarto-title-block.default .description { margin-top: 1rem; }
+.navbar { border-bottom: 1px solid $border-color; backdrop-filter: blur(8px); }
+.navbar-title { font-family: "Space Grotesk"; font-weight: 700; letter-spacing: -0.02em; }
+.sw-accent { color: $primary; }
+
+/* Code blocks are always dark, like the landing page */
+div.sourceCode { background: #0e1017 !important; border: 1px solid #1c1f2a; border-radius: 12px; }
+div.sourceCode pre, div.sourceCode code { color: #c9cfdd; }
+/* Plain fenced blocks (no language, e.g. install commands) get a quiet panel in the theme's code color */
+main pre:not(.sourceCode) { background: $code-bg; border: 1px solid $border-color; border-radius: 12px; padding: .75rem 1rem; }
+
+/* Example blocks (_filters/example-header): a title bar inside the same dark panel as the code */
+.sw-example { background: #0e1017; border: 1px solid #1c1f2a; border-radius: 12px; overflow: hidden; margin: 1rem 0; }
+.sw-example div.sourceCode { border: 0; border-radius: 0; margin: 0; }
+.sw-example .code-copy-button { display: none !important; }
+.sw-example-bar {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; min-width: 0;
+  background: #151824; border-bottom: 1px solid #1c1f2a; cursor: pointer;
+  font-family: $font-family-monospace; font-size: .8rem; line-height: 1.4;
+}
+.sw-collapsed .sw-example-bar { border-bottom-color: transparent; }
+.sw-collapsed .sw-example-code { display: none; }
+.sw-example-toggle, .sw-example-action {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px;
+  background: transparent; color: #8b90a0; cursor: pointer;
+}
+.sw-example-toggle:hover, .sw-example-action:hover, .sw-example-action:focus-visible, .sw-example-toggle:focus-visible { color: #eef0f6; background: #232738; }
+.sw-example-toggle svg, .sw-example-action svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sw-example-toggle svg { transition: transform .15s ease; }
+.sw-collapsed .sw-example-toggle svg { transform: rotate(-90deg); }
+.sw-example-file { color: #7cf2c9 !important; text-decoration: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sw-example-file:hover { text-decoration: underline; }
+.sw-example-extra { color: #8b90a0 !important; text-decoration: none; white-space: nowrap; }
+.sw-example-extra:hover { color: #eef0f6 !important; text-decoration: underline; }
+.sw-example-meta { color: #5d6375; white-space: nowrap; }
+.sw-example-actions { display: inline-flex; gap: 2px; margin-left: auto; flex: none; }
+@media (max-width: 575.98px) {
+  .sw-example-extra, .sw-example-meta { display: none; }
+}
+
+/* Screenshots get a quiet frame */
+main img:not(.thumbnail-image) { border-radius: 10px; border: 1px solid $border-color; box-shadow: 0 20px 50px -30px rgba(18, 20, 27, .35); }
+
+/* ---------- Sidebar (docked, full height) ---------- */
+#quarto-sidebar.sidebar.docked, .sidebar.sidebar-navigation.docked {
+  background: $sw-side !important;
+  border-right: 1px solid $border-color !important;
+  padding: 1.5rem .9rem 3rem 1.25rem;
+}
+#quarto-sidebar .sidebar-menu-container > ul.list-unstyled > li.sidebar-item-section + li.sidebar-item-section { margin-top: 1.1rem; }
+#quarto-sidebar .sidebar-item { margin: 0; }
+#quarto-sidebar .sidebar-item-container .sidebar-link,
+#quarto-sidebar .sidebar-item-container .sidebar-item-text { font-size: .9rem; line-height: 1.35; }
+
+/* top-level group labels */
+#quarto-sidebar .sidebar-item-section > .sidebar-item-container .sidebar-item-text {
+  font-size: .7rem; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: $text-muted; padding: .2rem .5rem;
+}
+/* nested groups (Widgets > Charts) read as normal items with a chevron */
+#quarto-sidebar .sidebar-item-section .sidebar-item-section > .sidebar-item-container .sidebar-item-text {
+  font-size: .9rem; font-weight: 500; letter-spacing: 0; text-transform: none; color: $body-color;
+}
+#quarto-sidebar .sidebar-item-section .sidebar-item-section > ul { margin-left: .55rem; padding-left: .55rem; border-left: 1px solid $border-color; }
+#quarto-sidebar .sidebar-item-toggle { color: $text-muted; opacity: .55; padding: 0 .35rem; }
+#quarto-sidebar .sidebar-item-toggle:hover { opacity: 1; }
+#quarto-sidebar .sidebar-item-toggle i { font-size: .7rem; }
+
+/* links */
+#quarto-sidebar .sidebar-item:not(.sidebar-item-section) > .sidebar-item-container > a.sidebar-link {
+  display: block; padding: .28rem .55rem; border-radius: 7px; color: $body-color; opacity: .82; position: relative;
+}
+#quarto-sidebar .sidebar-item:not(.sidebar-item-section) > .sidebar-item-container > a.sidebar-link:hover { background: rgba(127, 135, 160, .1); opacity: 1; }
+#quarto-sidebar a.sidebar-link.active { background: $sw-accent-bg !important; color: $primary !important; font-weight: 600; opacity: 1 !important; }
+#quarto-sidebar a.sidebar-link.active .menu-text { background: none !important; padding: 0 !important; margin: 0 !important; color: inherit !important; }
+#quarto-sidebar a.sidebar-link.active::before { content: ""; position: absolute; left: -.55rem; top: .3rem; bottom: .3rem; width: 2px; border-radius: 2px; background: $primary; }
+#quarto-sidebar .sidebar-item-section .sidebar-item-section a.sidebar-link.active::before { left: -.6rem; }
+
+/* ---------- Reference pages (GreatDocs-like anatomy) ---------- */
+body.sw-ref section.ref-title > h1 { font-family: $font-family-monospace; font-weight: 500; font-size: 2rem; letter-spacing: -0.01em; display: inline-block; margin-right: .6rem; }
+body.sw-ref .ref-kind { display: inline-block; font: 500 .72rem/1 $font-family-monospace; text-transform: lowercase; padding: .3rem .55rem; border-radius: 999px; border: 1px solid; vertical-align: .55rem; }
+body.sw-ref .ref-kind-class { color: #7c3aed; border-color: rgba(124, 58, 237, .35); background: rgba(124, 58, 237, .07); }
+body.sw-ref .ref-kind-function { color: $primary; border-color: rgba(10, 143, 108, .35); background: rgba(10, 143, 108, .07); }
+body.sw-ref .ref-summary { display: block; font-size: 1.15rem; font-style: italic; color: $text-muted; margin: -.25rem 0 1.25rem; }
+
+body.sw-ref .ref-usage { margin: 0 0 1.75rem; }
+body.sw-ref .ref-usage > p { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 .35rem; }
+body.sw-ref .ref-usage-label { font: 600 .7rem $font-family-sans-serif; letter-spacing: .1em; text-transform: uppercase; color: $text-muted; }
+body.sw-ref .ref-source { font: 600 .7rem $font-family-sans-serif; letter-spacing: .1em; text-transform: uppercase; text-decoration: none; }
+body.sw-ref .ref-source::after { content: " ↗"; }
+body.sw-ref .ref-usage div.sourceCode { background: #f4f5f8 !important; border: 1px solid $border-color; border-radius: 10px; margin: 0; }
+body.sw-ref .ref-usage div.sourceCode pre, body.sw-ref .ref-usage div.sourceCode code { color: #1f2a44 !important; }
+body.sw-ref .ref-usage code span.cn, body.sw-ref .ref-usage code span.va { color: #b4572a !important; }
+body.sw-ref .ref-usage code span.op { color: #8a8fa0 !important; }
+body.sw-ref .ref-usage code span.dv, body.sw-ref .ref-usage code span.fl { color: #0a7d5f !important; }
+
+/* Parameters: description list */
+body.sw-ref dl { margin: .5rem 0 1.5rem; }
+body.sw-ref dl dt { margin-top: 1rem; }
+body.sw-ref dl dt code { display: block; background: #f4f5f8; border: 1px solid $border-color; border-radius: 6px; padding: .3rem .6rem; font-size: .86rem; color: $body-color; }
+body.sw-ref .parameter-name strong { font-weight: 600; color: #1f4fd1; }
+body.sw-ref .parameter-annotation { color: #5d6273; }
+body.sw-ref .parameter-default { color: #b4572a; }
+body.sw-ref dl dd { margin: .45rem 0 0 1.1rem; }
+body.sw-ref dl dd p { margin-bottom: .4rem; }
+
+/* Section headings and methods */
+body.sw-ref h2, body.sw-ref h3.doc-section { font-size: 1.35rem; border-bottom: 0; margin-top: 2.25rem; }
+body.sw-ref h2.ref-methods { border-top: 1px solid $border-color; padding-top: 1.75rem; margin-top: 3rem; }
+body.sw-ref section.ref-member > h3 { font-family: $font-family-monospace; font-weight: 500; font-size: 1.15rem; margin-top: 2.25rem; padding-top: 1.25rem; border-top: 1px dashed $border-color; }
+body.sw-ref .ref-usage-member div.sourceCode { background: #f4f5f8 !important; border: 1px solid $border-color; border-radius: 8px; }
+body.sw-ref .ref-usage-member code { color: #1f2a44 !important; }
+body.sw-ref table thead:empty, body.sw-ref table thead tr:only-child th:empty { display: none; }
+body.sw-ref table td:first-child a { font-family: $font-family-monospace; white-space: nowrap; text-decoration: none; }
+body.sw-ref table td { padding: .55rem .75rem; vertical-align: top; }
+
+/* Reference sidebar: object names in monospace */
+body.sw-ref .sidebar-item:not(.sidebar-item-section) .sidebar-item-text { font-family: $font-family-monospace; font-size: .82rem; }
+
+/* Reference fixes: one title, readable light signature */
+body.sw-ref #title-block-header { display: none; }
+body.sw-ref .ref-usage code span, body.sw-ref .ref-usage-member code span { color: #1f2a44 !important; font-style: normal !important; }
+body.sw-ref .ref-usage code span.cn, body.sw-ref .ref-usage code span.va, body.sw-ref .ref-usage code span.dv { color: #b4572a !important; }
+body.sw-ref .ref-usage code span.bu, body.sw-ref .ref-usage code span.dt { color: #7c3aed !important; }
+body.sw-ref .ref-usage code span.op, body.sw-ref .ref-usage code span.ot { color: #8a8fa0 !important; }
+body.sw-ref dl dt code > .parameter-annotation-sep:first-child { display: none; }
+body.sw-ref table { table-layout: fixed; width: 100%; }
+body.sw-ref table td:first-child { width: 34%; }
+
+/* ---------- Gallery listing ---------- */
+.quarto-grid-item.card { border: 1px solid $border-color; border-radius: 12px; overflow: hidden; transition: border-color .15s, transform .15s; }
+.quarto-grid-item.card:hover { border-color: $primary; transform: translateY(-2px); }
+.quarto-grid-item .thumbnail-image { object-fit: cover; object-position: center; border-bottom: 1px solid $border-color; }
+.quarto-grid-item .listing-categories .listing-category { border-radius: 999px; font-size: .68rem; letter-spacing: .04em; }
+
+
+/* ---------- Homepage: full-bleed, always dark (in both theme bundles) ---------- */
+body.sw-home { background: #07080c !important; color: #eef0f6; padding-top: 0 !important; }
+body.sw-home #quarto-header { position: absolute; top: 0; left: 0; right: 0; z-index: 1030; background: none !important; }
+body.sw-home #quarto-header .navbar {
+  background-color: transparent !important;
+  background-image: linear-gradient(rgba(7, 8, 12, .85), rgba(7, 8, 12, 0)) !important;
+  border: 0 !important; backdrop-filter: none;
+}
+body.sw-home .navbar :is(.nav-link, .navbar-title, .bi, .quarto-color-scheme-toggle, .quarto-navigation-tool, .aa-DetachedSearchButtonIcon) { color: #eef0f6 !important; }
+body.sw-home .navbar .nav-link:hover { color: #7cf2c9 !important; }
+body.sw-home .navbar .sw-accent { color: #7cf2c9; }
+body.sw-home #quarto-content, body.sw-home main.content, body.sw-home #quarto-document-content { margin-top: 0 !important; padding-top: 0 !important; }
+body.sw-home main.content > :first-child { margin-top: 0; }
+body.sw-home .sw-landing { padding: 0 !important; }
+body.sw-home .nav-footer { background: #07080c !important; border-top: 1px solid #1c1f2a; color: #5d6375; }
+body.sw-home .nav-footer a { color: #8b90a0; }
+/* The toggle and search icons are SVGs drawn for the active theme; on the dark landing page
+   the light bundle's dark icons need flipping. */
+body.sw-home.quarto-light .navbar :is(.quarto-color-scheme-toggle .bi, .aa-DetachedSearchButtonIcon, #quarto-search, .navbar-toggler-icon) { filter: invert(1) brightness(1.4); }
+body.sw-home .navbar-collapse.show, body.sw-home .navbar-collapse.collapsing { background: #07080c; }
+
+
+/* Narrow screens: wide tables scroll inside themselves instead of widening the page. */
+@media (max-width: 767.98px) {
+  main.content table { display: block; max-width: 100%; overflow-x: auto; }
+  // Long identifiers and paths in inline code would otherwise widen the page.
+  main.content :not(pre) > code { white-space: pre-wrap; overflow-wrap: anywhere; }
+  // Prev/next links carry long object names on reference pages.
+  .page-navigation .nav-page { min-width: 0; }
+  .page-navigation .nav-page-text, .page-navigation .nav-page a { white-space: normal; overflow-wrap: anywhere; }
+  body.sw-ref section.ref-title > h1 { font-size: 1.4rem; overflow-wrap: anywhere; }
+}

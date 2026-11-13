@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any, Dict, List
 
 import altair as alt
@@ -26,12 +27,12 @@ DATE_BRUSH = [
 ]
 
 
-def interval(store: List[Dict[str, Any]]) -> IntervalSelection:
-    return IntervalSelection(name="s", value={}, store=store)  # type: ignore[arg-type]
+def interval(store: List[Dict[str, Any]], name: str = "s") -> IntervalSelection:
+    return IntervalSelection(name=name, value={}, store=store)  # type: ignore[arg-type]
 
 
-def point(store: List[Dict[str, Any]]) -> PointSelection:
-    return PointSelection(name="s", value=[], store=store)  # type: ignore[arg-type]
+def point(store: List[Dict[str, Any]], name: str = "s") -> PointSelection:
+    return PointSelection(name=name, value=[], store=store)  # type: ignore[arg-type]
 
 
 def entry(*fields: tuple[str, str, Any]) -> Dict[str, Any]:
@@ -39,6 +40,169 @@ def entry(*fields: tuple[str, str, Any]) -> Dict[str, Any]:
         "fields": [{"field": f, "type": t} for f, t, _ in fields],
         "values": [v for _, _, v in fields],
     }
+
+
+POINTS = pd.DataFrame({"x": [1, 2, 3], "y": [10, 20, 30]})
+LINES = pd.DataFrame({"x": [1, 2, 3], "z": [100, 200, 300]})
+
+
+def uentry(unit: str, *fields: tuple[str, str, Any]) -> Dict[str, Any]:
+    """A store entry with a `unit`, as multi-view selections report them."""
+    return {"unit": unit, **entry(*fields)}
+
+
+def layered_chart() -> alt.JupyterChart:
+    """Layers with distinct datasets, each with its own interval selection."""
+    pts = (
+        alt.Chart(POINTS, name="pts")
+        .mark_point()
+        .encode(x="x", y="y")
+        .add_params(alt.selection_interval(name="b1"))
+    )
+    lns = (
+        alt.Chart(LINES, name="lns")
+        .mark_point()
+        .encode(x="x", y="z")
+        .add_params(alt.selection_interval(name="b2"))
+    )
+    return alt.JupyterChart(alt.layer(pts, lns))
+
+
+def hconcat_chart() -> alt.JupyterChart:
+    """Concatenated charts with distinct datasets sharing one selection."""
+    brush = alt.selection_interval(name="brush")
+    pts = (
+        alt.Chart(POINTS, name="pts")
+        .mark_point()
+        .encode(x="x", y="y")
+        .add_params(brush)
+    )
+    lns = (
+        alt.Chart(LINES, name="lns").mark_point().encode(x="x", y="z").add_params(brush)
+    )
+    with warnings.catch_warnings():
+        # altair warns when it deduplicates the identical params
+        warnings.simplefilter("ignore")
+        return alt.JupyterChart(alt.hconcat(pts, lns))
+
+
+def test_filter_by_unit_partitions_entries() -> None:
+    store = [
+        uentry("pts", ("x", "R", [1, 2])),
+        uentry("lns", ("z", "R", [150, 250])),
+    ]
+    out = sa.filter_selection_by_unit(
+        interval(store), {"pts": POINTS, "lns": LINES}, None
+    )
+    assert out["pts"]["y"].tolist() == [10, 20]
+    assert out["lns"]["z"].tolist() == [200]
+
+
+def test_filter_by_unit_empty_store_gives_empty_frames() -> None:
+    out = sa.filter_selection_by_unit(interval([]), {"pts": POINTS, "lns": LINES}, None)
+    assert set(out) == {"pts", "lns"}
+    assert len(out["pts"]) == 0 and len(out["lns"]) == 0
+
+
+def test_filter_by_unit_index_selection_raises() -> None:
+    # A bare alt.selection_point() stores positional `_vgsid_` ids, which Vega
+    # assigns across the whole chart's dataflow -- they can't be resolved to
+    # rows of one view's frame, so the per-view path refuses them
+    sel = IndexSelection(
+        name="pick",
+        value=[0, 2],
+        store=[{"unit": "pts", "_vgsid_": 1}, {"unit": "lns", "_vgsid_": 3}],
+    )  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="encodings="):
+        sa.filter_selection_by_unit(sel, {"pts": POINTS, "lns": LINES}, None)
+
+
+def test_filter_by_unit_rejects_unknown_units() -> None:
+    with pytest.raises(ValueError, match="'nope'"):
+        sa.filter_selection_by_unit(
+            interval([uentry("nope", ("x", "R", [1, 2]))]), {"pts": POINTS}, None
+        )
+
+
+def test_view_frames_walks_layers_and_concats(widget_session: Session) -> None:
+    with session_context(widget_session):
+        layered = layered_chart()
+        concatenated = hconcat_chart()
+    for combo in (layered.chart, concatenated.chart):
+        frames = sa.view_frames(combo)
+        assert set(frames) == {"pts", "lns"}
+        assert frames["pts"] is POINTS and frames["lns"] is LINES
+    with session_context(widget_session):
+        plain = chart()
+    assert sa.view_frames(plain.chart) == {}
+
+
+def test_view_frames_inherits_an_intermediate_charts_data() -> None:
+    # The layers share one data frame, which altair hoists onto the inner
+    # LayerChart, so the leaves declare no data of their own
+    inner = alt.layer(
+        alt.Chart(POINTS, name="pts").mark_point().encode(x="x"),
+        alt.Chart(POINTS, name="dup").mark_point().encode(x="x"),
+    )
+    combo = alt.hconcat(inner, alt.Chart(LINES, name="lns").mark_point().encode(x="x"))
+    assert inner.data is POINTS and inner.layer[0].data is alt.Undefined
+    # altair disambiguates a nested layer's name with its concat position
+    frames = sa.view_frames(combo)
+    assert frames["pts_0"] is POINTS and frames["dup_0"] is POINTS
+    assert frames["lns"] is LINES
+
+
+def test_selection_views_reads_the_hoisted_param(widget_session: Session) -> None:
+    with session_context(widget_session):
+        layered = layered_chart()
+        concatenated = hconcat_chart()
+        plain = chart(alt.selection_interval(name="brush"))
+    assert sa.selection_views(layered.chart, "b1") == ["pts"]
+    assert sa.selection_views(layered.chart, "b2") == ["lns"]
+    assert sa.selection_views(concatenated.chart, "brush") == ["pts", "lns"]
+    assert sa.selection_views(concatenated.chart, "nope") is None
+    assert sa.selection_views(plain.chart, "brush") is None
+    variable = (
+        alt.Chart(POINTS)
+        .mark_point()
+        .encode(x="x")
+        .add_params(alt.param(name="v", value=1))
+    )
+    assert sa.selection_views(variable, "v") is None
+
+
+def test_view_frames_explicit_non_frame_data_overrides_the_parent() -> None:
+    combo = alt.hconcat(
+        alt.Chart(POINTS, name="pts").mark_point().encode(x="x"),
+        alt.Chart("https://example.com/d.csv", name="url").mark_point().encode(x="x:Q"),
+        data=LINES,
+    )
+    frames = sa.view_frames(combo)
+    assert frames["pts"] is POINTS
+    # The URL dataset isn't a frame; inheriting the parent frame would
+    # silently filter the wrong rows, so df= is required instead
+    assert frames["url"] is None
+
+
+def test_chart_datasets_counts_frames_urls_and_inline_data() -> None:
+    combo = alt.hconcat(
+        alt.Chart(POINTS).mark_point().encode(x="x"),
+        alt.Chart("https://example.com/a.csv").mark_point().encode(x="x"),
+        alt.Chart(alt.Data(values=[{"x": 1}])).mark_point().encode(x="x"),
+    )
+    assert len(sa.chart_datasets(combo)) == 3
+    same_url = alt.hconcat(
+        alt.Chart("https://example.com/a.csv").mark_point().encode(x="x"),
+        alt.Chart("https://example.com/a.csv").mark_point().encode(x="x"),
+    )
+    assert len(sa.chart_datasets(same_url)) == 1
+
+
+def test_view_frames_rejects_duplicate_names() -> None:
+    a = alt.Chart(POINTS, name="dup").mark_point().encode(x="x")
+    b = alt.Chart(LINES, name="dup").mark_point().encode(x="x")
+    with pytest.raises(ValueError, match="'dup'"):
+        sa.view_frames(alt.hconcat(a, b))
 
 
 def test_temporal_range_compares_in_utc() -> None:
@@ -150,10 +314,10 @@ def test_pick_selection_by_name() -> None:
 
 def test_chart_frame_from_chart_data_or_raises(widget_session: Session) -> None:
     with session_context(widget_session):
-        assert sa.chart_frame(chart()) is DATES
+        assert sa.chart_frame(chart().chart) is DATES
         url_chart = chart(data="https://example.com/data.csv")
     with pytest.raises(TypeError, match="df="):
-        sa.chart_frame(url_chart)
+        sa.chart_frame(url_chart.chart)
 
 
 def test_render_altair_selected_and_selected_rows(widget_session: Session) -> None:
@@ -175,6 +339,616 @@ def test_render_altair_selected_and_selected_rows(widget_session: Session) -> No
     assert r.selected_rows(df=other)["z"].tolist() == [8, 9, 10, 11]
     with pytest.raises(TypeError, match="positional"):
         r.selected_rows("brush", other)
+
+
+def test_selected_rows_uses_the_selection_views_own_data(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    r = render_altair()
+    with session_context(widget_session):
+        w = layered_chart()
+    r._widget = w
+    r._accessors.on_render(w)
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "b1": interval([uentry("pts", ("x", "R", [1, 2]))], name="b1"),
+                "b2": interval([uentry("lns", ("z", "R", [150, 250]))], name="b2"),
+            }
+        )
+    )
+    w.local_tz = "UTC"
+    assert r.selected_rows("b1")["y"].tolist() == [10, 20]
+    assert r.selected_rows("b2")["z"].tolist() == [200]
+
+
+def test_selected_rows_facet_chart_still_filters_the_whole_frame(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    df = pd.DataFrame({"x": range(6), "y": range(6), "g": list("aaabbb")})
+    brush = alt.selection_interval(name="brush")
+    faceted = (
+        alt.Chart(df)
+        .mark_point()
+        .encode(x="x:Q", y="y:Q")
+        .add_params(brush)
+        .facet(column="g:N")
+    )
+    with session_context(widget_session):
+        w = alt.JupyterChart(faceted)
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    # Facet store units carry a `__facet` suffix; the single-view path ignores
+    # them and filters the chart's (hoisted) frame, as before this change
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "brush": interval(
+                    [uentry("view_1_0__facet_g_a", ("x", "R", [1, 2]))], name="brush"
+                )
+            }
+        )
+    )
+    w.local_tz = "UTC"
+    assert r.selected_rows("brush")["y"].tolist() == [1, 2]
+
+
+def test_selected_rows_returns_a_dict_for_multi_dataset_views(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    r = render_altair()
+    with session_context(widget_session):
+        w = hconcat_chart()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+
+    # An empty selection is a dict of empty frames, keyed by view name
+    empty = r.selected_rows("brush")
+    assert isinstance(empty, dict) and set(empty) == {"pts", "lns"}
+    assert all(len(frame) == 0 for frame in empty.values())
+
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "brush": interval(
+                    [
+                        uentry("pts", ("x", "R", [1, 2])),
+                        uentry("lns", ("z", "R", [150, 250])),
+                    ],
+                    name="brush",
+                )
+            }
+        )
+    )
+    out = r.selected_rows("brush")
+    assert isinstance(out, dict)
+    assert out["pts"]["y"].tolist() == [10, 20]
+    assert out["lns"]["z"].tolist() == [200]
+
+
+def test_selected_rows_shared_data_concat_stays_a_single_frame(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    brush = alt.selection_interval(name="brush")
+    pts = (
+        alt.Chart(POINTS, name="pts")
+        .mark_point()
+        .encode(x="x", y="y")
+        .add_params(brush)
+    )
+    dup = (
+        alt.Chart(POINTS, name="dup")
+        .mark_point()
+        .encode(x="x", y="y")
+        .add_params(brush)
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        combo = alt.hconcat(pts, dup)
+    with session_context(widget_session):
+        w = alt.JupyterChart(combo)
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box({"brush": interval([uentry("pts", ("x", "R", [1, 2]))], name="brush")})
+    )
+    out = r.selected_rows("brush")
+    assert isinstance(out, pd.DataFrame)
+    assert out["y"].tolist() == [10, 20]
+    # A scalar df can stand in for the dataset every view shares
+    out = r.selected_rows("brush", df=POINTS)
+    assert isinstance(out, pd.DataFrame)
+    assert out["y"].tolist() == [10, 20]
+
+
+def test_selected_rows_df_dict_filters_each_frame(widget_session: Session) -> None:
+    from shinywidgets import render_altair
+
+    r = render_altair()
+    with session_context(widget_session):
+        w = hconcat_chart()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "brush": IntervalSelection(
+                    name="brush",
+                    value={},
+                    store=[
+                        uentry("pts", ("x", "R", [1, 2])),
+                        uentry("lns", ("z", "R", [150, 250])),
+                    ],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    out = r.selected_rows("brush", df={"pts": POINTS, "lns": LINES})
+    assert isinstance(out, dict)
+    assert out["pts"]["y"].tolist() == [10, 20]
+    assert out["lns"]["z"].tolist() == [200]
+    with pytest.raises(ValueError, match="don't match"):
+        r.selected_rows("brush", df={"pts": POINTS})
+    with pytest.raises(ValueError, match="dict"):
+        r.selected_rows("brush", df=POINTS)
+
+
+def test_selected_rows_unresolvable_view_points_at_df_dict(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    r = render_altair()
+    with session_context(widget_session):
+        w = hconcat_chart()
+    # A view the chart walk can't find (e.g. a chart from alt.Chart.from_dict)
+    w.chart.params[0].views = ["ghost", "lns"]
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    with pytest.raises(ValueError, match="ghost"):
+        r.selected_rows("brush")
+
+
+def test_view_resolution_under_the_vegafusion_transformer(
+    widget_session: Session,
+) -> None:
+    with alt.data_transformers.enable("vegafusion"):
+        with session_context(widget_session):
+            w = hconcat_chart()
+    assert sa.selection_views(w.chart, "brush") == ["pts", "lns"]
+    frames = sa.view_frames(w.chart)
+    assert frames["pts"] is POINTS and frames["lns"] is LINES
+
+
+def test_selected_rows_bare_point_selection_raises_on_a_multi_dataset_chart(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    pick = alt.selection_point(name="pick")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        combo = alt.hconcat(
+            alt.Chart(POINTS, name="pts")
+            .mark_point()
+            .encode(x="x", y="y")
+            .add_params(pick),
+            alt.Chart(LINES, name="lns")
+            .mark_point()
+            .encode(x="x", y="z")
+            .add_params(pick),
+        )
+    with session_context(widget_session):
+        w = alt.JupyterChart(combo)
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    # Even with one participating view (or an explicit df), Vega's `_vgsid_`
+    # ids are assigned across the whole chart's dataflow, so they aren't row
+    # positions of any one view's frame
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "pick": IndexSelection(
+                    name="pick",
+                    value=[3],
+                    store=[{"unit": "lns", "_vgsid_": 4}],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="encodings="):
+        r.selected_rows("pick")
+    with pytest.raises(ValueError, match="encodings="):
+        r.selected_rows("pick", df=LINES)
+
+
+def test_selected_rows_bare_point_selection_on_a_single_dataset_chart(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    r = render_altair()
+    with session_context(widget_session):
+        w = chart(alt.selection_point(name="pick"))
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "pick": IndexSelection(
+                    name="pick",
+                    value=[2, 0],
+                    store=[{"unit": "", "_vgsid_": 1}],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    assert r.selected_rows("pick")["y"].tolist() == [0, 2]
+
+
+def test_selected_rows_single_view_with_unresolvable_data_raises(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    brush = alt.selection_interval(name="b")
+    combo = alt.hconcat(
+        alt.Chart(POINTS, name="pts").mark_point().encode(x="x"),
+        alt.Chart("https://example.com/d.csv", name="url")
+        .mark_point()
+        .encode(x="x:Q")
+        .add_params(brush),
+        data=LINES,
+    )
+    with session_context(widget_session):
+        w = alt.JupyterChart(combo)
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box({"b": interval([uentry("url", ("x", "R", [1, 2]))], name="b")})
+    )
+    # The view's data is a URL: the chart's root frame must not be
+    # substituted for it, but an explicit df rescues the call
+    with pytest.raises(ValueError, match="'url'"):
+        r.selected_rows("b")
+    assert r.selected_rows("b", df=POINTS)["y"].tolist() == [10, 20]
+
+
+def test_selected_rows_bare_point_selection_raises_for_mixed_frame_and_url_data(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    pick = alt.selection_point(name="pick")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        combo = alt.hconcat(
+            alt.Chart(POINTS, name="pts")
+            .mark_point()
+            .encode(x="x", y="y")
+            .add_params(pick),
+            alt.Chart("https://example.com/d.csv", name="url")
+            .mark_point()
+            .encode(x="x:Q", y="y:Q")
+            .add_params(pick),
+        )
+    with session_context(widget_session):
+        w = alt.JupyterChart(combo)
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "pick": IndexSelection(
+                    name="pick",
+                    value=[0],
+                    store=[{"unit": "pts", "_vgsid_": 1}],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="encodings="):
+        r.selected_rows("pick")
+    with pytest.raises(ValueError, match="encodings="):
+        r.selected_rows("pick", df=POINTS)
+
+
+def test_selected_rows_repeat_chart_filters_the_shared_frame(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    brush = alt.selection_interval(name="b")
+    rep = (
+        alt.Chart(POINTS, name="pts")
+        .mark_point()
+        .encode(x="x:Q", y="y:Q")
+        .add_params(brush)
+        .repeat(column=["x", "y"])
+    )
+    with session_context(widget_session):
+        w = alt.JupyterChart(rep)
+    views = sa.selection_views(w.chart, "b")
+    assert views is not None and len(views) == 2
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "b": IntervalSelection(
+                    name="b",
+                    value={},
+                    store=[uentry(view, ("x", "R", [1, 2])) for view in views],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    # A selection spans the repeat's generated views, which all share the
+    # chart's one data frame: no per-view dict, and a scalar df= works
+    assert r.selected_rows("b")["y"].tolist() == [10, 20]
+    assert r.selected_rows("b", df=POINTS)["y"].tolist() == [10, 20]
+
+
+def test_selected_rows_scalar_df_for_views_sharing_a_url(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    brush = alt.selection_interval(name="b")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        combo = alt.hconcat(
+            alt.Chart("https://example.com/d.csv", name="a")
+            .mark_point()
+            .encode(x="x:Q")
+            .add_params(brush),
+            alt.Chart("https://example.com/d.csv", name="b")
+            .mark_point()
+            .encode(x="x:Q")
+            .add_params(brush),
+        )
+    with session_context(widget_session):
+        w = alt.JupyterChart(combo)
+    assert sa.selection_views(w.chart, "b") == ["a", "b"]
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "b": IntervalSelection(
+                    name="b",
+                    value={},
+                    store=[
+                        uentry("a", ("x", "R", [1, 2])),
+                        uentry("b", ("x", "R", [1, 2])),
+                    ],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    # Both views are fed the same URL: a scalar df stands in for it, and
+    # without one there is nothing to filter
+    assert r.selected_rows("b", df=POINTS)["y"].tolist() == [10, 20]
+    with pytest.raises(ValueError, match="'a'"):
+        r.selected_rows("b")
+
+
+def test_selected_rows_nested_repeat_with_its_own_data_is_not_mis_filtered(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    brush = alt.selection_interval(name="b")
+    combo = alt.hconcat(
+        alt.Chart(POINTS, name="pts").mark_point().encode(x="x", y="y"),
+        alt.Chart(LINES)
+        .mark_point()
+        .encode(x="x:Q", y="z:Q")
+        .add_params(brush)
+        .repeat(column=["x", "y"]),
+        data=POINTS,
+    )
+    with session_context(widget_session):
+        w = alt.JupyterChart(combo)
+    views = sa.selection_views(w.chart, "b")
+    assert views is not None and len(views) == 2
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "b": IntervalSelection(
+                    name="b",
+                    value={},
+                    store=[uentry(view, ("x", "R", [1, 2])) for view in views],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    # The repeat declares its own data (LINES) but the concat's root is
+    # POINTS: resolving the generated views to the root frame would
+    # silently filter the wrong rows, so the call must raise instead
+    with pytest.raises(ValueError, match="df="):
+        r.selected_rows("b")
+    # A scalar df can't stand in for two distinct datasets either
+    with pytest.raises(ValueError, match="dict"):
+        r.selected_rows("b", df=LINES)
+
+
+def test_selection_views_reads_imported_param_names() -> None:
+    brush = alt.selection_interval(name="brush")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        combo = alt.hconcat(
+            alt.Chart(POINTS, name="pts")
+            .mark_point()
+            .encode(x="x", y="y")
+            .add_params(brush),
+            alt.Chart(LINES, name="lns")
+            .mark_point()
+            .encode(x="x", y="z")
+            .add_params(brush),
+        )
+    # from_dict wraps parameter names in schema objects (ParameterName);
+    # the declared views must still be readable
+    imported = alt.Chart.from_dict(combo.to_dict())
+    assert sa.selection_views(imported, "brush") == ["pts", "lns"]
+
+
+def test_selected_rows_unreadable_views_reject_scalar_df_on_multi_dataset(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    r = render_altair()
+    with session_context(widget_session):
+        w = hconcat_chart()
+    # Simulate a chart whose selection participation can't be read (e.g.
+    # alt.Chart.from_dict): selected_rows() falls back to the store's units
+    w.chart.params[0].views = alt.Undefined
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "brush": IntervalSelection(
+                    name="brush",
+                    value={},
+                    store=[uentry("lns", ("z", "R", [150, 250]))],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    # Only "lns" reports entries, but the selection may participate in more
+    # views: neither a scalar df nor the chart's own frames can be matched
+    # to their views safely
+    with pytest.raises(ValueError, match="dict"):
+        r.selected_rows("brush", df=POINTS)
+    with pytest.raises(ValueError, match="dict"):
+        r.selected_rows("brush")
+    out = r.selected_rows("brush", df={"lns": LINES})
+    assert isinstance(out, dict)
+    assert out["lns"]["z"].tolist() == [200]
+
+
+def test_chart_datasets_dedupes_named_references() -> None:
+    same = alt.hconcat(
+        alt.Chart(alt.NamedData("same")).mark_point().encode(x="x:Q"),
+        alt.Chart(alt.NamedData("same")).mark_point().encode(x="x:Q"),
+    )
+    assert len(sa.chart_datasets(same)) == 1
+    imported = alt.Chart.from_dict(same.to_dict())
+    assert len(sa.chart_datasets(imported)) == 1
+    distinct = alt.hconcat(
+        alt.Chart(alt.NamedData("one")).mark_point().encode(x="x:Q"),
+        alt.Chart(alt.NamedData("two")).mark_point().encode(x="x:Q"),
+    )
+    assert len(sa.chart_datasets(distinct)) == 2
+
+
+def test_selected_rows_scalar_df_for_views_sharing_a_named_dataset(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    brush = alt.selection_interval(name="b")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        combo = alt.hconcat(
+            alt.Chart(alt.NamedData("same"), name="a")
+            .mark_point()
+            .encode(x="x:Q")
+            .add_params(brush),
+            alt.Chart(alt.NamedData("same"), name="b")
+            .mark_point()
+            .encode(x="x:Q")
+            .add_params(brush),
+        )
+    with session_context(widget_session):
+        w = alt.JupyterChart(combo)
+    assert sa.selection_views(w.chart, "b") == ["a", "b"]
+    r = render_altair()
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "b": IntervalSelection(
+                    name="b",
+                    value={},
+                    store=[
+                        uentry("a", ("x", "R", [1, 2])),
+                        uentry("b", ("x", "R", [1, 2])),
+                    ],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    # Both views reference the same named dataset: a scalar df stands in
+    # for it, just as it did before multi-dataset support
+    assert r.selected_rows("b", df=POINTS)["y"].tolist() == [10, 20]
+    with pytest.raises(ValueError, match="'a'"):
+        r.selected_rows("b")
+
+
+def test_selected_rows_empty_views_means_unknown_participation(
+    widget_session: Session,
+) -> None:
+    from shinywidgets import render_altair
+
+    r = render_altair()
+    with session_context(widget_session):
+        w = hconcat_chart()
+    # An empty views list means the selection may apply to any view (Vega
+    # semantics): participation is unknown, not "no views"
+    w.chart.params[0].views = []
+    r._widget = w
+    r._accessors.on_render(w)
+    w.local_tz = "UTC"
+    r._accessors.values["selected"].set(
+        sa_box(
+            {
+                "brush": IntervalSelection(
+                    name="brush",
+                    value={},
+                    store=[uentry("lns", ("z", "R", [150, 250]))],
+                )  # type: ignore[arg-type]
+            }
+        )
+    )
+    # The store entry belongs to "lns": filtering the chart's root frame
+    # would silently return the wrong rows
+    with pytest.raises(ValueError, match="dict"):
+        r.selected_rows("brush")
 
 
 def sa_box(raw: object) -> Any:

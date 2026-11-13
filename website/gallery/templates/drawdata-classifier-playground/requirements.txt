@@ -1,0 +1,4 @@
+shinywidgets[drawdata,plotly]
+scikit-learn
+pandas
+numpy

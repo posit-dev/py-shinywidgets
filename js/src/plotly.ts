@@ -43,8 +43,9 @@ export function normalizeBindEvents(
 // The payload shape requested for each event of each model, applied to
 // every view of it ("points" wins over "region" for the same event)
 const requestedEvents = new WeakMap<WidgetModel, Map<string, PlotlyPayloadShape>>();
-// The events already bound on each graph div
-const boundEvents = new WeakMap<HTMLElement, Set<string>>();
+// The events already bound on each graph div, with the payload shape they
+// bound at (a shape upgrade re-seeds the event without re-binding it)
+const boundEvents = new WeakMap<HTMLElement, Map<string, PlotlyPayloadShape>>();
 
 export function isPlotlyBindRequest(content: unknown): content is PlotlyBindRequest {
   return (
@@ -115,13 +116,23 @@ export function waitForPlotlyGraphDiv(
 export function bindPlotlyEvents(plotEl: HTMLElement, model: WidgetModel): void {
   const requested = requestedEvents.get(model);
   if (!requested || !hasMethod<PlotlyEventEmitter, "on">(plotEl, "on")) return;
-  const bound = boundEvents.get(plotEl) ?? new Set<string>();
+  const bound = boundEvents.get(plotEl) ?? new Map<string, PlotlyPayloadShape>();
   boundEvents.set(plotEl, bound);
   let boundSelected = false;
   let boundVisibility = false;
-  for (const event of requested.keys()) {
-    if (bound.has(event)) continue;
-    bound.add(event);
+  let upgradedSelected = false;
+  for (const [event, shape] of requested) {
+    const boundShape = bound.get(event);
+    if (boundShape === shape) continue;
+    bound.set(event, shape);
+    if (boundShape !== undefined) {
+      // The listener stays bound (it reads its shape live from `requested`);
+      // a region -> points upgrade just needs the selection re-seeded with
+      // points, since the bind-time seed omitted them. (A downgrade can't
+      // happen: "points" wins over "region" in requestPlotlyEvents.)
+      if (event === "plotly_selected") upgradedSelected = true;
+      continue;
+    }
     if (event === "plotly_selected") boundSelected = true;
     if (VISIBILITY_EVENTS.has(event)) boundVisibility = true;
     plotEl.on(event, (data?: any) => {
@@ -147,10 +158,11 @@ export function bindPlotlyEvents(plotEl: HTMLElement, model: WidgetModel): void 
   // A selection is state on the graph div (trace `selectedpoints`), not just
   // an event: a lasso drawn before this bind (e.g. before an accessor's first
   // read asked for the event) is still recoverable, so report the current
-  // selection as if plotly.js had just fired it. An empty payload is a
-  // no-data `plotly_selected`, which plotly.js itself sends for an empty
-  // selection and Python reads as "nothing selected".
-  if (boundSelected) {
+  // selection as if plotly.js had just fired it. A region -> points upgrade
+  // re-seeds the same way, adding the points the bind-time seed left out. An
+  // empty payload is a no-data `plotly_selected`, which plotly.js itself
+  // sends for an empty selection and Python reads as "nothing selected".
+  if (boundSelected || upgradedSelected) {
     model.send(
       {
         shinywidgets: "event",
@@ -169,32 +181,32 @@ export function selectionSeed(
   plotEl: HTMLElement,
   includePoints: boolean = true,
 ): Record<string, unknown> {
+  // Region-only payloads never touch the data: skip the per-trace scan,
+  // which would copy typed selection arrays proportional to selection size
+  if (!includePoints) return regionSeed(plotEl);
   const data = (plotEl as any).data;
   if (!Array.isArray(data)) return {};
-  const points = includePoints
-    ? data.flatMap((trace: any, curveNumber: number) => {
-        // jsonable(): a selection preconfigured from plotly.py arrives as a
-        // typed array, which Array.isArray rejects (and whose .map can't
-        // hold point objects)
-        const selected = jsonable(trace?.selectedpoints);
-        if (!Array.isArray(selected)) return [];
-        return (selected as number[]).map((i) => {
-          const entry: Record<string, unknown> = {
-            trace_index: curveNumber,
-            point_index: i,
-          };
-          const custom = trace.customdata?.[i];
-          if (custom !== undefined) entry.customdata = jsonable(custom);
-          return entry;
-        });
-      })
-    : [];
+  const points = data.flatMap((trace: any, curveNumber: number) => {
+    // jsonable(): a selection preconfigured from plotly.py arrives as a
+    // typed array, which Array.isArray rejects (and whose .map can't
+    // hold point objects)
+    const selected = jsonable(trace?.selectedpoints);
+    if (!Array.isArray(selected)) return [];
+    return (selected as number[]).map((i) => {
+      const entry: Record<string, unknown> = {
+        trace_index: curveNumber,
+        point_index: i,
+      };
+      const custom = trace.customdata?.[i];
+      if (custom !== undefined) entry.customdata = jsonable(custom);
+      return entry;
+    });
+  });
   // An empty drag selection is still a selection: plotly.js reports it as
-  // points: [] plus the region (or, when points weren't requested, as just
-  // the region). So is a preconfigured selectedpoints: [] (plotly dims
-  // every point with unselected styling). No points, no region, and no
-  // trace supplying a selection array means nothing was ever selected (or
-  // a deselect), the no-data case.
+  // points: [] plus the region. So is a preconfigured selectedpoints: []
+  // (plotly dims every point with unselected styling). No points, no
+  // region, and no trace supplying a selection array means nothing was ever
+  // selected (or a deselect), the no-data case.
   const region = regionSeed(plotEl);
   const anySelectionArray = data.some((trace: any) =>
     Array.isArray(jsonable(trace?.selectedpoints)),
@@ -202,9 +214,7 @@ export function selectionSeed(
   if (points.length === 0 && Object.keys(region).length === 0 && !anySelectionArray) {
     return {};
   }
-  const out: Record<string, unknown> = { ...region };
-  if (includePoints) out.points = points;
-  return out;
+  return { ...region, points };
 }
 
 function regionSeed(plotEl: HTMLElement): Record<string, unknown> {

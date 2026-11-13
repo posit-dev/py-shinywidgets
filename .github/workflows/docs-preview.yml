@@ -1,0 +1,68 @@
+name: Website deploy preview
+
+on:
+  pull_request:
+    branches: ["main"]
+  pull_request_target:
+    branches: ["main"]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  # nwtgck/actions-netlify creates a GitHub deployment and commit status
+  deployments: write
+  statuses: write
+
+jobs:
+  notify-fork-pr:
+    # Post a sticky comment on every fork PR explaining /deploy-preview.
+    # Fork pushes get a read-only GITHUB_TOKEN with no access to secrets, so
+    # auto-deploy isn't possible regardless of the author's role. Every
+    # fork-PR author needs the same prompt — including members, who can
+    # self-trigger by commenting.
+    if: >
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.fork == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post fork preview notice
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: fork-docs-preview-notice
+          message: |
+            ## Website preview not available
+
+            This PR is from a fork and cannot deploy a website preview automatically.
+            A repository member can comment `/deploy-preview` to trigger one
+            (including you, if you have member access). Only trigger it after
+            reviewing the PR's changes: the build runs with deploy credentials.
+
+  build-and-deploy:
+    # Two paths to a preview deploy:
+    # 1. pull_request for non-fork PRs (auto-deploy)
+    # 2. /deploy-preview comment from a member (covers fork PRs and anyone
+    #    without push access; members with fork PRs self-trigger this way)
+    concurrency:
+      group: docs-preview-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: true
+    if: >
+      (
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.fork != true
+      ) ||
+      (
+        github.event.issue.pull_request &&
+        (
+          github.event.comment.author_association == 'MEMBER' ||
+          github.event.comment.author_association == 'OWNER' ||
+          github.event.comment.author_association == 'COLLABORATOR'
+        ) &&
+        startsWith(github.event.comment.body, '/deploy-preview')
+      )
+    uses: ./.github/workflows/docs-deploy.yml
+    with:
+      ref: ${{ format('refs/pull/{0}/merge', github.event.pull_request.number || github.event.issue.number) }}
+      deploy-context: "preview"
+    secrets: inherit
