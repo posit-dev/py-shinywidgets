@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { eventPayload, normalizeBindEvents, selectionSeed, visibilitySeed } from "./plotly";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  eventPayload,
+  normalizeBindEvents,
+  requestPlotlyEvents,
+  selectionSeed,
+  visibilitySeed,
+} from "./plotly";
 
 const legendData = {
   curveNumber: 2,
@@ -227,6 +233,72 @@ describe("eventPayload selection slimming", () => {
       { trace_index: 0, point_index: 3, x: 1.5, y: 2.5, customdata: "row-3" },
       { trace_index: 0, point_index: 4, x: 1.6, y: 2.6 },
     ]);
+  });
+});
+
+describe("requestPlotlyEvents", () => {
+  // The tests run in node, so give findPlotlyGraphDiv's `instanceof
+  // HTMLElement` a class to check the fake graph div against
+  class FakeHTMLElement {}
+  afterEach(() => vi.unstubAllGlobals());
+
+  const makePlotEl = () =>
+    Object.assign(new FakeHTMLElement(), {
+      matches: () => true,
+      on: vi.fn(),
+      data: [
+        {
+          x: [1, 2, 3],
+          y: [4, 5, 6],
+          customdata: ["a", "b", "c"],
+          selectedpoints: [0, 2],
+        },
+      ],
+      _fullLayout: { selections: [{ xref: "x", yref: "y", x0: 1, x1: 3, y0: 4, y1: 6 }] },
+    });
+
+  const makeModel = (plotEl: unknown, sent: unknown[]) =>
+    ({
+      views: { "1": Promise.resolve({ el: plotEl }) },
+      send: (msg: unknown) => sent.push(msg),
+    }) as any;
+
+  it("re-sends the current selection with points on a region -> points upgrade", async () => {
+    vi.stubGlobal("HTMLElement", FakeHTMLElement);
+    const sent: any[] = [];
+    const model = makeModel(makePlotEl(), sent);
+
+    await requestPlotlyEvents(model, [{ name: "plotly_selected", payload: "region" }]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      shinywidgets: "event",
+      event: "plotly_selected",
+      range: { x: [1, 3], y: [4, 6] },
+    });
+    expect("points" in sent[0]).toBe(false);
+
+    await requestPlotlyEvents(model, [{ name: "plotly_selected", payload: "points" }]);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toMatchObject({
+      shinywidgets: "event",
+      event: "plotly_selected",
+      range: { x: [1, 3], y: [4, 6] },
+      points: [
+        { trace_index: 0, point_index: 0, customdata: "a" },
+        { trace_index: 0, point_index: 2, customdata: "c" },
+      ],
+    });
+  });
+
+  it("doesn't re-seed a bound view for an unchanged request", async () => {
+    vi.stubGlobal("HTMLElement", FakeHTMLElement);
+    const sent: any[] = [];
+    const model = makeModel(makePlotEl(), sent);
+
+    await requestPlotlyEvents(model, [{ name: "plotly_selected", payload: "points" }]);
+    expect(sent).toHaveLength(1);
+    await requestPlotlyEvents(model, [{ name: "plotly_selected", payload: "points" }]);
+    expect(sent).toHaveLength(1);
   });
 });
 
