@@ -11,7 +11,7 @@ from shiny import Session, reactive
 from shiny.session import session_context
 from shiny.session._session import AppSession
 from shinywidgets._comm import ShinyComm
-from shinywidgets._shinywidgets import SESSION_WIDGET_ID_MAP, is_closed_widget
+from shinywidgets._shinywidgets import SESSION_WIDGET_ID_MAP
 
 
 def test_open_does_not_create_display_previews(widget_session: Session) -> None:
@@ -82,7 +82,7 @@ class BrokenStateSlider(IntSlider):
         raise RuntimeError("boom during get_state")
 
 
-def test_comm_open_failure_notifies_user_and_closes_widget(
+def test_comm_open_failure_notifies_user(
     widget_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     sent: List[Dict[str, Any]] = []
@@ -94,7 +94,7 @@ def test_comm_open_failure_notifies_user_and_closes_widget(
     monkeypatch.setattr(widget_session, "_unhandled_error", unhandled)
 
     with session_context(widget_session):
-        w = BrokenStateSlider()
+        _ = BrokenStateSlider()
         asyncio.get_event_loop().run_until_complete(reactive.flush())
 
     [note] = [m for m in sent if "notification" in m]
@@ -102,7 +102,6 @@ def test_comm_open_failure_notifies_user_and_closes_widget(
     assert payload["type"] == "error"
     assert payload["duration"] is None
     assert "boom during get_state" in payload["html"]
-    assert is_closed_widget(w)
 
 
 def test_comm_open_failure_notification_is_sanitized_with_app_flag(

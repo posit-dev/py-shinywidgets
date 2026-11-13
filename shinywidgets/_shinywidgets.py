@@ -310,20 +310,9 @@ def init_shiny_widget(w: Widget):
         except Exception as e:
             # The render already returned, so Shiny's render-error display
             # never sees this failure; unhandled, the output stays blank
-            # forever (and on older Shiny the error would end the session).
-            # NotifyException makes Shiny print the traceback and show a
-            # sticky error notification while the session survives -- it
-            # fires even though this effect destroyed itself above.
-            #
-            # A process-global widget belongs to every session, so one
-            # session's failure must not close it. A session-owned one is
-            # closed, tearing down its half-initialized state the same way
-            # render invalidation would.
-            if not is_process_global(w):
-                try:
-                    close_widget(w)
-                except Exception:
-                    logger.exception("Failed to close widget after comm-open failure")
+            # forever. NotifyException makes Shiny print the traceback and
+            # show a sticky error notification while the session survives --
+            # it fires even though this effect destroyed itself above.
             raise NotifyException(
                 f"Failed to display {type(w).__name__}: {e}",
                 sanitize=session.app.sanitize_errors,
