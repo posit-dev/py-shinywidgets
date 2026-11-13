@@ -15,6 +15,9 @@ on:
 
 permissions:
   contents: read
+  # nwtgck/actions-netlify creates a GitHub deployment and commit status
+  deployments: write
+  statuses: write
 
 jobs:
   build-and-deploy:

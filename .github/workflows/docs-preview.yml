@@ -11,6 +11,9 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  # nwtgck/actions-netlify creates a GitHub deployment and commit status
+  deployments: write
+  statuses: write
 
 jobs:
   notify-fork-pr:
