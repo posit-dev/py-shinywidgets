@@ -1,4 +1,4 @@
-.PHONY: help clean clean-build clean-pyc clean-test setup check-format check-types check-tests check check-tox build format coverage check-build test test-unit test-reactable test-playwright test-playwright-reactable test-playwright-coverage test-all-local coverage-ci coverage-combine coverage-html dist install pyright
+.PHONY: help clean clean-build clean-pyc clean-test setup check-format check-types check-tests check check-tox build format coverage check-build test test-unit test-reactable test-playwright test-playwright-reactable test-playwright-coverage test-all-local coverage-ci coverage-combine coverage-html dist install pyright docs docs-preview docs-check
 
 .DEFAULT_GOAL := help
 
@@ -133,3 +133,18 @@ install: build ## install the built wheel into the uv environment
 	uv run pip install dist/shinywidgets*.whl
 
 pyright: check-types ## run pyright type checks
+
+DOCS_PORT ?= 8780
+
+docs: ## build the website into website/_site (log: website/_render.log)
+	cd website && uv run --no-sync quartodoc build --config _quarto.yml > _render.log 2>&1 || { tail -40 _render.log; exit 1; }
+	cd website && uv run --no-sync quarto render >> _render.log 2>&1 || { tail -40 _render.log; exit 1; }
+	@if grep -q "Unable to resolve link target" website/_render.log; then \
+		grep -B1 "Unable to resolve link target" website/_render.log | head -40; \
+		echo "Unresolved links; see website/_render.log"; exit 1; fi
+
+docs-preview: ## serve the built website at http://localhost:$(DOCS_PORT)/
+	uv run --no-sync python -m http.server $(DOCS_PORT) --bind 127.0.0.1 --directory website/_site
+
+docs-check: ## run the website's browser checks against website/_site
+	uv run --no-sync python website/_tools/check_site.py
