@@ -78,8 +78,6 @@ class ShinyComm:
         self.comm_manager = comm_manager
         self.target_name = target_name
         self.session = session
-        # Error messages already shown to the user (see notify_client_msg_error)
-        self._notified_errors: set[str] = set()
         self.open(data=data, metadata=metadata, buffers=buffers, **keys)
 
     @classmethod
@@ -99,7 +97,6 @@ class ShinyComm:
         comm.comm_manager = comm_manager
         comm.target_name = target_name
         comm.session = session
-        comm._notified_errors = set()
         comm._closed = False
         comm.awaiting_owner = True
         comm_manager.register_comm(comm)
@@ -252,7 +249,6 @@ class ShinyComm:
         """
         self._parent_header = msg.get("header")
         scope = ClientMsgScope()
-        scope.comm = self
         token = handling_client_msg.set(scope)
         traitlets_level_patch.patch()
         try:
@@ -261,11 +257,9 @@ class ShinyComm:
             self._parent_header = None
             traitlets_level_patch.restore()
             scope.active = False
-            # Deferred work shares this scope via its copied context (see
-            # ClientMsgScope); release the comm so that work can't pin it
-            # (and its widget callbacks and session) after dispatch ends.
-            scope.comm = None
             handling_client_msg.reset(token)
+        if scope.errors:
+            notify_client_msg_error(self, scope.errors[0])
 
     def handle_close(self, msg: Dict[str, object]) -> None:
         """The browser closed this comm: a later close() has nothing to publish."""
@@ -520,10 +514,13 @@ class ClientMsgScope:
     """
 
     active = True
-    # The comm whose message is being dispatched: how a rerouted callback
-    # error finds the session (and per-widget dedup set) for its user-facing
-    # notification (see notify_client_msg_error).
-    comm: Optional["ShinyComm"] = None
+
+    def __init__(self) -> None:
+        # The callback errors rerouted during dispatch, for its user-facing
+        # notification (see notify_client_msg_error). Their messages, not the
+        # exceptions: deferred work can outlive the dispatch holding this
+        # scope, and a traceback's frames would pin the widget and session.
+        self.errors: List[str] = []
 
 
 handling_client_msg: ContextVar[Optional[ClientMsgScope]] = ContextVar(
@@ -574,35 +571,25 @@ class TraitletsLevelPatch:
 traitlets_level_patch = TraitletsLevelPatch()
 
 
-# Cap per comm so a callback that fails with ever-changing messages can't
-# grow the dedup set (or flood the user with notifications) without bound.
-MAX_ERROR_NOTIFICATIONS_PER_COMM = 50
-
-
-def notify_client_msg_error(comm: ShinyComm, record: logging.LogRecord) -> None:
+def notify_client_msg_error(comm: ShinyComm, msg: str) -> None:
     """
     Show a sticky browser notification for a widget-callback error that
     ipywidgets swallowed (see ClientMsgErrorFilter): the error already
     reached the server log, but if the failing callback is part of how the
     widget renders, the user's output is otherwise blank with no
-    explanation. Each unique message is shown once per widget; repeats only
-    go to the server log.
+    explanation. The browser replaces a notification whose id it already
+    shows, so a callback that fails on every message leaves one per widget.
     """
-    if record.exc_info is not None and record.exc_info[1] is not None:
-        msg = str(record.exc_info[1])
-    else:
-        msg = record.getMessage()
-    notified = comm._notified_errors
-    if msg in notified or len(notified) >= MAX_ERROR_NOTIFICATIONS_PER_COMM:
-        return
-    notified.add(msg)
     session = comm.session
-    try:
-        if session.app.sanitize_errors:
-            msg = session.app.sanitize_error_msg
-        ui.notification_show(msg, type="error", duration=None, session=session)
-    except Exception:
-        logger.exception("Failed to show widget callback error in the browser")
+    if session.app.sanitize_errors:
+        msg = session.app.sanitize_error_msg
+    ui.notification_show(
+        msg,
+        type="error",
+        duration=None,
+        id=f"shinywidgets-error-{comm.comm_id}",
+        session=session,
+    )
 
 
 class ClientMsgErrorFilter(logging.Filter):
@@ -615,9 +602,8 @@ class ClientMsgErrorFilter(logging.Filter):
     logger (dropping the original, so a configured root handler doesn't show
     them twice). Everywhere else, e.g. in Jupyter, `traitlets` logging is untouched.
 
-    A rerouted record is also shown to the user as a sticky error
-    notification (deduplicated per widget, see notify_client_msg_error): the
-    failing callback often leaves their output blank with no explanation.
+    A rerouted exception is also noted on the dispatch's scope, so the
+    dispatch can show it to the user (see notify_client_msg_error).
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -625,8 +611,9 @@ class ClientMsgErrorFilter(logging.Filter):
         if scope is None or not scope.active or record.levelno < logging.WARNING:
             return True
         logger.error(record.getMessage(), exc_info=record.exc_info)
-        if scope.comm is not None:
-            notify_client_msg_error(scope.comm, record)
+        exc = record.exc_info[1] if record.exc_info else None
+        if exc is not None:
+            scope.errors.append(str(exc))
         return False
 
 

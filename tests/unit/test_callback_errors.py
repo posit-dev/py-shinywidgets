@@ -3,8 +3,8 @@ Exceptions raised by widget callbacks while handling a browser message are
 caught by ipywidgets and logged to the `traitlets` logger, whose only handler is
 a NullHandler, so outside of IPython they would vanish. shinywidgets re-routes
 them to its own logger so they show up in the server's console, and shows the
-user a sticky error notification (deduplicated per widget), since the error
-usually means their output is blank.
+user a sticky error notification (one per widget), since the error usually
+means their output is blank.
 """
 
 from __future__ import annotations
@@ -212,21 +212,23 @@ def test_deferred_work_after_dispatch_keeps_traitlets_logging(
     assert record.levelno == logging.WARNING
 
 
-def test_scope_releases_comm_after_dispatch(widget_session: Session) -> None:
+def test_scope_keeps_error_messages_not_exceptions(widget_session: Session) -> None:
     # Deferred work (asyncio tasks, loop.call_soon) shares the dispatch scope
-    # via its copied context, so a strong comm reference on it would keep the
-    # comm -- and its widget callbacks and session -- alive for the lifetime
-    # of that work, even after the widget is closed or replaced.
+    # via its copied context, so an exception kept on it would keep its
+    # traceback's frames -- and through them the widget, its callbacks and
+    # session -- alive for the lifetime of that work, even after the widget
+    # is closed or replaced.
     scopes: List[ClientMsgScope] = []
 
-    def grab(change: object) -> None:
+    def boom(change: object) -> None:
         scope = handling_client_msg.get()
         assert scope is not None
         scopes.append(scope)
+        raise RuntimeError("observer failed")
 
     with session_context(widget_session):
         slider = IntSlider(value=1)
-        slider.observe(grab, names="value")
+        slider.observe(boom, names="value")
         comm = open_comm(slider)
         comm.handle_msg(
             client_msg(
@@ -236,7 +238,7 @@ def test_scope_releases_comm_after_dispatch(widget_session: Session) -> None:
         )
 
     [scope] = scopes
-    assert scope.comm is None
+    assert scope.errors == ["observer failed"]
 
 
 def capture_notifications(
@@ -283,7 +285,7 @@ def test_observer_error_notifies_browser(
     assert "observer failed" in payload["html"]
 
 
-def test_observer_error_notifies_once_per_unique_message(
+def test_repeat_errors_reuse_the_widgets_notification(
     widget_session: Session,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -297,11 +299,42 @@ def test_observer_error_notifies_once_per_unique_message(
                 {"method": "update", "state": {"value": 6}, "buffer_paths": []},
             )
         )
+        other = failing_slider()
 
-    # Both failures are logged ...
-    assert len(caplog.records) == 2
-    # ... but the user is notified only once.
-    assert len([m for m in sent if "notification" in m]) == 1
+    # Every failure is logged ...
+    assert len(caplog.records) == 3
+    # ... but the browser replaces a notification whose id it already shows,
+    # so an observer that fails on every message leaves one per widget.
+    ids = [m["notification"]["message"]["id"] for m in sent if "notification" in m]
+    assert ids == [
+        f"shinywidgets-error-{comm.comm_id}",
+        f"shinywidgets-error-{comm.comm_id}",
+        f"shinywidgets-error-{other.comm_id}",
+    ]
+
+
+def test_warning_without_exception_does_not_notify(
+    widget_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def warn(change: object) -> None:
+        logging.getLogger("traitlets").warning("heads up")
+
+    sent = capture_notifications(widget_session, monkeypatch)
+    with session_context(widget_session), caplog.at_level(logging.WARNING):
+        slider = IntSlider(value=1)
+        slider.observe(warn, names="value")
+        comm = open_comm(slider)
+        comm.handle_msg(
+            client_msg(
+                comm.comm_id,
+                {"method": "update", "state": {"value": 5}, "buffer_paths": []},
+            )
+        )
+
+    assert "heads up" in caplog.text
+    assert [m for m in sent if "notification" in m] == []
 
 
 def test_observer_error_notification_sanitized_when_app_sanitizes(
