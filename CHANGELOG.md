@@ -82,6 +82,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * shinywidgets now requires ipywidgets 8.1 or newer, and the bundled JavaScript widget manager was upgraded to `@jupyter-widgets/html-manager` 1.0. Together these fix many long-standing issues with ipywidgets 8 (see the bug fixes below). (#237, #259)
 * shinywidgets now requires shiny 1.9.0 or newer. With it, widget updates made from a background thread (e.g., nglview's, or your own `threading.Thread`) reach the browser right away instead of waiting for the next unrelated input. (#377)
 * shinywidgets now requires plotly 5.12 or newer for plotly widgets. With an older plotly, you now get an error explaining how to upgrade instead of a blank output. (#332)
+* `@render_plotly` no longer sends plotly.py's own click, hover, and selection events to the server by default. If your app reads `plot.widget.data[i].selectedpoints` after the user selects, or registers plotly.py trace callbacks (`on_click()`, `on_hover()`, `on_unhover()`, `on_selection()`, `on_deselect()`) outside the render function, those now see nothing until you pass `listen_to=["native"]`, which restores the previous behavior:
+
+  ```python
+  @render_plotly(listen_to=["native"])
+  def plot():
+      return px.scatter(df, x="x", y="y")
+  ```
+
+  To restore it for every output at once (e.g., an existing deployment you can't edit), set the `SHINYWIDGETS_NATIVE_EVENTS=1` environment variable. Callbacks registered inside the render function keep working without either. plotly.py reports these events with an entry for every point whether or not anything reads them, so selecting a few hundred thousand points uploaded tens of megabytes and could disconnect the session; the new accessors (`plot.clicked()`, `plot.brushed()`, ...) are the lighter way to read interactions. (#479)
 
 ### Deprecated
 
