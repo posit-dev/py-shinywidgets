@@ -9,7 +9,7 @@
 # Run: uv run --no-sync shiny run docs/widget-guides/ipydatagrid/gallery/showcase_monthly_sales.py
 # Data: synthesized in-line (numpy); flat region/product columns (no MultiIndex
 # -- ipydatagrid's merged row-header groups go stale after a sort, so this
-# avoids that upstream bug entirely; see NOTES.md).
+# avoids that upstream bug entirely).
 #
 # NOTE: this header is a comment, not a module docstring -- Shiny Express
 # auto-displays a leading string-literal expression as page content, so a

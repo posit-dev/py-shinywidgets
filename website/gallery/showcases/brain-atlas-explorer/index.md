@@ -61,5 +61,4 @@ verification time. Two real gestures, each confirmed against the rendered sideba
 - A real click on the canvas then populated the region card with
   `"Occipital Sup L", MNI (-14, -88, 10) mm` -- `img/after_click.webp`.
 
-Source: promoted from `docs/widget-guides/niivue/gallery/showcase_atlas_explorer.py` (see
-`NOTES.md`).
+Source: promoted from `docs/widget-guides/niivue/gallery/showcase_atlas_explorer.py`.

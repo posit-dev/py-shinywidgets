@@ -786,7 +786,7 @@ plain `@render.data_frame` table, for sorting and paging in the selected subset.
 `@render_matplotlib` has no large-data mode of its own: ipympl redraws the whole figure to a bitmap on every
 pan, zoom, or `draw_idle()` call, with no WebGL context and no server-side rasterization step. We didn't
 re-measure a practical point-count ceiling this pass (the old evaluation's panning-frame-rate numbers were
-dropped as stale -- see `NOTES.md`). For a genuinely large series, either widget gets cheaper as data grows:
+dropped as stale). For a genuinely large series, either widget gets cheaper as data grows:
 Shiny's own `@render.plot` (same matplotlib drawing underneath, a static PNG per render instead of a live
 canvas -- see the introduction above), or a sibling built for scale, such as
 [bokeh](../bokeh/index.md#large-data)'s `output_backend="webgl"`, [plotly](../plotly/index.md#large-data)'s

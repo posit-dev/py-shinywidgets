@@ -62,5 +62,4 @@ retry). A real Playwright rectangle-draw gesture on the map produces a populated
 against the rendered table text, not just a screenshot -- see `img/hero.webp` (before) and
 `img/after_draw.webp` (after).
 
-Source: promoted from `docs/widget-guides/leafmap/gallery/showcase_aoi_workbench.py` (see
-`NOTES.md`).
+Source: promoted from `docs/widget-guides/leafmap/gallery/showcase_aoi_workbench.py`.

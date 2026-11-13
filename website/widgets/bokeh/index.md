@@ -916,7 +916,7 @@ with ui.layout_columns():
 Time to first render also favors WebGL at this scale, not just steady-state pan/zoom smoothness: measured with
 isolated single-panel copies of the two apps above (three runs each, median reported), the WebGL panel reached
 a stable, fully-drawn scatter in 5.1 s versus 7.4 s for the canvas panel -- about 30% faster, even though both
-ship the identical bytes measured above. Method and raw numbers in [NOTES.md](NOTES.md).
+ship the identical bytes measured above.
 
 This is the "draw it with the GPU in the browser" approach from
 [Large data & performance](../../guide/performance/index.md#three-approaches-to-large-data). For data that

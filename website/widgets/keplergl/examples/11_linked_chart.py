@@ -1,5 +1,4 @@
 import plotly.express as px
-import plotly.graph_objects as go
 from shiny import reactive
 from shiny.express import input, ui
 from shinywidgets import render_keplergl, render_plotly

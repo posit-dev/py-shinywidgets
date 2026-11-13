@@ -246,8 +246,7 @@ Nothing in this app reads `plot.selected_rows()` before `chat.on_user_submit` do
 that is the point: the accessor started recording the lasso the moment `plot` rendered,
 long before the user typed a word, so the gesture is still there when the handler
 finally reads it. Three independent runs of the lasso-then-ask sequence above all
-produced a correctly-populated summary -- see [NOTES.md](NOTES.md) for the verification
-log.
+produced a correctly-populated summary.
 
 ## 3. A registered tool that moves a widget
 
@@ -469,8 +468,8 @@ visible" as the very first thing in the session already gets the right answer.
 
 This app is a reasonable template for "point an LLM at a map app," but it is not
 gallery-polished (a single hardcoded place list, two tools, no error recovery beyond the
-allow-list message). It stays in `examples/`; see [NOTES.md](NOTES.md) for why it isn't
-promoted to `gallery/showcases/` as-is.
+allow-list message). It stays in `examples/` rather than being promoted to
+`gallery/showcases/` as-is.
 
 ## Pitfalls
 
@@ -488,10 +487,9 @@ arguments are no more trustworthy than any other text a remote system handed you
 suggested in a system prompt (a system prompt is guidance, not enforcement; the model
 can still emit anything the tool's schema allows). The same applies doubly to anything
 that ends up in a file path, a URL, or a SQL string. On that last point: if a tool
-builds its own SQL from the model's arguments, see the
-[quak and mosaic DuckDB lockdown finding](https://github.com/posit-dev/py-shinywidgets/blob/main/docs/widget-guides/FINDINGS.md#quak-and-mosaic-security) --
-`render_quak` and `render_mosaic_widget`'s *browser-sent* SQL path was found to allow
-arbitrary file reads before a fix landed. querychat's own SQL tool does not have this
+builds its own SQL from the model's arguments, note the quak and mosaic DuckDB lockdown
+finding: `render_quak` and `render_mosaic_widget`'s *browser-sent* SQL path was found
+to allow arbitrary file reads before a fix landed. querychat's own SQL tool does not have this
 problem out of the box: its DuckDB connection is locked down
 (`enable_external_access = false`, `disabled_filesystems = 'LocalFileSystem'`, extension
 autoloading off) and non-`SELECT` statements are rejected before a query ever runs (see
@@ -509,8 +507,7 @@ widget trait is just another `@reactive.effect`-shaped write, and the same
 since it runs outside any reactive context). Had a tool instead read `bounds()` and
 written something that fed back into `bounds()`, it would hang the same way an
 unguarded `count.set(count() + 1)` effect does -- silently, with no error, pinning a CPU
-core (see `docs/widget-guides/FINDINGS.md`'s itables and mosaic entries for two
-independently-discovered cases of exactly that shape).
+core (the itables and mosaic guides each hit a case of exactly that shape).
 
 **Latency and streaming.** A tool-calling turn is at least two model round trips (decide
 to call a tool, then respond to its result), and a lasso-to-chat turn like example 2 adds
@@ -533,5 +530,3 @@ a widget didn't update, check whether the chat shows the tool was actually calle
 - The [plotly](../../widgets/plotly/index.md), [itables](../../widgets/itables/index.md), and
   [ipyleaflet](../../widgets/ipyleaflet/index.md) guides for the full accessor reference on each
   widget used above.
-- `docs/widget-guides/FINDINGS.md` for the quak/mosaic DuckDB lockdown finding
-  referenced in Pitfalls.

@@ -50,4 +50,4 @@ Source: [app.py](app.py) · [Open in Shinylive](app.py){.sw-shinylive-link}
 
 `rate_policy`/`rate_delay` have no effect on `grid.selected()` or `grid.clicked()`: neither
 accessor declares a default rate policy, and `reactive_read`'s own rate limit applies to the
-composite `Box`, not the inner `.grid.widget`. See `docs/widget-guides/mols2grid/NOTES.md`.
+composite `Box`, not the inner `.grid.widget`.

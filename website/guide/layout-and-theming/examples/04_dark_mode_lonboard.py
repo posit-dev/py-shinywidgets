@@ -7,8 +7,8 @@ from shiny.express import ui
 from shinywidgets import render_lonboard
 
 # Kept separate from 03_dark_mode.py: rendering a lonboard map on the same
-# page as a maplibre map crashes lonboard's view (see NOTES.md -- the two
-# widgets load conflicting bundled copies of deck.gl), unrelated to dark
+# page as a maplibre map crashes lonboard's view (the two widgets load
+# conflicting bundled copies of deck.gl), unrelated to dark
 # mode. This file isolates lonboard to get a clean dark-mode screenshot.
 ui.page_opts(title="lonboard: dark mode", fillable=True)
 ui.input_dark_mode(id="mode")

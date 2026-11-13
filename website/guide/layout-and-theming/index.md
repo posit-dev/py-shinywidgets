@@ -231,9 +231,9 @@ ui.page_opts(title="Dark mode: who follows, who doesn't", fillable=True)
 ui.input_dark_mode(id="mode")
 
 # lonboard is covered separately, in 04_dark_mode_lonboard.py: on the same
-# page as maplibre it fails to render at all (see NOTES.md -- the two
-# widgets' bundled copies of deck.gl collide: "deck.gl - multiple versions
-# detected"), unrelated to dark mode.
+# page as maplibre it fails to render at all (the two widgets' bundled
+# copies of deck.gl collide: "deck.gl - multiple versions detected"),
+# unrelated to dark mode.
 with ui.layout_columns(col_widths=[4, 4, 4]):
     with ui.card():
         ui.card_header("plotly")
@@ -348,8 +348,8 @@ from shiny.express import ui
 from shinywidgets import render_lonboard
 
 # Kept separate from 03_dark_mode.py: rendering a lonboard map on the same
-# page as a maplibre map crashes lonboard's view (see NOTES.md -- the two
-# widgets load conflicting bundled copies of deck.gl), unrelated to dark
+# page as a maplibre map crashes lonboard's view (the two widgets load
+# conflicting bundled copies of deck.gl), unrelated to dark
 # mode. This file isolates lonboard to get a clean dark-mode screenshot.
 ui.page_opts(title="lonboard: dark mode", fillable=True)
 ui.input_dark_mode(id="mode")
@@ -382,7 +382,7 @@ toggle changes nothing in either screenshot beyond the page chrome around it.
   and [#460](https://github.com/posit-dev/py-shinywidgets/issues/460).
 - **Rendering a lonboard map and a maplibre map on the same page breaks the lonboard map** (a `deck.gl -
   multiple versions detected` error from lonboard's own anywidget bundle). Verified on current `main`; not
-  specific to dark mode. See `NOTES.md` for the repro and `FINDINGS.md`.
+  specific to dark mode.
 
 ## Where to go next
 

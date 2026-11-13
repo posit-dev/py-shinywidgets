@@ -9,7 +9,7 @@
 # ObsplotWidget instances mounting at the same time intermittently
 # cross-contaminate each other's scales (e.g. the histogram's y-axis would
 # pick up the bubble chart's y-domain) -- a pyobsplot/Observable Plot
-# concurrency bug, not a shinywidgets one; see NOTES.md. Keeping this
+# concurrency bug, not a shinywidgets one. Keeping this
 # showcase to a single render_obsplot output avoids it.
 
 from __future__ import annotations

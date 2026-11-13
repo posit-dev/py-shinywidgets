@@ -69,5 +69,4 @@ making real calls to `claude-haiku-5-5` via `ANTHROPIC_API_KEY`:
   confirmed in `img/after_fly_to.webp`.
 
 Source: promoted from
-`docs/widget-guides/articles/ai-exploration/examples/04_map_chart_chat_combined.py` (see
-`NOTES.md`).
+`docs/widget-guides/articles/ai-exploration/examples/04_map_chart_chat_combined.py`.

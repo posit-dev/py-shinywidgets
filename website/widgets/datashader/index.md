@@ -754,8 +754,8 @@ Verified on current main (shiny 1.9.0, holoviews 1.23.2, hvplot 0.12.2, datashad
   [rasterize vs datashade](#rasterize-vs-datashade-which-one-and-why)), not a bug, but it's easy to reach for
   `datashade` for its smaller payload and then wonder why hover stopped working.
 - Everything in the [HoloViews guide's Gotchas section](../holoviews/index.md#gotchas-and-limitations) applies
-  here too (the `ui.sidebar()`/`link_selections` concern there was investigated and did **not** reproduce --
-  see `../holoviews/INVESTIGATION.md` -- so sidebars are fine to use, as the showcase gallery app does).
+  here too (the `ui.sidebar()`/`link_selections` concern there was investigated and did **not** reproduce,
+  so sidebars are fine to use, as the showcase gallery app does).
 
 ## Payload and latency at scale
 

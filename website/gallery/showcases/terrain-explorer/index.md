@@ -63,5 +63,4 @@ No extra packages needed. Two real gestures confirmed against server-rendered te
   changed from `"None (click the terrain)"` to `"elevation: 1021 m\nrow, col: 139, 108"` --
   `img/after_click.webp`.
 
-Source: promoted from `docs/widget-guides/k3d/gallery/showcase_terrain_explorer.py` (see
-`NOTES.md`).
+Source: promoted from `docs/widget-guides/k3d/gallery/showcase_terrain_explorer.py`.

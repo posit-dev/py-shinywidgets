@@ -873,5 +873,3 @@ Express `globals.py` caveat `shared_lifetime()` needs, and what a shared widget 
   [ipydatagrid](../../widgets/ipydatagrid/index.md), [itables](../../widgets/itables/index.md),
   [mosaic](../../widgets/mosaic/index.md), [bqplot](../../widgets/bqplot/index.md), [panel](../../widgets/panel/index.md), and
   [reactable](../../widgets/reactable/index.md).
-- `docs/widget-guides/FINDINGS.md` is the coordinator's running log of bugs and surprises across every
-  guide, including the renderer `rate_policy`/`rate_delay` cross-cutting gap mentioned above.

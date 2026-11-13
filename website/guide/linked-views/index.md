@@ -43,7 +43,7 @@ three examples original to this article -- a click-to-detail card that crosses a
 into plotly, a lonboard/plotly bidirectional broker, and a three-output
 `@reactive.calc` -- were built and driven with real Playwright gestures specifically for
 it. All seventeen of those were re-verified against the exact commit this article is
-checked against (see [NOTES.md](NOTES.md)). Three more (18-20), built for the
+checked against. Three more (18-20), built for the
 large-data brushing pattern below, are new in this same pass.
 
 ## 1. Selection &rarr; table of rows
@@ -1478,8 +1478,7 @@ scaled up 5x with the interactor moved onto the histograms.
 ### Measured
 
 20-step, one-second drag, real Playwright mouse gestures, websocket frames captured
-after the first render and a full warm-up drag (method and raw numbers in
-[NOTES.md](NOTES.md); the script is [`measure/brush_payload.py`](measure/brush_payload.py)):
+after the first render and a full warm-up drag (script: [`measure/brush_payload.py`](measure/brush_payload.py)):
 
 | Example | Scale | Browser &rarr; server | Server &rarr; browser | Latency/step |
 |---|---|---|---|---|
@@ -1509,7 +1508,7 @@ points per commit, while 19's per-step cost is just a cheap pandas boolean filte
 1,000,000 rows, run more often. 18 is cheap in total traffic but pays a real compute cost
 per update; 19 is fast per update but its *total* cost scales with the selection -- exactly
 the failure mode "push summaries, not points" warns about. Latency per step was never the
-claim bytes/drag makes (full derivation: [NOTES.md](NOTES.md)).
+claim bytes/drag makes.
 
 20 is a genuine surprise: the heaviest number in the table, in absolute bytes. Mosaic's
 crossfilter grammar needs no Python glue code, but `render_mosaic_widget`'s DuckDB
@@ -1667,11 +1666,10 @@ different libraries, one shared calc:
   [embedding-atlas](../../widgets/embedding-atlas/index.md#coordinating-multiple-views),
   [datashader](../../widgets/datashader/index.md#coordinating-multiple-views), and
   [holoviews](../../widgets/holoviews/index.md#coordinating-multiple-views).
-- `docs/widget-guides/FINDINGS.md` for cross-cutting bugs that affect linking apps;
-  one worth calling out here since an earlier version of this article routed around
-  it: the `render_reactable` accessor regression it describes (`_accessor_specs` vs.
-  `accessor_specs`, all five accessors dead) is **fixed on current `main`** (#394),
-  confirmed directly against `render_reactable`'s source for this update. Reactable is
-  a fine choice for pattern 1 or 8 now; this article still only builds itables-based
-  examples of those patterns (see [NOTES.md](NOTES.md)), not because reactable doesn't
+- One cross-cutting bug worth calling out here since an earlier version of this
+  article routed around it: the `render_reactable` accessor regression
+  (`_accessor_specs` vs. `accessor_specs`, all five accessors dead) is **fixed on
+  current `main`** (#394), confirmed directly against `render_reactable`'s source for
+  this update. Reactable is a fine choice for pattern 1 or 8 now; this article still
+  only builds itables-based examples of those patterns, not because reactable doesn't
   work.

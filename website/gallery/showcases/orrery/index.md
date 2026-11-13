@@ -55,5 +55,4 @@ canvas center (where the sun always renders, since it sits at the scene origin) 
 `Picker` resolves clicks to the correct object across re-renders of the moving scene. See
 `img/hero.webp` and `img/after_click.webp`.
 
-Source: promoted from `docs/widget-guides/pythreejs/gallery/showcase_orrery.py` (see
-`NOTES.md`).
+Source: promoted from `docs/widget-guides/pythreejs/gallery/showcase_orrery.py`.

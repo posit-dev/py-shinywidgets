@@ -844,7 +844,7 @@ Verified on current `main` (shinywidgets, jupyter-scatter 1.0.1):
 - **Selections over roughly 3 million points can exceed Shiny's default 16 MiB websocket message limit**,
   disconnecting the session (the selection array is base64-encoded JSON, not a binary frame). This is documented
   on the `render_jscatter` class itself; raise the limit with `shiny run --ws-max-size <bytes>` if your app lassoes
-  selections at that scale. Not independently re-triggered at that scale in this pass -- see `NOTES.md`.
+  selections at that scale. Not independently re-triggered at that scale in this pass.
 - **`jscatter.compose()` and `.link()` return a plain `ipywidgets.GridBox`**, not a `JupyterScatter`, so
   `@render_jscatter` can't render their result directly (it isn't a `Scatter`/`JupyterScatter`). Use
   `@render_widget` instead if you want `compose()`'s side-by-side layout (it won't get fill behavior or the

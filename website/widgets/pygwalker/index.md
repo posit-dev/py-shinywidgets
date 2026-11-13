@@ -208,7 +208,7 @@ ui.markdown(
     "1,000,000 synthetic rows. PyGWalker aggregates with DuckDB in the Python "
     "process, so only the query *result* crosses the wire -- opening the explorer "
     "and building a chart here cost the same bytes and time as "
-    "02_build_a_chart.py's 244 rows (measured in NOTES.md)."
+    "02_build_a_chart.py's 244 rows."
 )
 
 rng = np.random.default_rng(0)
@@ -234,7 +234,7 @@ def explorer():
 
 ![a stacked bar chart over 1M rows, same cost as 244](img/scale_1M.webp)
 
-Measured with Playwright (see `NOTES.md` for methodology): opening the explorer and the first chart query
+Measured with Playwright: opening the explorer and the first chart query
 cost **identical** bytes and time for 500, 50,000, and 1,000,000 rows --
 
 | | 500 / 50K / 1M rows (all identical) |

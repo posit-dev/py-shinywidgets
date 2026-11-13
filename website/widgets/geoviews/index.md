@@ -680,8 +680,7 @@ is fixed -- see below); this list covers what's additionally true for GeoViews.
 
 - **~~A `BoundsXY` (box-select) stream silently never fires below ~500-650px~~ -- retracted, test-methodology
   artifact, not a bug.** An earlier revision of this guide reported box-select failing on a narrow responsive
-  canvas. A follow-up investigation
-  (`../investigations/narrow-canvas-and-subclass/INVESTIGATION.md`, Item A) found the real mechanism: Bokeh's
+  canvas. A follow-up investigation found the real mechanism: Bokeh's
   `BoxSelectTool` only starts a selection when the mousedown lands inside the plot's *data frame*, not its
   fixed-pixel y-axis label margin (~49px). A drag computed as a fraction of the canvas's full bounding rect clears
   that margin comfortably on a wide canvas (a few percent of the width) but lands *inside* the margin once the

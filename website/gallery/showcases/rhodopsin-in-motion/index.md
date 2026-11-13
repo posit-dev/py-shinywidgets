@@ -61,5 +61,4 @@ click on the 3D structure itself identified `TRP 265 chain B` in the **Picked at
 `img/hero.webp`, `img/after_click.webp` (chart click), `img/after_atom_click.webp` (structure
 click).
 
-Source: promoted from `docs/widget-guides/nglview/gallery/showcase_md_explorer.py` (see
-`NOTES.md`).
+Source: promoted from `docs/widget-guides/nglview/gallery/showcase_md_explorer.py`.

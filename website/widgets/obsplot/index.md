@@ -870,8 +870,7 @@ above, hit and fixed during verification), and itables-driven highlighting.
 [`gallery/showcase_gapminder_dashboard.py`](gallery/showcase_gapminder_dashboard.py)
 
 An earlier version of this showcase also had a second obsplot chart (a histogram) beside the bubble chart; it was
-removed after triggering the two-obsplot concurrency bug described in Gotchas. See `NOTES.md` for the full
-investigation.
+removed after triggering the two-obsplot concurrency bug described in Gotchas.
 
 ## Learn more
 

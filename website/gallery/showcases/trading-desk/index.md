@@ -56,5 +56,4 @@ streaming on at the default rate) -- a real, growing count, not a static display
 **Left viewer layout** to Pivot visibly regrouped the blotter by sector/symbol/side and
 changed the treemap's labels, confirmed in `img/after_pivot.webp` against `img/hero.webp`.
 
-Source: promoted from `docs/widget-guides/perspective/gallery/showcase_trading_desk.py` (see
-`NOTES.md`).
+Source: promoted from `docs/widget-guides/perspective/gallery/showcase_trading_desk.py`.

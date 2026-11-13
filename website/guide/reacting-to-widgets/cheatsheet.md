@@ -2,7 +2,7 @@
 
 Generated from `shinywidgets/_accessors.py`, each renderer's `_accessor_specs` (in the per-library
 `shinywidgets/_<lib>.py` modules), and the accessor methods on each `render_*` class in
-`shinywidgets/_render_widget.py`, on the commit documented in `NOTES.md`. Every accessor attaches the
+`shinywidgets/_render_widget.py`. Every accessor attaches the
 moment its output renders and records interactions whether or not anything has read it yet -- there is no
 warm-up idiom and no "first read" gotcha (see ["The mental model"](index.md#the-mental-model-accessors-are-inputs-that-remember)).
 

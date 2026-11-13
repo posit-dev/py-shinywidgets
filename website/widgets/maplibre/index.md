@@ -959,7 +959,7 @@ and it keeps that height instead of growing. Both paths are exercised in
 
 This matches `MapWidget(height=...)` semantics too: an explicit widget height is respected inside a filling card,
 and the default (`400`) is treated as unset so the map still fills. (An earlier evaluation of this renderer found
-explicit heights broken; that's fixed on current `main` -- see NOTES.md.)
+explicit heights broken; that's fixed on current `main`.)
 
 ## Gotchas and limitations
 

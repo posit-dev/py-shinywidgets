@@ -437,7 +437,7 @@ Closing the settings panel flips the `settings` trait:
 ![reactive_read after](img/reactive_read_after.webp)
 
 One quirk: right after a render, `grid.read("theme")` (equivalently, `reactive_read(grid.widget, "theme")`) can
-briefly read `None`, before the browser's first sync sets it (verified -- see NOTES.md). The two named accessors
+briefly read `None`, before the browser's first sync sets it (verified). The two named accessors
 don't have this problem -- they seed with a real value (`[]` or the config dict) the moment they're attached. If
 you read `theme` at startup, handle `None`.
 

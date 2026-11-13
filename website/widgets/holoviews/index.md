@@ -678,8 +678,8 @@ Verified on current main (shiny 1.9.0, holoviews 1.23.2, hvplot 0.12.2, panel 1.
 - **A composite `Layout` wrapped in `link_selections` defaults its drag tool to Pan, not Box Select -- at any
   width.** An earlier revision of this guide blamed this on narrow panels (a card squeezed below roughly 300px);
   a follow-up investigation found that was a test-methodology artifact (the repro's Playwright drag never
-  clicked the box-select toolbar icon first, unlike this guide's own working examples, which do -- see
-  `../investigations/narrow-canvas-and-subclass/INVESTIGATION.md`). Panel width is not the variable. The real,
+  clicked the box-select toolbar icon first, unlike this guide's own working examples, which do). Panel width
+  is not the variable. The real,
   width-independent fix: set `.opts(active_tools=["box_select"])` on each element before combining them with
   `links(...)`, as every crossfilter example in this guide does, so box-select is the default drag tool from the
   first render -- no toolbar click needed for a real interactive user. (A scripted/headless client that sets

@@ -526,7 +526,7 @@ stretching, on current main.
   ran). Two fixes, both verified: keep animation-loop state in a plain mutable Python object and have each
   writer redraw the widget directly (the `examples/05_game_of_life.py` pattern), or keep the `reactive.value`
   but read it inside `with reactive.isolate():` so the tick effect doesn't take a dependency on it. Ordinary
-  reactive-semantics footgun, not an ipycanvas or shinywidgets issue. See NOTES.md for the full investigation.
+  reactive-semantics footgun, not an ipycanvas or shinywidgets issue.
 - **Touch events are declared** (`on_touch_start/end/move/cancel`) but unverified in this guide: headless Chromium
   via Playwright doesn't have a simple way to synthesize multi-touch, so this wasn't exercised.
 - **`MultiCanvas` renders as a single `<canvas>` element.** The browser composites every sub-canvas into one; don't

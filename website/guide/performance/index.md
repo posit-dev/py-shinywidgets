@@ -21,8 +21,7 @@ Every number on this page was measured on this machine, by driving a real Shiny 
 real websocket frames, HTTP responses, and server process memory -- not estimated from reading source code. Most
 numbers date from the original pass against shinywidgets `main` @ `00f90249`; Section 4 (rate limiting) and the
 accessor-attachment check in Section 2 were re-measured against `main` @ `32ca7035` after the reactive-accessor
-redesign changed what they were testing. [NOTES.md](NOTES.md) says which is which, along with methodology,
-versions, and the handful of things that didn't measure cleanly.
+redesign changed what they were testing.
 
 This page opens with an orientation section -- the three strategies that cover every widget in this roster
 that handles genuinely large data -- then answers five further, narrower, measured questions, each with its
@@ -156,7 +155,7 @@ field -- **the entire plotly.js bundle, re-sent as part of the widget's own stat
 In-place's `batch_update()` never creates a new model, so it never touches `_esm` at all; only the changed
 `marker.color` buffer crosses the wire. This is the old plotly report's "5 MB bundle resent per render" claim,
 independently re-measured and confirmed real on current `main` (the plotly guide's own notes had left it
-unverified -- see this article's [NOTES.md](NOTES.md)).
+unverified).
 
 lonboard shows the same shape for a different reason: its re-render resends both the point *positions* (which
 never changed) and lonboard's own deck.gl/maplibre JavaScript, where in-place only resends the one Arrow buffer
@@ -340,7 +339,7 @@ it made the 5.45 MB re-render look *faster* than the 36 KB in-place update, whic
 result. Section 2 below has a wall-clock comparison with a trustworthy methodology (waiting for the browser's
 own widget registry to report a mounted, stable view) where the time differences are real and substantial.
 
-**Mined from other guides, not re-measured here** (see [NOTES.md](NOTES.md) for which one was re-verified):
+**Mined from other guides, not re-measured here**:
 pyvista's in-place re-render dropped from a roughly 1.1 MB floor (trame-pyvista 0.2.3) to about 12 KB for an
 unchanged mesh once its vtk.js runtime became a per-session singleton instead of a per-render resend
 (trame-pyvista 0.3.4) -- see the [pyvista guide](../../widgets/pyvista/index.md). keplergl's playback/animation stream
@@ -367,15 +366,15 @@ this project's resource rules.
 
 datashader's flatness holds another order of magnitude further: pushed to 10,000,000 points -- a scale none of
 the other renderers in this table can even attempt -- the rasterized image is still only 2.51 MB, a 15%
-increase over the 10K case for 1,000x the data (bytes-only this pass; see [NOTES.md](NOTES.md) for the fourth
-scale and the fixed 700x450 image size this row holds constant so the comparison isn't confounded by viewport).
+increase over the 10K case for 1,000x the data (bytes-only this pass; the row holds a fixed 700x450 image size
+constant so the comparison isn't confounded by viewport).
 embedding-atlas does **not** get this flatness for free: its GPU map needs the real points client-side, the
 same way the three scatter renderers above do, so its payload grows with N -- it belongs with "draw it with the
 GPU in the browser" for transport purposes, even though its auto-labeling, charts, and SQL cross-filter put it
 in a different category on the sidebar. Its time-to-render grows with N too (1.7 s to 2.3 s, 10K to 1M), while
 datashader's stays flat (2.7 s at every scale) -- the same story bytes tell, for the same reason. Both rows
-needed a different stopping signal than the other renderers in this table to measure that time honestly (see
-[NOTES.md](NOTES.md)): a widget can register as mounted, and the page as settled, before its image or WebGPU map
+needed a different stopping signal than the other renderers in this table to measure that time honestly: a
+widget can register as mounted, and the page as settled, before its image or WebGPU map
 actually finishes drawing the points it already received.
 
 The four apps ([`examples/05_bigdata_jscatter.py`](examples/05_bigdata_jscatter.py),
@@ -804,8 +803,7 @@ confused with its data cost (that's Section 2's job):
 Methodology: a fresh, uncached Playwright browser context for each app (so every byte is a true cold start),
 summing HTTP response bytes plus websocket frame bytes, with `blob:`-URL reconstructions (the browser rebuilding
 an anywidget ESM module from bytes already counted once in the comm channel) and basemap tile imagery excluded
-from both totals to avoid double-counting or penalizing map widgets for a viewport-dependent cost. See
-[NOTES.md](NOTES.md) for the exact filtering.
+from both totals to avoid double-counting or penalizing map widgets for a viewport-dependent cost.
 
 ```{.python file="examples/14_bundle_matplotlib.py"}
 import matplotlib.pyplot as plt
@@ -869,7 +867,7 @@ baseline.
   subdirectory for exactly this reason: every *other* example in the shared directory -- including ones with
   no lonboard import at all -- silently carried an extra ~9 MB of the Section 3 shared map's own payload on
   first load. Section 5's re-measurement after the move showed no change to its own numbers (they'd been
-  captured before `globals.py` existed in that directory -- see [NOTES.md](NOTES.md)), but the lesson holds
+  captured before `globals.py` existed in that directory), but the lesson holds
   generally: keep a `shared_lifetime()` cache module in its own subdirectory, away from unrelated example apps.
 - **A million-point scatter plot is not automatically a bad idea, but budget for both bytes and client-side
   render time** (Section 2) -- and for genuinely tabular data (sort/filter/browse, not a 2D point cloud),
@@ -902,6 +900,3 @@ baseline.
   [itables](../../widgets/itables/index.md) (`maxBytes` downsampling for large tables),
   [plotly](../../widgets/plotly/index.md), [lonboard](../../widgets/lonboard/index.md), [jscatter](../../widgets/jscatter/index.md),
   [perspective](../../widgets/perspective/index.md).
-- `docs/widget-guides/FINDINGS.md`: the coordinator's running log of bugs and surprises across the whole
-  roster (written against `main` @ `00f90249`; Section 4 above has this article's own current-`main`
-  rate-limiting findings).

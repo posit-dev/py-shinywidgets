@@ -316,8 +316,7 @@ the map in one tab --
 view and through `reactive_read()` on the trait in tab B's own session, which never invalidated either.
 This was a bug in the test app, not in shinywidgets: the two tabs were reading two different `Map` objects
 the whole time, because the per-session re-execution that `shared_lifetime()`'s own docstring warns about
-had silently defeated it. See [NOTES.md](NOTES.md) for the full repro -- it's worth keeping around as a
-sharp edge to watch for, not a shinywidgets bug to wait on a fix for.)
+had silently defeated it. It's a sharp edge to watch for, not a shinywidgets bug to wait on a fix for.)
 
 One more thing worth knowing about shared widgets: **accessors on a shared widget aren't scoped to a
 session.** If two users are both looking at the same `shared_lifetime()` map, `map.clicked()` reports

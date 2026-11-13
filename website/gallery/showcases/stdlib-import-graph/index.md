@@ -58,5 +58,4 @@ No extra packages needed (pure stdlib + networkx + ipysigma). A real Playwright 
 click and the full round trip (click -> `.read()` -> sidebar selectize -> re-render ->
 recolored graph) works. See `img/hero.webp` and `img/after_select.webp`.
 
-Source: promoted from `docs/widget-guides/ipysigma/gallery/showcase_stdlib_imports.py` (see
-`NOTES.md`).
+Source: promoted from `docs/widget-guides/ipysigma/gallery/showcase_stdlib_imports.py`.

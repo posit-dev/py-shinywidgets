@@ -565,7 +565,7 @@ out as needing this accessor, since their view reset (map center/zoom, ternary a
 `relayout()`'s `xaxis`/`yaxis` filter. The exception, called out in the docstring, is 3D: on the plotly 6.9.0
 bundled here, double-clicking a `scatter_3d` scene's background does **not** fire `plotly_doubleclick` at all
 (confirmed with a direct JS listener; the gesture just registers as two tiny camera-orbit `relayout` events),
-so a 3D view reset isn't observable this way. See NOTES.md.
+so a 3D view reset isn't observable this way.
 
 ### `legend_clicked()` and `visible_traces()`
 
@@ -861,7 +861,7 @@ Re-rendering (the render function reading a changed input) rebuilds the figure f
 `selected()`/`brushed()`/`visible_traces()` re-seed to the new, unselected figure (see "Reacting to user
 interaction" above for which accessors keep their value instead). Verified on current main: the plot also
 goes visibly blank for roughly a second while plotly.js reloads before the new figure paints (worse under
-load; see NOTES.md). Prefer re-rendering when the shape of the data genuinely changes (new/removed traces, a
+load). Prefer re-rendering when the shape of the data genuinely changes (new/removed traces, a
 different chart type).
 
 For everything else -- restyling existing traces, moving points, changing colors -- read inputs under
@@ -1201,7 +1201,7 @@ Verified on current `main` (plotly 6.9.0, shiny 1.9.0):
 - **`double_clicked()` doesn't fire on a 3D scene.** Verified on current main: double-clicking a `scatter_3d`
   plot's background never dispatches `plotly_doubleclick` (confirmed with a direct JS listener; the gesture
   just registers as two tiny camera-orbit `relayout` events), so a 3D view reset isn't observable this way.
-  It does fire as documented on cartesian, `scattermap`/mapbox, and ternary charts. See NOTES.md.
+  It does fire as documented on cartesian, `scattermap`/mapbox, and ternary charts.
 - **`customdata` is wrapped in a list per point** by `plotly.express` (even for a single `custom_data=[...]`
   column), so reading it directly (rather than through `selected_rows()`) needs an extra `[0]`:
   `pts["customdata"].iloc[0][0]`.
@@ -1211,7 +1211,7 @@ Verified on current `main` (plotly 6.9.0, shiny 1.9.0):
 
 What we deliberately didn't chase: the old report's performance findings about plotly's ~5MB JS bundle being
 resent on every re-render (a real, measurable cost, but a cross-cutting anywidget/shinywidgets architecture
-question, not specific to this guide; see NOTES.md).
+question, not specific to this guide).
 
 ## Gallery candidates
 

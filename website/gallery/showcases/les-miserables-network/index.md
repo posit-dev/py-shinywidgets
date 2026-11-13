@@ -66,5 +66,4 @@ most of the canvas reported `"72 characters · 249 ties inside the group · dens
 `selected_nodes()`, with visible black selection outlines on every caught node --
 `img/after_box_select.webp`.
 
-Source: promoted from `docs/widget-guides/ipycytoscape/gallery/showcase_les_miserables.py`
-(see `NOTES.md`).
+Source: promoted from `docs/widget-guides/ipycytoscape/gallery/showcase_les_miserables.py`.

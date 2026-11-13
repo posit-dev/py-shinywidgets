@@ -463,8 +463,7 @@ navigating into a subfolder, then toggling a filter, keeps you in that subfolder
 always run their first pass immediately), which would immediately call `reset()` on the just-constructed chooser
 and silently reapply `select_default`'s pick -- clobbering whatever you seeded your mirrored `reactive.value`
 with, before the user ever touches the input. Gate the effect with `@reactive.event(input.jump,
-ignore_init=True)` so it only fires on an actual change. The gallery showcase below needs exactly this fix (see
-NOTES.md).
+ignore_init=True)` so it only fires on an actual change. The gallery showcase below needs exactly this fix.
 
 ## Coordinating multiple views
 

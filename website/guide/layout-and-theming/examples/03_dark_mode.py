@@ -28,9 +28,9 @@ ui.page_opts(title="Dark mode: who follows, who doesn't", fillable=True)
 ui.input_dark_mode(id="mode")
 
 # lonboard is covered separately, in 04_dark_mode_lonboard.py: on the same
-# page as maplibre it fails to render at all (see NOTES.md -- the two
-# widgets' bundled copies of deck.gl collide: "deck.gl - multiple versions
-# detected"), unrelated to dark mode.
+# page as maplibre it fails to render at all (the two widgets' bundled
+# copies of deck.gl collide: "deck.gl - multiple versions detected"),
+# unrelated to dark mode.
 with ui.layout_columns(col_widths=[4, 4, 4]):
     with ui.card():
         ui.card_header("plotly")

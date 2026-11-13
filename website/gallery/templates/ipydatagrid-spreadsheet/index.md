@@ -55,4 +55,4 @@ Source: [app.py](app.py) · [Open in Shinylive](app.py){.sw-shinylive-link}
 `rate_policy`/`rate_delay` on `render_ipydatagrid` do not affect `selected()`, which streams
 continuously during a drag (not just at release) and declares no default rate policy. A heavy
 downstream computation per tick can stall the browser during a long drag; keep per-tick work cheap
-or debounce it yourself. See `docs/widget-guides/ipydatagrid/NOTES.md`.
+or debounce it yourself.

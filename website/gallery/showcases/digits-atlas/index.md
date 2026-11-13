@@ -61,5 +61,4 @@ visibly changed from a blurry superposition of all ten digits to a recognizable 
 confirmed against the rendered selection-count text, not just a screenshot. See
 `img/hero.webp` and `img/after_lasso.webp`.
 
-Source: promoted from `docs/widget-guides/embedding-atlas/gallery/showcase_digits_atlas.py`
-(see `NOTES.md`).
+Source: promoted from `docs/widget-guides/embedding-atlas/gallery/showcase_digits_atlas.py`.

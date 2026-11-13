@@ -56,5 +56,4 @@ to "3,000 cells selected (1.0%)" -- exactly 1% of 300,000, confirming the server
 visibly zoomed to the selected cluster while the marker-gene plot mirrored the same
 selection. See `img/hero.webp` and `img/after_top.webp`.
 
-Source: promoted from `docs/widget-guides/jscatter/gallery/showcase_single_cell_atlas.py`
-(see `NOTES.md`).
+Source: promoted from `docs/widget-guides/jscatter/gallery/showcase_single_cell_atlas.py`.

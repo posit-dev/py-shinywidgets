@@ -57,5 +57,4 @@ network fetch of the Natural Earth GeoJSON (confirmed reachable), and a real Pla
 on a city dot updates the "Selected city" card from `selected()` (verified against the
 rendered DOM text, not just a screenshot) -- see `img/hero.webp` and `img/after_click.webp`.
 
-Source: promoted from `docs/widget-guides/lonboard/gallery/showcase_world_dashboard.py`
-(see `NOTES.md` for details).
+Source: promoted from `docs/widget-guides/lonboard/gallery/showcase_world_dashboard.py`.

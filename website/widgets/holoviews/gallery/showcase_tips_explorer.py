@@ -83,7 +83,7 @@ with ui.card(full_screen=True):
 
     # Full row width is a layout preference here, not a bug workaround (an
     # earlier draft wrongly blamed a width threshold for a box-select failure
-    # that was actually a missing active_tools setting -- see NOTES.md).
+    # that was actually a missing active_tools setting).
     # active_tools=["box_select"] on each element below is what actually
     # matters: without it, a link_selections-wrapped composite Layout
     # defaults its drag tool to Pan, at any width.

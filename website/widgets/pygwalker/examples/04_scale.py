@@ -10,7 +10,7 @@ ui.markdown(
     "1,000,000 synthetic rows. PyGWalker aggregates with DuckDB in the Python "
     "process, so only the query *result* crosses the wire -- opening the explorer "
     "and building a chart here cost the same bytes and time as "
-    "02_build_a_chart.py's 244 rows (measured in NOTES.md)."
+    "02_build_a_chart.py's 244 rows."
 )
 
 rng = np.random.default_rng(0)

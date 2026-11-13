@@ -59,5 +59,4 @@ grid cell's `.m2g-callback` element (the per-cell click target mols2grid adds un
 depiction and descriptor line (`MW 86.2 LogP 2.44 LogS -3.68`), confirmed against the
 rendered text -- see `img/hero.webp` and `img/after_click.webp`.
 
-Source: promoted from `docs/widget-guides/mols2grid/gallery/showcase_chem_explorer.py` (see
-`NOTES.md`).
+Source: promoted from `docs/widget-guides/mols2grid/gallery/showcase_chem_explorer.py`.

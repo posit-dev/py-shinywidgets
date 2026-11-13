@@ -419,7 +419,7 @@ renders, whether or not anything has read it yet, so a click that happens before
 still shows up in it. Clicking the same spot twice doesn't re-fire. Unlike the other three
 accessors, a re-render doesn't reset it: `clicked()` keeps reporting the previous click until the
 user clicks the new map (verified by clicking, forcing a re-render, and confirming the value
-survives -- see `NOTES.md`).
+survives).
 
 ### Beyond the accessors: `reactive_read`
 
