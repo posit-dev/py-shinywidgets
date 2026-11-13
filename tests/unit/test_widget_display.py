@@ -10,7 +10,7 @@ from plotly.graph_objects import FigureWidget, Scatter
 from shiny import Session, reactive
 from shiny.session import session_context
 from shiny.session._session import AppSession
-from shinywidgets._comm import ShinyComm
+from shinywidgets._comm import OrphanedShinyComm, ShinyComm
 from shinywidgets._shinywidgets import SESSION_WIDGET_ID_MAP
 
 
@@ -102,6 +102,16 @@ def test_comm_open_failure_notifies_user(
     assert payload["type"] == "error"
     assert payload["duration"] is None
     assert "boom during get_state" in payload["html"]
+
+
+def test_comm_open_failure_stops_queuing_sends(widget_session: Session) -> None:
+    with session_context(widget_session):
+        w = BrokenStateSlider()
+        asyncio.get_event_loop().run_until_complete(reactive.flush())
+        w.send({"x": 1})
+
+    assert isinstance(w.comm, OrphanedShinyComm)
+    assert w.comm.take_queued_sends() == []
 
 
 def test_comm_open_failure_notification_is_sanitized_with_app_flag(

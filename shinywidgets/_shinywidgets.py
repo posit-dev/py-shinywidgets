@@ -313,6 +313,12 @@ def init_shiny_widget(w: Widget):
             # forever. NotifyException makes Shiny print the traceback and
             # show a sticky error notification while the session survives --
             # it fires even though this effect destroyed itself above.
+            #
+            # A session-owned widget's comm can no longer open, so stop its
+            # placeholder queuing sends. A process-global one's placeholder is
+            # still drained when another session opens it (open_shared_in()).
+            if not is_process_global(w) and isinstance(w.comm, OrphanedShinyComm):
+                w.comm.close()
             raise NotifyException(
                 f"Failed to display {type(w).__name__}: {e}",
                 sanitize=session.app.sanitize_errors,
