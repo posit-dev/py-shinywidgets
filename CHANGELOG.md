@@ -119,6 +119,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Error messages for objects that can't be rendered as widgets are clearer. Subclasses of supported types (e.g., `leafmap.deck.Map`) get their base package's guidance, unsupported builtins (e.g., a string) get the intended `TypeError` instead of an `AttributeError`, and messages no longer include huge object reprs. (#287)
 * Reading `.widget` or `.value` inside the output's own render function now raises an error instead of silently returning the previous render's widget or value.
 * With shinywidgets imported, constructing a `pydeck.Deck` outside a Shiny session (e.g., at module level) no longer raises "shinywidgets requires that all ipywidgets be constructed within an active Shiny session".
+* ipydatagrid grids (and other widgets that detect JupyterLab's theme) now follow the app's light/dark color mode instead of always rendering light. Toggling the mode re-themes grids rendered after the toggle; grids already on screen keep their palette, an ipydatagrid limitation. (#439)
 
 ## [0.8.2] - 2026-10-15
 
