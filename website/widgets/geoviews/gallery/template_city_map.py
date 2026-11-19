@@ -4,7 +4,7 @@
 # your own DataFrame and tile source.
 # Bucket: template
 # Run: cd to the shinywidgets repo root, then
-#   uv run --with geoviews shiny run docs/widget-guides/geoviews/gallery/template_city_map.py
+#   uv run --with geoviews shiny run website/widgets/geoviews/gallery/template_city_map.py
 # Data: six world cities, hand-entered (lon/lat/population).
 import geoviews as gv
 import holoviews as hv

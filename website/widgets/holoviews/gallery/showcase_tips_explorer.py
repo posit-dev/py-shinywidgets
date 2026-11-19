@@ -3,7 +3,7 @@
 # and link_selections, with no Bokeh server and no Python callback for the
 # linking itself.
 # Bucket: showcase.
-# Run:  uv run shiny run docs/widget-guides/holoviews/gallery/showcase_tips_explorer.py
+# Run:  uv run shiny run website/widgets/holoviews/gallery/showcase_tips_explorer.py
 # Data: plotly.express.data.tips() (ships with plotly)
 import holoviews as hv
 import plotly.express as px

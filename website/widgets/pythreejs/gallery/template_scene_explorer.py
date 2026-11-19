@@ -2,7 +2,7 @@
 # Swap in your own geometry/material; the lighting, OrbitControls, Picker, and
 # camera() readout are the reusable parts.
 # bucket: template
-# run: uv run --no-sync shiny run docs/widget-guides/pythreejs/gallery/template_scene_explorer.py
+# run: uv run --no-sync shiny run website/widgets/pythreejs/gallery/template_scene_explorer.py
 # data: none (procedural geometry)
 
 import pythreejs as p3

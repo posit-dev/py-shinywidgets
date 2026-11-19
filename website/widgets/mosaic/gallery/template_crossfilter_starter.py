@@ -3,7 +3,7 @@
 #   summary table. Habits worth copying: fixed domains, a background context
 #   layer, and one shared @reactive.calc for the selected data.
 # Bucket: template
-# Run: uv run --no-sync shiny run docs/widget-guides/mosaic/gallery/template_crossfilter_starter.py
+# Run: uv run --no-sync shiny run website/widgets/mosaic/gallery/template_crossfilter_starter.py
 # Data: Palmer Penguins (palmerpenguins), fetched from a stable GitHub URL
 
 from __future__ import annotations

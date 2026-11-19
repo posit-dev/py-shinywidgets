@@ -7,7 +7,7 @@
 # in your own columns and this scales to any 2-3 numeric-feature dataset.
 #
 # Run:
-#     uv run --with bokeh_sampledata shiny run docs/widget-guides/bokeh/gallery/template_linked_scatter.py
+#     uv run --with bokeh_sampledata shiny run website/widgets/bokeh/gallery/template_linked_scatter.py
 #
 # Data: bokeh's own sample-data package (`bokeh_sampledata`, downloaded on
 # first use -- `pip install bokeh_sampledata`); Fisher's iris flowers.

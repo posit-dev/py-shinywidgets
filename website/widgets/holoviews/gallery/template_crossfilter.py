@@ -3,7 +3,7 @@
 # Python callbacks for the linking itself. active_tools=["box_select"] on
 # each element makes box-select the default drag tool (a composite Layout
 # otherwise defaults to Pan).
-# Run:  uv run shiny run docs/widget-guides/holoviews/gallery/template_crossfilter.py
+# Run:  uv run shiny run website/widgets/holoviews/gallery/template_crossfilter.py
 # Data: plotly.express.data.tips() (ships with plotly)
 import holoviews as hv
 import plotly.express as px

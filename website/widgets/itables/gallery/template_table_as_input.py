@@ -2,7 +2,7 @@
 # One-line: A searchable, sortable, exportable table whose selection drives a
 #     summary panel.
 # Bucket: template
-# Run: uv run --with plotly shiny run docs/widget-guides/itables/gallery/template_table_as_input.py
+# Run: uv run --with plotly shiny run website/widgets/itables/gallery/template_table_as_input.py
 # Data: plotly.express.data.gapminder() (142 countries, 2007), ships with plotly.
 #
 # Adapt this by swapping `countries` for your own data frame and `summary()`

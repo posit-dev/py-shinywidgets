@@ -7,7 +7,7 @@
 # Run: uv run shiny run app.py
 # Data: plotly's carshare dataset (249 real car2go pod locations around Montreal)
 #
-# Source: docs/widget-guides/ipyleaflet/gallery/template_spatial_explorer.py
+# Source: website/widgets/ipyleaflet/gallery/template_spatial_explorer.py
 
 import plotly.express as px
 import ipyleaflet as L

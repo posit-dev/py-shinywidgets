@@ -8,7 +8,7 @@
 # Run: uv run --with scikit-learn shiny run app.py
 # Data: sklearn.datasets.load_iris (swap in your own (n, 3) array + labels)
 #
-# Source: docs/widget-guides/k3d/gallery/template_point_cloud_explorer.py
+# Source: website/widgets/k3d/gallery/template_point_cloud_explorer.py
 from __future__ import annotations
 
 import k3d

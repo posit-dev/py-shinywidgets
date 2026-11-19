@@ -6,7 +6,7 @@
 # redraws to show the monthly profile of whatever rows are selected.
 #
 # Bucket: showcase (~170 lines)
-# Run: uv run --no-sync shiny run docs/widget-guides/ipydatagrid/gallery/showcase_monthly_sales.py
+# Run: uv run --no-sync shiny run website/widgets/ipydatagrid/gallery/showcase_monthly_sales.py
 # Data: synthesized in-line (numpy); flat region/product columns (no MultiIndex
 # -- ipydatagrid's merged row-header groups go stale after a sort, so this
 # avoids that upstream bug entirely).

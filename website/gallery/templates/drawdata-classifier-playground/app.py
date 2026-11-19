@@ -11,7 +11,7 @@
 # classifier (LogisticRegression, SVC, a small MLP, ...), or ScatterWidget's
 # n_classes for more groups.
 #
-# Source: docs/widget-guides/drawdata/gallery/template_classifier_playground.py
+# Source: website/widgets/drawdata/gallery/template_classifier_playground.py
 
 from __future__ import annotations
 

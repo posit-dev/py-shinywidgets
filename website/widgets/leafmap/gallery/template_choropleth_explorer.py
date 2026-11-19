@@ -1,6 +1,6 @@
 # Choropleth explorer -- a small, adaptable starting point for a leafmap dashboard.
 # template | ~65 lines
-# Run: uv run --with geopandas,mapclassify shiny run docs/widget-guides/leafmap/gallery/template_choropleth_explorer.py
+# Run: uv run --with geopandas,mapclassify shiny run website/widgets/leafmap/gallery/template_choropleth_explorer.py
 # Data: Natural Earth countries (via leafmap's example data on GitHub)
 import geopandas as gpd
 import leafmap

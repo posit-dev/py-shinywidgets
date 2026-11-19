@@ -2,7 +2,7 @@
 # One-line: Draw two classes by hand and watch a k-NN decision boundary
 #     refit live, next to a point count and a clear button.
 # Bucket: template
-# Run: uv run --with scikit-learn shiny run docs/widget-guides/drawdata/gallery/template_classifier_playground.py
+# Run: uv run --with scikit-learn shiny run website/widgets/drawdata/gallery/template_classifier_playground.py
 # Data: none -- you draw it.
 #
 # Adapt this by swapping KNeighborsClassifier for any other sklearn

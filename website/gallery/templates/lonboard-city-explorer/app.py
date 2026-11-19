@@ -9,7 +9,7 @@
 # Data: Natural Earth 110m populated places (public domain), fetched at startup
 #   from a GitHub mirror
 #
-# Source: docs/widget-guides/lonboard/gallery/template_city_explorer.py
+# Source: website/widgets/lonboard/gallery/template_city_explorer.py
 
 import geopandas as gpd
 from lonboard import Map, ScatterplotLayer

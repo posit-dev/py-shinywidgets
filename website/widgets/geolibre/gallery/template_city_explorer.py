@@ -4,7 +4,7 @@
 # since it can't run on Shiny's event-loop thread directly). Click a marker
 # for its population.
 # bucket: template
-# run: uv run --no-sync shiny run docs/widget-guides/geolibre/gallery/template_city_explorer.py
+# run: uv run --no-sync shiny run website/widgets/geolibre/gallery/template_city_explorer.py
 # data: 8 major US cities, hardcoded (name, lng, lat, population)
 
 from __future__ import annotations

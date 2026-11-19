@@ -3,7 +3,7 @@
 #     clustering -- each refit live as you draw, for building intuition
 #     about how models respond to the data you give them.
 # Bucket: showcase
-# Run: uv run --with scikit-learn shiny run docs/widget-guides/drawdata/gallery/showcase_model_explorer.py
+# Run: uv run --with scikit-learn shiny run website/widgets/drawdata/gallery/showcase_model_explorer.py
 # Data: none -- you draw it.
 
 from __future__ import annotations

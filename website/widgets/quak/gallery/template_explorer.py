@@ -2,7 +2,7 @@
 # A drop-in starting point: a DataFrame-backed table with column histograms,
 # plus the current query and a live row count read back from the table.
 # bucket: template
-# run: uv run --no-sync shiny run docs/widget-guides/quak/gallery/template_explorer.py
+# run: uv run --no-sync shiny run website/widgets/quak/gallery/template_explorer.py
 # data: plotly.express.data.gapminder() (bundled with plotly)
 
 from __future__ import annotations

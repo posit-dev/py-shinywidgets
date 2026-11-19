@@ -3,7 +3,7 @@
 #     a small summary card -- a clean starting point for "pick some rows, see
 #     a number" dashboards.
 # bucket: template
-# run: uv run --no-sync --with reactable shiny run docs/widget-guides/reactable/gallery/template_filterable_table.py
+# run: uv run --no-sync --with reactable shiny run website/widgets/reactable/gallery/template_filterable_table.py
 # data: reactable.data.cars_93 (ships with the reactable package)
 #
 # NOTE: this header uses comments, not a module docstring. In Shiny Express,

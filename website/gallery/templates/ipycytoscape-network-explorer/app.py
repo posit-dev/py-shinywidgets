@@ -8,7 +8,7 @@
 # Run: uv run shiny run app.py
 # Data: networkx's bundled karate_club_graph() and les_miserables_graph()
 #
-# Source: docs/widget-guides/ipycytoscape/gallery/template_network_explorer.py
+# Source: website/widgets/ipycytoscape/gallery/template_network_explorer.py
 
 import networkx as nx
 from ipycytoscape import CytoscapeWidget

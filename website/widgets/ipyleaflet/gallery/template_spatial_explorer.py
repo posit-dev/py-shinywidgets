@@ -2,7 +2,7 @@
 # description: Clustered markers, a live "in view" count, and click-to-detail --
 #     a clean starting point for any point dataset.
 # bucket: template
-# run: uv run --no-sync shiny run docs/widget-guides/ipyleaflet/gallery/template_spatial_explorer.py
+# run: uv run --no-sync shiny run website/widgets/ipyleaflet/gallery/template_spatial_explorer.py
 # data: plotly's carshare dataset (249 real car2go pod locations around Montreal)
 
 import plotly.express as px

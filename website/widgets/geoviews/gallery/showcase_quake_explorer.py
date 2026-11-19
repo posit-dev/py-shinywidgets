@@ -5,7 +5,7 @@
 # Tap -- all on the same 6,000-point synthetic earthquake map.
 # Bucket: showcase
 # Run: cd to the shinywidgets repo root, then
-#   uv run --with geoviews --with cartopy shiny run docs/widget-guides/geoviews/gallery/showcase_quake_explorer.py
+#   uv run --with geoviews --with cartopy shiny run website/widgets/geoviews/gallery/showcase_quake_explorer.py
 # Data: synthetic (plausible tectonic-belt point cloud; see the guide's
 #   "Performance with large point sets" section for why this is synthetic).
 import geoviews as gv

@@ -10,7 +10,7 @@
 #
 # Adapt by swapping MOLS for your own DataFrame (needs a SMILES column).
 #
-# Source: docs/widget-guides/mols2grid/gallery/template_grid_explorer.py
+# Source: website/widgets/mols2grid/gallery/template_grid_explorer.py
 
 from __future__ import annotations
 

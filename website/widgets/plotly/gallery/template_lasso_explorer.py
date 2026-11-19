@@ -4,7 +4,7 @@
 #     in a searchable table and a one-line summary, with a click-through detail
 #     card for a single point. A clean starting point for "explore my data
 #     frame visually" apps -- swap in your own data frame and column names.
-# Run: uv run --no-sync shiny run docs/widget-guides/plotly/gallery/template_lasso_explorer.py
+# Run: uv run --no-sync shiny run website/widgets/plotly/gallery/template_lasso_explorer.py
 # Data: plotly.express.data.gapminder() (ships with plotly)
 #
 # Note: a module docstring here would be auto-displayed as page text by Shiny

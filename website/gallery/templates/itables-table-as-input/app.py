@@ -10,7 +10,7 @@
 # Adapt this by swapping `countries` for your own data frame and `summary()`
 # for whatever the selection should drive (a plot, a download, a model run).
 #
-# Source: docs/widget-guides/itables/gallery/template_table_as_input.py
+# Source: website/widgets/itables/gallery/template_table_as_input.py
 
 from __future__ import annotations
 

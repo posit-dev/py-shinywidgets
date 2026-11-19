@@ -2,7 +2,7 @@
 # A real DEM you can orbit, click to read elevation at the cursor, fly to the
 # high/low points, and toggle wireframe -- all without rebuilding the scene.
 # Bucket: showcase
-# Run: shiny run docs/widget-guides/k3d/gallery/showcase_terrain_explorer.py
+# Run: shiny run website/widgets/k3d/gallery/showcase_terrain_explorer.py
 # Data: the Jacksboro Fault DEM shipped inside matplotlib's sample data
 # (344x403 elevation grid, Texas; downsampled 2x here for responsiveness).
 from __future__ import annotations

@@ -1,7 +1,7 @@
 # A clean, adaptable starting point for a mols2grid output: a searchable
 # grid plus a reactive readout of the checkbox selection, as a DataFrame.
 # Bucket: template.
-# Run: shiny run docs/widget-guides/mols2grid/gallery/template_grid_explorer.py
+# Run: shiny run website/widgets/mols2grid/gallery/template_grid_explorer.py
 # Data: mols2grid's bundled ESOL/Delaney solubility SDF (mols2grid.datafiles).
 # Adapt by swapping MOLS for your own DataFrame (needs a SMILES column).
 

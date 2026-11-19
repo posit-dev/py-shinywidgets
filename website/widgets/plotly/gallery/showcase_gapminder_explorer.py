@@ -5,7 +5,7 @@
 #     highlights in place when you lasso bubbles, plus a click-through detail
 #     card and a dark-mode toggle. Demonstrates batch_animate, the clicked()/
 #     selected() accessors, and in-place cross-chart highlighting.
-# Run: uv run --no-sync shiny run docs/widget-guides/plotly/gallery/showcase_gapminder_explorer.py
+# Run: uv run --no-sync shiny run website/widgets/plotly/gallery/showcase_gapminder_explorer.py
 # Data: plotly.express.data.gapminder() (ships with plotly)
 
 import plotly.express as px

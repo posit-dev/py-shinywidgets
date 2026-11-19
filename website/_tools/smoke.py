@@ -1,6 +1,6 @@
 """Headless-Chromium smoke runner for a single shinywidgets app.
 
-Usage: uv run --no-sync python docs/widget-guides/tools/smoke.py APP.py [--shot OUT.webp]
+Usage: uv run --no-sync python website/_tools/smoke.py APP.py [--shot OUT.webp]
        [--gpu {none,webgl,webgpu}] [--wait SELECTOR]
 
 Starts `python -m shiny run` on a free port, loads the page in headless Chromium, waits

@@ -2,7 +2,7 @@
 # A clean starting point for browsing a public OME-NGFF/OME-Zarr dataset: a
 # full-screen viewer, a "reset view" button, and a live camera readout driven
 # by viewer.read("view_state"). Swap IDR_SAMPLE for your own store's URL (or
-# a local zarr.Group/Array/numpy array -- see docs/widget-guides/vizarr/guide.md).
+# a local zarr.Group/Array/numpy array -- see website/widgets/vizarr/index.md).
 # bucket: template
 # run: uv run --with 'shinywidgets[vizarr]' shiny run template_ome_zarr_viewer.py
 # data: Image Data Resource (IDR), dataset idr0062-blin-nuclearsegmentation,

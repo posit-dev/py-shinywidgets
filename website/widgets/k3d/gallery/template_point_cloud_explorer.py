@@ -2,7 +2,7 @@
 # A small, adaptable starting point for exploring any 3D point cloud: orbit,
 # resize points live, click a point for details, and read the camera.
 # Bucket: template
-# Run: uv run --with scikit-learn shiny run docs/widget-guides/k3d/gallery/template_point_cloud_explorer.py
+# Run: uv run --with scikit-learn shiny run website/widgets/k3d/gallery/template_point_cloud_explorer.py
 # Data: sklearn.datasets.load_iris (swap in your own (n, 3) array + labels)
 from __future__ import annotations
 

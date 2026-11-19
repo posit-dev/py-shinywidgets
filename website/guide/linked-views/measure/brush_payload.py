@@ -1,7 +1,7 @@
 """Measure real websocket bytes (and optionally latency) per brush step.
 
 Usage:
-    uv run --no-sync python docs/widget-guides/articles/linked-views/measure/brush_payload.py \
+    uv run --no-sync python website/guide/linked-views/measure/brush_payload.py \
         APP --scale N [--timing]
 
 `APP` is one of the three apps in `../examples/`: `18_datashader_brush_summaries.py`,

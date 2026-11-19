@@ -1,6 +1,6 @@
 # 140,000 UK road accidents, binned on the GPU via deck.gl layers on a maplibre map.
 # bucket: showcase
-# run: uv run shiny run docs/widget-guides/maplibre/gallery/showcase_uk_accidents.py
+# run: uv run shiny run website/widgets/maplibre/gallery/showcase_uk_accidents.py
 # data: visgl/deck.gl-data's public 3d-heatmap CSV (no API key)
 #
 # pydeck >= 0.9 no longer ships an ipywidget, so @render_pydeck can't render a Deck.

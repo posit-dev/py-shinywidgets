@@ -5,7 +5,7 @@
 #     currently visible. Exercises selected_rows(), search(), an in-place prop
 #     update, grouping/aggregation, a JS cell renderer, and theming together.
 # bucket: showcase
-# run: uv run --no-sync --with reactable shiny run docs/widget-guides/reactable/gallery/showcase_cars_dashboard.py
+# run: uv run --no-sync --with reactable shiny run website/widgets/reactable/gallery/showcase_cars_dashboard.py
 # data: reactable.data.cars_93 (ships with the reactable package)
 #
 # NOTE: this header uses comments, not a module docstring. In Shiny Express,

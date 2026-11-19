@@ -8,7 +8,7 @@
 # Run: uv run shiny run app.py
 # Data: synthesized in-line (numpy)
 #
-# Source: docs/widget-guides/ipydatagrid/gallery/template_spreadsheet.py
+# Source: website/widgets/ipydatagrid/gallery/template_spreadsheet.py
 
 import numpy as np
 import pandas as pd

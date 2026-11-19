@@ -50,6 +50,6 @@ Source: [app.py](app.py) · [Open in Shinylive](app.py){.sw-shinylive-link}
 ## Credit
 
 Promoted from
-`docs/widget-guides/articles/linked-views/examples/09_itables_selection_to_plotly_inplace.py` (the
+`website/guide/linked-views/examples/09_itables_selection_to_plotly_inplace.py` (the
 cross-cutting linked-views article), with a comment header added for gallery consistency; no logic
 changes (both cards already used `full_screen=True`).

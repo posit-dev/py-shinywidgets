@@ -1,7 +1,7 @@
 # Chemical explorer: sliders + lasso jointly filter a mols2grid grid, with a
 # click-to-inspect detail card and a selection -> SDF download.
 # Bucket: showcase.
-# Run: shiny run docs/widget-guides/mols2grid/gallery/showcase_chem_explorer.py
+# Run: shiny run website/widgets/mols2grid/gallery/showcase_chem_explorer.py
 # Data: mols2grid's bundled ESOL/Delaney solubility SDF (mols2grid.datafiles).
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 # to an open viewer (no re-render), plus a selection-driven detail panel.
 # Adapt by swapping what gets logged each tick (a real sensor feed, a queue
 # drained from a background thread, ...) and what HISTORY tracks.
-# Run: shiny run docs/widget-guides/rerun/gallery/template_live_tracker.py
+# Run: shiny run website/widgets/rerun/gallery/template_live_tracker.py
 # Data: a synthetic circular walk (no external data needed).
 
 from __future__ import annotations

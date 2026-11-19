@@ -4,7 +4,7 @@
 #   query-per-brush approach keeps scale off the browser's plate: value
 #   boxes and a per-carrier table are computed in DuckDB from the selection.
 # Bucket: showcase
-# Run: uv run --no-sync shiny run docs/widget-guides/mosaic/gallery/showcase_flight_delays.py
+# Run: uv run --no-sync shiny run website/widgets/mosaic/gallery/showcase_flight_delays.py
 # Data: synthesized in-process (numpy); a real dataset this large and this
 #   shape isn't readily available as a small download
 

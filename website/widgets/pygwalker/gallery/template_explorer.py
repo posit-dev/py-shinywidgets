@@ -1,7 +1,7 @@
 # PyGWalker starting point: a drag-and-drop explorer over a filtered dataframe,
 # with the DuckDB lockdown render_pygwalker requires. Template: ~50 lines,
 # adapt by swapping `tips` for your own dataframe and the filter for yours.
-# Run: uv run --no-sync shiny run docs/widget-guides/pygwalker/gallery/template_explorer.py
+# Run: uv run --no-sync shiny run website/widgets/pygwalker/gallery/template_explorer.py
 # Data: plotly.express.data.tips() (ships with plotly)
 import duckdb
 import plotly.express as px

@@ -1,6 +1,6 @@
 # Quake explorer -- filter, click-to-detail and a viewport count, in one small map.
 # bucket: template
-# run: uv run shiny run docs/widget-guides/maplibre/gallery/template_quake_explorer.py
+# run: uv run shiny run website/widgets/maplibre/gallery/template_quake_explorer.py
 # data: maplibre's own earthquakes.geojson tutorial dataset (~6,100 points, no API key)
 import numpy as np
 import requests

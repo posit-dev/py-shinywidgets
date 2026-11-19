@@ -1,5 +1,5 @@
 # Needs scikit-learn for the iris dataset:
-#   uv run --with scikit-learn shiny run docs/widget-guides/k3d/examples/12_fly_to.py
+#   uv run --with scikit-learn shiny run website/widgets/k3d/examples/12_fly_to.py
 from __future__ import annotations
 
 import k3d

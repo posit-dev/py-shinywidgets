@@ -7,7 +7,7 @@
 # Run: uv run shiny run app.py
 # Data: altair.datasets' seattle_weather (4 years of real NOAA daily observations)
 #
-# Source: docs/widget-guides/altair/gallery/template_weather_brush.py
+# Source: website/widgets/altair/gallery/template_weather_brush.py
 
 import altair as alt
 from altair.datasets import data

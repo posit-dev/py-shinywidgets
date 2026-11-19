@@ -9,7 +9,7 @@
 # Run: uv run shiny run app.py
 # Data: plotly.express.data.gapminder() (142 countries, 2007), ships with plotly
 #
-# Source: docs/widget-guides/articles/linked-views/examples/09_itables_selection_to_plotly_inplace.py
+# Source: website/guide/linked-views/examples/09_itables_selection_to_plotly_inplace.py
 
 from __future__ import annotations
 

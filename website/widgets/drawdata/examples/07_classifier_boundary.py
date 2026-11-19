@@ -1,5 +1,5 @@
 # Needs scikit-learn: uv run --with scikit-learn shiny run
-#   docs/widget-guides/drawdata/examples/07_classifier_boundary.py
+#   website/widgets/drawdata/examples/07_classifier_boundary.py
 from __future__ import annotations
 
 import numpy as np

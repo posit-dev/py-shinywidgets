@@ -8,7 +8,7 @@
 # Run: uv run shiny run app.py
 # Data: Palmer Penguins (palmerpenguins), fetched from a stable GitHub URL
 #
-# Source: docs/widget-guides/mosaic/gallery/template_crossfilter_starter.py
+# Source: website/widgets/mosaic/gallery/template_crossfilter_starter.py
 
 from __future__ import annotations
 

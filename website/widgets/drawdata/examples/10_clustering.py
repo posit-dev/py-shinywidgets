@@ -1,5 +1,5 @@
 # Needs scikit-learn: uv run --with scikit-learn shiny run
-#   docs/widget-guides/drawdata/examples/10_clustering.py
+#   website/widgets/drawdata/examples/10_clustering.py
 from __future__ import annotations
 
 import altair as alt

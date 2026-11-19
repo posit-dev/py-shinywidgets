@@ -516,7 +516,7 @@ pattern above, cleaned up with a neighbor-count slider and a clear button. ~65 l
 `KNeighborsClassifier` for any other scikit-learn classifier to adapt it.
 
 ```sh
-uv run --with scikit-learn shiny run docs/widget-guides/drawdata/gallery/template_classifier_playground.py
+uv run --with scikit-learn shiny run website/widgets/drawdata/gallery/template_classifier_playground.py
 ```
 
 ![template before](img/gallery_template_classifier_playground_before.webp)
@@ -530,7 +530,7 @@ canvas with the right `n_classes` for that task and clears the drawing; a "Clear
 demand.
 
 ```sh
-uv run --with scikit-learn shiny run docs/widget-guides/drawdata/gallery/showcase_model_explorer.py
+uv run --with scikit-learn shiny run website/widgets/drawdata/gallery/showcase_model_explorer.py
 ```
 
 ![showcase classify, before drawing](img/gallery_showcase_model_explorer_classify.webp)

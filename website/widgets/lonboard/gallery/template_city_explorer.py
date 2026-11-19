@@ -3,7 +3,7 @@
 # Description: A clean starting point for a lonboard app: click a city for a
 #   detail card, or drag a selection box for a filtered table. Swap in your
 #   own GeoDataFrame and keep the accessor wiring.
-# Run: shiny run docs/widget-guides/lonboard/gallery/template_city_explorer.py
+# Run: shiny run website/widgets/lonboard/gallery/template_city_explorer.py
 # Data: Natural Earth 110m populated places (public domain), fetched at startup
 #   from a GitHub mirror.
 

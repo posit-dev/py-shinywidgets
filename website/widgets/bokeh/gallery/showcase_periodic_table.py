@@ -10,7 +10,7 @@
 # assignment.
 #
 # Run:
-#     uv run --with bokeh_sampledata shiny run docs/widget-guides/bokeh/gallery/showcase_star_explorer.py
+#     uv run --with bokeh_sampledata shiny run website/widgets/bokeh/gallery/showcase_periodic_table.py
 #
 # Data: bokeh's own sample-data package (`bokeh_sampledata`, downloaded on
 # first use -- `pip install bokeh_sampledata`). Noble gases (no recorded

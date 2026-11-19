@@ -6,7 +6,7 @@
 # switch updates both viewers' themes in place.
 #
 # Bucket: showcase (~155 lines)
-# Run: uv run shiny run docs/widget-guides/perspective/gallery/showcase_trading_desk.py
+# Run: uv run shiny run website/widgets/perspective/gallery/showcase_trading_desk.py
 # Data: synthesized in-process (random-walk trades)
 #
 # NOTE: `#`-comment header, not a module docstring -- see template_live_feed.py.

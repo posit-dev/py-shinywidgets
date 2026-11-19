@@ -3,7 +3,7 @@
 # + event log), a pause/scrub control pair (Shiny drives the viewer's time
 # control while the stream is paused), a "log an event" button (Shiny input ->
 # what gets logged), and a selection-driven detail panel (viewer -> Shiny).
-# Run: shiny run docs/widget-guides/rerun/gallery/showcase_robot_patrol.py
+# Run: shiny run website/widgets/rerun/gallery/showcase_robot_patrol.py
 # Data: a synthetic patrol route and obstacles (no external data needed).
 
 from __future__ import annotations

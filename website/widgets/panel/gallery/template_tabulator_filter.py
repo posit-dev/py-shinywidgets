@@ -3,7 +3,7 @@
 # One-line: Shiny checkboxes filter a Panel Tabulator in place; row selection
 #   drives a render_plotly trend chart. A clean starting point for any
 #   Panel-table-plus-chart dashboard.
-# Run: uv run --no-sync shiny run docs/widget-guides/panel/gallery/template_tabulator_filter.py
+# Run: uv run --no-sync shiny run website/widgets/panel/gallery/template_tabulator_filter.py
 # Data: plotly.express.data.gapminder() (ships with plotly)
 import pandas as pd
 import panel as pn

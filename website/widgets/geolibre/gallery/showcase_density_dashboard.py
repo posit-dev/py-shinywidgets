@@ -4,7 +4,7 @@
 # flies the map to a selection, a chart of what's on screen as you pan/zoom,
 # and a PNG export of the current view.
 # bucket: showcase
-# run: uv run --no-sync shiny run docs/widget-guides/geolibre/gallery/showcase_density_dashboard.py
+# run: uv run --no-sync shiny run website/widgets/geolibre/gallery/showcase_density_dashboard.py
 # data: US state boundaries + 2020-census density, from PublicaMundi's public
 #       us-states.json (state centroids are approximated from the polygons)
 

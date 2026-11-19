@@ -9,7 +9,7 @@
 # without losing your zoom.
 #
 # Bucket: showcase
-# Run: uv run shiny run docs/widget-guides/matplotlib/gallery/showcase_grid_demand_explorer.py
+# Run: uv run shiny run website/widgets/matplotlib/gallery/showcase_grid_demand_explorer.py
 # Data: synthesized in this file with numpy/pandas; no download needed.
 #
 # A plain top-level docstring would render as a text output in Shiny Express

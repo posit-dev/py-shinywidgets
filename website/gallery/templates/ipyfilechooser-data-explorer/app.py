@@ -8,7 +8,7 @@
 # Run: uv run shiny run app.py
 # Data: plotly.express.data (gapminder, tips) written to a sandboxed temp directory
 #
-# Source: docs/widget-guides/ipyfilechooser/gallery/template_data_explorer.py
+# Source: website/widgets/ipyfilechooser/gallery/template_data_explorer.py
 
 import os
 import tempfile

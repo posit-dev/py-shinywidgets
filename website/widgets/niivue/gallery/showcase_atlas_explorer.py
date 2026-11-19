@@ -4,7 +4,7 @@
 # and adjust the atlas overlay's colormap/opacity in place -- all without
 # re-rendering the viewer.
 # Bucket: showcase
-# Run: uv run --with ipyniivue --with nibabel shiny run docs/widget-guides/niivue/gallery/showcase_atlas_explorer.py
+# Run: uv run --with ipyniivue --with nibabel shiny run website/widgets/niivue/gallery/showcase_atlas_explorer.py
 # Data: MNI152 template + AAL atlas volumes (niivue.com demo images, fetched
 #   by the browser) and the AAL region-label JSON (fetched once at startup);
 #   the landmark jump needs the MNI152 file locally too, so it's cached with

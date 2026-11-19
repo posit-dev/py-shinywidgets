@@ -412,7 +412,7 @@ report back through a `selected_rows()`-shaped accessor.
 # real difference: altair's selection is declared in the chart spec (a
 # grammar object you read by name); plotly's and bokeh's are accessors on
 # the renderer itself, driven by `dragmode`/`BoxSelectTool`.
-# Run: uv run shiny run docs/widget-guides/articles/choosing-a-widget/examples/01_selection_three_libraries.py
+# Run: uv run shiny run website/guide/choosing-a-widget/examples/01_selection_three_libraries.py
 import altair as alt
 import plotly.express as px
 from bokeh.models import ColumnDataSource
@@ -495,7 +495,7 @@ one-line CSV export button. ipydatagrid adds rectangular, multi-cell selection (
 # (global search, export, zero config), ipydatagrid (cell-block selection,
 # editable cells). None of these needs the others -- pick by what the task
 # needs, not by default.
-# Run: uv run shiny run docs/widget-guides/articles/choosing-a-widget/examples/02_tables_display_vs_input.py
+# Run: uv run shiny run website/guide/choosing-a-widget/examples/02_tables_display_vs_input.py
 import plotly.express as px
 from ipydatagrid import DataGrid
 from itables.widget import ITable
@@ -570,7 +570,7 @@ for the hundred-thousand-point case).
 # drawing); lonboard gives GPU-native picking that also scales past the ~250
 # points shown here (see the lonboard guide for the multi-hundred-thousand-
 # point case).
-# Run: uv run shiny run docs/widget-guides/articles/choosing-a-widget/examples/03_maps_location_vs_feature_pick.py
+# Run: uv run shiny run website/guide/choosing-a-widget/examples/03_maps_location_vs_feature_pick.py
 import geopandas as gpd
 import ipyleaflet as L
 import plotly.express as px

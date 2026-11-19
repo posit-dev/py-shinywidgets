@@ -5,7 +5,7 @@
 # the filtered rows, computed in DuckDB without copying the data out of
 # Python.
 # bucket: showcase
-# run: uv run --no-sync shiny run docs/widget-guides/quak/gallery/showcase_trip_explorer.py
+# run: uv run --no-sync shiny run website/widgets/quak/gallery/showcase_trip_explorer.py
 # data: synthetic (sized for scale; see generate_rides() below)
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 # controls that update the volume in place, plus a crosshair readout driven
 # by the `location()` accessor.
 # Bucket: template
-# Run: uv run --with ipyniivue shiny run docs/widget-guides/niivue/gallery/template_mri_viewer.py
+# Run: uv run --with ipyniivue shiny run website/widgets/niivue/gallery/template_mri_viewer.py
 # Data: MNI152 template volume, fetched by the browser from niivue.com
 
 from ipyniivue import NiiVue, SliceType, Volume

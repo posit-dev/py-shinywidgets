@@ -6,7 +6,7 @@
 # outputs.
 #
 # Bucket: template
-# Run: uv run shiny run docs/widget-guides/matplotlib/gallery/template_zoom_and_click.py
+# Run: uv run shiny run website/widgets/matplotlib/gallery/template_zoom_and_click.py
 # Data: synthesized in this file with numpy; no download needed.
 #
 # A plain top-level docstring would render as a text output in Shiny Express

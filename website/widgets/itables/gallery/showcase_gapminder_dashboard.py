@@ -2,7 +2,7 @@
 # One-line: A searchable, exportable table drives a highlighted scatter plot and
 #     stays filterable by continent without losing its selection.
 # Bucket: showcase
-# Run: uv run --with plotly shiny run docs/widget-guides/itables/gallery/showcase_gapminder_dashboard.py
+# Run: uv run --with plotly shiny run website/widgets/itables/gallery/showcase_gapminder_dashboard.py
 # Data: plotly.express.data.gapminder() (142 countries, 2007), ships with plotly.
 
 from __future__ import annotations

@@ -8,7 +8,7 @@
 # Run: uv run shiny run app.py
 # Data: synthetic car-like data (generated below); no download needed
 #
-# Source: docs/widget-guides/jscatter/gallery/template_linked_scatter.py
+# Source: website/widgets/jscatter/gallery/template_linked_scatter.py
 
 import numpy as np
 import pandas as pd

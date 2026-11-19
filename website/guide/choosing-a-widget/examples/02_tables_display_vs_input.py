@@ -3,7 +3,7 @@
 # (global search, export, zero config), ipydatagrid (cell-block selection,
 # editable cells). None of these needs the others -- pick by what the task
 # needs, not by default.
-# Run: uv run shiny run docs/widget-guides/articles/choosing-a-widget/examples/02_tables_display_vs_input.py
+# Run: uv run shiny run website/guide/choosing-a-widget/examples/02_tables_display_vs_input.py
 import plotly.express as px
 from ipydatagrid import DataGrid
 from itables.widget import ITable

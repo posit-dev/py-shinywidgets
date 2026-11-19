@@ -1188,7 +1188,7 @@ axes, a background context layer, and one shared `@reactive.calc` for the select
 ![template](img/gallery_template_crossfilter_starter_after.webp)
 
 [`gallery/template_crossfilter_starter.py`](gallery/template_crossfilter_starter.py) --
-`uv run --no-sync shiny run docs/widget-guides/mosaic/gallery/template_crossfilter_starter.py`
+`uv run --no-sync shiny run website/widgets/mosaic/gallery/template_crossfilter_starter.py`
 
 ### Showcase: 2 million flights, crossfiltered live
 
@@ -1202,7 +1202,7 @@ rows (28% on time, 7.8 min average delay) to 1,627 rows in a specific hour/delay
 | ![showcase before](img/gallery_showcase_flight_delays_before.webp) | ![showcase after](img/gallery_showcase_flight_delays_after.webp) |
 
 [`gallery/showcase_flight_delays.py`](gallery/showcase_flight_delays.py) --
-`uv run --no-sync shiny run docs/widget-guides/mosaic/gallery/showcase_flight_delays.py`
+`uv run --no-sync shiny run website/widgets/mosaic/gallery/showcase_flight_delays.py`
 
 ## Learn more
 

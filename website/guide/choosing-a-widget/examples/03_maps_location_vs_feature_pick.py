@@ -6,7 +6,7 @@
 # drawing); lonboard gives GPU-native picking that also scales past the ~250
 # points shown here (see the lonboard guide for the multi-hundred-thousand-
 # point case).
-# Run: uv run shiny run docs/widget-guides/articles/choosing-a-widget/examples/03_maps_location_vs_feature_pick.py
+# Run: uv run shiny run website/guide/choosing-a-widget/examples/03_maps_location_vs_feature_pick.py
 import geopandas as gpd
 import ipyleaflet as L
 import plotly.express as px

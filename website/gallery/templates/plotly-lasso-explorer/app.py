@@ -9,7 +9,7 @@
 # Run: uv run shiny run app.py
 # Data: plotly.express.data.gapminder() (ships with plotly)
 #
-# Source: docs/widget-guides/plotly/gallery/template_lasso_explorer.py
+# Source: website/widgets/plotly/gallery/template_lasso_explorer.py
 # Note: a module docstring here would be auto-displayed as page text by Shiny
 # Express (a bare top-level string is rendered like `ui.markdown`), so this
 # header is a comment block instead.

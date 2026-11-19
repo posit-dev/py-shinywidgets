@@ -3,7 +3,7 @@
 # shared across several meshes, and in-place `.widget.camera` mutation for a
 # "home view" button.
 # bucket: showcase
-# run: uv run --no-sync shiny run docs/widget-guides/pythreejs/gallery/showcase_orrery.py
+# run: uv run --no-sync shiny run website/widgets/pythreejs/gallery/showcase_orrery.py
 # data: none (procedural orbits; radii/periods are illustrative, not to scale)
 
 import math

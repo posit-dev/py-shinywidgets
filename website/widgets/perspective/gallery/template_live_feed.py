@@ -5,7 +5,7 @@
 # "rows arriving over time, user pivots/filters them" app.
 #
 # Bucket: template (~70 lines)
-# Run: uv run shiny run docs/widget-guides/perspective/gallery/template_live_feed.py
+# Run: uv run shiny run website/widgets/perspective/gallery/template_live_feed.py
 # Data: synthesized in-process (random notional for real stock tickers)
 #
 # NOTE: this is a `#`-comment header, not a module docstring. A bare

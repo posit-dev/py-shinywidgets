@@ -4,7 +4,7 @@
 #   layer on top. Styling restyles in place (no re-send of the 177 country
 #   polygons or 243 cities); the sidebar's "cities in view" stat and the
 #   detail card both come from lonboard's reactive accessors.
-# Run: shiny run docs/widget-guides/lonboard/gallery/showcase_world_dashboard.py
+# Run: shiny run website/widgets/lonboard/gallery/showcase_world_dashboard.py
 # Data: Natural Earth 110m countries + populated places (public domain),
 #   fetched at startup from a GitHub mirror.
 

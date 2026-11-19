@@ -5,7 +5,7 @@
 # you drag over, plus a live edit log. Swap in your own DataFrame and go.
 #
 # Bucket: template (~60 lines)
-# Run: uv run --no-sync shiny run docs/widget-guides/ipydatagrid/gallery/template_spreadsheet.py
+# Run: uv run --no-sync shiny run website/widgets/ipydatagrid/gallery/template_spreadsheet.py
 # Data: synthesized in-line (numpy)
 #
 # NOTE: this header is a comment, not a module docstring -- Shiny Express

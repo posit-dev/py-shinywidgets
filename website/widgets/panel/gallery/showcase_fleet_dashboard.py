@@ -2,7 +2,7 @@
 # Bucket: showcase
 # One-line: A Panel Tabulator, two live indicators, and a canned-reply chat
 #   assistant, all wired together with Shiny reactivity and no Panel server.
-# Run: uv run --no-sync shiny run docs/widget-guides/panel/gallery/showcase_fleet_dashboard.py
+# Run: uv run --no-sync shiny run website/widgets/panel/gallery/showcase_fleet_dashboard.py
 # Data: synthetic but plausible fleet metrics (generated below with numpy;
 #   point is combining several Panel component families, not the data itself)
 import numpy as np

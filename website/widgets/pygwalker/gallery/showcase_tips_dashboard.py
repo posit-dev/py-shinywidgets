@@ -1,7 +1,7 @@
 # PyGWalker showcase: a filterable explorer that keeps the user's saved chart
 # across filter changes, plus a value box and table built from whatever the
 # user exports. Showcase: ~130 lines.
-# Run: uv run --no-sync shiny run docs/widget-guides/pygwalker/gallery/showcase_tips_dashboard.py
+# Run: uv run --no-sync shiny run website/widgets/pygwalker/gallery/showcase_tips_dashboard.py
 # Data: plotly.express.data.tips() (ships with plotly)
 import json
 

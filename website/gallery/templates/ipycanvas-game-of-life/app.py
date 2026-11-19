@@ -8,7 +8,7 @@
 # Run: uv run shiny run app.py
 # Data: none (synthetic cellular automaton)
 #
-# Source: docs/widget-guides/ipycanvas/gallery/template_game_of_life.py
+# Source: website/widgets/ipycanvas/gallery/template_game_of_life.py
 
 import numpy as np
 from ipycanvas import Canvas

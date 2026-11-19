@@ -51,5 +51,5 @@ Source: [app.py](app.py) · [Open in Shinylive](app.py){.sw-shinylive-link}
 ## Scale note
 
 At very large point counts (multi-million-row lasso selections), the selection payload can exceed
-Shiny's websocket message size; see `docs/widget-guides/jscatter/guide.md` "Gotchas" for the
+Shiny's websocket message size; see `website/widgets/jscatter/index.md` "Gotchas" for the
 threshold and workaround.

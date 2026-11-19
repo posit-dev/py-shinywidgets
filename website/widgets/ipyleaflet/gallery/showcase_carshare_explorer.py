@@ -4,7 +4,7 @@
 #     without re-rendering it. Also filters by time-of-day and swaps
 #     basemaps, both in place.
 # bucket: showcase
-# run: uv run --no-sync shiny run docs/widget-guides/ipyleaflet/gallery/showcase_carshare_explorer.py
+# run: uv run --no-sync shiny run website/widgets/ipyleaflet/gallery/showcase_carshare_explorer.py
 # data: plotly's carshare dataset (249 real car2go pod locations around Montreal)
 
 from __future__ import annotations

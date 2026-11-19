@@ -9,7 +9,7 @@
 # Data: plotly's carshare dataset (249 real car2go pod locations around
 #   Montreal, labeled with each pod's peak-use period)
 #
-# Source: docs/widget-guides/articles/linked-views/examples/06_ipyleaflet_bounds_to_plotly.py
+# Source: website/guide/linked-views/examples/06_ipyleaflet_bounds_to_plotly.py
 
 import pandas as pd
 import plotly.express as px

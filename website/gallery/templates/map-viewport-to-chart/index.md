@@ -44,10 +44,10 @@ Source: [app.py](app.py) · [Open in Shinylive](app.py){.sw-shinylive-link}
 - Swap `pods` for your own point DataFrame; replace `"period"` with whatever categorical (or
   binned numeric) breakdown you want charted.
 - This same shape works for any map-widget-with-a-bounds-accessor paired with any chart library --
-  see `docs/widget-guides/articles/linked-views/article.md` for the lonboard and maplibre variants.
+  see `website/guide/linked-views/index.md` for the lonboard and maplibre variants.
 
 ## Credit
 
-Promoted from `docs/widget-guides/articles/linked-views/examples/06_ipyleaflet_bounds_to_plotly.py`
+Promoted from `website/guide/linked-views/examples/06_ipyleaflet_bounds_to_plotly.py`
 (the cross-cutting linked-views article), with `full_screen=True` cards and a comment header added
 for gallery consistency.

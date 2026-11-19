@@ -3,7 +3,7 @@
 # real difference: altair's selection is declared in the chart spec (a
 # grammar object you read by name); plotly's and bokeh's are accessors on
 # the renderer itself, driven by `dragmode`/`BoxSelectTool`.
-# Run: uv run shiny run docs/widget-guides/articles/choosing-a-widget/examples/01_selection_three_libraries.py
+# Run: uv run shiny run website/guide/choosing-a-widget/examples/01_selection_three_libraries.py
 import altair as alt
 import plotly.express as px
 from bokeh.models import ColumnDataSource
