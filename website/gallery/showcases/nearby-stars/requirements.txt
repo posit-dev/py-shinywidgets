@@ -1,0 +1,7 @@
+# shinywidgets[jscatter,k3d,ipyaladin] pulls the three widget packages;
+# astropy builds the sky table, matplotlib provides the colormaps.
+shinywidgets[jscatter,k3d,ipyaladin]
+astropy
+matplotlib
+pandas
+numpy

@@ -1,0 +1,5 @@
+# shinywidgets[lonboard,mosaic_widget] pulls lonboard + mosaic-widget; duckdb
+# and geopandas are the showcase's own data dependencies.
+shinywidgets[lonboard,mosaic_widget]
+duckdb
+geopandas

@@ -1,0 +1,6 @@
+# chatlas + anthropic are only needed for the "Summarize selection" button
+# (and ANTHROPIC_API_KEY); the atlas itself works without them.
+shinywidgets[embedding_atlas]
+chatlas
+anthropic
+pandas

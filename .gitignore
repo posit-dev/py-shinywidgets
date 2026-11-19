@@ -130,3 +130,8 @@ sandbox/
 uv.lock
 
 .superpowers/
+
+# Gallery showcase data, downloaded at app startup from cpsievert/py-shinywidgets-data
+website/gallery/showcases/whale-slowdown/data/
+website/gallery/showcases/nearby-stars/data/
+website/gallery/showcases/issue-atlas/data/
