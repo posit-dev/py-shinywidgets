@@ -63,6 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   `@render_plotly` has `clicked()`, `hover()`, `selected()`, `brushed()`, `relayout()`, `double_clicked()`, `legend_clicked()`, and `visible_traces()`. `@render_altair` has `selected(name)` and `selected_rows(name)`. `@render_bokeh` has `selected()`, `selected_rows()`, `tapped()`, and `zoomed()`. Many of the new renderers have their own (see above). Accessors keep their value across re-renders. Continuous streams, such as a selection while the user drags, are debounced by 250 ms by default; adjust this with the decorator's `rate_policy` and `rate_delay` parameters. Accessors whose payloads can grow without bound or stream continuously — plotly's `selected()`, `selecting()`, and `hover()` — are opt-in: pass `listen_to=["selected"]` (etc.) to the renderer, and reading one you didn't declare raises an error pointing at `listen_to`. Plotly's `selected()`/`selecting()` frames report `trace_index`, `point_index`, and `customdata`, without `x`/`y` columns (you already have the coordinates in your data, so selection messages stay small). `.read(name)` reads an accessor, or any widget trait, by name. (#379, #437, #443, #459)
 
+* Added `shinywidgets.config()` for app-wide settings, starting with `native_events=True` to keep widgets' own event traits (e.g., plotly.py's per-point reports) flowing to Python — see the breaking change below for when you'd want it. Also settable as the `SHINYWIDGETS_NATIVE_EVENTS=1` environment variable.
+
 * Added per-renderer extras, so you can install a decorator's widget dependencies in one command (e.g., `pip install 'shinywidgets[plotly]'` or `'shinywidgets[maplibre,bokeh]'`). See the README for the full list.
 
 * Added `session_lifetime()`, a context manager for building widgets that outlive the current render, e.g., one cached widget per dataset that is shown again when the user switches back. (#258)
@@ -82,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * shinywidgets now requires ipywidgets 8.1 or newer, and the bundled JavaScript widget manager was upgraded to `@jupyter-widgets/html-manager` 1.0. Together these fix many long-standing issues with ipywidgets 8 (see the bug fixes below). (#237, #259)
 * shinywidgets now requires shiny 1.9.0 or newer. With it, widget updates made from a background thread (e.g., nglview's, or your own `threading.Thread`) reach the browser right away instead of waiting for the next unrelated input. (#377)
 * shinywidgets now requires plotly 5.12 or newer for plotly widgets. With an older plotly, you now get an error explaining how to upgrade instead of a blank output. (#332)
+* `render_plotly` no longer sends plotly.py's per-point click/hover/selection reports to Python unless the app uses them — they fired on every interaction with an entry per point, whether or not anything read them (#479, #488). Trace callbacks (`on_click()`, `on_hover()`, etc.) registered inside the render function are detected automatically and keep working. To turn plotly.py's native events on app-wide (e.g. to read `.widget.data[i].selectedpoints`, or for callbacks registered outside the render function), use the new `shinywidgets.config(native_events=True)` setting (or the `SHINYWIDGETS_NATIVE_EVENTS=1` environment variable).
 
 ### Deprecated
 

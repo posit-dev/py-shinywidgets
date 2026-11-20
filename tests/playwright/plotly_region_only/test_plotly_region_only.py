@@ -66,18 +66,19 @@ def test_region_only_selection_stays_small_and_connected(page: Page, local_app) 
     lasso_center(page)
     expect(page.locator("#brushed")).to_contain_text("lassoPoints", timeout=30000)
 
-    # shinywidgets' bridge messages (the region report among them) all stay
-    # small: no per-point payload was requested, so none was sent (a slim
-    # point is ~40 bytes, so 300K points would be >10 MB). plotly.py's own
-    # `_js2py_pointsCallback` channel does still send the full selection --
-    # shinywidgets can't gate it -- so only bridge frames are measured.
+    # Every message stays small: no per-point payload was requested from
+    # shinywidgets' bridge (a slim point is ~40 bytes, so 300K points would
+    # be >10 MB), and plotly.py's own per-point report of the selection (its
+    # `_js2py_pointsCallback` trait, #479) is muted because the app registers
+    # no plotly.py callback to receive it.
     bridge_frames = [
         f.replace('\\"', '"')
         for f in frames
         if '"shinywidgets"' in f.replace('\\"', '"')
     ]
     assert bridge_frames, "expected the bridge's region report"
-    assert max(len(f) for f in bridge_frames) < 100_000
+    assert not [f for f in frames if "_js2py_pointsCallback" in f]
+    assert max(len(f) for f in frames) < 100_000
     # The session is still alive: no disconnect overlay
     expect(page.locator("#shiny-disconnected-overlay")).to_have_count(0)
 

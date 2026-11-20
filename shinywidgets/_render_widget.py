@@ -173,6 +173,7 @@ from ._niivue import LOCATION
 from ._panel import PARAM_PREFIX, dynamic_accessor_spec
 from ._perspective import PERSPECTIVE_ACCESSORS
 from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
+from ._plotly import muted_traits as plotly_muted_traits
 from ._pythreejs import CAMERA as PYTHREEJS_CAMERA
 from ._quak import QUAK_ACCESSORS
 from ._reactable import REACTABLE_ACCESSORS
@@ -4815,6 +4816,17 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     ``SHINYWIDGETS_WS_MAX_SIZE`` environment variable to the same value, so
     the client-side guard matches the raised server limit.
 
+    **plotly.py's own events**: plotly.py's widget can also report every
+    click, hover, and selection to the server itself, with an entry for each
+    point, so that is off unless something needs it. Trace callbacks
+    (``on_click()``, ``on_hover()``, ``on_unhover()``, ``on_selection()``,
+    ``on_deselect()``) registered inside the render function are noticed and
+    keep working. For callbacks registered later, or to read
+    ``.widget.data[i].selectedpoints`` after the user selects, turn native
+    events on app-wide with ``shinywidgets.config(native_events=True)`` (or
+    the ``SHINYWIDGETS_NATIVE_EVENTS=1`` environment variable, e.g. in a
+    deployment).
+
     **Typing**: no return-type annotation is needed -- the renderer's value
     type is statically bounded, so type checkers flag unsupported return
     values at decoration time, and the output's `.value` attribute is
@@ -4911,6 +4923,39 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     """
 
     _accessor_specs = PLOTLY_ACCESSORS
+
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[PlotlyValueT]] = None,
+        *,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[float] = None,
+        listen_to: Optional[Sequence[str]] = None,
+    ) -> None:
+        if listen_to is not None and "native" in listen_to:
+            raise ValueError(
+                '"native" is not a listen_to name: plotly.py\'s own events '
+                "are an app-wide setting -- use shinywidgets.config("
+                "native_events=True) (or the SHINYWIDGETS_NATIVE_EVENTS=1 "
+                "environment variable) to receive them."
+            )
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+            listen_to=listen_to,
+        )
+
+    def _muted_traits(self, widget: FigureWidget) -> Sequence[str]:
+        return plotly_muted_traits(widget)
 
     def clicked(self) -> Optional[pd.DataFrame]:
         """

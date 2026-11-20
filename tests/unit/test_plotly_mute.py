@@ -1,0 +1,211 @@
+from __future__ import annotations
+
+import asyncio
+from typing import Any, Callable, Dict, List, Sequence
+
+import plotly.graph_objects as go
+import pytest
+import shinywidgets._plotly as sp
+import shinywidgets._shinywidgets as sw
+from shiny import Session
+from shiny.session import session_context
+from shinywidgets import config, render_plotly, render_widget
+from shinywidgets._comm import SharedShinyComm
+from shinywidgets._config import _SETTINGS
+
+from tests.unit.test_muted_traits import (
+    mute_requests_in,
+    other_session,
+    session_recorder,
+)
+
+__all__ = ("other_session",)
+
+MUTE = {"shinywidgets": "mute", "traits": ["_js2py_pointsCallback"]}
+
+Flush = Callable[[], List[Dict[str, Any]]]
+
+
+@pytest.fixture(autouse=True)
+def reset_settings():
+    _SETTINGS.clear()
+    yield
+    _SETTINGS.clear()
+
+
+def figure() -> go.FigureWidget:
+    return go.FigureWidget(go.Scatter(x=[1, 2, 3], y=[1, 2, 3]))
+
+
+def noop(*args: object) -> None:
+    pass
+
+
+def test_points_callback_trait_is_muted_without_native_callbacks(
+    widget_session: Session,
+) -> None:
+    # plotly.py's widget syncs every click, hover and selection to Python
+    # through this trait, per point, whether or not anything listens (#479)
+    with session_context(widget_session):
+        assert sp.muted_traits(figure()) == ["_js2py_pointsCallback"]
+
+
+@pytest.mark.parametrize(
+    "register",
+    ["on_click", "on_hover", "on_unhover", "on_selection", "on_deselect"],
+)
+def test_native_callback_keeps_the_points_callback_trait(
+    widget_session: Session, register: str
+) -> None:
+    with session_context(widget_session):
+        fig = figure()
+        getattr(fig.data[0], register)(noop)
+        assert sp.muted_traits(fig) == []
+
+
+def test_native_callback_on_any_trace_keeps_the_trait(widget_session: Session) -> None:
+    with session_context(widget_session):
+        fig = figure()
+        fig.add_scatter(x=[1], y=[1])
+        fig.data[1].on_click(noop)
+        assert sp.muted_traits(fig) == []
+
+
+def mute_requests(
+    widget_session: Session,
+    flush: Flush,
+    build: Callable[[], go.FigureWidget],
+    listen_to: Sequence[str] = (),
+) -> List[Dict[str, Any]]:
+    """The mute requests the browser receives when `build()`'s figure renders."""
+    r = render_plotly(listen_to=listen_to)
+
+    @r
+    def _() -> go.FigureWidget:
+        return build()
+
+    with session_context(widget_session):
+        asyncio.get_event_loop().run_until_complete(r._render())
+    return mute_requests_in(flush())
+
+
+def test_render_asks_the_browser_to_mute(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    assert mute_requests(widget_session, flush_to_browser, figure) == [MUTE]
+
+
+def test_render_with_native_callback_mutes_nothing(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    def build() -> go.FigureWidget:
+        fig = figure()
+        fig.data[0].on_selection(noop)
+        return fig
+
+    # The whole set is stated on every render (even an empty one), so a
+    # reused figure's previously muted set is cleared
+    assert mute_requests(widget_session, flush_to_browser, build) == [
+        {"shinywidgets": "mute", "traits": []}
+    ]
+
+
+def test_native_events_config_mutes_nothing(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    # For what a render can't see: callbacks registered later, and reads of
+    # plotly.py's Python-side `selectedpoints`
+    config(native_events=True)
+    requests = mute_requests(widget_session, flush_to_browser, figure)
+    assert requests == [{"shinywidgets": "mute", "traits": []}]
+
+
+def test_listen_to_native_raises_and_points_at_config() -> None:
+    with pytest.raises(ValueError, match=r"shinywidgets\.config\(native_events=True\)"):
+        render_plotly(listen_to=["native"])
+
+
+def test_misspelled_native_is_rejected_and_names_it() -> None:
+    with pytest.raises(ValueError, match="nativ"):
+        render_plotly(listen_to=["nativ"])
+
+
+def test_native_is_not_a_name_for_renderers_that_mute_nothing() -> None:
+    with pytest.raises(ValueError, match="native"):
+        render_widget(listen_to=["native"])
+
+
+def test_rerender_restores_native_events_when_a_callback_is_registered(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        fig = figure()
+
+    r = render_plotly()
+
+    @r
+    def _() -> go.FigureWidget:
+        # Reused across renders (e.g. cached via session_lifetime())
+        return fig
+
+    def render() -> None:
+        with session_context(widget_session):
+            asyncio.get_event_loop().run_until_complete(r._render())
+
+    render()
+    assert mute_requests_in(flush_to_browser()) == [MUTE]
+
+    # A callback registered after the first render unmutes on the next: the
+    # empty set must reach the browser as an explicit clear, not be skipped
+    # (leaving _js2py_pointsCallback muted there)
+    fig.data[0].on_click(noop)
+    render()
+    assert mute_requests_in(flush_to_browser())[-1] == {
+        "shinywidgets": "mute",
+        "traits": [],
+    }
+
+
+def test_mute_policy_reaches_only_the_rendering_session(
+    widget_session: Session,
+    flush_to_browser: Flush,
+    other_session: Session,
+    shared_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    a, b = widget_session, other_session
+    flush_b = session_recorder(b, monkeypatch)
+
+    # A shared FigureWidget: its comm fans send() out to EVERY session, so
+    # this is the case a mute policy must not leak across
+    with session_context(a), sw.shared_construction():
+        fig = figure()
+    flush_to_browser()
+
+    def render(session: Session, native: bool = False) -> None:
+        r = render_plotly()
+
+        @r
+        def _() -> go.FigureWidget:
+            if native:
+                # A trace callback registered in the render function keeps
+                # plotly.py's own events on for this widget
+                fig.data[0].on_selection(noop)
+            return fig
+
+        with session_context(session):
+            asyncio.get_event_loop().run_until_complete(r._render())
+
+    # b renders first, wrapping fig.comm into a SharedShinyComm over both sessions
+    render(b)
+    assert isinstance(fig.comm, SharedShinyComm)
+    render(a, native=True)
+    flush_to_browser()
+    flush_b()
+
+    # Each session's browser got only its own render's mute send: with the
+    # fan-out send, b's default render would have muted a's native events
+    assert mute_requests_in(flush_to_browser()) == [
+        {"shinywidgets": "mute", "traits": []}
+    ]
+    assert mute_requests_in(flush_b()) == [MUTE]
