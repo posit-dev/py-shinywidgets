@@ -73,11 +73,9 @@ rendering_renderer: ContextVar[Optional[object]] = ContextVar(
 # (req(..., cancel_output=True)) sends nothing, SilentOperationInProgress-
 # Exception (cancel_output="progress") only a progress message, and an
 # asyncio.CancelledError unwinds the render task before anything is sent --
-# so the browser keeps showing the last widget. A mute policy must survive
-# these: it still describes what the output shows. Every other exception
-# (including a plain SilentException from req(False), which sends None, and
-# errors, which render an error message) replaces the view, so the policy
-# retires (see _render()).
+# so the browser keeps showing the last widget, and this render must not
+# touch browser-visible state (e.g. the widget's muted-traits set) on the
+# way out.
 _OUTPUT_RETAINING_EXCEPTIONS = (
     SilentCancelOutputException,
     SilentOperationInProgressException,
@@ -169,8 +167,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             self._accessor_specs,
             # The base method is a no-op; storing it bound would pin the
             # renderer for as long as anything keeps the Accessors (a
-            # session's on_destroy() registration does), defeating weak-key
-            # cleanup keyed on the renderer (see _MUTE_POLICIES)
+            # session's on_destroy() registration does)
             dynamic_specs=(
                 None
                 if type(self)._dynamic_accessor_spec
@@ -188,27 +185,10 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             return await self._render()
 
     async def _render(self) -> Jsonifiable | None:
-        # _shinywidgets imports from this module at module scope, so
-        # importing it back the same way would be circular (see the import
-        # below); keep this one function-local too. It must precede the
-        # early exits: an un-render or a failed render leaves no replacement
-        # widget for this output, so its mute policy retires here, or the
-        # stale policy keeps suppressing a surviving output's mute on the
-        # shared model.
-        from ._shinywidgets import drop_mute_policy
-
         token = rendering_renderer.set(self)
         try:
             value = await self.fn()
         except _OUTPUT_RETAINING_EXCEPTIONS:
-            # The output keeps its previous view (see
-            # _OUTPUT_RETAINING_EXCEPTIONS), so its mute policy stays
-            raise
-        except Exception:
-            # The render function failed: the output shows an error (or, for
-            # a plain req(False), nothing) instead of the previous widget,
-            # so its mute policy retires like an un-render's does below
-            drop_mute_policy(self)
             raise
         finally:
             rendering_renderer.reset(token)
@@ -221,7 +201,6 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self._invalidate_contexts()
 
         if value is None:
-            drop_mute_policy(self)
             self._accessors.on_render(None)
             return None
 
@@ -239,7 +218,6 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             # accessors keep watching (and reads keep reporting) the old
             # object's state while the output has nothing rendered
             self._accessors.on_render(None)
-            drop_mute_policy(self)
             raise
 
         session = get_current_session()
@@ -250,25 +228,20 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             foreign_or_closed_widget,
             open_process_global_widgets,
             ownership_error,
-            send_mute_policy,
+            send_muted_traits,
         )
 
         # Outside a real session (the Express UI-discovery pass, or a unit test
         # that calls _render() directly without a session) there's nothing to
         # compare the returned widgets' ownership against, so only a closed
         # root can be rejected.
-        # An ownership-rejected render leaves no replacement widget (the
-        # output shows the error), so its stale policy retires like a failed
-        # render's does above
         if session is None or session.is_stub_session():
             if is_closed_widget(widget):
-                drop_mute_policy(self)
                 raise ownership_error(widget)
         else:
             root = session.root_scope()
             bad = foreign_or_closed_widget(widget, root)
             if bad is not None:
-                drop_mute_policy(self)
                 raise ownership_error(bad)
             # Only once nothing raised, so a rejected render opens nothing
             open_process_global_widgets(widget, root)
@@ -288,16 +261,14 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         for w in self._rate_policy_widgets(self._widget):
             register_rate_policy(w, self._rate_policy, self._rate_delay)
         self._accessors.on_render(widget)
+        # The browser replaces the model's muted set with each message, so
+        # state the whole set on every render (an empty one clears the set a
+        # reused widget's earlier render left there)
         muted = (
             [] if native_events_enabled() else list(self._muted_traits(self._widget))
         )
         if session is not None and not session.is_stub_session():
-            # Other outputs in this session may show the same widget, and the
-            # browser keeps one (last-sent) muted set per model: send the
-            # intersection over all the model's consumers, not this render's
-            # policy alone (and move the policy off the widget a re-render
-            # switched away from)
-            send_mute_policy(self, widget, session, muted)
+            send_muted_traits(widget, session, muted)
         else:
             # No session to scope to (the Express UI-discovery pass, or a test
             # calling _render() directly): the widget's comm is inert, or
