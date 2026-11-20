@@ -50,6 +50,11 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      # anywidget tracks git main (tool.uv.sources in pyproject.toml), and
+      # building it from source runs its JS toolchain via hatch-jupyter-builder
+      - name: Install vite-plus (builds anywidget from git)
+        run: npm install -g vite-plus
+
       - name: Install dependencies
         run: uv sync --python ${{ matrix.python-version }} --all-groups
 
@@ -104,6 +109,11 @@ jobs:
 
       - name: Set up Python 3.12
         run: uv python install 3.12
+
+      # anywidget tracks git main (tool.uv.sources in pyproject.toml), and
+      # building it from source runs its JS toolchain via hatch-jupyter-builder
+      - name: Install vite-plus (builds anywidget from git)
+        run: npm install -g vite-plus
 
       - name: Install dependencies
         run: uv sync --python 3.12 --all-groups

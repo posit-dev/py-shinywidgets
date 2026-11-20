@@ -2,13 +2,10 @@ from __future__ import annotations
 
 from playwright.sync_api import Page, expect
 from tests.playwright.conftest import (
-    ANYWIDGET_INIT_XFAIL,
     KEPLERGL_ALLOWED_ERRORS,
     assert_no_unexpected_errors,
     collect_errors,
 )
-
-pytestmark = ANYWIDGET_INIT_XFAIL
 
 LOAD_TIMEOUT = 60000
 

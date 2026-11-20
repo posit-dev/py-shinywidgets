@@ -4,15 +4,12 @@ import re
 
 from playwright.sync_api import Page, expect
 from tests.playwright.conftest import (
-    ANYWIDGET_INIT_XFAIL,
     KEPLERGL_ALLOWED_ERRORS,
     assert_no_unexpected_errors,
     collect_errors,
     expose_manager,
     wait_for_stable_view_count,
 )
-
-pytestmark = ANYWIDGET_INIT_XFAIL
 
 # kepler.gl bundles a ~12MB script and builds a WebGL map, so first paint is slow
 LOAD_TIMEOUT = 60000
