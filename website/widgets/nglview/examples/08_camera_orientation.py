@@ -7,7 +7,7 @@ ui.page_opts(fillable=True)
 with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
 
-        @render_nglview
+        @render_nglview(listen_to=["camera_orientation"])
         def structure():
             view = nglview.show_file(nglview.datafiles.PDB)
             view.center()
@@ -19,8 +19,10 @@ with ui.layout_columns(col_widths=[8, 4]):
         @render.code
         def orientation():
             # A 4x4 matrix (16 floats), updated ~100ms after the user stops
-            # dragging/scrolling/panning the view
-            matrix = structure.read("_camera_orientation")
+            # dragging/scrolling/panning the view (None until the first move)
+            matrix = structure.camera_orientation()
+            if matrix is None:
+                return "Drag the view to rotate the camera."
             return "\n".join(
                 " ".join(f"{v: .2f}" for v in matrix[i : i + 4])
                 for i in range(0, len(matrix), 4)

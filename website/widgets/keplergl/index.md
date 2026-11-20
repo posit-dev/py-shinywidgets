@@ -6,7 +6,7 @@ category: Maps & geospatial
 upstream: https://docs.kepler.gl
 hero: img/hero.webp
 tagline: Hand users a full geospatial-analysis studio -- layers, filters, 3D hexbins, time playback -- in a Shiny card, and read back whatever they build.
-accessors: []
+accessors: [config]
 description: "Hand users a full geospatial-analysis studio -- layers, filters, 3D hexbins, time playback -- in a Shiny card, and read back whatever they build."
 image: "img/hero.webp"
 ---
@@ -24,10 +24,9 @@ widget (for multiple datasets or a starting `config`). A plain DataFrame becomes
 `"data"` and is sent as compact, NaN-safe Arrow rather than kepler's default JSON. In a filling layout
 the map resizes to its container the same way every other shinywidgets output does; see
 [Layout and sizing](#layout-and-sizing) for the one kepler-specific wrinkle (the browser, not Python,
-owns the widget's `height` trait once the output is sizing the map). kepler.gl has no per-gesture
-accessors in this release -- its one synced-back trait is the whole map `config`, so the way to react to
-it is `.read("config")`, with the `rate_policy`/`rate_delay` kwargs to tame how often that fires during
-a drag or time-filter playback (see [Reacting to user interaction](#reacting-to-user-interaction)).
+owns the widget's `height` trait once the output is sizing the map). kepler.gl's one synced-back trait is the whole map `config`, so its one accessor is `config()`
+-- opt in with `listen_to=["config"]`, and use the `rate_policy`/`rate_delay` kwargs to tame how often
+it fires during a drag or time-filter playback (see [Reacting to user interaction](#reacting-to-user-interaction)).
 
 Choose kepler.gl when the map itself should be an end-user tool: let an analyst add layers, pick
 colors, build a time filter, and hand you back a `config` you can store and reload. For GPU-scale
@@ -166,7 +165,7 @@ def map():
 
 kepler.gl's config schema is large but mostly optional -- every key you omit falls back to a
 sensible default. The easiest way to get a starting config is to build one in the UI once and read
-it back with `.read("config")` (see [Coordinating multiple views](#coordinating-multiple-views)).
+it back with `.config()` (see [Coordinating multiple views](#coordinating-multiple-views)).
 
 ### GeoDataFrame input
 
@@ -270,14 +269,17 @@ available.
 
 ## Reacting to user interaction
 
-`@render_keplergl` declares no accessors: kepler.gl's one synced-back trait is the entire map
-`config`, which the design deliberately leaves to `.read()` rather than wrapping in a
-named accessor. Two reasons: there is no single "headline" interaction (config mixes layer edits,
-filter drags, and camera moves in one blob), and during time-filter playback or a hexbin drag it can
-rewrite dozens of times a second -- exactly the kind of noisy, undifferentiated stream that doesn't
-suit a dedicated accessor but does suit a rate-limited `.read()`.
+kepler.gl's one synced-back trait is the entire map `config`, and the `config()` accessor reads it.
+The accessor is opt-in -- pass `listen_to=["config"]` to `@render_keplergl` -- because kepler.gl
+syncs the whole config (often 100s of KB) on every store dispatch: each animation frame of a pan or
+zoom, every filter drag, every frame of time-filter playback. To keep that traffic off apps that
+never read it, shinywidgets stops the browser syncing the `config` trait to Python unless the
+accessor is enabled. With `listen_to=["config"]`, the trait flows and `map.config()` reads it
+reactively, debounced (250 ms) by default -- `rate_policy`/`rate_delay` adjust that (see
+[Rate limiting](#rate-limiting)). To read the trait without opting in per output -- e.g. a one-off
+`.widget.config` read -- `shinywidgets.config(native_events=True)` opens the wire app-wide.
 
-### Beyond the accessors: `.read()`
+### The `config` trait
 
 `config` is the trait worth reading. `height` also changes (the browser writes the measured size into
 it; see [Layout and sizing](#layout-and-sizing)), but `data`, `mapbox_token`, `theme`, and `app_name`
@@ -305,7 +307,7 @@ ui.page_opts(title="Reading kepler.gl's config", fillable=True)
 with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
 
-        @render_keplergl
+        @render_keplergl(listen_to=["config"])
         def map():
             return carshare
 
@@ -314,7 +316,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.code
         def view_state():
-            config = map.read("config")
+            config = map.config()
             state = config.get("config", {}).get("mapState", {})
             if not state:
                 return "Waiting for the map to load..."
@@ -336,10 +338,10 @@ unchanged by a pan):
 ### Rate limiting
 
 `config` rewrites on close to every animation frame during time-filter playback -- measured at over
-200 `.read()` invalidations in 4 seconds of playback with no rate limit, against a widget
-whose view only needs to update a couple of times a second. `render_keplergl`'s `rate_policy` and
-`rate_delay` kwargs throttle (or debounce) every `.read()`/`reactive_read()` on that widget's instance, not just
-one reader:
+200 invalidations in 4 seconds of playback with no rate limit, against a widget
+whose view only needs to update a couple of times a second. The `config()` accessor debounces
+(250 ms) by default; `render_keplergl`'s `rate_policy` and `rate_delay` kwargs override that (here, a
+throttle to at most one read per 0.5 s):
 
 ```{.python file="examples/07_rate_limiting.py"}
 import pandas as pd
@@ -378,24 +380,24 @@ CONFIG = {
     },
 }
 
-ui.page_opts(title="Rate-limiting .read()", fillable=True)
+ui.page_opts(title="Rate-limiting config()", fillable=True)
 
 with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
 
         # `config` rewrites on almost every animation frame during playback.
-        # Without a rate policy, every frame invalidates every reader.
-        @render_keplergl(rate_policy="throttle", rate_delay=0.5)
+        # The accessor debounces by default; this throttle goes further.
+        @render_keplergl(listen_to=["config"], rate_policy="throttle", rate_delay=0.5)
         def map():
             return KeplerGl(data={"data": birds}, config=CONFIG)
 
     with ui.card():
-        ui.card_header(".read() invocations (throttled to 2/s)")
+        ui.card_header("config() invocations (throttled to 2/s)")
         count = reactive.value(0)
 
         @reactive.effect
         def _():
-            map.read("config")
+            map.config()
             with reactive.isolate():
                 count.set(count.get() + 1)
 
@@ -410,9 +412,9 @@ vs. dozens per second unthrottled.
 ![rate limited, before play](img/07_rate_before.webp)
 ![rate limited, after 4s of play](img/07_rate_after.webp)
 
-Reach for a rate policy whenever a downstream calculation driven by `map.read("config")` is non-trivial (a DataFrame filter, a database query, another render) and the map has a
+Reach for an explicit rate policy whenever a downstream calculation driven by `map.config()` is non-trivial (a DataFrame filter, a database query, another render) and the map has a
 time filter, or when users are likely to drag the map around a lot. For a cheap read like the
-`mapState` printout above, the default (no limit) is fine.
+`mapState` printout above, the default debounce is fine.
 
 ## Updating the widget from Python
 
@@ -478,7 +480,7 @@ want to deliberately reset the user's styling.
 ### Save a styled view, restore it later
 
 Because the *entire* authored state -- camera, layers, colors, filters -- lives in one `config` dict,
-`map.read("config")` is a complete, serializable snapshot of whatever a user built.
+`map.config()` is a complete, serializable snapshot of whatever a user built.
 Store it, and `.widget.config = saved` reproduces it exactly, including on a widget that has since
 been reset or moved elsewhere:
 
@@ -504,7 +506,7 @@ ui.page_opts(title="Saving and restoring a view", fillable=True)
 with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
 
-        @render_keplergl
+        @render_keplergl(listen_to=["config"])
         def map():
             return KeplerGl(data={"data": carshare}, config=DEFAULT_CONFIG)
 
@@ -530,7 +532,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 @reactive.effect
 @reactive.event(input.save)
 def _():
-    saved_config.set(map.read("config"))
+    saved_config.set(map.config())
 
 
 @reactive.effect
@@ -604,7 +606,7 @@ ui.page_opts(title="Time window drives a detail table", fillable=True)
 with ui.layout_columns(col_widths=[7, 5]):
     with ui.card(full_screen=True):
 
-        @render_keplergl(rate_policy="throttle", rate_delay=0.5)
+        @render_keplergl(listen_to=["config"], rate_policy="throttle", rate_delay=0.5)
         def map():
             return KeplerGl(data={"data": birds}, config=CONFIG)
 
@@ -613,7 +615,7 @@ with ui.layout_columns(col_widths=[7, 5]):
 
         @render.data_frame
         def visible_rows():
-            config = map.read("config")
+            config = map.config()
             filters = config.get("config", {}).get("visState", {}).get("filters", [])
             if not filters:
                 return birds.iloc[0:0]

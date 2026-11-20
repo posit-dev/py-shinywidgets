@@ -19,7 +19,7 @@ ui.page_opts(title="Saving and restoring a view", fillable=True)
 with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
 
-        @render_keplergl
+        @render_keplergl(listen_to=["config"])
         def map():
             return KeplerGl(data={"data": carshare}, config=DEFAULT_CONFIG)
 
@@ -45,7 +45,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 @reactive.effect
 @reactive.event(input.save)
 def _():
-    saved_config.set(map.read("config"))
+    saved_config.set(map.config())
 
 
 @reactive.effect
