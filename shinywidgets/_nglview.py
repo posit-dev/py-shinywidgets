@@ -2,11 +2,43 @@ from __future__ import annotations
 
 import sys
 import threading
+from typing import TYPE_CHECKING, Any, Callable
 
 from ipywidgets import Widget
 
+from ._accessors import AccessorSpec, Emit
 from ._dependencies import widget_pkg
 from ._utils import restrict_client_traits
+
+if TYPE_CHECKING:
+    from nglview import NGLWidget
+
+
+def attach_camera_orientation(widget: "NGLWidget", emit: Emit) -> Callable[[], None]:
+    """Observe the `_camera_orientation` trait, skipping the [] seed.
+
+    [] is a fresh widget's default, not a report, so the accessor reads
+    None until the camera first moves.
+    """
+
+    def on_change(change: Any) -> None:
+        emit(change["new"])
+
+    widget.observe(on_change, "_camera_orientation")
+    if widget._camera_orientation:
+        emit(widget._camera_orientation)
+    return lambda: widget.unobserve(on_change, "_camera_orientation")
+
+
+CAMERA_ORIENTATION = AccessorSpec(
+    name="camera_orientation",
+    kind="state",
+    attach=attach_camera_orientation,
+    # nglview streams the 4x4 matrix every ~100 ms while the camera moves
+    rate_policy="debounce",
+    opt_in=True,
+    muted_trait="_camera_orientation",
+)
 
 
 def is_nglview_widget(w: object) -> bool:
