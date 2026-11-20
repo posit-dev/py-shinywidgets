@@ -321,7 +321,8 @@ with ui.layout_columns(col_widths=[7, 5]):
             pts = plot.selected()
             if pts is None:
                 return "None (drag a box)"
-            cols = pts[["trace_index", "point_index", "customdata"]]
+            # An empty selection has no customdata column to report
+            cols = pts.reindex(columns=["trace_index", "point_index", "customdata"])
             return cols.round(1).to_string(index=False)
 ```
 
