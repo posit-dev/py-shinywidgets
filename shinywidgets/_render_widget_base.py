@@ -109,11 +109,6 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
     # make its clicked() accessor conditional on the click channel existing
     _accessor_specs: Tuple[AccessorSpec, ...] = ()
 
-    # Names `listen_to` accepts besides accessor names: what a renderer
-    # leaves off by default that isn't read through an accessor (e.g.
-    # render_plotly's "native", plotly.py's own events)
-    _listen_to_names: Tuple[str, ...] = ()
-
     def auto_output_ui(self) -> Tag:
         return output_widget(
             self.output_id,
@@ -160,16 +155,11 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             is render_widget_base._dynamic_accessor_spec
         ):
             known = {spec.name for spec in self._accessor_specs}
-            unknown = self._listen_to - known - set(self._listen_to_names)
+            unknown = self._listen_to - known
             if unknown:
-                also = (
-                    f" It also accepts {sorted(self._listen_to_names)}."
-                    if self._listen_to_names
-                    else ""
-                )
                 raise ValueError(
                     f"listen_to names unknown accessor(s) {sorted(unknown)}; "
-                    f"this renderer's accessors are {sorted(known)}.{also}"
+                    f"this renderer's accessors are {sorted(known)}."
                 )
         # Instance attribute, so a renderer can make its set of accessors
         # conditional on its own kwargs (render_mols2grid drops clicked()
@@ -187,7 +177,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             ),
             rate_policy=rate_policy,
             rate_delay=rate_delay,
-            listen_to=sorted(self._listen_to.difference(self._listen_to_names)),
+            listen_to=sorted(self._listen_to),
         )
         self._closes_accessors_on_destroy = False
 

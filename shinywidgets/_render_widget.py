@@ -4922,11 +4922,24 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     """
 
     _accessor_specs = PLOTLY_ACCESSORS
-    _listen_to_names = ("native",)
+
+    def __init__(
+        self,
+        _fn: Optional[ValueFn[PlotlyValueT]] = None,
+        *,
+        listen_to: Optional[Sequence[str]] = None,
+        **kwargs: Any,
+    ) -> None:
+        if listen_to is not None and "native" in listen_to:
+            raise ValueError(
+                '"native" is not a listen_to name: plotly.py\'s own events '
+                "are an app-wide setting -- use shinywidgets.config("
+                "native_events=True) (or the SHINYWIDGETS_NATIVE_EVENTS=1 "
+                "environment variable) to receive them."
+            )
+        super().__init__(_fn, listen_to=listen_to, **kwargs)
 
     def _muted_traits(self, widget: FigureWidget) -> Sequence[str]:
-        if "native" in self._listen_to:
-            return ()
         return plotly_muted_traits(widget)
 
     def clicked(self) -> Optional[pd.DataFrame]:
