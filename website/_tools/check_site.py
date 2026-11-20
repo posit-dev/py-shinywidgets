@@ -378,8 +378,8 @@ def landing(page: Page, base: str) -> list[str]:
         problems.append(f"{picker.count()} showcases in the stage, expected 6")
     else:
         picker.nth(1).click()
-        if "Every star" not in page.locator("#picker li.on").inner_text():
-            problems.append("clicking the 2nd showcase doesn't select Every star")
+        if "Lending Club" not in page.locator("#picker li.on").inner_text():
+            problems.append("clicking the 2nd showcase doesn't select Lending Club")
         page.wait_for_load_state("networkidle")
         if broken := page.evaluate(IMAGES_LOADED_JS):
             problems.append(f"stage images failed to load: {broken}")

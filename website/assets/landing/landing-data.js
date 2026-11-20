@@ -209,6 +209,12 @@ def clicked_out():
 // The gallery stage. Gesture captions describe what the "after" screenshot shows.
 // Images: img/show-<id>-{0,1}.webp.
 const SHOWCASES = [
+  { id: "counties", title: "Which US counties are alike?", widgets: ["plotly"], lines: 240,
+    blurb: "k-means groups 3,152 counties; click one and its closest matches light up, often a continent away.",
+    gesture: "Click King County, WA", href: "gallery/showcases/county-clusters/index.html" },
+  { id: "loans", title: "Lending Club loans, in plain English", widgets: ["plotly"], lines: 242,
+    blurb: "10,000 loans you filter by asking; lasso a band on the scatter and Claude describes exactly those loans.",
+    gesture: "Lasso a rate band, ask Claude", href: "gallery/showcases/loan-chat/index.html" },
   { id: "whales", title: "Ships slow down for whales", widgets: ["lonboard", "mosaic"], lines: 325,
     blurb: "2.68M AIS pings on a GPU map reveal the 10-knot limit ships keep near California whales.",
     gesture: "Brush 9–10.5 knots off California", href: "gallery/showcases/whale-slowdown/index.html" },
@@ -218,12 +224,6 @@ const SHOWCASES = [
   { id: "issues", title: "The Shiny issue atlas", widgets: ["embedding-atlas"], lines: 207,
     blurb: "6,088 GitHub issues mapped by meaning; Claude summarizes whatever region you select.",
     gesture: "Select a cluster, ask Claude", href: "gallery/showcases/issue-atlas/index.html" },
-  { id: "counties", title: "Which US counties are alike?", widgets: ["plotly"], lines: 240,
-    blurb: "k-means groups 3,152 counties; click one and its closest matches light up, often a continent away.",
-    gesture: "Click King County, WA", href: "gallery/showcases/county-clusters/index.html" },
-  { id: "loans", title: "Lending Club loans, in plain English", widgets: ["plotly"], lines: 242,
-    blurb: "10,000 loans you filter by asking; lasso a band on the scatter and Claude describes exactly those loans.",
-    gesture: "Lasso a rate band, ask Claude", href: "gallery/showcases/loan-chat/index.html" },
   { id: "trade", title: "Live trading desk", widgets: ["perspective"], lines: 215,
     blurb: "One streaming table feeds a blotter and a treemap; value boxes follow the grid's live filter.",
     gesture: "Switch the blotter to a pivot", href: "gallery/showcases/trading-desk/index.html" },
