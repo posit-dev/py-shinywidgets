@@ -61,8 +61,6 @@ body.sw-home .sw-landing :not(pre) > code { background: none !important; color: 
 .sw-landing .cat div { position: absolute; left: 18px; bottom: 16px; right: 18px; z-index: 1; }
 .sw-landing .cat h3 { font-family: "Space Grotesk"; font-size: 22px; font-weight: 700; color: var(--fg); }
 .sw-landing .cat p { color: var(--muted); font-size: 13px; margin-top: 4px; }
-.sw-landing .cat .n { position: absolute; top: 14px; right: 16px; z-index: 1; font-family: "JetBrains Mono"; font-size: 12px;
-  color: var(--accent); background: rgba(7, 8, 12, .7); padding: 2px 7px; border-radius: 6px; }
 
 /* ---------- 3. Code explorer ---------- */
 .sw-landing .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 36px; }
@@ -191,7 +189,6 @@ body.sw-home .sw-landing :not(pre) > code { background: none !important; color: 
   .sw-landing section { padding: 80px 20px 24px; }
   .sw-landing .hero { min-height: 640px; }
   .sw-landing .wall { grid-template-columns: repeat(3, 1fr); }
-  .sw-landing .col:nth-child(n+4) { display: none; }
   .sw-landing .lede { font-size: 17px; }
   .sw-landing h2 { font-size: 32px; }
   .sw-landing .cats { grid-template-columns: repeat(2, 1fr); gap: 12px; }

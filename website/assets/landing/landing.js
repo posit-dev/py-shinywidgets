@@ -5,20 +5,37 @@
   const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const $ = (id) => document.getElementById(id);
 
-  // Hero wall: six columns, each its four tiles twice so the drift loops seamlessly.
+  // Hero wall: columns of tiles, each column's set repeated once so the drift
+  // loops seamlessly. The drift translates a column up by half its height, so
+  // each half must stay taller than the wall (plus slack for the wall's
+  // rotate/scale) through the whole loop — a fixed four tiles per column leaves
+  // tall, narrow windows with empty space at the bottom.
   const wall = $("wall");
-  for (let c = 0; c < 6; c++) {
-    const col = document.createElement("div");
-    col.className = "col";
-    const pick = [0, 1, 2, 3].map((i) => WALL[(c * 4 + i) % WALL.length]);
-    for (const slug of [...pick, ...pick]) {
-      const tile = document.createElement("div");
-      tile.className = "tile";
-      tile.style.backgroundImage = `url(${IMG}wall-${slug}.webp)`;
-      col.appendChild(tile);
+  const narrow = window.matchMedia("(max-width: 900px)");
+  function buildWall() {
+    const cols = narrow.matches ? 3 : 6;
+    const tileH = ((wall.clientWidth - (cols - 1) * 14) / cols) * 0.75 + 14;
+    const per = Math.max(4, Math.ceil((wall.clientHeight * 1.3) / tileH));
+    wall.replaceChildren();
+    for (let c = 0; c < cols; c++) {
+      const col = document.createElement("div");
+      col.className = "col";
+      for (let r = 0; r < 2; r++)
+        for (let i = 0; i < per; i++) {
+          const tile = document.createElement("div");
+          tile.className = "tile";
+          tile.style.backgroundImage = `url(${IMG}wall-${WALL[(c * per + i) % WALL.length]}.webp)`;
+          col.appendChild(tile);
+        }
+      wall.appendChild(col);
     }
-    wall.appendChild(col);
   }
+  buildWall();
+  let wallTimer;
+  window.addEventListener("resize", () => {
+    clearTimeout(wallTimer);
+    wallTimer = setTimeout(buildWall, 200);
+  });
 
   // "See it in code": tabs, highlighted snippet, before/after screenshot.
   const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
