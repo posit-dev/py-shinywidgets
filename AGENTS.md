@@ -95,9 +95,10 @@ Handles dynamic loading of 3rd party widget JavaScript:
 
 ### Adding a new renderer
 
+For the full integration workflow (feasibility spike -> renderer -> widget guide -> website article, plus the quality blueprint for sizing/accessors/mutation), use the `adding-shinywidgets-integrations` skill in `.agents/skills/`.
+
 When adding a `@render_*` decorator for a third-party widget package, add a matching extra to `[project.optional-dependencies]` in `pyproject.toml` (e.g., `plotly = ["plotly>=5.0.0"]`) containing everything the renderer needs, and:
-- Add a row to the README's extras table
-- Point the decorator's docstring and install-error messages at `pip install 'shinywidgets[<extra>]'`
+- Point the decorator's docstring, install-error messages, and the widget's website guide at `pip install 'shinywidgets[<extra>]'` (the README points readers to the guides for install commands)
 - Keep example-specific data packages in the example's own `requirements.txt` (which should use `shinywidgets[<extra>]`, not the raw widget package)
 - Accessor reads (`_read_accessor()`) don't depend on the render, so a re-render that reports an unchanged value doesn't re-run readers. An accessor method that computes its result from the widget itself (e.g. `visible_data()`, `camera()`) must read `self.widget`, not `self._widget`, so its readers follow a re-render
 
