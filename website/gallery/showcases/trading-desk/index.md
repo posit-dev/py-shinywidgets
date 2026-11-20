@@ -13,11 +13,12 @@ categories: ["Tables & grids"]
 ---
 
 A single Perspective server-side `table` (a rolling window, capped at 3,000 rows) feeds two
-`PerspectiveWidget` viewers: a blotter/pivot/heatmap grid on the left, and a sector treemap
-on the right. A background effect streams new trades into the table twice a second; three
-value boxes above the viewers recompute, server-side, from exactly the blotter's *current*
-filter -- so pivoting, grouping, or typing a filter into the grid's own settings panel
-immediately changes what the value boxes count, with no extra code to keep them in sync.
+`PerspectiveWidget` viewers, both in Perspective's dark theme: a blotter/pivot/heatmap grid
+on the left, and a sector treemap on the right. A background effect streams new trades into
+the table twice a second (~80 trades/s at the default rate); three value boxes above the
+viewers recompute, server-side, from exactly the blotter's *current* filter -- so pivoting,
+grouping, or typing a filter into the grid's own settings panel immediately changes what the
+value boxes count, with no extra code to keep them in sync.
 
 ![Live trading desk](img/hero.webp)
 
@@ -38,7 +39,6 @@ Source: [app.py](app.py) · [Open in Shinylive](app.py){.sw-shinylive-link}
   grouping, columns, column styling) is swapped in one `hold_sync()` batch.
 - Open the grid's own settings panel (the `«` affordance) and add a filter (e.g. `sector ==
   "Tech"`): the value boxes above immediately recompute to match.
-- Flip dark mode: both viewers' themes update in place.
 
 ## Accessors demonstrated
 

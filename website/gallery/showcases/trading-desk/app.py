@@ -2,8 +2,7 @@
 #
 # One streaming Perspective table feeds a blotter grid and a treemap at once;
 # value boxes recompute server-side from exactly the blotter's current filter,
-# a radio group swaps three viewer presets with hold_sync(), and a dark-mode
-# switch updates both viewers' themes in place.
+# and a radio group swaps three viewer presets with hold_sync().
 #
 # Bucket: showcase (~155 lines)
 # Run: uv run shiny run app.py
@@ -101,14 +100,24 @@ PRESETS: Dict[str, Dict[str, Any]] = {
     ),
 }
 
-ui.page_opts(title="Live trading desk", fillable=True)
-ui.tags.style("#config { font-size: 0.8rem; white-space: pre-wrap; }")
+ui.page_opts(fillable=True)
+ui.input_dark_mode(mode="dark", style="display: none")
+ui.tags.style(
+    """
+    .showcase-title { display: flex; align-items: baseline; gap: 1rem; margin-bottom: .25rem; }
+    .showcase-title h1 { font-size: 1.4rem; margin: 0; }
+    .showcase-title p { margin: 0; color: var(--bs-secondary-color); }
+    #config { font-size: 0.8rem; white-space: pre-wrap; }
+    """
+)
+with ui.div(class_="showcase-title"):
+    ui.h1("Live trading desk")
+    ui.p("one streaming Perspective table, two views, ~80 trades/s")
 
 with ui.sidebar(width=320):
     ui.input_switch("live", "Stream trades", True)
     ui.input_slider("rate", "Trades per tick (2 ticks/s)", 5, 200, 40)
     ui.input_radio_buttons("preset", "Left viewer layout", list(PRESETS), inline=True)
-    ui.input_dark_mode(id="mode")
     ui.markdown(
         "Open a viewer's settings (`«`) to pivot, filter, or switch charts. "
         "Its filter syncs back to Python and drives the boxes above the "
@@ -137,21 +146,21 @@ def in_view() -> Dict[str, List[float]]:
 
 
 with ui.layout_columns(fill=False):
-    with ui.value_box(theme="primary"):
+    with ui.value_box(theme="text-primary"):
         "Trades matching your filter"
 
         @render.text
         def n_trades():
             return f"{len(in_view()['pnl']):,} / {table.size():,}"
 
-    with ui.value_box(theme="bg-gradient-indigo-purple"):
+    with ui.value_box(theme="text-primary"):
         "Notional"
 
         @render.text
         def notional():
             return f"${sum(in_view()['notional']) / 1e6:,.2f}M"
 
-    with ui.value_box(theme="bg-gradient-teal-cyan"):
+    with ui.value_box(theme="text-primary"):
         "P&L"
 
         @render.text
@@ -165,7 +174,11 @@ with ui.layout_columns(col_widths=[6, 6]):
         @render_perspective
         def grid():
             return PerspectiveWidget(
-                table, title="Trades", settings=False, **PRESETS["Blotter"]
+                table,
+                title="Trades",
+                settings=False,
+                theme="Pro Dark",
+                **PRESETS["Blotter"],
             )
 
     with ui.card(full_screen=True):
@@ -179,6 +192,7 @@ with ui.layout_columns(col_widths=[6, 6]):
                 group_by=["sector", "sym"],
                 columns=["notional", "pnl"],
                 settings=False,
+                theme="Pro Dark",
             )
 
 
@@ -199,9 +213,3 @@ def _apply_preset():
     with grid.widget.hold_sync():  # send the whole preset as one message
         for k, v in PRESETS[input.preset()].items():
             setattr(grid.widget, k, v)
-
-
-@reactive.effect
-def _theme():
-    theme = "Pro Dark" if input.mode() == "dark" else "Pro Light"
-    grid.widget.theme = chart.widget.theme = theme
