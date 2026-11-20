@@ -25,8 +25,10 @@ def attach_camera_orientation(widget: "NGLWidget", emit: Emit) -> Callable[[], N
         emit(change["new"])
 
     widget.observe(on_change, "_camera_orientation")
-    if widget._camera_orientation:
-        emit(widget._camera_orientation)
+    # A re-render replacing a moved viewer with a fresh one must not keep the
+    # previous widget's matrix: state accessors retain their value across
+    # renders, so seed None explicitly when there's nothing to report
+    emit(widget._camera_orientation or None)
     return lambda: widget.unobserve(on_change, "_camera_orientation")
 
 

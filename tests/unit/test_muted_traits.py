@@ -12,6 +12,7 @@ from shiny._connection import MockConnection
 from shiny.session import session_context
 from shinywidgets import render_widget
 from shinywidgets._accessors import AccessorSpec, Emit
+from shinywidgets._render_widget_base import render_widget_base
 from shinywidgets._comm import SharedShinyComm
 from shinywidgets._config import _SETTINGS, config
 
@@ -222,7 +223,9 @@ class render_muting_value_min(render_widget[ipywidgets.IntSlider]):
         return ["value", "min"]
 
 
-def render_once(renderer: render_widget[Any], widget: Any, session: Session) -> None:
+def render_once(
+    renderer: render_widget_base[Any, Any], widget: Any, session: Session
+) -> None:
     @renderer
     def _() -> Any:
         return widget
@@ -230,7 +233,7 @@ def render_once(renderer: render_widget[Any], widget: Any, session: Session) -> 
     rerender(renderer, session)
 
 
-def rerender(renderer: render_widget[Any], session: Session) -> None:
+def rerender(renderer: render_widget_base[Any, Any], session: Session) -> None:
     with session_context(session):
         asyncio.get_event_loop().run_until_complete(renderer._render())
 
