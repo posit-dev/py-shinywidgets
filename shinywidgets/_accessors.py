@@ -11,6 +11,8 @@ from shiny.reactive._core import (
 )
 from shiny.session import get_current_session
 
+from ._config import native_events_enabled
+
 RatePolicy = Literal["debounce", "throttle"]
 
 # (delay in seconds, fn) -> cancel
@@ -68,6 +70,13 @@ class AccessorSpec:
         created with `listen_to=[name, ...]`; use for accessors whose payloads
         are unbounded or stream continuously, so default apps don't pay for
         events they never read.
+    muted_trait
+        The widget's own synced trait this accessor reads, which the
+        renderer mutes (stops the browser syncing to Python) unless the
+        accessor is listened to -- the trait's traffic is the accessor's
+        payload, so nothing else should pay for it. `None` (the default)
+        for accessors backed by shinywidgets' own bridges, which are
+        unaffected by muting.
     """
 
     name: str
@@ -79,6 +88,7 @@ class AccessorSpec:
     rate_delay: float = 0.25
     not_ready: Callable[[Any], bool] = never_ready_check
     opt_in: bool = False
+    muted_trait: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.name == "value":
@@ -243,7 +253,11 @@ class Accessors:
         return tuple(self._slots)
 
     def _listened(self, slot: "Slot") -> bool:
-        return not slot.spec.opt_in or slot.spec.name in self._listen_to
+        if not slot.spec.opt_in or slot.spec.name in self._listen_to:
+            return True
+        # With native events on app-wide, a native-trait-backed accessor's
+        # payload flows anyway, so gating its read would be a double-gate
+        return slot.spec.muted_trait is not None and native_events_enabled()
 
     def on_render(self, widget: object) -> None:
         self._generation += 1

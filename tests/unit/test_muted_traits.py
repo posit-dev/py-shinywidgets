@@ -11,7 +11,10 @@ from shiny import App, Session, reactive, ui
 from shiny._connection import MockConnection
 from shiny.session import session_context
 from shinywidgets import render_widget
+from shinywidgets._accessors import AccessorSpec, Emit
 from shinywidgets._comm import SharedShinyComm
+from shinywidgets._config import _SETTINGS, config
+from shinywidgets._render_widget_base import render_widget_base
 
 from tests.unit.conftest import widget_test_server
 
@@ -220,7 +223,9 @@ class render_muting_value_min(render_widget[ipywidgets.IntSlider]):
         return ["value", "min"]
 
 
-def render_once(renderer: render_widget[Any], widget: Any, session: Session) -> None:
+def render_once(
+    renderer: render_widget_base[Any, Any], widget: Any, session: Session
+) -> None:
     @renderer
     def _() -> Any:
         return widget
@@ -228,7 +233,7 @@ def render_once(renderer: render_widget[Any], widget: Any, session: Session) -> 
     rerender(renderer, session)
 
 
-def rerender(renderer: render_widget[Any], session: Session) -> None:
+def rerender(renderer: render_widget_base[Any, Any], session: Session) -> None:
     with session_context(session):
         asyncio.get_event_loop().run_until_complete(renderer._render())
 
@@ -261,3 +266,91 @@ def test_outputs_sharing_a_widget_last_render_wins(
         {"shinywidgets": "mute", "traits": ["value", "min"]},
         {"shinywidgets": "mute", "traits": []},
     ]
+
+
+# ---------------------------------------------------------------------------
+# Native-trait-backed accessors: an opt-in accessor whose payload IS a synced
+# trait the widget sends by default mutes that trait unless it's listened to
+# ---------------------------------------------------------------------------
+
+
+def _watched_attach(widget: ipywidgets.IntSlider, emit: Emit) -> Callable[[], None]:
+    def on_change(change: Any) -> None:
+        emit(change["new"])
+
+    widget.observe(on_change, "value")
+    emit(widget.value)
+    return lambda: widget.unobserve(on_change, "value")
+
+
+WATCHED = AccessorSpec(
+    name="watched",
+    kind="state",
+    attach=_watched_attach,
+    opt_in=True,
+    muted_trait="value",
+)
+
+
+class render_muting_accessor(render_widget[ipywidgets.IntSlider]):
+    """A renderer with one opt-in accessor backed by the slider's `value`."""
+
+    _accessor_specs = (WATCHED,)
+
+
+def test_unlistened_native_accessor_mutes_its_trait(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        slider = ipywidgets.IntSlider()
+    render_once(render_muting_accessor(), slider, widget_session)
+    assert mute_requests_for(flush_to_browser(), slider) == [
+        {"shinywidgets": "mute", "traits": ["value"]}
+    ]
+
+
+def test_listened_native_accessor_mutes_nothing(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        slider = ipywidgets.IntSlider()
+    render_once(
+        render_muting_accessor(listen_to=["watched"]),
+        slider,
+        widget_session,
+    )
+    assert mute_requests_for(flush_to_browser(), slider) == [
+        {"shinywidgets": "mute", "traits": []}
+    ]
+
+
+def test_native_events_lifts_both_the_mute_and_the_gate(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    _SETTINGS.clear()
+    config(native_events=True)
+    try:
+        r = render_muting_accessor()
+        with session_context(widget_session):
+            slider = ipywidgets.IntSlider()
+        render_once(r, slider, widget_session)
+        assert mute_requests_for(flush_to_browser(), slider) == [
+            {"shinywidgets": "mute", "traits": []}
+        ]
+        # No listen_to, but native_events lifts the gate: the read attaches
+        # and returns the seeded value instead of raising
+        with session_context(widget_session):
+            assert r.read("watched") == 0
+    finally:
+        _SETTINGS.clear()
+
+
+def test_unlistened_native_accessor_read_raises_listened_error(
+    widget_session: Session,
+) -> None:
+    r = render_muting_accessor()
+    with session_context(widget_session):
+        slider = ipywidgets.IntSlider()
+    render_once(r, slider, widget_session)
+    with pytest.raises(RuntimeError, match=r'listen_to=\["watched"\]'):
+        r.read("watched")

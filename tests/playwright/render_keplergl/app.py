@@ -38,7 +38,7 @@ def server(input, output, session):
     def render_count():
         return str(counter.get())
 
-    @render_keplergl
+    @render_keplergl(listen_to=["config"])
     def map():
         counter.get()
         return POINTS
@@ -51,7 +51,7 @@ def server(input, output, session):
     def tall_map():
         return KeplerGl(data={"data": POINTS}, height=250)
 
-    @render_keplergl
+    @render_keplergl(listen_to=["config"])
     def missing_values_map():
         return POINTS.assign(n=[1, None, 3, 4])
 

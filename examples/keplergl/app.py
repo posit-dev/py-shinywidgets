@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from shiny import App, render, ui
-from shinywidgets import output_widget, reactive_read, render_keplergl
+from shinywidgets import output_widget, render_keplergl
 
 rng = np.random.default_rng(42)
 
@@ -42,7 +42,7 @@ app_ui = ui.page_sidebar(
 
 
 def server(input, output, session):
-    @render_keplergl
+    @render_keplergl(listen_to=["config"])
     def map():
         keep = readings["city"].isin(input.cities()) & (
             readings["reading"] >= input.min_reading()
@@ -52,8 +52,8 @@ def server(input, output, session):
     @render.text
     def n_layers():
         # kepler.gl syncs its config (including layers you add or edit in its
-        # side panel) back to Python
-        config = reactive_read(map.widget, "config")
+        # side panel) back to Python, readable through the config() accessor
+        config = map.config() or {}
         layers = config.get("config", {}).get("visState", {}).get("layers", [])
         return f"Layers in the map: {len(layers)}"
 

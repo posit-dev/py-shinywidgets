@@ -90,7 +90,7 @@ ui.page_opts(title="A year of bird migration in the Americas", fillable=True)
 with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
 
-        @render_keplergl(rate_policy="throttle", rate_delay=0.5)
+        @render_keplergl(listen_to=["config"], rate_policy="throttle", rate_delay=0.5)
         def map():
             with reactive.isolate():
                 return KeplerGl(data={"data": filtered()}, config=DEFAULT_CONFIG)
@@ -109,7 +109,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
             @render.data_frame
             def visible_rows():
-                config = map.read("config")
+                config = map.config()
                 filters = config.get("config", {}).get("visState", {}).get("filters", [])
                 if not filters:
                     return birds.iloc[0:0]
@@ -138,7 +138,7 @@ def _():
 @reactive.effect
 @reactive.event(input.save)
 def _():
-    saved_config.set(map.read("config"))
+    saved_config.set(map.config())
 
 
 @reactive.effect

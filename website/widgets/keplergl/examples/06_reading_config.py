@@ -11,7 +11,7 @@ ui.page_opts(title="Reading kepler.gl's config", fillable=True)
 with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
 
-        @render_keplergl
+        @render_keplergl(listen_to=["config"])
         def map():
             return carshare
 
@@ -20,7 +20,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.code
         def view_state():
-            config = map.read("config")
+            config = map.config()
             state = config.get("config", {}).get("mapState", {})
             if not state:
                 return "Waiting for the map to load..."

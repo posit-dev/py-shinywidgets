@@ -34,24 +34,24 @@ CONFIG = {
     },
 }
 
-ui.page_opts(title="Rate-limiting .read()", fillable=True)
+ui.page_opts(title="Rate-limiting config()", fillable=True)
 
 with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
 
         # `config` rewrites on almost every animation frame during playback.
-        # Without a rate policy, every frame invalidates every reader.
-        @render_keplergl(rate_policy="throttle", rate_delay=0.5)
+        # The accessor debounces by default; this throttle goes further.
+        @render_keplergl(listen_to=["config"], rate_policy="throttle", rate_delay=0.5)
         def map():
             return KeplerGl(data={"data": birds}, config=CONFIG)
 
     with ui.card():
-        ui.card_header(".read() invocations (throttled to 2/s)")
+        ui.card_header("config() invocations (throttled to 2/s)")
         count = reactive.value(0)
 
         @reactive.effect
         def _():
-            map.read("config")
+            map.config()
             with reactive.isolate():
                 count.set(count.get() + 1)
 

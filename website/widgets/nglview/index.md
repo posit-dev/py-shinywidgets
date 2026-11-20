@@ -6,7 +6,7 @@ category: Scientific
 upstream: https://nglviewer.org/nglview/latest/
 hero: img/hero.webp
 tagline: A WebGL molecular structure viewer -- proteins, nucleic acids, trajectories -- as a reactive Shiny output.
-accessors: []
+accessors: [camera_orientation]
 description: "A WebGL molecular structure viewer -- proteins, nucleic acids, trajectories -- as a reactive Shiny output."
 image: "img/hero.webp"
 ---
@@ -26,7 +26,8 @@ background threads that poll forever in a notebook, and shinywidgets stops them 
 of leaking a pair per re-render; and nglview constructs a process-global color-scheme registry at import time,
 which shinywidgets exempts from Shiny's "no widgets outside a session" rule the same way it does for lonboard.
 
-NGLView has no curated reactive accessors -- the single most useful piece of interaction, clicking an atom, is
+NGLView has one curated reactive accessor, `camera_orientation()` (opt-in; see
+[below](#reacting-to-user-interaction)) -- the other most useful piece of interaction, clicking an atom, is
 a synced widget trait you read with `structure.read("picked")` (the generic trait-reading primitive every
 output has), exactly like reading `"zoom"` on an `ipyleaflet.Map` output that also has no accessor for it.
 That's enough to build real linked views: a click gives you a full atom record (residue, chain, element,
@@ -262,8 +263,8 @@ with ui.card(full_screen=True):
 
 ### Accessor reference
 
-`render_nglview` declares no curated accessors (confirmed by reading `_render_widget.py`: unlike `render_plotly`
-or `render_lonboard`, its class body is just a docstring). The traits below live on the rendered `NGLWidget`
+`render_nglview` declares one curated accessor -- the opt-in `camera_orientation()`, covered in its own
+section below. The traits below live on the rendered `NGLWidget`
 itself, so read them with `structure.read("trait")` -- every output's generic trait-by-name reader, which falls
 through to `reactive_read()` on `.widget` under the hood. It's the same tier used for any renderer's
 un-curated traits; reach for plain `reactive_read(obj, "trait")` instead only when the trait lives on a
@@ -274,7 +275,6 @@ child widgets with traits worth reading).
 |---|---|---|---|---|
 | `"picked"` | `dict` | the user clicks the viewer | `{}` | `{}` on every click too, briefly, before the atom record (see below); `{}` again if nothing is hit |
 | `"frame"` | `int` | `.widget.frame` is set, from Python *or* synced back from a displayed `_iplayer`/GUI player | the render function's initial value (usually `0`) | also settable from Python to drive playback |
-| `"_camera_orientation"` | `list[float]` (16, a 4x4 matrix) | the user drags/scrolls/pans, debounced ~100 ms by NGL's own JS | `[]` until first move | private (leading underscore) but stable; used internally for multi-view camera sync |
 
 ### `picked`: click an atom
 
@@ -354,13 +354,17 @@ readable with `structure.read("frame")`, which matters when something *other* th
 [trajectory + RMSD example](#coordinating-multiple-views) below reads `frame` indirectly, through a shared
 `reactive.value` that both a Shiny slider and a plot click can set.
 
-### `_camera_orientation`: camera state after a drag
+### `camera_orientation()`: camera state after a drag
 
-Dragging to rotate, scrolling to zoom, and right-click-dragging to pan all update `_camera_orientation` -- a
-flattened 4x4 matrix -- after NGL's own ~100 ms debounce. It's private API (and nglview's docs call camera
-control "unstable"), but it's been stable across versions and is what nglview itself uses to sync cameras
-between multiple linked views. Reach for it if you want to save/restore a view, or log what orientation a user
-settled on.
+Dragging to rotate, scrolling to zoom, and right-click-dragging to pan all update the camera's flattened 4x4
+orientation matrix, after NGL's own ~100 ms debounce, and `structure.camera_orientation()` reads it
+reactively. The accessor is opt-in -- pass `listen_to=["camera_orientation"]` to `@render_nglview` -- because
+nglview streams the matrix to Python while the camera moves, so shinywidgets stops the browser syncing the
+`_camera_orientation` trait unless the accessor is enabled (`shinywidgets.config(native_events=True)` opens
+the wire app-wide, e.g. for direct `.widget._camera_orientation` reads). The trait is private API upstream
+(and nglview's docs call camera control "unstable"), but it's been stable across versions and is what nglview
+itself uses to sync cameras between multiple linked views. Reach for it if you want to save/restore a view,
+or log what orientation a user settled on.
 
 ```{.python file="examples/08_camera_orientation.py"}
 import nglview
@@ -372,7 +376,7 @@ ui.page_opts(fillable=True)
 with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
 
-        @render_nglview
+        @render_nglview(listen_to=["camera_orientation"])
         def structure():
             view = nglview.show_file(nglview.datafiles.PDB)
             view.center()
@@ -384,8 +388,10 @@ with ui.layout_columns(col_widths=[8, 4]):
         @render.code
         def orientation():
             # A 4x4 matrix (16 floats), updated ~100ms after the user stops
-            # dragging/scrolling/panning the view
-            matrix = structure.read("_camera_orientation")
+            # dragging/scrolling/panning the view (None until the first move)
+            matrix = structure.camera_orientation()
+            if matrix is None:
+                return "Drag the view to rotate the camera."
             return "\n".join(
                 " ".join(f"{v: .2f}" for v in matrix[i : i + 4])
                 for i in range(0, len(matrix), 4)
@@ -404,7 +410,8 @@ trait invalidates your reactive context immediately, as many times as the browse
 `reactive_read()` under the hood). In practice this rarely matters
 for NGLView: `picked` only changes on discrete clicks (twice per click, as noted above, not a stream); `frame`
 changes once per slider step or trajectory tick; and the one truly continuous interaction, camera dragging,
-already arrives pre-throttled from NGL's own JS at roughly 10 updates/second, not on every mouse-move event. If
+already arrives pre-throttled from NGL's own JS at roughly 10 updates/second, which the
+`camera_orientation()` accessor then debounces (250 ms) by default. If
 you still want to throttle further (e.g. to avoid redrawing an expensive downstream plot on every camera
 update), wrap the read in your own `@reactive.calc` and poll it, or debounce the *consuming* output rather than
 the trait itself.
