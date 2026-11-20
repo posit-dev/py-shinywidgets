@@ -85,6 +85,25 @@ export function ack_comm(comm_id: string, msg_id: string): void {
   comms.get(comm_id)?.ack(msg_id);
 }
 
+// Python's request (render_widget_base._render()) to stop syncing some of a
+// widget's traits from the browser
+export interface MuteRequest {
+  shinywidgets: "mute";
+  traits: string[];
+}
+
+export function isMuteRequest(content: unknown): content is MuteRequest {
+  return (
+    !!content &&
+    (content as any).shinywidgets === "mute" &&
+    Array.isArray((content as any).traits)
+  );
+}
+
+export function mute_comm(comm_id: string, traits: string[]): void {
+  comms.get(comm_id)?.setMutedTraits(traits);
+}
+
 // For comms Python closed, where the model closes without calling close().
 export function dispose_comm(comm_id: string): void {
   comms.get(comm_id)?.dispose();
@@ -103,6 +122,9 @@ export class ShinyComm {
   private closed = false;
   // msg_id -> the model's status callback, for messages awaiting a server ack.
   private pending = new Map<string, (msg: any) => void>();
+  // Traits whose browser-side changes aren't synced to Python (see
+  // render_widget_base._muted_traits())
+  private muted = new Set<string>();
   constructor(model_id: string) {
     this.comm_id = model_id;
     comms.set(model_id, this);
@@ -124,9 +146,20 @@ export class ShinyComm {
     metadata?: any,
     buffers?: ArrayBuffer[] | ArrayBufferView[]
   ): string {
+    const onIdle = callbacks?.iopub?.status;
+    if (this.muted.size > 0 && data?.method === "update") {
+      const kept = withoutTraits(data, buffers, this.muted);
+      if (!kept) {
+        // Nothing left to send, so nothing will be acked: report idle
+        // ourselves to keep ipywidgets' one-message-in-flight throttle moving
+        if (onIdle) setTimeout(() => onIdle(IDLE), 0);
+        return `${this.comm_id}-${++this.msgCount}`;
+      }
+      [data, buffers] = kept;
+    }
+
     const [msg_id, msg_txt] = this._message("comm_msg", {data: data}, metadata, buffers);
 
-    const onIdle = callbacks?.iopub?.status;
     if (!messageWithinLimit(msg_txt, this.comm_id)) {
       // A dropped message is never acked, so report idle ourselves to keep
       // ipywidgets' one-message-in-flight throttle moving
@@ -205,6 +238,11 @@ export class ShinyComm {
     return msg_id;
   }
 
+  // Replaces the muted set: each render states the whole of it
+  setMutedTraits(traits: string[]): void {
+    this.muted = new Set(traits);
+  }
+
   // Not ack(): reporting idle would make the closing model flush its buffered
   // change through this closed comm.
   dispose(): void {
@@ -254,4 +292,34 @@ export class ShinyComm {
     };
     return [msg_id, JSON.stringify(msg)];
   }
+}
+
+type Buffers = ArrayBuffer[] | ArrayBufferView[] | undefined;
+
+// An ipywidgets "update" message without the given traits, or null if it
+// sets nothing else. A trait's binary values travel apart from the state:
+// buffer_paths[i] is the path into the state (starting with the trait name)
+// where buffers[i] belongs. A top-level binary trait appears ONLY there
+// (ipywidgets' remove_buffers() deletes it from the state object), so both
+// early returns must consider buffer paths too -- otherwise a muted buffer
+// goes out unchanged, or an unmuted binary update is discarded with the
+// muted JSON traits.
+function withoutTraits(data: any, buffers: Buffers, traits: Set<string>): [any, Buffers] | null {
+  const state = data.state ?? {};
+  const keptKeys = Object.keys(state).filter((k) => !traits.has(k));
+  const paths: unknown[][] = data.buffer_paths ?? [];
+  const keptBuffers = paths.map((path) => !traits.has(path[0] as string));
+  if (keptKeys.length === Object.keys(state).length && keptBuffers.every(Boolean)) {
+    return [data, buffers];
+  }
+  if (keptKeys.length === 0 && !keptBuffers.some(Boolean)) return null;
+
+  return [
+    {
+      ...data,
+      state: Object.fromEntries(keptKeys.map((k) => [k, state[k]])),
+      buffer_paths: paths.filter((_, i) => keptBuffers[i]),
+    },
+    (buffers as ArrayBuffer[] | undefined)?.filter((_, i) => keptBuffers[i]),
+  ];
 }
