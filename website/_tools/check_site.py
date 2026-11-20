@@ -446,6 +446,20 @@ def motion(page: Page, base: str) -> list[str]:
     page.wait_for_timeout(8000)
     if page.locator("#picker li.on").inner_text() == first:
         problems.append("the stage doesn't auto-advance once it's in view")
+
+    # Hovering pauses the stage where it is, and leaving resumes from there.
+    bar_js = "parseFloat(getComputedStyle(document.querySelector('#picker li.on .bar i')).height)"
+    page.wait_for_timeout(2000)
+    page.locator("#screen").hover()
+    hovered = (page.evaluate(bar_js), page.locator("#screen").get_attribute("class"))
+    page.wait_for_timeout(1500)
+    held = (page.evaluate(bar_js), page.locator("#screen").get_attribute("class"))
+    if held != hovered:
+        problems.append(f"hovering the stage doesn't hold it still: {hovered} -> {held}")
+    page.mouse.move(0, 0)
+    page.wait_for_timeout(300)
+    if not hovered[0] < page.evaluate(bar_js) < hovered[0] + 20:
+        problems.append("leaving the stage doesn't resume from where it paused")
     return problems
 
 

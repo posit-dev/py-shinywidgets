@@ -83,12 +83,27 @@
 
   // The stage: every DUR ms, play the current app's gesture (caption, crossfade from
   // before to after), then advance. It waits until the screen is in view, and coming
-  // back into view restarts the current app. Hovering pauses it; reduced motion turns
-  // it off and shows each app's "after" state directly.
+  // back into view restarts the current app. Hovering pauses it mid-gesture and leaving
+  // resumes it. An app picked while paused, or under reduced motion, shows its "after"
+  // state directly ("settled").
   const DUR = 7000;
+  const STEPS = [
+    [1600, () => screen.classList.add("gesture")],
+    [2600, () => screen.classList.add("after")],
+    [5600, () => screen.classList.remove("gesture")],
+    [DUR, () => go((cur + 1) % SHOWCASES.length)],
+  ];
   const picker = $("picker"), screen = $("screen"), stage = $("stage");
-  let cur = 0, timers = [], paused = false, visible = false;
+  let cur = 0, timers = [], paused = false, visible = false, started = 0;
+  // While paused mid-gesture: how far into it (ms), and the CSS animations/transitions
+  // frozen with it.
+  let held = null, frozen = [];
   const clear = () => { timers.forEach(clearTimeout); timers = []; };
+  function play(from) {
+    clear();
+    started = performance.now() - from;
+    for (const [t, f] of STEPS) if (t > from) timers.push(setTimeout(f, t - from));
+  }
   SHOWCASES.forEach((s, i) => {
     const li = document.createElement("li");
     li.innerHTML = `<span class="bar"><i></i></span><button type="button"><h3>${s.title}<small>${s.widgets[0]}</small></h3></button><p>${s.blurb}</p>`;
@@ -117,7 +132,13 @@
     $("wchips").innerHTML = s.widgets.map((w) => `<span>${w}</span>`).join("");
     $("meta").textContent = `${s.lines} lines · app.py`;
     $("view-src").href = s.href;
-    if (calm || paused) {
+    // A frozen transition whose target this change keeps would otherwise stay frozen.
+    frozen.forEach((a) => a.play());
+    frozen = [];
+    held = null;
+    const settled = calm || paused;
+    stage.classList.toggle("settled", settled);
+    if (settled) {
       screen.className = "screen after gesture";
       return;
     }
@@ -125,34 +146,44 @@
     if (!visible) return;
     void screen.offsetWidth;
     screen.classList.add("zoom");
-    timers.push(setTimeout(() => screen.classList.add("gesture"), 1600));
-    timers.push(setTimeout(() => screen.classList.add("after"), 2600));
-    timers.push(setTimeout(() => screen.classList.remove("gesture"), 5600));
-    timers.push(setTimeout(() => go((cur + 1) % SHOWCASES.length), DUR));
+    play(0);
   }
   // Pointer over the stage, or keyboard focus inside it, pauses autoplay.
   const pause = () => {
     paused = true;
-    clear();
     stage.classList.add("paused");
+    if (!timers.length) return;
+    held = performance.now() - started;
+    clear();
+    // Finished animations are left alone: play() would rewind them.
+    frozen = [
+      ...screen.getAnimations({ subtree: true }),
+      ...picker.querySelector("li.on .bar i").getAnimations(),
+    ].filter((a) => a.playState === "running");
+    frozen.forEach((a) => a.pause());
   };
   const resume = () => {
     if (stage.matches(":hover") || stage.contains(document.activeElement)) return;
     paused = false;
     stage.classList.remove("paused");
-    go(cur);
+    if (held === null) return go(cur);
+    frozen.forEach((a) => a.play());
+    play(held);
+    held = null;
   };
   stage.addEventListener("mouseenter", pause);
   stage.addEventListener("mouseleave", resume);
   stage.addEventListener("focusin", pause);
   stage.addEventListener("focusout", () => setTimeout(resume));
-  if (calm) stage.classList.add("calm");
   stage.classList.add("offscreen");
   go(0);
   new IntersectionObserver(([e]) => {
     visible = e.isIntersecting;
     stage.classList.toggle("offscreen", !visible);
     if (visible) go(cur);
-    else clear();
+    else {
+      clear();
+      held = null;
+    }
   }, { threshold: 0.5 }).observe(screen);
 })();
