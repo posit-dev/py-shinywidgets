@@ -1,10 +1,10 @@
 # website/_tools
 
-Scripts that test the website, plus `sync_landing_counts.py`, which `make docs` runs before rendering.
+Scripts that test the website, plus `check_landing_cards.py`, which `make docs` runs before rendering.
 
-## sync_landing_counts.py
-`uv run --no-sync python website/_tools/sync_landing_counts.py`
-Rewrites the landing page's category-card counts (`<span class="n">` in `index.qmd`) from the Widgets
+## check_landing_cards.py
+`uv run --no-sync python website/_tools/check_landing_cards.py`
+Checks the landing page's category cards (`index.qmd`) against the Widgets
 sidebar groups in `_quarto.yml`, the source of truth for which guides belong to which category. Fails if a
 sidebar group has no card or a card names no group. Run automatically by `make docs`. `check_docs.py` and `smoke.py` stand in for unit tests on the page
 content; `check_site.py` checks the rendered site in a browser (`make docs-check`).

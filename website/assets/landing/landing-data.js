@@ -36,6 +36,7 @@ def selected_countries():
   { id: "altair", label: "altair", src: "widgets/altair/examples/04_interval_selection.py", before: true,
     gesture: "drag a brush", code: `import altair as alt
 from altair.datasets import data
+from shiny.express import render
 from shinywidgets import render_altair
 
 @render_altair
@@ -54,6 +55,7 @@ def brushed():
     return ⟦scatter.selected_rows("brush")⟧` },
   { id: "mosaic", label: "mosaic", src: "widgets/mosaic/examples/10_linked_stats_table.py", before: true,
     gesture: "brush a region", code: `from mosaic_widget import MosaicWidget
+from shiny.express import render
 from shinywidgets import render_mosaic_widget
 
 spec = {
@@ -78,6 +80,7 @@ def by_species():
     ).df()` },
   { id: "bokeh", label: "bokeh", src: "widgets/bokeh/examples/15_lasso_to_histogram.py", before: true,
     gesture: "box-select a region", code: `from bokeh.plotting import figure
+from shiny.express import render
 from shinywidgets import render_bokeh, render_matplotlib
 
 src = ColumnDataSource({"x": x, "y": y})
@@ -111,6 +114,8 @@ def crossfilter():
     return links(scatter + bill_hist + size_hist)` },
   { id: "matplotlib", label: "matplotlib", src: "widgets/matplotlib/examples/06_accessor_clicked.py", before: true,
     gesture: "click the line", code: `from matplotlib.figure import Figure
+from shiny import req
+from shiny.express import render
 from shinywidgets import render_matplotlib
 
 @render_matplotlib
@@ -126,6 +131,7 @@ def reading():
     return f"x={ev.xdata:.2f}  y={ev.ydata:.2f}"` },
   { id: "itables", label: "itables", src: "widgets/itables/examples/08_selected_rows_accessor.py", before: true,
     gesture: "click some rows", code: `from itables.widget import ITable
+from shiny.express import render
 from shinywidgets import render_itables
 
 @render_itables
@@ -137,6 +143,7 @@ def selected():
     return countries.iloc[⟦table.selected_rows()⟧]` },
   { id: "reactable", label: "reactable", src: "widgets/reactable/examples/15_search_to_chart.py", before: true,
     gesture: "type \"chevrolet\" in the search box", code: `from reactable import Reactable
+from shiny.express import render
 from shinywidgets import render_reactable
 
 @render_reactable
@@ -153,6 +160,7 @@ def chart():
     return counts.plot.barh()` },
   { id: "lonboard", label: "lonboard", src: "widgets/lonboard/examples/07_accessors.py", before: true,
     gesture: "click a city", code: `from lonboard import Map, ScatterplotLayer
+from shiny.express import render
 from shinywidgets import render_lonboard
 
 @render_lonboard
@@ -185,7 +193,8 @@ def extrusion():
     ))
     return m` },
   { id: "any-widget", label: "any widget", src: "guide/any-widget/examples/03_anywidget_trait_sync.py", before: false,
-    gesture: null, code: `from shinywidgets import render_widget
+    gesture: null, code: `from shiny.express import render
+from shinywidgets import render_widget
 from sparkline_widget import Sparkline  # your anywidget
 
 @render_widget
