@@ -70,7 +70,10 @@ the user's interaction yet -- that's the next step.
 recent lasso, matched up via the `custom_data` set in step 1. A second output, `@render.data_frame`, calls it,
 and because it does, Shiny reruns it every time the selection changes. The accessor returns an empty data frame
 until the user selects something, so `req(not rows.empty)` holds the table back until there's a real selection
-to show. The `with ui.layout_columns()` and `with ui.card()` blocks arrange the page: outputs inside a `with`
+to show. The `listen_to=["selected"]` on the decorator opts the app into the selection stream those rows come
+from -- a selection payload grows with the number of points caught, so plotly's selection accessors are
+declared, not automatic (the plotly guide's [Reacting to user
+interaction](../../widgets/plotly/index.md#reacting-to-user-interaction) has the whole story). The `with ui.layout_columns()` and `with ui.card()` blocks arrange the page: outputs inside a `with`
 block go inside that column or card.
 
 ```{.python file="examples/02_react.py"}

@@ -513,19 +513,22 @@ architectural choice jscatter and lonboard make above. Its DuckDB cross-filter s
 
 ### Does attaching every accessor at render cost anything?
 
-Accessors used to attach lazily, on first read; since the accessor redesign (#437), every accessor on a
-renderer attaches the moment its output renders, whether or not the app ever reads it -- plotly's output alone
-now carries ten of them (`clicked`, `selected`, `selecting`, `brushed`, `brushing`, `relayout`, `hover`,
-`double_clicked`, `legend_clicked`, `visible_traces`), each registering its own browser-side event bridge, none
-of which `examples/04_bigdata_plotly.py` above reads. That raises an obvious question for this section's
-numbers: is the 10K/100K/1M plotly timing above now paying for ten attached accessors it never asked for?
+Accessors used to attach lazily, on first read; since the accessor redesign (#437), accessors on a
+renderer attach the moment their output renders, whether or not the app ever reads them. One later
+refinement narrows that: plotly's `selected`/`selecting`/`hover` are now opt-in (`listen_to=[...]` on the
+decorator), because their payloads grow with the selection or stream continuously, so they attach only when
+declared. plotly's output carries ten accessors altogether (`clicked`, `selected`, `selecting`, `brushed`,
+`brushing`, `relayout`, `hover`, `double_clicked`, `legend_clicked`, `visible_traces`), each registering its
+own browser-side event bridge, none of which `examples/04_bigdata_plotly.py` above reads or declares. That
+raises an obvious question for this section's
+numbers: is the 10K/100K/1M plotly timing above paying for attached accessors it never asked for?
 Re-measuring the 10K case against the original run (same methodology: Chromium waits for
 `widgetManager._liveViews` to report a stable, mounted view) found no regression -- three fresh runs landed at
 2.35-2.42s, at or below the original 3.6s, well within this shared machine's normal run-to-run noise (Section 1
 already documented how noisy timing is here). Attaching an accessor registers a message handler; it doesn't
 move data, so there's no reason to expect it to scale with point count, and the measurement doesn't show it
 scaling with accessor count either. If a future renderer accumulates a much larger accessor set, this is worth
-re-checking, but for plotly's current ten, eager attachment is not a measurable tax.
+re-checking, but for plotly's current set, eager attachment is not a measurable tax.
 
 ### What this means for picking a renderer
 

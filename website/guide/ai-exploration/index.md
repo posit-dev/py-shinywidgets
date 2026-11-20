@@ -28,7 +28,9 @@ selection becoming chat context, a registered tool that moves a widget, and all 
 combined into one app. Each example is small and independently verified; the combined
 one is the shape a real exploration tool takes. Every example below leans on **read on
 demand**: an accessor attaches the moment its output renders and records the user's
-gesture whether or not anything has read it yet, so a `chat.on_user_submit` handler or
+gesture whether or not anything has read it yet (a few, like plotly's selection
+accessors, must first be switched on with the renderer's `listen_to` -- a declaration,
+not a read), so a `chat.on_user_submit` handler or
 a registered tool can read it for the first time long after the gesture happened, with
 nothing lost in between. Read [Reacting to widgets](../reacting-to-widgets/index.md)
 first -- in particular ["Read on
@@ -175,9 +177,10 @@ builds the augmented prompt, and streams the response itself:
 #
 # Nothing here reads plot.selected_rows() until chat.on_user_submit runs,
 # which only happens after the user's first message -- the textbook "read on
-# demand" case. That's safe because the accessor attaches the moment `plot`
-# renders and records the lasso whether or not anything has read it yet; see
-# ../../reacting-to-widgets/article.md#read-on-demand.
+# demand" case. That's safe because `listen_to=["selected"]` opts the app
+# into the selection stream once, up front: from the moment `plot` renders,
+# the accessor records every lasso whether or not anything has read it yet.
+# See ../../reacting-to-widgets/article.md#read-on-demand.
 import chatlas
 import plotly.express as px
 from shiny.express import ui
@@ -244,9 +247,10 @@ to the model inventing statistics, because the summary **is** the only thing abo
 selection the model ever saw.
 
 Nothing in this app reads `plot.selected_rows()` before `chat.on_user_submit` does, and
-that is the point: the accessor started recording the lasso the moment `plot` rendered,
-long before the user typed a word, so the gesture is still there when the handler
-finally reads it. Three independent runs of the lasso-then-ask sequence above all
+that is the point: `listen_to=["selected"]` opts the app into the selection stream once,
+on the decorator, and from then on the accessor records every lasso from the moment
+`plot` renders -- long before the user typed a word -- so the gesture is still there
+when the handler finally reads it. Three independent runs of the lasso-then-ask sequence above all
 produced a correctly-populated summary.
 
 ## 3. A registered tool that moves a widget

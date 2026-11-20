@@ -391,7 +391,8 @@ A detail card doesn't have to wait for a click. `hover()` reports the same colum
 `clicked()`, but fires continuously as the pointer moves over points and clears back to
 `None` the moment it leaves them (debounced 250ms by default, so a reader updates once
 the pointer settles rather than on every pixel) -- a frictionless upgrade over `clicked()`
-for a card whose only job is to preview whatever's under the cursor:
+for a card whose only job is to preview whatever's under the cursor. Hover streams, so
+it's one of plotly's opt-in accessors: `listen_to=["hover"]` on the decorator enables it:
 
 [`examples/17_plotly_hover_to_detail.py`](examples/17_plotly_hover_to_detail.py)
 (reused verbatim from the [plotly guide](../../widgets/plotly/index.md#hover)):
@@ -1400,7 +1401,9 @@ accessors of its own). Neither figure is rebuilt, so the sky map's zoom survives
 ### The anti-pattern: lasso raw points at scale
 
 [`examples/19_scattergl_lasso_raw_points.py`](examples/19_scattergl_lasso_raw_points.py)
-(1,000,000 of the same 5,000,000 rows, plotted individually):
+(1,000,000 of the same 5,000,000 rows, plotted individually). This is exactly the traffic
+plotly's opt-in gate exists for: `listen_to=["selecting"]` is what opts the app into a
+stream whose payload grows with the selection:
 
 ```{.python file="examples/19_scattergl_lasso_raw_points.py"}
 # The anti-pattern: lassoing raw points at scale. Same Gaia data as 18, but
