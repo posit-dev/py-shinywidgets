@@ -24,7 +24,7 @@ metadata-files:
 
 website:
   title: shinywidgets
-  site-url: https://posit-dev.github.io/py-shinywidgets/
+  site-url: https://shinywidgets.org/
   page-navigation: true
   # Draft pages (vitessce, until render_vitessce ships) are not rendered at all.
   draft-mode: gone

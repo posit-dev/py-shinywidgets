@@ -22,7 +22,7 @@ Dozens of widget libraries have first-class support — charts (plotly, altair,
 bokeh, …), maps (lonboard, ipyleaflet, …), tables (itables, perspective, …),
 3D, networks, and scientific viewers — and any other ipywidget works with the
 generic `@render_widget`. The
-[website](https://posit-dev.github.io/py-shinywidgets/) has a guide and
+[website](https://shinywidgets.org/) has a guide and
 runnable example for each one, plus a gallery of complete apps.
 
 ## Example
@@ -61,16 +61,16 @@ pip install shinywidgets
 The core doesn't include any widget library. Each library has a matching
 *extra* that installs everything its `@render_*` decorator needs, e.g.
 `pip install 'shinywidgets[plotly]'`. Every widget's
-[guide](https://posit-dev.github.io/py-shinywidgets/) shows its install
+[guide](https://shinywidgets.org/) shows its install
 command near the top.
 
 ## Learn more
 
-- [Why shinywidgets?](https://posit-dev.github.io/py-shinywidgets/guide/why/) —
+- [Why shinywidgets?](https://shinywidgets.org/guide/why/) —
   the motivation, and how it compares to notebooks, Streamlit, and Dash.
-- [Your first widget app](https://posit-dev.github.io/py-shinywidgets/guide/first-app/) —
+- [Your first widget app](https://shinywidgets.org/guide/first-app/) —
   a step-by-step walkthrough.
-- [Gallery](https://posit-dev.github.io/py-shinywidgets/gallery/) — complete,
+- [Gallery](https://shinywidgets.org/gallery/) — complete,
   open-source apps.
 
 ## Development

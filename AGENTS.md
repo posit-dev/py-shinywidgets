@@ -31,7 +31,7 @@ cd js && yarn install && yarn watch
 - **Watch JS**: `cd js && yarn watch`
 - **Build the website**: `make docs` (quartodoc + Quarto into `website/_site`; fails on unresolved links; log in `website/_render.log`). Needs `uv sync --group docs` once.
 - **Preview the website**: `make docs-preview` (serves `website/_site` at http://localhost:8780/)
-- **Check the website**: `make docs-check` (browser checks against the built site, served under `/py-shinywidgets/`)
+- **Check the website**: `make docs-check` (browser checks against the built site, served at the server root like production)
 
 ## Website
 

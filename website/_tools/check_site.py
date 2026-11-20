@@ -1,7 +1,7 @@
 """Browser checks for the rendered website (the site's test suite).
 
-Serves ``website/_site`` under ``/py-shinywidgets/`` (the GitHub Pages subpath), so a
-root-absolute URL anywhere in the site shows up as a 404. Each check gets a fresh page and
+Serves ``website/_site`` at the server root (matching production, which serves the domain
+root). Each check gets a fresh page and
 returns a list of problems; every check also fails on any HTTP status >= 400, failed
 same-origin request, or uncaught page error it sees.
 
@@ -26,7 +26,6 @@ from playwright.sync_api import Browser, Locator, Page, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 SITE = Path(__file__).resolve().parents[1] / "_site"
-PREFIX = "/py-shinywidgets"
 SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
 CheckFn = Callable[[Page, str], list[str]]
@@ -646,16 +645,7 @@ class Server(http.server.ThreadingHTTPServer):
     daemon_threads = True
 
 
-class PrefixHandler(http.server.SimpleHTTPRequestHandler):
-    """Serves the site only under PREFIX, like a GitHub Pages project site."""
-
-    def send_head(self):  # noqa: ANN201
-        if not (self.path == PREFIX or self.path.startswith(PREFIX + "/")):
-            self.send_error(404, "outside the site prefix")
-            return None
-        self.path = self.path[len(PREFIX) :] or "/"
-        return super().send_head()
-
+class QuietHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         pass
 
@@ -664,10 +654,10 @@ def serve(root: Path) -> tuple[Server, str]:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
-    handler = functools.partial(PrefixHandler, directory=str(root))
+    handler = functools.partial(QuietHandler, directory=str(root))
     server = Server(("127.0.0.1", port), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    return server, f"http://127.0.0.1:{port}{PREFIX}/"
+    return server, f"http://127.0.0.1:{port}/"
 
 
 if __name__ == "__main__":
