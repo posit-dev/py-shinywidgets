@@ -117,6 +117,7 @@ GALLERY_CROPS: dict[str, Box] = {
     "showcases/brain-atlas-explorer": (0.25, 0.10, 0.97, 0.80),
     "showcases/chemical-explorer": (0.22, 0.10, 0.92, 0.78),
     "showcases/digits-atlas": (0.00, 0.10, 0.92, 0.99),
+    "showcases/issue-atlas": (0.34, 0.06, 0.99, 0.99),
     "showcases/les-miserables-network": (0.22, 0.18, 0.85, 0.83),
     "showcases/map-chart-chat": (0.00, 0.08, 0.88, 0.93),
     "showcases/orrery": (0.00, 0.15, 0.64, 0.83),
