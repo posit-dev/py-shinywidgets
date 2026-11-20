@@ -66,7 +66,8 @@ def config(**kwargs: Any) -> Dict[str, Any]:
       app.py); the env var remains the deployment-time alternative.
     - ``cdn_only`` (bool, default ``False``, env var ``SHINYWIDGETS_CDN_ONLY``):
       always load widget JavaScript from the CDN, never from a local copy.
-      Read per render, so it only needs to be set before the first render.
+      Like ``cdn``, ``output_widget()`` bakes it into the UI's data
+      attributes, so it must be set before the UI is built.
     - ``extension_warning`` (bool, default ``False``, env var
       ``SHINYWIDGETS_EXTENSION_WARNING``): warn when no local path to a
       widget's extension is found (the widget still renders via the CDN
