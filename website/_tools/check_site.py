@@ -460,6 +460,12 @@ def motion(page: Page, base: str) -> list[str]:
     page.wait_for_timeout(300)
     if not hovered[0] < page.evaluate(bar_js) < hovered[0] + 20:
         problems.append("leaving the stage doesn't resume from where it paused")
+    page.wait_for_timeout(7000)
+    idle = page.evaluate(
+        "[...document.querySelectorAll('#picker li:not(.on) .bar i')].map(b => parseFloat(getComputedStyle(b).height))"
+    )
+    if any(idle):
+        problems.append(f"after a pause, inactive showcases' bars fill: {idle}")
     return problems
 
 

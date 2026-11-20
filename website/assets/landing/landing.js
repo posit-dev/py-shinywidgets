@@ -132,8 +132,9 @@
     $("wchips").innerHTML = s.widgets.map((w) => `<span>${w}</span>`).join("");
     $("meta").textContent = `${s.lines} lines · app.py`;
     $("view-src").href = s.href;
-    // A frozen transition whose target this change keeps would otherwise stay frozen.
-    frozen.forEach((a) => a.play());
+    // A paused animation outlives the CSS that started it (it would stay frozen, or
+    // keep running on the inactive bar once played), so drop it.
+    frozen.forEach((a) => a.cancel());
     frozen = [];
     held = null;
     const settled = calm || paused;
@@ -168,6 +169,7 @@
     stage.classList.remove("paused");
     if (held === null) return go(cur);
     frozen.forEach((a) => a.play());
+    frozen = [];
     play(held);
     held = null;
   };
