@@ -269,8 +269,8 @@ def gallery(page: Page, base: str) -> list[str]:
     problems: list[str] = []
     page.goto(base + "gallery/index.html")
     items = page.locator(".quarto-listing .quarto-grid-item")
-    if items.count() != 30:
-        problems.append(f"{items.count()} gallery items, expected 30")
+    if items.count() != 33:
+        problems.append(f"{items.count()} gallery items, expected 33")
     # Cards show a crop of each app's widgets (img/card.webp), not the whole-app screenshot.
     srcs = page.evaluate(
         "[...document.querySelectorAll('.quarto-grid-item img.thumbnail-image')].map(i => i.getAttribute('src'))"
@@ -373,12 +373,12 @@ def landing(page: Page, base: str) -> list[str]:
             problems.append(f"tab {LANDING_TABS[i]}: images failed to load: {broken}")
 
     picker = page.locator("#picker li")
-    if picker.count() != 7:
-        problems.append(f"{picker.count()} showcases in the stage, expected 7")
+    if picker.count() != 4:
+        problems.append(f"{picker.count()} showcases in the stage, expected 4")
     else:
-        picker.nth(5).click()
-        if "Terrain explorer" not in page.locator("#picker li.on").inner_text():
-            problems.append("clicking the 6th showcase doesn't select Terrain explorer")
+        picker.nth(1).click()
+        if "Every star" not in page.locator("#picker li.on").inner_text():
+            problems.append("clicking the 2nd showcase doesn't select Every star")
         page.wait_for_load_state("networkidle")
         if broken := page.evaluate(IMAGES_LOADED_JS):
             problems.append(f"stage images failed to load: {broken}")
@@ -391,9 +391,9 @@ def landing(page: Page, base: str) -> list[str]:
     else:
         item.focus()
         page.keyboard.press("Enter")
-        if "World development" not in page.locator("#picker li.on").inner_text():
+        if "issue atlas" not in page.locator("#picker li.on").inner_text():
             problems.append(
-                "Enter on the 3rd stage item doesn't select World development"
+                "Enter on the 3rd stage item doesn't select the issue atlas"
             )
         if "paused" not in (page.locator("#stage").get_attribute("class") or ""):
             problems.append("keyboard focus in the stage doesn't pause autoplay")
