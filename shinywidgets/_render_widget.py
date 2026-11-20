@@ -6237,7 +6237,8 @@ class render_mols2grid(render_widget_base[Mols2GridValueT, Widget]):
         The rate-limit window in seconds (default 0.25). ``0`` disables rate
         limiting.
     listen_to
-        Names of opt-in accessors to enable (e.g. ``listen_to=["clicked"]``).
+        Names of opt-in accessors to enable (e.g. ``listen_to=["clicked"]``,
+        which also needs ``clicks=True``).
         Accessors whose payloads can grow without bound or stream
         continuously are off unless declared; reading one that wasn't
         declared raises an error naming it. Additive to the always-on
