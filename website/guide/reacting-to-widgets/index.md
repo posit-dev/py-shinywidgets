@@ -42,6 +42,14 @@ Every accessor follows one behavior, regardless of which widget or which gesture
 - and it **keeps or re-seeds that value across a re-render**, depending on what kind of thing it reports
   (the next two sections cover both halves of that in detail).
 
+One qualifier on "every accessor": a few are **opt-in**, because their payloads can grow without bound or
+stream continuously -- plotly's `selected()`/`selecting()`/`hover()`, kepler.gl's `config()`, nglview's
+`camera_orientation()`. shinywidgets keeps that traffic off unless the renderer declares it --
+`@render_plotly(listen_to=["selected"])` -- and reading an opt-in accessor that wasn't declared raises an
+error pointing at `listen_to`. The declaration is per renderer, not per read: once it's on the decorator,
+the accessor behaves exactly like every other above -- attached from the render, recording whether or not
+anything reads it. Each per-widget guide flags which of its accessors are opt-in.
+
 `examples/01_mental_model.py` shows the first consequence of this directly: an accessor reads exactly like a
 Shiny input, side by side with the lower-level primitive underneath it, `reactive_read()`.
 
@@ -325,24 +333,29 @@ letting it blow up the output.
 
 ## Read on demand
 
-Because every accessor is live from the moment its output renders -- not from the moment something first
-reads it -- a gesture made before any code reads the accessor is never lost. This is the headline new
-capability: you can safely read an accessor **on demand**, from code that only runs well after the user
-interacted -- a button handler, a `@reactive.event`-gated output, a download handler, a chat message handler,
-or a tool an LLM decides to call. None of these need to read the accessor earlier "just in case"; there's no
-earlier read to arrange.
+Because an accessor records from the moment its output renders -- not from the moment something first
+reads it -- a gesture made before any code reads the accessor is never lost. For an opt-in accessor like
+plotly's selection stream, the one thing that has to happen *up front* is the declaration:
+`listen_to=["selected"]` on the renderer is what opts the app into paying for that stream at all. But the
+declaration is not a read -- nothing has to *read* the accessor early. That is the headline capability: you
+can safely read an accessor **on demand**, from code that only runs well after the user interacted -- a
+button handler, a `@reactive.event`-gated output, a download handler, a chat message handler, or a tool an
+LLM decides to call. None of these need to read the accessor earlier "just in case"; there's no earlier
+read to arrange.
 
-`examples/09_read_on_demand.py` makes the "on demand" part concrete: nothing in the app reads
-`plot.selected_rows()` until the user clicks a button, and the lasso or box selection made *before* that
-click is still there when it finally runs.
+`examples/09_read_on_demand.py` makes the "on demand" part concrete: the app opts into the selection stream
+once, at the decorator, and nothing in it reads `plot.selected_rows()` until the user clicks a button --
+and the lasso or box selection made *before* that click is still there when it finally runs.
 
 ```{.python file="examples/09_read_on_demand.py"}
-# Read on demand: nothing in this app reads `plot.selected()` /
+# Read on demand: `listen_to=["selected"]` opts this app into the selection
+# stream (the payload grows with the selection, so plotly's selection
+# accessors are off unless declared), but nothing READS
 # `plot.selected_rows()` until the button's gated reader runs -- not a
 # warm-up effect, not a visible output, nothing. Box- or lasso-select points
 # FIRST, then click "Show selection": the selection you already made is
-# there, because the accessor attached and started recording the moment the
-# plot rendered, not on its first read. This is what makes a selection safe
+# there, because once declared the accessor records from the moment the
+# plot renders, not from its first read. This is what makes a selection safe
 # to read from a button handler, a `@reactive.event`-gated output, a
 # download handler, or (see the ai-exploration article) a chat message
 # handler or an LLM tool call -- any reader that only runs after the user
@@ -608,7 +621,7 @@ with ui.layout_columns():
     with ui.card():
         ui.card_header("plotly selecting(rate_delay=0): every raw update")
 
-        @render_plotly(rate_delay=0, listen_to=["selecting"])
+        @render_plotly(listen_to=["selecting"], rate_delay=0)
         def plot_fast():
             return px.scatter(df, x="sepal_width", y="sepal_length").update_layout(
                 dragmode="select"

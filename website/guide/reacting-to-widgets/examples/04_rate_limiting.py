@@ -66,7 +66,7 @@ with ui.layout_columns():
     with ui.card():
         ui.card_header("plotly selecting(rate_delay=0): every raw update")
 
-        @render_plotly(rate_delay=0, listen_to=["selecting"])
+        @render_plotly(listen_to=["selecting"], rate_delay=0)
         def plot_fast():
             return px.scatter(df, x="sepal_width", y="sepal_length").update_layout(
                 dragmode="select"

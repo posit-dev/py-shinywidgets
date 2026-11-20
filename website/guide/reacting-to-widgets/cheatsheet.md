@@ -5,6 +5,10 @@ Generated from `shinywidgets/_accessors.py`, each renderer's `_accessor_specs` (
 `shinywidgets/_render_widget.py`. Every accessor attaches the
 moment its output renders and records interactions whether or not anything has read it yet -- there is no
 warm-up idiom and no "first read" gotcha (see ["The mental model"](index.md#the-mental-model-accessors-are-inputs-that-remember)).
+Accessors marked **(opt-in)** are the one exception to "every": their payloads can grow without bound or
+stream continuously, so they're off unless the renderer declares them (`listen_to=["selected"]` on the
+decorator) -- reading one undeclared raises an error pointing at `listen_to`. Once declared they behave
+exactly like the rest.
 
 Columns, straight from each `AccessorSpec` (not from memory):
 
@@ -18,7 +22,7 @@ Columns, straight from each `AccessorSpec` (not from memory):
   `rate_policy`/`rate_delay` kwargs are a no-op for it (see ["Rate limiting"](index.md#rate-limiting)).
 
 **Renderers with no accessors** (use `reactive_read()` on `.widget` instead): `render_widget`, `render_drawdata`,
-`render_ipysigma`, `render_geolibre`, `render_keplergl`, `render_ipycanvas`, `render_nglview`,
+`render_ipysigma`, `render_geolibre`, `render_ipycanvas`,
 `render_obsplot`, `render_holoviews`, `render_ipyfilechooser`, `render_pygwalker`, `render_vizarr`,
 `render_pyvista`, `render_vitessce`, and `render_pydeck` (deprecated; pydeck >= 0.9 has no widget to read
 from -- see `render_maplibre`). `render_panel` has one dynamic accessor, `param(name)` (below).
@@ -71,6 +75,12 @@ plotly, ...) raises `TypeError` pointing at `reactive_read()`.
 |---|---|---|---|---|
 | `selected()` | `numpy.ndarray[uint32]` | cancels until the browser's first report | re-seeded | none |
 | `selected_rows(df=None)` | the selected rows of `df` (default: the `Scatter`'s data frame), same type as `df` | empty frame (cancels when `selected()` does) | derived from `selected` | none |
+
+## render_keplergl
+
+| Accessor | Returns | Before any interaction | Across re-render | Default rate |
+|---|---|---|---|---|
+| `config()` (opt-in) | `dict` (the whole map config) | `{}` until the map loads | re-seeded | debounce 250ms |
 
 ## render_k3d
 
@@ -186,19 +196,21 @@ current one.
 | Accessor | Returns | Before any interaction | Across re-render | Default rate |
 |---|---|---|---|---|
 | `clicked()` | `Optional[pd.DataFrame]` | `None` | **kept** | none |
-| `selected()` | `Optional[pd.DataFrame]` | `None` | **kept** (the new plot's own empty selection replaces it once it reports -- see note) | none |
-| `selecting()` | `Optional[pd.DataFrame]` | `None` | **kept** | debounce 250ms |
+| `selected()` (opt-in) | `Optional[pd.DataFrame]` (slim: no `x`/`y`) | `None` | **kept** (the new plot's own empty selection replaces it once it reports -- see note) | none |
+| `selecting()` (opt-in) | `Optional[pd.DataFrame]` (slim: no `x`/`y`) | `None` | **kept** | debounce 250ms |
 | `brushed()` | `Optional[dict]` (`range` or `lassoPoints`) | `None` | **kept** (same note as `selected()`) | none |
 | `brushing()` | `Optional[dict]` | `None` | **kept** | debounce 250ms |
 | `relayout()` | `Optional[dict]` | `None` | **kept** (a delta payload; refers to the previous render's plot) | none |
-| `hover()` | `Optional[pd.DataFrame]` | `None` | **kept** | debounce 250ms |
+| `hover()` (opt-in) | `Optional[pd.DataFrame]` | `None` | **kept** | debounce 250ms |
 | `double_clicked()` | `Optional[bool]` | `None` | **kept** (pulse: re-fires readers on every subsequent double-click even though the value stays `True`) | none |
 | `legend_clicked()` | `Optional[pd.DataFrame]` | `None` | **kept** (pulse: re-fires on every click, even of the same item) | none |
 | `visible_traces()` | `Optional[pd.DataFrame]` | seeded (the figure's initial trace visibility) | re-seeded | none |
-| `selected_rows(df, *, key=None)` | same frame type as `df` | empty frame | derived from `selected` | none |
+| `selected_rows(df, *, key=None)` (opt-in via `selected`) | same frame type as `df` | empty frame | derived from `selected` | none |
 
-`selected()`/`brushed()` attach at render like every other accessor (#419): a box or lasso selection made
-before the first read is reported, not lost. They don't reset to `None` on their own re-render the instant it
+`selected()`/`brushed()` attach at render like every other accessor (#419 -- once declared, in the opt-in
+`selected()`'s case): a box or lasso selection made before the first read is reported, not lost. The opt-in selection frames are slim
+(`trace_index`, `point_index`, `customdata` -- no `x`/`y`): recover coordinates from your own data, as
+`selected_rows()` does. They don't reset to `None` on their own re-render the instant it
 happens -- plotly.js's bridge also rebuilds and re-sends the new graph div's *own* (initially empty)
 selection shortly after mount, which is what actually clears them; until that arrives, the old value is
 still what reads back. `double_clicked()`/`legend_clicked()` are **pulses** (`priority="event"`): identical
@@ -236,6 +248,12 @@ Same shape as `render_ipyvolume`'s `camera()`.
 
 Clicking the same molecule twice doesn't re-fire `clicked()` (a mols2grid limitation: the trait only changes
 when the payload does -- unlike plotly's `clicked()`, there's no underlying event stream to re-publish from).
+
+## render_nglview
+
+| Accessor | Returns | Before any interaction | Across re-render | Default rate |
+|---|---|---|---|---|
+| `camera_orientation()` (opt-in) | flattened 4x4 orientation matrix (16 floats) | `None` | re-seeded | debounce 250ms |
 
 ## render_niivue
 

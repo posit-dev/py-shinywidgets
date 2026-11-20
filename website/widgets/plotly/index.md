@@ -176,6 +176,13 @@ registration needed. Call an accessor from any reactive context (a `@render.*` f
 `@reactive.effect`); it invalidates that context whenever the interaction changes, the same way `input.x()`
 does.
 
+Three accessors are **opt-in**: `selected()`, `selecting()`, and `hover()` -- plus `selected_rows()`, which
+reads `selected()` under the hood. A selection payload grows with the number of points caught, and a hover
+can stream continuously, so shinywidgets doesn't send them to Python unless the renderer declares them:
+pass `listen_to=["selected"]` (and/or `"selecting"`, `"hover"`) to `@render_plotly`. Reading one without
+declaring it raises an error pointing at `listen_to`. Once declared, the accessor behaves like any other --
+the declaration is per renderer, not per read.
+
 Accessors are inputs that remember. Each one attaches the moment the figure renders and records what the user
 does whether or not anything has read it yet -- there's no "warm-up" read needed to arm it. A re-render gives
 the user a new figure, but the last interaction isn't thrown away: `clicked()`, `hover()`, `selecting()`,
@@ -192,9 +199,9 @@ selected, so they go back to `None`/empty once it reports).
 | Accessor | Returns | Before any interaction | Across a re-render | Default rate policy |
 |---|---|---|---|---|
 | `clicked()` | points `DataFrame` | `None` | kept | none |
-| `hover()` | points `DataFrame` | `None` | kept | debounce 250 ms |
-| `selected()` | points `DataFrame` | `None` | re-seeded | none |
-| `selecting()` | points `DataFrame` | `None` | kept | debounce 250 ms |
+| `hover()` (opt-in) | points `DataFrame` | `None` | kept | debounce 250 ms |
+| `selected()` (opt-in) | points `DataFrame` | `None` | re-seeded | none |
+| `selecting()` (opt-in) | points `DataFrame` | `None` | kept | debounce 250 ms |
 | `brushed()` | region `dict` (`range` or `lassoPoints`) | `None` | re-seeded | none |
 | `brushing()` | region `dict` | `None` | kept | debounce 250 ms |
 | `relayout()` | axis-range `dict` | `None` | kept | none |
@@ -203,9 +210,14 @@ selected, so they go back to `None`/empty once it reports).
 | `visible_traces()` | traces `DataFrame` | seeded from the figure | re-seeded | none |
 | `selected_rows(df, key=None)` | rows of `df` | empty frame | re-seeded (follows `selected()`) | follows `selected()` |
 
-Points frames have columns `trace_index`, `point_index`, `x`, `y`, and `z`/`customdata` when the figure has
-them -- except `selected()`/`selecting()` frames, which report only `trace_index`, `point_index`, and
-`customdata` (coordinates would duplicate data you already have, keeping selection messages small). `point_index` is a point's position within its trace, not a row of your data -- for px figures with
+Opt-in rows need the matching `listen_to=[...]` on `@render_plotly` (see above); `selected_rows()` reads
+`selected()`, so it needs `listen_to=["selected"]` too.
+
+`clicked()` and `hover()` frames have columns `trace_index`, `point_index`, `x`, `y`, and `z`/`customdata`
+when the figure has them. `selected()`/`selecting()` frames are slimmer -- `trace_index`, `point_index`, and
+`customdata` when the figure has it, with no `x`/`y`: the selected points came out of your own data, so
+recover coordinates from it (via `customdata`, as `selected_rows()` does) instead of streaming them back.
+`point_index` is a point's position within its trace, not a row of your data -- for px figures with
 `color=`, each color group is its own trace, so match rows via `customdata` (see `selected_rows()` below), not
 `point_index`.
 
@@ -274,8 +286,9 @@ after a re-render that reshuffles the data.
 
 ### `selected()` and `selecting()`
 
-`selecting()` streams the same columns while the user drags; `selected()` reports once at the end of the
-gesture. Both reset on a deselect. Unlike `clicked()`, `selected()` is re-seeded at every render: plotly.js
+`selecting()` streams the selection while the user drags; `selected()` reports once at the end of the
+gesture. Both are opt-in -- declare `listen_to=["selected", "selecting"]` for the pair, as below -- and both
+reset on a deselect. Unlike `clicked()`, `selected()` is re-seeded at every render: plotly.js
 tracks the current selection as state on the figure itself, so a freshly rendered figure's "current selection"
 is genuinely nothing, and `selected()` (and `selected_rows()`) reports that -- it doesn't carry over the
 previous figure's selection the way `clicked()` carries over the previous click. `selecting()`, the drag
@@ -319,11 +332,12 @@ with ui.layout_columns(col_widths=[7, 5]):
         @render.code
         def selected_out():
             pts = plot.selected()
-            if pts is None:
+            if pts is None or pts.empty:
                 return "None (drag a box)"
-            # An empty selection has no customdata column to report
-            cols = pts.reindex(columns=["trace_index", "point_index", "customdata"])
-            return cols.round(1).to_string(index=False)
+            # Selection frames are slim (no x/y): the coordinates live in
+            # your own data -- here customdata carries the df.index labels.
+            rows = df.loc[[cd[0] for cd in pts["customdata"]]]
+            return rows[["country", "lifeExp", "gdpPercap"]].round(1).to_string(index=False)
 ```
 
 Mid-drag (`selecting()` already has 31 points; `selected()` hasn't fired yet), and after release:
@@ -441,7 +455,8 @@ zoom and pan).
 
 Same columns as `clicked()`, but fires continuously as the mouse moves over points and clears to `None` when
 it leaves them -- debounced 250 ms by default, so a reader updates once the mouse settles rather than on every
-pixel of movement. A natural fit for a detail card that previews a point without requiring a click:
+pixel of movement. Hover streams while the mouse moves, so it's opt-in: `listen_to=["hover"]`. A natural fit
+for a detail card that previews a point without requiring a click:
 
 ```{.python file="examples/19_hover_detail.py"}
 import plotly.express as px
@@ -637,6 +652,7 @@ rows of *your* data frame by matching each point's `customdata` -- so the figure
 
 Calling it without `customdata` on the figure raises a clear `ValueError` pointing at `custom_data=`. It returns
 an empty frame (not `None`) while nothing is selected, so you can pass it straight to `@render.data_frame`.
+`selected_rows()` reads `selected()` under the hood, so it needs the same opt-in: `listen_to=["selected"]`.
 
 Pandas, matched by index:
 
@@ -726,9 +742,10 @@ a list (one entry per point, even for a single column), so `pts["customdata"].il
 
 ### Reading on demand
 
-Because every accessor attaches at render and records the interaction regardless of whether anything has read
-it yet, it's safe to leave an accessor completely unread until some later event -- a button click, a download
-handler, an LLM tool call -- asks for it. The lasso made before that first read isn't lost:
+An enabled accessor records from the moment the figure renders, regardless of whether anything has read it
+yet, so it's safe to leave an accessor completely unread until some later event -- a button click, a download
+handler, an LLM tool call -- asks for it. For the opt-in `selected_rows()`, the `listen_to=["selected"]` on
+the decorator is the entire up-front cost; the lasso made before that first read still isn't lost:
 
 ```{.python file="examples/22_read_on_demand.py"}
 import plotly.express as px
@@ -798,7 +815,7 @@ every output in an app).
 while the mouse moves or drags); the rest are event-driven and already fire at most once per gesture, so they
 aren't rate-limited by default. Pass `rate_delay=0` to `@render_plotly` to see every event as it happens --
 useful for debugging, or for a very cheap per-event computation where the debounce's lag is more noticeable
-than its benefit:
+than its benefit (`selecting()` is opt-in, so it comes along via `listen_to` here):
 
 ```{.python file="examples/12_rate_limiting.py"}
 import plotly.express as px
@@ -836,7 +853,7 @@ with ui.layout_columns():
     with ui.card(full_screen=True):
         "rate_delay=0: fires on every drag event"
 
-        @render_plotly(rate_delay=0, listen_to=["selecting"])
+        @render_plotly(listen_to=["selecting"], rate_delay=0)
         def live():
             fig = px.scatter(df, x="gdpPercap", y="lifeExp", log_x=True)
             fig.update_layout(dragmode="select")
@@ -996,7 +1013,7 @@ with ui.layout_columns(col_widths=[7, 5]):
 
     with ui.card(full_screen=True):
 
-        @render_plotly(listen_to=["selected"])
+        @render_plotly
         def bars():
             fig = go.Figure(go.Bar(x=top30["pop"], y=top30["country"], orientation="h"))
             fig.update_traces(marker_color="lightgray")
@@ -1188,6 +1205,9 @@ container resizes once `responsive` is set.
 
 Verified on current `main` (plotly 6.9.0, shiny 1.9.0):
 
+- **`selected()`, `selecting()`, and `hover()` are opt-in.** Reading one of them -- or `selected_rows()`,
+  which reads `selected()` -- without declaring `listen_to=[...]` on `@render_plotly` raises an error naming
+  the accessor to declare; see "Reacting to user interaction" above.
 - **A double-click only clears `clicked()` if it lands on empty background.** Double-clicking a point leaves
   `clicked()` showing that point (the second click re-fires after the internal clear). This isn't mentioned in
   the docstring; see "Clearing semantics" above.

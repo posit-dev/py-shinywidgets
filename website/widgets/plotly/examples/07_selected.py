@@ -35,8 +35,9 @@ with ui.layout_columns(col_widths=[7, 5]):
         @render.code
         def selected_out():
             pts = plot.selected()
-            if pts is None:
+            if pts is None or pts.empty:
                 return "None (drag a box)"
-            # An empty selection has no customdata column to report
-            cols = pts.reindex(columns=["trace_index", "point_index", "customdata"])
-            return cols.round(1).to_string(index=False)
+            # Selection frames are slim (no x/y): the coordinates live in
+            # your own data -- here customdata carries the df.index labels.
+            rows = df.loc[[cd[0] for cd in pts["customdata"]]]
+            return rows[["country", "lifeExp", "gdpPercap"]].round(1).to_string(index=False)

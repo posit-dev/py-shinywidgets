@@ -33,7 +33,7 @@ with ui.layout_columns():
     with ui.card(full_screen=True):
         "rate_delay=0: fires on every drag event"
 
-        @render_plotly(rate_delay=0, listen_to=["selecting"])
+        @render_plotly(listen_to=["selecting"], rate_delay=0)
         def live():
             fig = px.scatter(df, x="gdpPercap", y="lifeExp", log_x=True)
             fig.update_layout(dragmode="select")
