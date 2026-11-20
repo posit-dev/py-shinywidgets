@@ -128,7 +128,7 @@ body.sw-home .sw-landing :not(pre) > code { background: none !important; color: 
 .sw-landing .picker li.on h3 { color: var(--fg); }
 .sw-landing .picker li.on p { display: block; }
 .sw-landing .picker li.on .bar i { animation: sw-fill var(--dur) linear forwards; }
-.sw-landing .stage.offscreen .picker li.on .bar i { animation-play-state: paused; }
+.sw-landing .stage.offscreen .picker li.on .bar i, .sw-landing .stage.paused .picker li.on .bar i { animation-play-state: paused; }
 .sw-landing .stage.calm .picker li.on .bar i { animation: none; height: 100%; }
 @keyframes sw-fill { to { height: 100%; } }
 .sw-landing .browser { border-radius: 14px; overflow: hidden; background: #fff; border: 1px solid #2a2f3d;
