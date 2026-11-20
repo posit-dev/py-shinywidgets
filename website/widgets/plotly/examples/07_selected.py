@@ -35,7 +35,7 @@ with ui.layout_columns(col_widths=[7, 5]):
         @render.code
         def selected_out():
             pts = plot.selected()
-            if pts is None:
+            if pts is None or pts.empty:
                 return "None (drag a box)"
             # Selection frames are slim (no x/y): the coordinates live in
             # your own data -- here customdata carries the df.index labels.
