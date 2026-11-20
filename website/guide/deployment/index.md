@@ -33,8 +33,9 @@ that can't reach the internet they only partly draw, or stay empty (see
   its molecule-drawing library from unpkg. That's up to the widget library, so check its docs for an offline
   option.
 - **Classic ipywidgets whose package doesn't include their JavaScript**, which shinywidgets loads from a CDN.
-  To find them, start your app with the environment variable `SHINYWIDGETS_EXTENSION_WARNING=true`. The
-  server then logs a warning for each one:
+  To find them, start your app with the environment variable `SHINYWIDGETS_EXTENSION_WARNING=true` (or call
+  `shinywidgets.config(extension_warning=True)` before the first render). The server then logs a warning for
+  each one:
 
   ```
   UserWarning: Couldn't find local path to widget extension for <class '...'>.
@@ -43,7 +44,8 @@ that can't reach the internet they only partly draw, or stay empty (see
   ```
 
   To load them from somewhere your readers can reach, such as an internal npm mirror, set `SHINYWIDGETS_CDN`
-  to its URL. The default is `https://cdn.jsdelivr.net/npm/`, and files are requested as
+  to its URL (or call `shinywidgets.config(cdn=...)` at the top of your app, before the UI is built). The
+  default is `https://cdn.jsdelivr.net/npm/`, and files are requested as
   `<url>/<package>@<version>/dist/index.js`, the layout npm CDNs use.
 
 ## Shinylive

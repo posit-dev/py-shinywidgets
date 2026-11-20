@@ -13,6 +13,8 @@ from __future__ import annotations
 import os
 from typing import Any, Callable, Dict
 
+CDN_DEFAULT = "https://cdn.jsdelivr.net/npm/"
+
 # Setting name -> default, computed from the environment on each read
 # (until config() sets the setting explicitly)
 _DEFAULTS: Dict[str, Callable[[], Any]] = {
@@ -22,6 +24,17 @@ _DEFAULTS: Dict[str, Callable[[], Any]] = {
     # app code.
     "native_events": lambda: (
         os.environ.get("SHINYWIDGETS_NATIVE_EVENTS", "").lower() in ("1", "true")
+    ),
+    # CDN fallback base URL for widget JS when no local nbextension is found.
+    # output_widget() bakes it into the UI's data attributes, so it's read
+    # when the UI is built, not per render.
+    "cdn": lambda: os.environ.get("SHINYWIDGETS_CDN", CDN_DEFAULT),
+    # Only "true" counts, matching the env vars' historical parsing
+    "cdn_only": lambda: (
+        os.environ.get("SHINYWIDGETS_CDN_ONLY", "false").lower() == "true"
+    ),
+    "extension_warning": lambda: (
+        os.environ.get("SHINYWIDGETS_EXTENSION_WARNING", "false").lower() == "true"
     ),
 }
 
@@ -45,6 +58,20 @@ def config(**kwargs: Any) -> Dict[str, Any]:
       selection reports), which renderers mute unless the app uses them.
       Set ``native_events=True`` to receive every widget's native events
       app-wide.
+    - ``cdn`` (str, default ``"https://cdn.jsdelivr.net/npm/"``, env var
+      ``SHINYWIDGETS_CDN``): the base URL of the CDN that widget JavaScript
+      falls back to when no local copy of a widget's extension is found.
+      ``output_widget()`` bakes the value into the UI's data attributes, so
+      ``config(cdn=...)`` must run before the UI is built (e.g., the top of
+      app.py); the env var remains the deployment-time alternative.
+    - ``cdn_only`` (bool, default ``False``, env var ``SHINYWIDGETS_CDN_ONLY``):
+      always load widget JavaScript from the CDN, never from a local copy.
+      Read per render, so it only needs to be set before the first render.
+    - ``extension_warning`` (bool, default ``False``, env var
+      ``SHINYWIDGETS_EXTENSION_WARNING``): warn when no local path to a
+      widget's extension is found (the widget still renders via the CDN
+      fallback). Read per render, so it only needs to be set before the
+      first render.
     """
     unknown = set(kwargs) - set(_DEFAULTS)
     if unknown:
@@ -59,6 +86,21 @@ def config(**kwargs: Any) -> Dict[str, Any]:
 def native_events_enabled() -> bool:
     """The current value of the ``native_events`` setting (see `config()`)."""
     return bool(_get("native_events"))
+
+
+def cdn_url() -> str:
+    """The current value of the ``cdn`` setting (see `config()`)."""
+    return str(_get("cdn"))
+
+
+def cdn_only() -> bool:
+    """The current value of the ``cdn_only`` setting (see `config()`)."""
+    return bool(_get("cdn_only"))
+
+
+def extension_warning() -> bool:
+    """The current value of the ``extension_warning`` setting (see `config()`)."""
+    return bool(_get("extension_warning"))
 
 
 def _get(name: str) -> Any:

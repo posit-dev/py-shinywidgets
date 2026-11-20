@@ -5,6 +5,7 @@ import json
 from typing import Any, Dict
 
 import pytest
+from shinywidgets._config import _SETTINGS
 
 from tests.unit._fakes import (
     FakeContext,
@@ -82,7 +83,7 @@ def test_session_is_wired_once_and_open_effect_assigns_comm(
     monkeypatch.setattr(sw, "get_current_session", lambda: root)
     monkeypatch.setattr(sw, "reactive", reactive)
     monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
-    monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
+    monkeypatch.setitem(_SETTINGS, "cdn_only", True)
     monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
     monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
@@ -128,7 +129,7 @@ def test_comm_send_handler_routes_to_existing_comm(
     monkeypatch.setattr(sw, "get_current_session", lambda: root)
     monkeypatch.setattr(sw, "reactive", reactive)
     monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
-    monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
+    monkeypatch.setitem(_SETTINGS, "cdn_only", True)
     monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
     monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
@@ -160,7 +161,7 @@ def test_session_end_cleanup_closes_widgets_and_clears_maps(
     monkeypatch.setattr(sw, "get_current_session", lambda: root)
     monkeypatch.setattr(sw, "reactive", reactive)
     monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
-    monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
+    monkeypatch.setitem(_SETTINGS, "cdn_only", True)
     monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
     monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
@@ -189,7 +190,7 @@ def test_render_context_invalidation_closes_widget_and_preserves_model_id(
     monkeypatch.setattr(sw, "get_current_session", lambda: root)
     monkeypatch.setattr(sw, "reactive", reactive)
     monkeypatch.setattr(sw, "StaticFiles", FakeStaticFiles)
-    monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
+    monkeypatch.setitem(_SETTINGS, "cdn_only", True)
     monkeypatch.setattr(sw, "uuid4", lambda: type("U", (), {"hex": "w1"})())
     monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
@@ -230,7 +231,7 @@ def test_nbextensions_mount_when_widget_dep_has_subdir(
     monkeypatch.setattr(sw, "_remove_buffers", lambda state: (state, [], []))
     monkeypatch.setattr(sw, "ShinyComm", FakeShinyComm)
 
-    monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", False)
+    monkeypatch.setitem(_SETTINGS, "cdn_only", False)
     monkeypatch.setattr(sw, "require_dependencies", lambda w, session, warn: [Dep()])
 
     w = FakeWidget()

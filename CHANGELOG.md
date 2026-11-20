@@ -65,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Added `shinywidgets.config()` for app-wide settings, starting with `native_events=True` to keep widgets' own event traits (e.g., plotly.py's per-point reports) flowing to Python — see the breaking change below for when you'd want it. Also settable as the `SHINYWIDGETS_NATIVE_EVENTS=1` environment variable.
 
+* The `SHINYWIDGETS_CDN`, `SHINYWIDGETS_CDN_ONLY`, and `SHINYWIDGETS_EXTENSION_WARNING` environment variables now have a discoverable Python API via `shinywidgets.config()` (e.g., `shinywidgets.config(cdn="https://npm.example.com/")`). The environment variables keep working and remain the deployment-time alternative — for `cdn` especially, since `output_widget()` bakes the value into the UI when it's built.
+
 * Added per-renderer extras, so you can install a decorator's widget dependencies in one command (e.g., `pip install 'shinywidgets[plotly]'` or `'shinywidgets[maplibre,bokeh]'`). See the README for the full list.
 
 * Added `session_lifetime()`, a context manager for building widgets that outlive the current render, e.g., one cached widget per dataset that is shown again when the user switches back. (#258)

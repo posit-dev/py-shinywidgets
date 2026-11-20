@@ -7,7 +7,7 @@ from shiny.module import resolve_id
 from shiny.ui.css import as_css_unit
 from shiny.ui.fill import as_fill_item, as_fillable_container
 
-from ._cdn import SHINYWIDGETS_CDN, SHINYWIDGETS_CDN_ONLY
+from ._config import cdn_only, cdn_url
 from ._dependencies import output_binding_dependency
 
 __all__ = ("output_widget",)
@@ -64,8 +64,8 @@ def output_widget(
         output_binding_dependency(),
         head_content(
             tags.script(
-                data_jupyter_widgets_cdn=SHINYWIDGETS_CDN,
-                data_jupyter_widgets_cdn_only=SHINYWIDGETS_CDN_ONLY,
+                data_jupyter_widgets_cdn=cdn_url(),
+                data_jupyter_widgets_cdn_only=cdn_only(),
             )
         ),
         id=id,

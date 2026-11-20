@@ -48,7 +48,6 @@ from shiny.types import NotifyException
 from ._accessors import rate_policy_for
 from ._as_widget import as_widget, pydeck_has_widget
 from ._bokeh import _bokeh_dependency, bokeh_extension_assets, guard_widget_close
-from ._cdn import SHINYWIDGETS_CDN_ONLY, SHINYWIDGETS_EXTENSION_WARNING
 from ._comm import (
     BufferType,
     DataType,
@@ -59,6 +58,7 @@ from ._comm import (
     flush_queued_sends,
     is_sessionless,
 )
+from ._config import cdn_only, extension_warning
 from ._dependencies import (
     custom_elements_dependency,
     geolibre_app_mount,
@@ -187,10 +187,10 @@ def init_shiny_widget(w: Widget):
     # Make sure window.require() calls made by 3rd party widgets
     # (via handle_comm_open() -> new_model() -> loadClass() -> requireLoader())
     # actually point to directories served locally by shiny
-    if SHINYWIDGETS_CDN_ONLY:
+    if cdn_only():
         widget_deps: List[HTMLDependency] = []
     else:
-        widget_deps = require_dependencies(w, session, SHINYWIDGETS_EXTENSION_WARNING)
+        widget_deps = require_dependencies(w, session, extension_warning())
 
     # By the time we get here, the user has already had an opportunity to specify a model_id,
     # so it isn't yet populated, generate a random one so we can assign the same id to the comm
@@ -410,9 +410,7 @@ def open_shared_in(w: Widget, session: Session) -> None:
         return
 
     widget_deps = (
-        []
-        if SHINYWIDGETS_CDN_ONLY
-        else require_dependencies(w, session, SHINYWIDGETS_EXTENSION_WARNING)
+        [] if cdn_only() else require_dependencies(w, session, extension_warning())
     )
     widget_deps, open_keys = widget_open_extras(w, session, widget_deps)
     mount_widget_deps(session, widget_deps)
