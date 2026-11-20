@@ -24,7 +24,7 @@ with ui.layout_columns(col_widths=[6, 6]):
     with ui.card(full_screen=True):
         ui.card_header("...to highlight them here")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def scatter():
             fig = go.FigureWidget(
                 go.Scatter(

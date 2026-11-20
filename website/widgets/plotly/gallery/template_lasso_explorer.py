@@ -23,7 +23,7 @@ with ui.layout_columns(col_widths=[7, 5, 12], row_heights=[1, 1]):
     with ui.card(full_screen=True):
         ui.card_header("Drag the lasso tool to select points")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(
                 df,

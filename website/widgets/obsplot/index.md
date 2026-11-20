@@ -662,7 +662,7 @@ with ui.layout_columns():
     with ui.card(full_screen=True):
         ui.card_header("Lasso-select countries")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def scatter():
             fig = px.scatter(
                 gapminder_2007,

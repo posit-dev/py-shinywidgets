@@ -76,7 +76,7 @@ ui.page_opts(title="Lasso to table", fillable=True)
 with ui.layout_columns(col_widths=[7, 5]):
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(
                 df,
@@ -363,7 +363,7 @@ with ui.layout_columns(col_widths=[7, 5]):
                 ui.p(f"{car['Horsepower']:.0f} hp, {car['Miles_per_Gallon']:.1f} mpg, {car['Origin']}"),
             )
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def hp_bar():
             # The detail card's second half is a different library entirely: a
             # small plotly bar comparing the clicked car to the fleet average.
@@ -656,7 +656,7 @@ with ui.layout_columns(col_widths=[6, 6]):
     with ui.card(full_screen=True):
         ui.card_header("...to highlight them here")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def scatter():
             fig = go.FigureWidget(
                 go.Scatter(
@@ -1571,7 +1571,7 @@ with ui.layout_columns(col_widths=[6, 6]):
     with ui.card(full_screen=True):
         ui.card_header("Lasso some visits")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(tips, x="total_bill", y="tip", color="time", custom_data=[tips.index])
             fig.update_layout(dragmode="lasso")

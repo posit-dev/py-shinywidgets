@@ -47,7 +47,7 @@ with ui.layout_columns(col_widths=[7, 5]):
     with ui.card(full_screen=True):
         ui.card_header("Life expectancy vs. GDP per capita")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def scatter():
             fig = go.FigureWidget(
                 go.Scatter(

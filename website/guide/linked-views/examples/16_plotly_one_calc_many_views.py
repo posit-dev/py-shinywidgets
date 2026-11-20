@@ -12,7 +12,7 @@ with ui.layout_columns(col_widths=[6, 6]):
     with ui.card(full_screen=True):
         ui.card_header("Lasso some visits")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(tips, x="total_bill", y="tip", color="time", custom_data=[tips.index])
             fig.update_layout(dragmode="lasso")

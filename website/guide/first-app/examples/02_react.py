@@ -11,7 +11,7 @@ with ui.layout_columns():
     with ui.card(full_screen=True):
         ui.card_header("Lasso a few countries")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(
                 df,

@@ -9,7 +9,7 @@ ui.page_opts(title="Lasso now, read later", fillable=True)
 with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(
                 df,

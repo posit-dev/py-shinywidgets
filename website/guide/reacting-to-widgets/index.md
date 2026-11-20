@@ -711,7 +711,7 @@ ui.page_opts(title="Rows of your data", fillable=True)
 with ui.layout_columns(col_widths=[7, 5]):
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(df, x="total_bill", y="tip", custom_data=[df.index])
             return fig.update_layout(dragmode="select")

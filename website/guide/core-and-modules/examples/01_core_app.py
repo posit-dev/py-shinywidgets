@@ -28,7 +28,7 @@ app_ui = ui.page_fillable(
 
 
 def server(input: Inputs, output: Outputs, session: Session):
-    @render_plotly
+    @render_plotly(listen_to=["selected"])
     def plot():
         fig = px.scatter(
             df, x="gdpPercap", y="lifeExp", custom_data=[df.index], log_x=True
