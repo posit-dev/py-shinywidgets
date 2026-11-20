@@ -4822,9 +4822,10 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     (``on_click()``, ``on_hover()``, ``on_unhover()``, ``on_selection()``,
     ``on_deselect()``) registered inside the render function are noticed and
     keep working. For callbacks registered later, or to read
-    ``.widget.data[i].selectedpoints`` after the user selects, pass
-    ``listen_to=["native"]``. Setting the ``SHINYWIDGETS_NATIVE_EVENTS=1``
-    environment variable does the same for every output in the app.
+    ``.widget.data[i].selectedpoints`` after the user selects, turn native
+    events on app-wide with ``shinywidgets.config(native_events=True)`` (or
+    the ``SHINYWIDGETS_NATIVE_EVENTS=1`` environment variable, e.g. in a
+    deployment).
 
     **Typing**: no return-type annotation is needed -- the renderer's value
     type is statically bounded, so type checkers flag unsupported return
