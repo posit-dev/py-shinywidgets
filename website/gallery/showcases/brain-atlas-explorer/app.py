@@ -30,7 +30,7 @@ LANDMARKS_MM = {
 }
 CMAPS = ["actc", "warm", "redyell", "winter", "jet"]
 
-with urllib.request.urlopen("https://niivue.com/demos/images/aal.json") as resp:
+with urllib.request.urlopen("https://raw.githubusercontent.com/niivue/niivue/main/packages/niivue/demos/images/aal.json") as resp:
     AAL_LABELS = json.load(resp)["labels"]
 
 CACHE = Path.home() / ".cache" / "niivue-guide"
@@ -80,7 +80,7 @@ with ui.card(full_screen=True):
             [
                 Volume(path=CACHE / "mni152.nii.gz"),
                 Volume(
-                    url="https://niivue.com/demos/images/aal.nii.gz",
+                    url="https://raw.githubusercontent.com/niivue/niivue/main/packages/niivue/demos/images/aal.nii.gz",
                     colormap="actc",
                     opacity=0.5,
                 ),

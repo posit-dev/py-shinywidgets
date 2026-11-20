@@ -12,7 +12,7 @@ ui.page_opts(title="Crosshair location", fillable=True)
 @render_niivue
 def brain():
     nv = NiiVue()
-    nv.load_volumes([Volume(url="https://niivue.com/demos/images/mni152.nii.gz")])
+    nv.load_volumes([Volume(url="https://niivue.github.io/niivue-demo-images/mni152.nii.gz")])
     return nv
 
 

@@ -7416,7 +7416,7 @@ class render_niivue(render_widget_base[ValueT, NiiVue]):
         def brain():
             nv = NiiVue()
             nv.load_volumes(
-                [Volume(url="https://niivue.com/demos/images/mni152.nii.gz")]
+                [Volume(url="https://niivue.github.io/niivue-demo-images/mni152.nii.gz")]
             )
 
             @nv.on_location_change

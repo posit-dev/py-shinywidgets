@@ -17,9 +17,9 @@ def brain():
     nv = NiiVue()
     nv.load_volumes(
         [
-            Volume(url="https://niivue.com/demos/images/mni152.nii.gz"),
+            Volume(url="https://niivue.github.io/niivue-demo-images/mni152.nii.gz"),
             Volume(
-                url="https://niivue.com/demos/images/narps-4735_50GV-hypo1_unthresh.nii.gz",
+                url="https://raw.githubusercontent.com/niivue/niivue/main/packages/niivue/demos/images/narps-4735_50GV-hypo1_unthresh.nii.gz",
                 colormap="warm",
                 cal_min=2.3,
                 cal_max=6.0,

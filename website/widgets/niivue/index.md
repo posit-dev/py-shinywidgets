@@ -57,7 +57,7 @@ ui.page_opts(title="NiiVue quickstart", fillable=True)
 @render_niivue
 def brain():
     nv = NiiVue()
-    nv.load_volumes([Volume(url="https://niivue.com/demos/images/mni152.nii.gz")])
+    nv.load_volumes([Volume(url="https://niivue.github.io/niivue-demo-images/mni152.nii.gz")])
     return nv
 ```
 
@@ -94,7 +94,7 @@ ui.input_radio_buttons("view", "View", list(SLICES), selected="Multiplanar", inl
 @render_niivue
 def brain():
     nv = NiiVue()
-    nv.load_volumes([Volume(url="https://niivue.com/demos/images/mni152.nii.gz")])
+    nv.load_volumes([Volume(url="https://niivue.github.io/niivue-demo-images/mni152.nii.gz")])
     return nv
 
 
@@ -132,9 +132,9 @@ def brain():
     nv = NiiVue()
     nv.load_volumes(
         [
-            Volume(url="https://niivue.com/demos/images/mni152.nii.gz"),
+            Volume(url="https://niivue.github.io/niivue-demo-images/mni152.nii.gz"),
             Volume(
-                url="https://niivue.com/demos/images/narps-4735_50GV-hypo1_unthresh.nii.gz",
+                url="https://raw.githubusercontent.com/niivue/niivue/main/packages/niivue/demos/images/narps-4735_50GV-hypo1_unthresh.nii.gz",
                 colormap="warm",
                 cal_min=2.3,
                 cal_max=6.0,
@@ -176,11 +176,11 @@ def brain():
     nv.load_meshes(
         [
             Mesh(
-                url="https://niivue.com/demos/images/BrainMesh_ICBM152.lh.mz3",
+                url="https://raw.githubusercontent.com/niivue/niivue/main/packages/niivue/demos/images/BrainMesh_ICBM152.lh.mz3",
                 rgba255=[200, 200, 200, 255],
                 layers=[
                     MeshLayer(
-                        url="https://niivue.com/demos/images/BrainMesh_ICBM152.lh.motor.mz3",
+                        url="https://raw.githubusercontent.com/niivue/niivue/main/packages/niivue/demos/images/BrainMesh_ICBM152.lh.motor.mz3",
                         colormap="warm",
                         opacity=0.7,
                     )
@@ -251,7 +251,7 @@ ui.input_slider("frame", "Frame", 0, 9, value=0)
 @render_niivue
 def brain():
     nv = NiiVue()
-    nv.load_volumes([Volume(url="https://niivue.com/demos/images/pcasl.nii.gz")])
+    nv.load_volumes([Volume(url="https://niivue.github.io/niivue-demo-images/pcasl.nii.gz")])
     return nv
 
 
@@ -295,7 +295,7 @@ ui.page_opts(title="Crosshair location", fillable=True)
 @render_niivue
 def brain():
     nv = NiiVue()
-    nv.load_volumes([Volume(url="https://niivue.com/demos/images/mni152.nii.gz")])
+    nv.load_volumes([Volume(url="https://niivue.github.io/niivue-demo-images/mni152.nii.gz")])
     return nv
 
 
@@ -347,7 +347,7 @@ bookmarks = reactive.Value([])
 @render_niivue
 def brain():
     nv = NiiVue()
-    nv.load_volumes([Volume(url="https://niivue.com/demos/images/mni152.nii.gz")])
+    nv.load_volumes([Volume(url="https://niivue.github.io/niivue-demo-images/mni152.nii.gz")])
     return nv
 
 
@@ -391,7 +391,7 @@ from shinywidgets import render_niivue
 
 ui.page_opts(title="Atlas region lookup", fillable=True)
 
-with urllib.request.urlopen("https://niivue.com/demos/images/aal.json") as resp:
+with urllib.request.urlopen("https://raw.githubusercontent.com/niivue/niivue/main/packages/niivue/demos/images/aal.json") as resp:
     AAL_LABELS = json.load(resp)["labels"]
 
 
@@ -400,9 +400,9 @@ def brain():
     nv = NiiVue()
     nv.load_volumes(
         [
-            Volume(url="https://niivue.com/demos/images/mni152.nii.gz"),
+            Volume(url="https://niivue.github.io/niivue-demo-images/mni152.nii.gz"),
             Volume(
-                url="https://niivue.com/demos/images/aal.nii.gz",
+                url="https://raw.githubusercontent.com/niivue/niivue/main/packages/niivue/demos/images/aal.nii.gz",
                 colormap="actc",
                 opacity=0.5,
             ),
@@ -508,7 +508,7 @@ ui.page_opts(title="No debounce", fillable=True)
 @render_niivue(rate_delay=0)
 def brain():
     nv = NiiVue()
-    nv.load_volumes([Volume(url="https://niivue.com/demos/images/mni152.nii.gz")])
+    nv.load_volumes([Volume(url="https://niivue.github.io/niivue-demo-images/mni152.nii.gz")])
     return nv
 
 
@@ -682,8 +682,9 @@ card, and a landmark dropdown that jumps the crosshair via `scene.crosshair_pos`
 
 ## Learn more
 
-- [NiiVue documentation](https://niivue.com) and [live demos](https://niivue.com/demos/features/) (the source of
-  every URL used in this guide)
+- [NiiVue documentation](https://niivue.com); the demo assets used in this guide come from
+  [niivue-demo-images](https://github.com/niivue/niivue-demo-images) and the
+  [niivue repo](https://github.com/niivue/niivue/tree/main/packages/niivue/demos/images)
 - [ipyniivue on GitHub](https://github.com/niivue/ipyniivue)
 - [AAL atlas](https://www.gin.cnrs.fr/en/tools/aal/) and the [NARPS](https://www.narps.info/) reproducibility
   dataset, used in the examples above

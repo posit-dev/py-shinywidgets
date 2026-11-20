@@ -12,7 +12,7 @@ ui.input_slider("frame", "Frame", 0, 9, value=0)
 @render_niivue
 def brain():
     nv = NiiVue()
-    nv.load_volumes([Volume(url="https://niivue.com/demos/images/pcasl.nii.gz")])
+    nv.load_volumes([Volume(url="https://niivue.github.io/niivue-demo-images/pcasl.nii.gz")])
     return nv
 
 

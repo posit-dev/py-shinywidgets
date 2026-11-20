@@ -12,7 +12,7 @@ from shinywidgets import render_niivue
 
 ui.page_opts(title="Atlas region lookup", fillable=True)
 
-with urllib.request.urlopen("https://niivue.com/demos/images/aal.json") as resp:
+with urllib.request.urlopen("https://raw.githubusercontent.com/niivue/niivue/main/packages/niivue/demos/images/aal.json") as resp:
     AAL_LABELS = json.load(resp)["labels"]
 
 
@@ -21,9 +21,9 @@ def brain():
     nv = NiiVue()
     nv.load_volumes(
         [
-            Volume(url="https://niivue.com/demos/images/mni152.nii.gz"),
+            Volume(url="https://niivue.github.io/niivue-demo-images/mni152.nii.gz"),
             Volume(
-                url="https://niivue.com/demos/images/aal.nii.gz",
+                url="https://raw.githubusercontent.com/niivue/niivue/main/packages/niivue/demos/images/aal.nii.gz",
                 colormap="actc",
                 opacity=0.5,
             ),
