@@ -42,7 +42,7 @@ with ui.layout_columns(col_widths=[7, 5, 12]):
     with ui.card(full_screen=True):
         ui.card_header("Life expectancy vs. GDP per capita")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def bubbles():
             d = by_year[years[0]].reset_index()
             fig = px.scatter(
