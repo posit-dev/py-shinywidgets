@@ -10,7 +10,7 @@ df = pd.DataFrame({"x": [1, 2, 3, 4, 5], "y": [1, 4, 9, 16, 25], "g": list("aabb
 ui.input_action_button("restyle", "restyle")
 
 
-@render_plotly
+@render_plotly(listen_to=["selected", "hover"])
 def plot():
     fig = px.scatter(df, x="x", y="y", color="g", custom_data=[df.index])
     fig.update_traces(marker_size=14)

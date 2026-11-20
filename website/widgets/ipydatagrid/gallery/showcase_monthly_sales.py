@@ -104,7 +104,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         ui.card_header("Monthly profile (selected rows vs. all rows)")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def profile():
             # A FigureWidget built once, then updated in place below -- not
             # rebuilt on every selection change. `selected()` debounces by

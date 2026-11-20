@@ -360,7 +360,7 @@ with ui.layout_columns(col_widths=[7, 5]):
     with ui.card(full_screen=True):
         ui.card_header("Lasso or box-select points, THEN click the button")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(
                 df, x="sepal_width", y="sepal_length", custom_data=[df.index]
@@ -588,7 +588,7 @@ with ui.layout_columns():
     with ui.card():
         ui.card_header("plotly selecting(): default debounce (250ms)")
 
-        @render_plotly
+        @render_plotly(listen_to=["selecting"])
         def plot_default():
             return px.scatter(df, x="sepal_width", y="sepal_length").update_layout(
                 dragmode="select"
@@ -608,7 +608,7 @@ with ui.layout_columns():
     with ui.card():
         ui.card_header("plotly selecting(rate_delay=0): every raw update")
 
-        @render_plotly(rate_delay=0)
+        @render_plotly(rate_delay=0, listen_to=["selecting"])
         def plot_fast():
             return px.scatter(df, x="sepal_width", y="sepal_length").update_layout(
                 dragmode="select"
@@ -711,7 +711,7 @@ ui.page_opts(title="Rows of your data", fillable=True)
 with ui.layout_columns(col_widths=[7, 5]):
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(df, x="total_bill", y="tip", custom_data=[df.index])
             return fig.update_layout(dragmode="select")

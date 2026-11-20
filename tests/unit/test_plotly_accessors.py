@@ -121,7 +121,10 @@ def test_streaming_variants_listen_to_selecting_and_debounce() -> None:
     assert sp.BRUSHING.rate_policy == "debounce"
     assert sp.SELECTED.rate_policy is None
     w, emitted, _ = attach(sp.BRUSHING)
-    assert w.sent[0]["events"] == ["plotly_selecting", "plotly_deselect"]
+    assert w.sent[0]["events"] == [
+        {"name": "plotly_selecting", "payload": "region"},
+        "plotly_deselect",
+    ]
     w.message(event("plotly_selecting", points=[], range={"x": [0, 1]}))
     assert emitted == [{"range": {"x": [0, 1]}}]
 
@@ -263,10 +266,10 @@ def test_specs_have_expected_names() -> None:
     ]
 
 
-def rendered() -> tuple[Any, FakeFigureWidget]:
+def rendered(*listen_to: str) -> tuple[Any, FakeFigureWidget]:
     from shinywidgets import render_plotly
 
-    r = render_plotly()
+    r = render_plotly(listen_to=list(listen_to))
     w = FakeFigureWidget()
     r._accessors.on_render(w)
     return r, w
@@ -282,7 +285,7 @@ def test_render_plotly_clicked_returns_points_frame() -> None:
 
 
 def test_render_plotly_selected_rows() -> None:
-    r, w = rendered()
+    r, w = rendered("selected")
     df = pd.DataFrame({"a": [10, 20, 30]})
     assert len(r.selected_rows(df)) == 0  # attaches; nothing selected yet
     w.message(event("plotly_selected", points=CLICK_POINTS))
@@ -294,7 +297,7 @@ def test_render_plotly_hover_returns_points_frame() -> None:
     # limiter would need a running event loop here
     from shinywidgets import render_plotly
 
-    r = render_plotly(rate_delay=0)
+    r = render_plotly(rate_delay=0, listen_to=["hover"])
     w = FakeFigureWidget()
     r._accessors.on_render(w)
     assert r.hover() is None
@@ -345,7 +348,7 @@ def test_all_accessors_are_retained_and_bind_at_render() -> None:
     # Every accessor is retained last-interaction state and binds at render:
     # the browser only reports an event with a listener, and an interaction
     # made before the first read is not lost.
-    r, w = rendered()
+    r, w = rendered("selected", "selecting", "hover")
     for spec in sp.PLOTLY_ACCESSORS:
         assert spec.kind == "state", spec.name
     assert w.sent == [
@@ -353,10 +356,34 @@ def test_all_accessors_are_retained_and_bind_at_render() -> None:
             "shinywidgets": "bind",
             "events": ["plotly_click", "plotly_doubleclick", "plotly_deselect"],
         },
-        {"shinywidgets": "bind", "events": ["plotly_selected", "plotly_deselect"]},
-        {"shinywidgets": "bind", "events": ["plotly_selecting", "plotly_deselect"]},
-        {"shinywidgets": "bind", "events": ["plotly_selected", "plotly_deselect"]},
-        {"shinywidgets": "bind", "events": ["plotly_selecting", "plotly_deselect"]},
+        {
+            "shinywidgets": "bind",
+            "events": [
+                {"name": "plotly_selected", "payload": "points"},
+                "plotly_deselect",
+            ],
+        },
+        {
+            "shinywidgets": "bind",
+            "events": [
+                {"name": "plotly_selecting", "payload": "points"},
+                "plotly_deselect",
+            ],
+        },
+        {
+            "shinywidgets": "bind",
+            "events": [
+                {"name": "plotly_selected", "payload": "region"},
+                "plotly_deselect",
+            ],
+        },
+        {
+            "shinywidgets": "bind",
+            "events": [
+                {"name": "plotly_selecting", "payload": "region"},
+                "plotly_deselect",
+            ],
+        },
         {"shinywidgets": "bind", "events": ["plotly_relayout"]},
         {"shinywidgets": "bind", "events": ["plotly_hover", "plotly_unhover"]},
         {"shinywidgets": "bind", "events": ["plotly_doubleclick"]},
@@ -369,7 +396,7 @@ def test_all_accessors_are_retained_and_bind_at_render() -> None:
 
 
 def test_selection_reported_before_first_read_survives() -> None:
-    r, w = rendered()
+    r, w = rendered("selected")
     # The bind's seed (or an event) arrives before anything reads the accessor
     w.message(event("plotly_selected", points=CLICK_POINTS))
     selected = r.selected()
@@ -378,7 +405,7 @@ def test_selection_reported_before_first_read_survives() -> None:
 
 
 def test_rerender_keeps_selection_until_the_new_plot_reports() -> None:
-    r, w = rendered()
+    r, w = rendered("selected")
     w.message(event("plotly_selected", points=CLICK_POINTS))
     assert r.selected() is not None
     # State accessors don't reset on re-render ...
@@ -424,6 +451,51 @@ def test_event_origin_accessors_are_retained() -> None:
 
     for spec in (CLICKED, SELECTING, BRUSHING, RELAYOUT):
         assert spec.kind == "state", spec.name
+
+
+def test_selected_binds_points_payload_and_is_opt_in() -> None:
+    assert sp.SELECTED.opt_in and sp.SELECTING.opt_in
+    w = FakeFigureWidget()
+    sp.SELECTED.attach(w, lambda v: None)
+    assert w.sent == [
+        {
+            "shinywidgets": "bind",
+            "events": [
+                {"name": "plotly_selected", "payload": "points"},
+                "plotly_deselect",
+            ],
+        }
+    ]
+
+
+def test_brushed_binds_region_payload_and_is_default_on() -> None:
+    assert not sp.BRUSHED.opt_in and not sp.BRUSHING.opt_in
+    w = FakeFigureWidget()
+    sp.BRUSHED.attach(w, lambda v: None)
+    assert w.sent == [
+        {
+            "shinywidgets": "bind",
+            "events": [
+                {"name": "plotly_selected", "payload": "region"},
+                "plotly_deselect",
+            ],
+        }
+    ]
+
+
+def test_hover_is_opt_in() -> None:
+    assert sp.HOVER.opt_in
+    assert not sp.CLICKED.opt_in
+
+
+def test_selection_frame_drops_coordinates_keeps_customdata() -> None:
+    points = [
+        {"trace_index": 0, "point_index": 3, "x": 1.5, "y": 2.5, "customdata": "row-3"}
+    ]
+    frame = sp.selection_frame(points)
+    assert list(frame.columns) == ["trace_index", "point_index", "customdata"]
+    full = sp.points_frame(points)
+    assert list(full.columns) == ["trace_index", "point_index", "x", "y", "customdata"]
 
 
 def test_listen_to_typo_raises_at_decoration() -> None:

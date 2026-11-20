@@ -42,7 +42,7 @@ with ui.layout_columns(col_widths=[7, 5]):
                 ui.p(f"{car['Horsepower']:.0f} hp, {car['Miles_per_Gallon']:.1f} mpg, {car['Origin']}"),
             )
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def hp_bar():
             # The detail card's second half is a different library entirely: a
             # small plotly bar comparing the clicked car to the fleet average.

@@ -9,7 +9,7 @@ ui.page_opts(title="Hover for details", fillable=True)
 with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["hover"])
         def plot():
             return px.scatter(
                 df,

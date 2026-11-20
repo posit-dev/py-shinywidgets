@@ -76,7 +76,7 @@ ui.page_opts(title="Lasso to table", fillable=True)
 with ui.layout_columns(col_widths=[7, 5]):
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(
                 df,
@@ -363,7 +363,7 @@ with ui.layout_columns(col_widths=[7, 5]):
                 ui.p(f"{car['Horsepower']:.0f} hp, {car['Miles_per_Gallon']:.1f} mpg, {car['Origin']}"),
             )
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def hp_bar():
             # The detail card's second half is a different library entirely: a
             # small plotly bar comparing the clicked car to the fleet average.
@@ -408,7 +408,7 @@ ui.page_opts(title="Hover for details", fillable=True)
 with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["hover"])
         def plot():
             return px.scatter(
                 df,
@@ -656,7 +656,7 @@ with ui.layout_columns(col_widths=[6, 6]):
     with ui.card(full_screen=True):
         ui.card_header("...to highlight them here")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def scatter():
             fig = go.FigureWidget(
                 go.Scatter(
@@ -896,7 +896,7 @@ with ui.layout_columns():
     with ui.card(full_screen=True):
         ui.card_header("plotly: click the same pod")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def chart():
             fig = px.scatter(pods, x="centroid_lon", y="centroid_lat")
             fig.update_traces(marker_color="#9ecae1")
@@ -1053,6 +1053,11 @@ breakdown DuckDB can compute but the chart spec alone can't
 verbatim from the [mosaic guide](../../widgets/mosaic/index.md#coordinating-multiple-views)):
 
 ```{.python file="examples/14_mosaic_crossfilter_stats_table.py"}
+# Linked view: a brush drives a stat line and an aggregated table.
+#
+# Pairs with: render-widget (plain Shiny outputs, no other widget library
+# needed) -- the simplest possible consumer of a Mosaic selection.
+
 from __future__ import annotations
 
 import pandas as pd
@@ -1428,7 +1433,7 @@ with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
         ui.card_header(f"{SAMPLE_N:,} of {len(gaia):,} Gaia stars (Scattergl)")
 
-        @render_plotly
+        @render_plotly(listen_to=["selecting"])
         def scatter():
             fig = go.Figure(
                 go.Scattergl(
@@ -1566,7 +1571,7 @@ with ui.layout_columns(col_widths=[6, 6]):
     with ui.card(full_screen=True):
         ui.card_header("Lasso some visits")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(tips, x="total_bill", y="tip", color="time", custom_data=[tips.index])
             fig.update_layout(dragmode="lasso")

@@ -30,7 +30,7 @@ with ui.layout_columns(col_widths=[5, 7]):
     with ui.card(full_screen=True):
         ui.card_header("Lasso- or box-select points")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def scatter():
             fig = px.scatter(MOLS, x="MW", y="LogP", custom_data=[MOLS.index])
             fig.update_layout(dragmode="lasso")

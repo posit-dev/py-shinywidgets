@@ -19,7 +19,7 @@ with ui.layout_columns():
     with ui.card(full_screen=True):
         ui.card_header("plotly")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot_plotly():
             fig = px.scatter(df, x="gdpPercap", y="lifeExp", log_x=True, custom_data=[df.index])
             fig.update_layout(dragmode="select", margin=dict(l=16, r=16, t=16, b=16))

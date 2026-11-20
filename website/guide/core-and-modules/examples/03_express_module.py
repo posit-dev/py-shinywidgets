@@ -16,7 +16,7 @@ def scatter(input, output, session, label: str):
     with ui.card(full_screen=True):
         ui.card_header(label)
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(
                 df, x="gdpPercap", y="lifeExp", custom_data=[df.index], log_x=True

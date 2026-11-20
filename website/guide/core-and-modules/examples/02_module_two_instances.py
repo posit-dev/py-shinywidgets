@@ -22,7 +22,7 @@ def scatter_ui(label: str):
 
 @module.server
 def scatter_server(input: Inputs, output: Outputs, session: Session):
-    @render_plotly
+    @render_plotly(listen_to=["selected"])
     def plot():
         fig = px.scatter(
             df, x="gdpPercap", y="lifeExp", custom_data=[df.index], log_x=True

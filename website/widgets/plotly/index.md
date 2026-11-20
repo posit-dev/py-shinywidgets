@@ -204,7 +204,8 @@ selected, so they go back to `None`/empty once it reports).
 | `selected_rows(df, key=None)` | rows of `df` | empty frame | re-seeded (follows `selected()`) | follows `selected()` |
 
 Points frames have columns `trace_index`, `point_index`, `x`, `y`, and `z`/`customdata` when the figure has
-them. `point_index` is a point's position within its trace, not a row of your data -- for px figures with
+them -- except `selected()`/`selecting()` frames, which report only `trace_index`, `point_index`, and
+`customdata` (coordinates would duplicate data you already have, keeping selection messages small). `point_index` is a point's position within its trace, not a row of your data -- for px figures with
 `color=`, each color group is its own trace, so match rows via `customdata` (see `selected_rows()` below), not
 `point_index`.
 
@@ -292,7 +293,7 @@ ui.page_opts(title="Box-select some bubbles", fillable=True)
 with ui.layout_columns(col_widths=[7, 5]):
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["selected", "selecting"])
         def plot():
             fig = px.scatter(
                 df,
@@ -320,7 +321,8 @@ with ui.layout_columns(col_widths=[7, 5]):
             pts = plot.selected()
             if pts is None:
                 return "None (drag a box)"
-            cols = pts[["trace_index", "point_index", "x", "y"]]
+            # An empty selection has no customdata column to report
+            cols = pts.reindex(columns=["trace_index", "point_index", "customdata"])
             return cols.round(1).to_string(index=False)
 ```
 
@@ -453,7 +455,7 @@ ui.page_opts(title="Hover for details", fillable=True)
 with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["hover"])
         def plot():
             return px.scatter(
                 df,
@@ -650,7 +652,7 @@ ui.page_opts(title="Lasso-select countries", fillable=True)
 with ui.layout_columns(col_widths=[7, 5]):
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(
                 df,
@@ -690,7 +692,7 @@ ui.page_opts(title="Lasso-select countries (polars)", fillable=True)
 with ui.layout_columns(col_widths=[7, 5]):
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(
                 df,
@@ -740,7 +742,7 @@ ui.page_opts(title="Lasso now, read later", fillable=True)
 with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(
                 df,
@@ -815,7 +817,7 @@ with ui.layout_columns():
     with ui.card(full_screen=True):
         "Default: debounced 250ms"
 
-        @render_plotly
+        @render_plotly(listen_to=["selecting"])
         def debounced():
             fig = px.scatter(df, x="gdpPercap", y="lifeExp", log_x=True)
             fig.update_layout(dragmode="select")
@@ -834,7 +836,7 @@ with ui.layout_columns():
     with ui.card(full_screen=True):
         "rate_delay=0: fires on every drag event"
 
-        @render_plotly(rate_delay=0)
+        @render_plotly(rate_delay=0, listen_to=["selecting"])
         def live():
             fig = px.scatter(df, x="gdpPercap", y="lifeExp", log_x=True)
             fig.update_layout(dragmode="select")
@@ -925,7 +927,7 @@ ui.page_opts(title="Lasso to table", fillable=True)
 with ui.layout_columns(col_widths=[7, 5]):
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def plot():
             fig = px.scatter(
                 df,
@@ -979,7 +981,7 @@ ui.page_opts(title="Selection highlights a second plot", fillable=True)
 with ui.layout_columns(col_widths=[7, 5]):
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def scatter():
             fig = px.scatter(
                 df,
@@ -994,7 +996,7 @@ with ui.layout_columns(col_widths=[7, 5]):
 
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def bars():
             fig = go.Figure(go.Bar(x=top30["pop"], y=top30["country"], orientation="h"))
             fig.update_traces(marker_color="lightgray")
