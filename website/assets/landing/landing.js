@@ -82,11 +82,12 @@
   showTab(0, 1);
 
   // The stage: every DUR ms, play the current app's gesture (caption, crossfade from
-  // before to after), then advance. Hovering pauses it; reduced motion turns it off and
-  // shows each app's "after" state directly.
+  // before to after), then advance. It waits until the screen is in view, and coming
+  // back into view restarts the current app. Hovering pauses it; reduced motion turns
+  // it off and shows each app's "after" state directly.
   const DUR = 7000;
   const picker = $("picker"), screen = $("screen"), stage = $("stage");
-  let cur = 0, timers = [], paused = false;
+  let cur = 0, timers = [], paused = false, visible = false;
   const clear = () => { timers.forEach(clearTimeout); timers = []; };
   SHOWCASES.forEach((s, i) => {
     const li = document.createElement("li");
@@ -121,6 +122,7 @@
       return;
     }
     screen.className = "screen";
+    if (!visible) return;
     void screen.offsetWidth;
     screen.classList.add("zoom");
     timers.push(setTimeout(() => screen.classList.add("gesture"), 1600));
@@ -145,5 +147,12 @@
   stage.addEventListener("focusin", pause);
   stage.addEventListener("focusout", () => setTimeout(resume));
   if (calm) stage.classList.add("calm");
+  stage.classList.add("offscreen");
   go(0);
+  new IntersectionObserver(([e]) => {
+    visible = e.isIntersecting;
+    stage.classList.toggle("offscreen", !visible);
+    if (visible) go(cur);
+    else clear();
+  }, { threshold: 0.5 }).observe(screen);
 })();

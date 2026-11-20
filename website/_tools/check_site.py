@@ -435,10 +435,17 @@ def motion(page: Page, base: str) -> list[str]:
 
     page.set_viewport_size({"width": 1440, "height": 900})
     page.goto(base + "index.html")
+    page.wait_for_timeout(1500)
+    bar = page.evaluate(
+        "getComputedStyle(document.querySelector('#picker li.on .bar i')).height"
+    )
+    if bar != "0px":
+        problems.append("the stage's progress bar runs before the stage is in view")
     first = page.locator("#picker li.on").inner_text()
+    page.locator("#screen").scroll_into_view_if_needed()
     page.wait_for_timeout(8000)
     if page.locator("#picker li.on").inner_text() == first:
-        problems.append("the stage doesn't auto-advance with motion allowed")
+        problems.append("the stage doesn't auto-advance once it's in view")
     return problems
 
 
