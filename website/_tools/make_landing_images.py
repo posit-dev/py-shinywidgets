@@ -126,6 +126,8 @@ GALLERY_CROPS: dict[str, Box] = {
     "showcases/stdlib-import-graph": (0.24, 0.10, 0.82, 0.80),
     "showcases/terrain-explorer": (0.00, 0.24, 0.66, 0.90),
     "showcases/trading-desk": (0.37, 0.05, 0.99, 0.66),
+    "showcases/nearby-stars": (0.22, 0.07, 0.99, 0.80),
+    "showcases/whale-slowdown": (0.00, 0.07, 0.56, 0.93),
     "showcases/world-development-dashboard": (0.27, 0.10, 0.97, 0.80),
     "templates/altair-weather-brush": (0.00, 0.08, 0.62, 0.70),
     "templates/drawdata-classifier-playground": (0.25, 0.08, 0.95, 0.78),
