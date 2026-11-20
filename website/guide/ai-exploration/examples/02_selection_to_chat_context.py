@@ -5,9 +5,10 @@
 #
 # Nothing here reads plot.selected_rows() until chat.on_user_submit runs,
 # which only happens after the user's first message -- the textbook "read on
-# demand" case. That's safe because the accessor attaches the moment `plot`
-# renders and records the lasso whether or not anything has read it yet; see
-# ../../reacting-to-widgets/article.md#read-on-demand.
+# demand" case. That's safe because `listen_to=["selected"]` opts the app
+# into the selection stream once, up front: from the moment `plot` renders,
+# the accessor records every lasso whether or not anything has read it yet.
+# See ../../reacting-to-widgets/article.md#read-on-demand.
 import chatlas
 import plotly.express as px
 from shiny.express import ui

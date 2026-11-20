@@ -1,9 +1,11 @@
-# Read on demand: nothing in this app reads `plot.selected()` /
+# Read on demand: `listen_to=["selected"]` opts this app into the selection
+# stream (the payload grows with the selection, so plotly's selection
+# accessors are off unless declared), but nothing READS
 # `plot.selected_rows()` until the button's gated reader runs -- not a
 # warm-up effect, not a visible output, nothing. Box- or lasso-select points
 # FIRST, then click "Show selection": the selection you already made is
-# there, because the accessor attached and started recording the moment the
-# plot rendered, not on its first read. This is what makes a selection safe
+# there, because once declared the accessor records from the moment the
+# plot renders, not from its first read. This is what makes a selection safe
 # to read from a button handler, a `@reactive.event`-gated output, a
 # download handler, or (see the ai-exploration article) a chat message
 # handler or an LLM tool call -- any reader that only runs after the user
