@@ -14,13 +14,17 @@ SLICES = {
 }
 
 ui.page_opts(title="Slice types", fillable=True)
-ui.input_radio_buttons("view", "View", list(SLICES), selected="Multiplanar", inline=True)
+ui.input_radio_buttons(
+    "view", "View", list(SLICES), selected="Multiplanar", inline=True
+)
 
 
 @render_niivue
 def brain():
     nv = NiiVue()
-    nv.load_volumes([Volume(url="https://niivue.github.io/niivue-demo-images/mni152.nii.gz")])
+    nv.load_volumes(
+        [Volume(url="https://niivue.github.io/niivue-demo-images/mni152.nii.gz")]
+    )
     return nv
 
 

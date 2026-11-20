@@ -12,7 +12,9 @@ from shinywidgets import render_niivue
 
 ui.page_opts(title="Atlas region lookup", fillable=True)
 
-with urllib.request.urlopen("https://raw.githubusercontent.com/niivue/niivue/main/packages/niivue/demos/images/aal.json") as resp:
+with urllib.request.urlopen(
+    "https://raw.githubusercontent.com/niivue/niivue/main/packages/niivue/demos/images/aal.json"
+) as resp:
     AAL_LABELS = json.load(resp)["labels"]
 
 

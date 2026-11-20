@@ -30,7 +30,9 @@ LANDMARKS_MM = {
 }
 CMAPS = ["actc", "warm", "redyell", "winter", "jet"]
 
-with urllib.request.urlopen("https://raw.githubusercontent.com/niivue/niivue/main/packages/niivue/demos/images/aal.json") as resp:
+with urllib.request.urlopen(
+    "https://raw.githubusercontent.com/niivue/niivue/main/packages/niivue/demos/images/aal.json"
+) as resp:
     AAL_LABELS = json.load(resp)["labels"]
 
 CACHE = Path.home() / ".cache" / "niivue-guide"
