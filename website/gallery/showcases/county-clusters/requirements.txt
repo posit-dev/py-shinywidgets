@@ -1,0 +1,6 @@
+# shinywidgets[plotly] pulls plotly; scikit-learn fits the k-means segments,
+# pyarrow reads the committed parquet.
+shinywidgets[plotly]
+scikit-learn
+pandas
+pyarrow

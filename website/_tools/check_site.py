@@ -269,8 +269,8 @@ def gallery(page: Page, base: str) -> list[str]:
     problems: list[str] = []
     page.goto(base + "gallery/index.html")
     items = page.locator(".quarto-listing .quarto-grid-item")
-    if items.count() != 33:
-        problems.append(f"{items.count()} gallery items, expected 33")
+    if items.count() != 35:
+        problems.append(f"{items.count()} gallery items, expected 35")
     # Cards show a crop of each app's widgets (img/card.webp), not the whole-app screenshot.
     srcs = page.evaluate(
         "[...document.querySelectorAll('.quarto-grid-item img.thumbnail-image')].map(i => i.getAttribute('src'))"
@@ -373,8 +373,8 @@ def landing(page: Page, base: str) -> list[str]:
             problems.append(f"tab {LANDING_TABS[i]}: images failed to load: {broken}")
 
     picker = page.locator("#picker li")
-    if picker.count() != 4:
-        problems.append(f"{picker.count()} showcases in the stage, expected 4")
+    if picker.count() != 6:
+        problems.append(f"{picker.count()} showcases in the stage, expected 6")
     else:
         picker.nth(1).click()
         if "Every star" not in page.locator("#picker li.on").inner_text():
