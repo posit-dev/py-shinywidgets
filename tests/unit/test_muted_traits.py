@@ -12,9 +12,9 @@ from shiny._connection import MockConnection
 from shiny.session import session_context
 from shinywidgets import render_widget
 from shinywidgets._accessors import AccessorSpec, Emit
-from shinywidgets._render_widget_base import render_widget_base
 from shinywidgets._comm import SharedShinyComm
 from shinywidgets._config import _SETTINGS, config
+from shinywidgets._render_widget_base import render_widget_base
 
 from tests.unit.conftest import widget_test_server
 
