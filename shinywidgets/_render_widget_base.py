@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import difflib
-import os
 import warnings
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
@@ -34,6 +33,7 @@ from shiny.types import SilentCancelOutputException, SilentOperationInProgressEx
 from ._accessors import Accessors, AccessorSpec, RatePolicy, register_rate_policy
 from ._as_widget import as_widget, refresh_stale_mpl_canvases
 from ._comm import OrphanedShinyComm
+from ._config import native_events_enabled
 from ._dependencies import widget_pkg
 from ._output_widget import output_widget
 from ._widget_registry import WIDGET_INSTANCE_MAP
@@ -484,16 +484,6 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
             # dependencies; still let it reach `.widget` (e.g. to call
             # geolibre's blocking methods)
             self._contexts.discard(ctx)
-
-
-def native_events_enabled() -> bool:
-    """
-    Whether SHINYWIDGETS_NATIVE_EVENTS asks for every widget's own events to
-    reach Python, restoring what renderers mute by default (see
-    `render_widget_base._muted_traits()`). Read per render, so a deployment
-    can set it without touching app code.
-    """
-    return os.environ.get("SHINYWIDGETS_NATIVE_EVENTS", "").lower() in ("1", "true")
 
 
 def has_current_context() -> bool:
