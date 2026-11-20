@@ -63,7 +63,7 @@ def muted_traits(widget: Any) -> List[str]:
     is registered to receive it (#479), so it is muted unless one is.
     Callbacks registered after the render aren't seen; those, and reads of
     plotly.py's Python-side `selectedpoints` (which the same trait keeps
-    current), need render_plotly's `listen_to=["native"]`.
+    current), need `shinywidgets.config(native_events=True)`.
     """
     for trace in widget.data:
         for callbacks in TRACE_CALLBACK_LISTS:

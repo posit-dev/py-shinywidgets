@@ -4928,8 +4928,13 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
         self,
         _fn: Optional[ValueFn[PlotlyValueT]] = None,
         *,
+        width: Optional[str] = None,
+        height: Optional[str] = None,
+        fill: Optional[bool] = None,
+        fillable: Optional[bool] = None,
+        rate_policy: Optional[RatePolicy] = None,
+        rate_delay: Optional[float] = None,
         listen_to: Optional[Sequence[str]] = None,
-        **kwargs: Any,
     ) -> None:
         if listen_to is not None and "native" in listen_to:
             raise ValueError(
@@ -4938,7 +4943,16 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
                 "native_events=True) (or the SHINYWIDGETS_NATIVE_EVENTS=1 "
                 "environment variable) to receive them."
             )
-        super().__init__(_fn, listen_to=listen_to, **kwargs)
+        super().__init__(
+            _fn,
+            width=width,
+            height=height,
+            fill=fill,
+            fillable=fillable,
+            rate_policy=rate_policy,
+            rate_delay=rate_delay,
+            listen_to=listen_to,
+        )
 
     def _muted_traits(self, widget: FigureWidget) -> Sequence[str]:
         return plotly_muted_traits(widget)
