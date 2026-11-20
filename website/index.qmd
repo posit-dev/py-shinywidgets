@@ -21,7 +21,7 @@ include-after-body:
   <div class="copy">
     <div class="eyebrow">SHINY 🤝 JUPYTER WIDGETS</div>
     <h1>Bring your Jupyter widgets to Shiny.</h1>
-    <p class="lede">Bring the Python libraries you already know (plotly, altair, etc) into a reactive web app with one decorator. Build rich and delightful experiences with <a class="see" href="guide/reacting-to-widgets/index.html">user interaction</a> and <a class="see" href="guide/performance/index.html">performant updates</a>.</p>
+    <p class="lede">Bring the libraries you already know (plotly, altair, etc) into a <a class="see" href="https://shiny.posit.co/py/">Shiny</a> app with one decorator. Ship delightfully rich experiences by <a class="see" href="guide/performance/index.html">efficiently</a> handling <a class="see" href="guide/reacting-to-widgets/index.html">user interaction</a>, directly from Python.</p>
 
     <div class="ctas"><a class="btn primary" href="guide/why/index.html">Get started</a><a class="btn ghost" href="gallery/index.html">Browse the gallery →</a></div>
     <div class="install">$ <b>pip install shinywidgets</b></div>
