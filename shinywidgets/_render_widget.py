@@ -165,6 +165,7 @@ from ._ipyleaflet import IPYLEAFLET_ACCESSORS
 from ._itables import ITABLES_ACCESSORS
 from ._jscatter import JSCATTER_ACCESSORS, scatter_frame
 from ._k3d import CAMERA as K3D_CAMERA
+from ._keplergl import CONFIG as KEPLERGL_CONFIG
 from ._lonboard import LONBOARD_ACCESSORS, pick_frame
 from ._maplibre import MAPLIBRE_ACCESSORS
 from ._matplotlib import CLICKED, LIMITS, MATPLOTLIB_ACCESSORS, AxesLimits
@@ -2306,8 +2307,11 @@ class render_keplergl(render_widget_base[ValueT, KeplerGl]):
     be read reactively with ``.read("some_trait")`` (a shortcut for
     :func:`~shinywidgets.reactive_read` on `.widget`).
 
-    **Responding to user interaction**: there are no accessors on this
-    renderer; read the map's configuration traits with ``.read()``.
+    **Responding to user interaction**: ``map.config()`` reads the map's
+    kepler.gl configuration as the user pans, zooms, and edits. It's opt-in
+    (``listen_to=["config"]``); see :meth:`config`. For anything beyond it,
+    use ``map.read()`` (a shortcut for :func:`~shinywidgets.reactive_read`
+    on ``map.widget``).
 
     **Mutating the widget**: use `.widget` to update the rendered map in
     place; trait changes on the widget are synced to the browser. The output
@@ -2336,6 +2340,23 @@ class render_keplergl(render_widget_base[ValueT, KeplerGl]):
     hold the output (Shiny Express displays it where the render function is
     defined).
     """
+
+    _accessor_specs = (KEPLERGL_CONFIG,)
+
+    def config(self) -> Dict[str, Any]:
+        """
+        The map's kepler.gl configuration (layers, filters, viewport, map
+        style), as the browser last reported it.
+
+        Opt-in (``listen_to=["config"]``): kepler.gl syncs the whole config
+        on every store dispatch -- per animation frame while
+        panning/zooming, with no debounce -- so the trait is muted unless
+        the accessor is enabled. Debounced (250 ms) by default; see
+        ``rate_policy``/``rate_delay``. For a one-off read, or to read
+        ``.widget.config`` directly, turn native events on app-wide with
+        ``shinywidgets.config(native_events=True)``.
+        """
+        return cast(Dict[str, Any], self._read_accessor("config"))
 
     def _as_widget(self, value: ValueT) -> KeplerGl:
         # A DataFrame is generic (several renderers accept one), so it's only
