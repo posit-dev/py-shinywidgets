@@ -84,8 +84,8 @@
   // The stage: every DUR ms, play the current app's gesture (caption, crossfade from
   // before to after), then advance. It waits until the screen is in view, and coming
   // back into view restarts the current app. Hovering pauses it mid-gesture and leaving
-  // resumes it. An app picked while paused, or under reduced motion, shows its "after"
-  // state directly ("settled").
+  // resumes it; picking an app plays it even under the pointer. Reduced motion shows
+  // each app's "after" state directly.
   const DUR = 7000;
   const STEPS = [
     [1600, () => screen.classList.add("gesture")],
@@ -107,7 +107,11 @@
   SHOWCASES.forEach((s, i) => {
     const li = document.createElement("li");
     li.innerHTML = `<span class="bar"><i></i></span><button type="button"><h3>${s.title}<small>${s.widgets[0]}</small></h3></button><p>${s.blurb}</p>`;
-    li.onclick = () => go(i);
+    li.onclick = () => {
+      paused = false;
+      stage.classList.remove("paused");
+      go(i);
+    };
     picker.appendChild(li);
   });
   function go(i) {
@@ -137,9 +141,7 @@
     frozen.forEach((a) => a.cancel());
     frozen = [];
     held = null;
-    const settled = calm || paused;
-    stage.classList.toggle("settled", settled);
-    if (settled) {
+    if (calm) {
       screen.className = "screen after gesture";
       return;
     }
@@ -149,7 +151,8 @@
     screen.classList.add("zoom");
     play(0);
   }
-  // Pointer over the stage, or keyboard focus inside it, pauses autoplay.
+  // Pointer over the stage, or keyboard focus inside it, pauses autoplay. (Focus a
+  // click leaves on a button doesn't, or the stage would stay paused off hover.)
   const pause = () => {
     paused = true;
     stage.classList.add("paused");
@@ -164,7 +167,7 @@
     frozen.forEach((a) => a.pause());
   };
   const resume = () => {
-    if (stage.matches(":hover") || stage.contains(document.activeElement)) return;
+    if (!paused || stage.matches(":hover") || stage.querySelector(":focus-visible")) return;
     paused = false;
     stage.classList.remove("paused");
     if (held === null) return go(cur);
@@ -175,15 +178,19 @@
   };
   stage.addEventListener("mouseenter", pause);
   stage.addEventListener("mouseleave", resume);
-  stage.addEventListener("focusin", pause);
+  stage.addEventListener("focusin", (e) => {
+    if (e.target.matches(":focus-visible")) pause();
+  });
   stage.addEventListener("focusout", () => setTimeout(resume));
+  if (calm) stage.classList.add("calm");
   stage.classList.add("offscreen");
   go(0);
   new IntersectionObserver(([e]) => {
     visible = e.isIntersecting;
     stage.classList.toggle("offscreen", !visible);
-    if (visible) go(cur);
-    else {
+    if (visible) {
+      if (!paused) go(cur);
+    } else {
       clear();
       held = null;
     }

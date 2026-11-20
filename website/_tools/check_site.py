@@ -390,13 +390,13 @@ def landing(page: Page, base: str) -> list[str]:
         problems.append("stage items aren't keyboard-focusable buttons")
     else:
         item.focus()
+        if "paused" not in (page.locator("#stage").get_attribute("class") or ""):
+            problems.append("keyboard focus in the stage doesn't pause autoplay")
         page.keyboard.press("Enter")
         if "issue atlas" not in page.locator("#picker li.on").inner_text():
             problems.append(
                 "Enter on the 3rd stage item doesn't select the issue atlas"
             )
-        if "paused" not in (page.locator("#stage").get_attribute("class") or ""):
-            problems.append("keyboard focus in the stage doesn't pause autoplay")
 
     # A visitor who picks light on a docs page still gets the dark landing page, and
     # their docs pages stay light.
@@ -466,6 +466,20 @@ def motion(page: Page, base: str) -> list[str]:
     )
     if any(idle):
         problems.append(f"after a pause, inactive showcases' bars fill: {idle}")
+
+    # Clicking a showcase plays it from the start, even under the pointer, and the
+    # focus the click leaves behind doesn't keep the stage paused.
+    page.locator("#picker li:not(.on) button").first.click()
+    page.wait_for_timeout(500)
+    if "after" in (page.locator("#screen").get_attribute("class") or "") or (
+        page.evaluate(bar_js) > 30
+    ):
+        problems.append("clicking a showcase skips to its end instead of playing it")
+    page.mouse.move(0, 0)
+    page.locator("#screen").hover()
+    page.mouse.move(0, 0)
+    if "paused" in (page.locator("#stage").get_attribute("class") or ""):
+        problems.append("after clicking a showcase, the stage stays paused off hover")
     return problems
 
 
