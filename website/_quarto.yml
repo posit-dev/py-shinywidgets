@@ -176,7 +176,7 @@ quartodoc:
   sections:
     - title: Core
       desc: "Render any widget, and read any widget's state."
-      contents: [render_widget, output_widget, reactive_read, as_widget]
+      contents: [render_widget, output_widget, reactive_read, as_widget, config]
     - title: Lifetimes
       desc: "Choose whether a widget belongs to one session or is shared by all of them."
       contents: [session_lifetime, shared_lifetime]
