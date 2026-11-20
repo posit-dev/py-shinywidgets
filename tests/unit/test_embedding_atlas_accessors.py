@@ -115,3 +115,11 @@ def test_selection_follows_a_rerender_with_new_data(widget_session: Session) -> 
         r, atlas_widget(widget_session), smaller, lambda: len(r.selected_rows())
     )
     assert seen == [4, 2]
+
+
+def test_listen_to_accepted_and_validated() -> None:
+    from shinywidgets import render_embedding_atlas
+
+    render_embedding_atlas(listen_to=["predicate"])
+    with pytest.raises(ValueError, match="predicat"):
+        render_embedding_atlas(listen_to=["predicat"])
