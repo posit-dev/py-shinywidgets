@@ -49,9 +49,9 @@ def box_select(page: Page, id: str) -> None:
 
 def test_native_plotly_events_need_listen_to_native(page: Page, local_app) -> None:
     """#479: plotly.py's own per-point report of clicks, hovers and
-    selections is muted by default; listen_to=["native"] restores it for
-    callbacks registered after the render and for Python-side
-    `selectedpoints`."""
+    selections is muted by default; a trace callback registered inside the
+    render function restores it for that widget's callbacks and
+    Python-side `selectedpoints`."""
     errors, failed_requests = collect_errors(page)
     frames: list[str] = []
 

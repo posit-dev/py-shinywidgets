@@ -6,11 +6,10 @@ import plotly.graph_objects as go
 from shiny import App, reactive, render, ui
 from shinywidgets import output_widget, render_plotly
 
-# plotly.py's own ("native") ways of reading a selection, which a render
-# function can't announce to shinywidgets: a callback registered after the
-# render, and plotly.py's Python-side `selectedpoints`, read on demand.
-# They only work with listen_to=["native"]; `default` shows what an output
-# without it gets.
+# plotly.py's own ("native") per-point event reports are muted by default
+# (#479). Registering a trace callback inside the render function (as
+# `native` does) keeps them on for that widget; `default` shows what an
+# output without one gets.
 
 
 def figure() -> go.Figure:
@@ -37,21 +36,21 @@ app_ui = ui.page_fluid(
 def server(input, output, session):
     callback_points = reactive.value("None")
 
-    @render_plotly(listen_to=["native"])
-    def native():
-        return figure()
-
     @render_plotly
-    def default():
-        return figure()
-
-    @reactive.effect
-    def _():
-        native.widget.data[0].on_selection(
+    def native() -> go.FigureWidget:
+        fig = go.FigureWidget(figure())
+        # A trace callback registered inside the render function keeps
+        # plotly.py's per-point events on for this widget (muted otherwise)
+        fig.data[0].on_selection(
             lambda trace, points, selector: callback_points.set(
                 indices(points.point_inds)
             )
         )
+        return fig
+
+    @render_plotly
+    def default():
+        return figure()
 
     @render.text
     def from_callback():
