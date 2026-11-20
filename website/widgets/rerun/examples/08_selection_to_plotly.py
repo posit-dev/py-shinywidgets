@@ -40,7 +40,7 @@ with ui.layout_columns():
     with ui.card(full_screen=True):
         ui.card_header("Top-down view (plotly)")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def scatter():
             fig = go.Figure(
                 go.Scatter(

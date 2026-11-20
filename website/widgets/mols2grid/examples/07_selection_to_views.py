@@ -59,7 +59,7 @@ with ui.layout_columns(col_widths=[7, 5]):
         with ui.card():
             ui.card_header("Molecular weight of the selection")
 
-            @render_plotly
+            @render_plotly(listen_to=["selected"])
             def hist():
                 return px.histogram(selected_rows(), x="MW", nbins=10)
 

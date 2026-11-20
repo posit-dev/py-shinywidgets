@@ -28,7 +28,7 @@ with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
         ui.card_header(f"{SAMPLE_N:,} of {len(gaia):,} Gaia stars (Scattergl)")
 
-        @render_plotly
+        @render_plotly(listen_to=["selecting"])
         def scatter():
             fig = go.Figure(
                 go.Scattergl(

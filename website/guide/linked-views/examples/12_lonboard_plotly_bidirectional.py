@@ -44,7 +44,7 @@ with ui.layout_columns():
     with ui.card(full_screen=True):
         ui.card_header("plotly: click the same pod")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def chart():
             fig = px.scatter(pods, x="centroid_lon", y="centroid_lat")
             fig.update_traces(marker_color="#9ecae1")

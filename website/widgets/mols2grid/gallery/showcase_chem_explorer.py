@@ -60,7 +60,7 @@ with ui.layout_columns(col_widths=[5, 4, 3]):
     with ui.card(full_screen=True):
         ui.card_header("MW vs. LogP (lasso to filter)")
 
-        @render_plotly
+        @render_plotly(listen_to=["selected"])
         def scatter():
             fig = px.scatter(
                 MOLS, x="MW", y="LogP", custom_data=[MOLS.index], opacity=0.6
