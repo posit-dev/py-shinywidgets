@@ -11,6 +11,7 @@ from typing import (
     Callable,
     Generic,
     Iterator,
+    List,
     Optional,
     Sequence,
     Tuple,
@@ -266,7 +267,9 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         # state the whole set on every render (an empty one clears the set a
         # reused widget's earlier render left there)
         muted = (
-            [] if native_events_enabled() else list(self._muted_traits(self._widget))
+            []
+            if native_events_enabled()
+            else self._spec_muted_traits() + list(self._muted_traits(self._widget))
         )
         if session is not None and not session.is_stub_session():
             send_muted_traits(widget, session, muted)
@@ -310,6 +313,18 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         (e.g., ipycytoscape's Node/Edge widgets).
         """
         return (widget,)
+
+    def _spec_muted_traits(self) -> List[str]:
+        """
+        The `muted_trait` of each accessor this render didn't opt into (see
+        `AccessorSpec.muted_trait`). The accessor is the trait's consumer,
+        so an unlistened accessor's trait is muted; a listened one's flows.
+        """
+        return [
+            spec.muted_trait
+            for spec in self._accessor_specs
+            if spec.muted_trait is not None and spec.name not in self._listen_to
+        ]
 
     def _muted_traits(self, widget: WidgetT) -> Sequence[str]:
         """
