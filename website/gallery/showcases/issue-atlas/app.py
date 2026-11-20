@@ -64,7 +64,8 @@ app_ui = ui.page_sidebar(
         ui.output_ui("summarize_button"),
         ui.output_ui("summary"),
         ui.p(
-            "Drag on the map to select a region; click a point to open its GitHub issue.",
+            "Drag on the map to select a region (shift + drag, or toggle the "
+            "rectangle/lasso tool below the map).",
             class_="text-secondary small mt-auto mb-0",
         ),
         width=420,
