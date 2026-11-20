@@ -63,8 +63,9 @@ Source: [app.py](app.py)
 
 ## Accessors demonstrated
 
-- `atlas.selection()` -- the currently-selected rows (as `__row_index__` positions back into
-  the original DataFrame), read by the stats panel, the "Asked twice" list, and the
+- `reactive_read(atlas.widget, "_predicate")` plus `atlas.widget.selection()` -- reaching
+  into the `EmbeddingAtlasWidget` directly for the `__row_index__` positions of the
+  currently-selected rows, read by the stats panel, the "Asked twice" list, and the
   `summary_titles()` call that feeds Claude -- one accessor driving three different views of
   the same selection.
 - A `reactive.extended_task` wired to `ui.bind_task_button` -- the live Claude call runs off

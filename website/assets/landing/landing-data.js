@@ -215,7 +215,7 @@ const SHOWCASES = [
   { id: "stars", title: "Every star within 330 light-years", widgets: ["jscatter", "k3d", "ipyaladin"], lines: 332,
     blurb: "256k Gaia stars linked across three views: lasso one, and the same stars light up everywhere.",
     gesture: "Press Hyades", href: "gallery/showcases/nearby-stars/index.html" },
-  { id: "issues", title: "The Shiny issue atlas", widgets: ["embedding-atlas"], lines: 206,
+  { id: "issues", title: "The Shiny issue atlas", widgets: ["embedding-atlas"], lines: 207,
     blurb: "6,088 GitHub issues mapped by meaning; Claude summarizes whatever region you select.",
     gesture: "Select a cluster, ask Claude", href: "gallery/showcases/issue-atlas/index.html" },
   { id: "trade", title: "Live trading desk", widgets: ["perspective"], lines: 215,

@@ -1,5 +1,5 @@
 # Title: The Shiny issue atlas
-# Bucket: showcase (~206 lines)
+# Bucket: showcase (~207 lines)
 # Description: 6,088 GitHub issues from 9 Shiny-ecosystem repos, embedded
 #   with sentence-transformers and projected with embedding-atlas. Select a
 #   region to see Python issues sitting next to an older R twin asking the
