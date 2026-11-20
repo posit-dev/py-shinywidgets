@@ -1,7 +1,7 @@
 import pytest
 import shinywidgets._output_widget as ow
 from htmltools import HTMLDependency
-from shinywidgets._cdn import SHINYWIDGETS_CDN_ONLY
+from shinywidgets._config import cdn_only
 from shinywidgets._output_widget import output_widget
 
 
@@ -27,7 +27,7 @@ def test_output_widget_structure_and_head_content(
         str(d.head) for d in deps if getattr(d, "head", None) is not None
     )
     assert 'data-jupyter-widgets-cdn="' in head_html
-    if SHINYWIDGETS_CDN_ONLY:
+    if cdn_only():
         assert "data-jupyter-widgets-cdn-only" in head_html
     else:
         assert "data-jupyter-widgets-cdn-only" not in head_html

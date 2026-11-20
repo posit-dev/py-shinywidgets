@@ -6,11 +6,11 @@ import subprocess
 import sys
 
 import pytest
-import shinywidgets._shinywidgets as sw
 from shiny import Session, reactive
 from shiny.session import session_context
 from shinywidgets import render_ipyvolume
 from shinywidgets._as_widget import as_widget
+from shinywidgets._config import _SETTINGS
 from shinywidgets._render_widget_base import render_widget_base
 
 
@@ -72,7 +72,7 @@ def test_vuetify_widget_open_serves_jupyter_vue(
     # jupyter-vue.js at the app root (then falls back to a CDN). The mapping
     # is only served in local-dependency mode, so disable the fixture's
     # CDN-only mode for this test.
-    monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", False)
+    monkeypatch.setitem(_SETTINGS, "cdn_only", False)
     ipv = pytest.importorskip("ipyvolume")
 
     messages: list[dict] = []

@@ -12,6 +12,7 @@ import shinywidgets._shinywidgets as sw
 from shiny import App, Inputs, Outputs, Session, reactive, ui
 from shiny._connection import MockConnection
 from shiny.session import session_context
+from shinywidgets._config import _SETTINGS
 
 
 def widget_test_server(input: Inputs, output: Outputs, session: Session) -> None:
@@ -26,7 +27,7 @@ def widget_session(monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
     """
     app = App(ui.page_fluid(), widget_test_server)
     session = app._create_session(MockConnection())
-    monkeypatch.setattr(sw, "SHINYWIDGETS_CDN_ONLY", True)
+    monkeypatch.setitem(_SETTINGS, "cdn_only", True)
     # Session effects send busy-count messages when scheduled, which needs a
     # current event loop (a real Shiny app always runs with one).
     loop = asyncio.new_event_loop()
