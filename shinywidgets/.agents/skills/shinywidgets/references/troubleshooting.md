@@ -9,7 +9,7 @@ browser. Don't assume it's a shinywidgets bug — check these first.
 ## The widget library isn't installed
 
 shinywidgets doesn't install widget libraries itself; each one is an extra
-(`pip install 'shinywidgets[<name>]'`, e.g. `shinywidgets[plotly]`).
+(e.g. `pip install 'shinywidgets[plotly]'`).
 Without it, the import that needs the library raises an ordinary
 `ModuleNotFoundError`. If shinywidgets itself is the one importing it (e.g.
 coercing a data frame to a table), the error names the exact extra to

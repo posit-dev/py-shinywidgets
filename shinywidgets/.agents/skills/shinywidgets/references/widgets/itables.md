@@ -4,7 +4,7 @@
 
 `pip install 'shinywidgets[itables]'`. Turn a pandas or polars data frame
 into a searchable, sortable, exportable DataTable with zero configuration —
-no extra app code, no `shinywidgets[...]` row-selection wiring. Returns an
+no extra app code, no custom row-selection wiring. Returns an
 `itables.widget.ITable` (or a plain DataFrame, coerced automatically). If
 the user doesn't need to *do* anything with the table besides read it,
 prefer plain `render.data_frame` instead — reach for itables when you need
