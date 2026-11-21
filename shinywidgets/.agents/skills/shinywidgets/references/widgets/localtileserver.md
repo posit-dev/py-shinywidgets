@@ -7,8 +7,8 @@ local GeoTIFF or COG into pan/zoom-able slippy-map tiles, served from your
 own Shiny process — no separate tile service, no upload, and it works
 deployed. There is no dedicated `render_localtileserver`: a `TileClient`
 builds an ordinary `ipyleaflet.TileLayer` (via `get_leaflet_tile_layer()`),
-so it rides on [`render_ipyleaflet`](widgets/ipyleaflet.md) or
-[`render_leafmap`](widgets/leafmap.md) like any other layer. Reach for
+so it rides on [`render_ipyleaflet`](ipyleaflet.md) or
+[`render_leafmap`](leafmap.md) like any other layer. Reach for
 plain ipyleaflet/lonboard instead for vector data (points, lines,
 polygons); `leafmap`'s `add_raster()` is localtileserver under the hood
 with a friendlier one-line API.
@@ -54,6 +54,7 @@ re-render:
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _restyle():

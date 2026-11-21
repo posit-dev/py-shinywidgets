@@ -52,6 +52,7 @@ otherwise re-trigger the same effect:
 ```python
 from shiny import reactive
 
+
 @reactive.effect
 def _recolor():
     with reactive.isolate():

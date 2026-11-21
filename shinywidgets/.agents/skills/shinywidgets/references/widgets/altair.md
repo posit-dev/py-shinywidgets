@@ -61,6 +61,7 @@ chart without re-sending its data:
 ```python
 from shiny import reactive
 
+
 @reactive.effect
 def _set_threshold():
     chart.widget.params.cutoff = input.cutoff()

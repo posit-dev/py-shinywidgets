@@ -16,8 +16,11 @@ from shinywidgets import render_mosaic_widget
 penguins = pd.DataFrame({"species": ["Adelie", "Gentoo"], "body_mass": [3700, 5000]})
 
 spec = {
-    "plot": [{"mark": "dot", "data": {"from": "penguins"}, "x": "species", "y": "body_mass"}],
-    "width": 600, "height": 300,
+    "plot": [
+        {"mark": "dot", "data": {"from": "penguins"}, "x": "species", "y": "body_mass"}
+    ],
+    "width": 600,
+    "height": 300,
 }
 
 
@@ -52,6 +55,7 @@ connection, and re-sends the JS bundle:
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _restyle():

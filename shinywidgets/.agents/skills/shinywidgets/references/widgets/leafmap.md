@@ -26,6 +26,7 @@ alternatives.
 import leafmap.leafmap as leafmap
 from shinywidgets import render_leafmap
 
+
 @render_leafmap
 def map():
     return leafmap.Map(center=(47.6, -122.3), zoom=10)
@@ -38,7 +39,7 @@ a height of their own (`leafmap.Map(height=400)` or
 ## Accessors
 
 On the default (ipyleaflet) backend, the same five accessors as
-[ipyleaflet](widgets/ipyleaflet.md): `bounds()`, `zoom()`, `center()`,
+[ipyleaflet](ipyleaflet.md): `bounds()`, `zoom()`, `center()`,
 `clicked()`, `drawn_features()`. On the maplibre, plotly, and kepler
 backends these **raise `TypeError`** — read those backends' state with
 `.read(...)` instead (e.g. `.read("view_state")` for maplibre). For a trait

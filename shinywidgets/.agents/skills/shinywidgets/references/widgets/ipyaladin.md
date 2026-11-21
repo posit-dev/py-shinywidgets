@@ -15,6 +15,7 @@ time.
 from ipyaladin import Aladin
 from shinywidgets import render_ipyaladin
 
+
 @render_ipyaladin
 def sky():
     return Aladin(target="M31", fov=5)
@@ -47,6 +48,7 @@ Mutate `.widget` (`.widget.target = "M31"`, `.widget.fov = 5`):
 
 ```python
 from shiny import reactive, req
+
 
 @reactive.effect
 def _pan():

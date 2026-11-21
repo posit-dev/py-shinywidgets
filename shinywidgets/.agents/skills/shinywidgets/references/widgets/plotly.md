@@ -69,6 +69,7 @@ changes at once:
 ```python
 from shiny import reactive, req
 
+
 @reactive.effect
 def _highlight():
     pts = plot.clicked()

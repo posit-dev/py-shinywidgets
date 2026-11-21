@@ -14,6 +14,7 @@ interaction overlay would swallow it; use click-select (below) instead.
 import bqplot.pyplot as bplt
 from shinywidgets import render_bqplot
 
+
 @render_bqplot
 def fig():
     fig = bplt.figure()  # always call figure() explicitly inside the render fn
@@ -52,6 +53,7 @@ tweens the transition):
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _update_line():

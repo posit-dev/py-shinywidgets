@@ -14,9 +14,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
-
 import shinywidgets
+import yaml
 from shinywidgets._render_widget import render_widget
 
 if sys.version_info >= (3, 11):
@@ -131,6 +130,13 @@ def test_links_resolve_and_every_reference_is_indexed() -> None:
     assert linked == on_disk
 
 
+@pytest.mark.parametrize("path", all_reference_files(), ids=str)
+def test_reference_relative_links_resolve(path: Path) -> None:
+    targets = re.findall(r"\]\(([^)\s#]+\.md)(?:#[^)]*)?\)", read(path))
+    broken = [t for t in targets if not (path.parent / t).is_file()]
+    assert broken == []
+
+
 def test_concept_references_exist() -> None:
     assert {p.stem for p in REFERENCES.glob("*.md")} == set(CONCEPTS)
 
@@ -149,7 +155,9 @@ def test_renderer_is_indexed_and_documented(name: str) -> None:
     assert name in text
     renderer = getattr(shinywidgets, name)
     for acc in accessors(renderer):
-        assert re.search(rf"[`.]{re.escape(acc)}\b", text), f"{acc} missing from {ref.name}"
+        assert re.search(rf"[`.]{re.escape(acc)}\b", text), (
+            f"{acc} missing from {ref.name}"
+        )
 
 
 def test_mentioned_extras_exist() -> None:

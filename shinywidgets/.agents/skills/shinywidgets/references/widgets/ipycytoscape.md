@@ -8,13 +8,14 @@ precise CSS-like styling computed in Python. Accepts a `networkx.Graph`
 (coerced to a `CytoscapeWidget`) or a `CytoscapeWidget` directly.
 Comfortable into the low thousands of nodes — every node and edge is its
 own ipywidgets model, so render time scales with element count; for tens
-of thousands of nodes, prefer [ipysigma](widgets/ipysigma.md).
+of thousands of nodes, prefer [ipysigma](ipysigma.md).
 
 ## Quick start
 
 ```python
 import networkx as nx
 from shinywidgets import render_ipycytoscape
+
 
 @render_ipycytoscape
 def graph():
@@ -46,6 +47,7 @@ Use `.widget` — `.widget.set_style()`, `.widget.set_layout()`, or setting
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _restyle():

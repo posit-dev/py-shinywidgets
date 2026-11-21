@@ -17,6 +17,7 @@ widget, report the selected node back to Python.
 import networkx as nx
 from shinywidgets import render_ipysigma
 
+
 @render_ipysigma
 def sigma():
     return nx.karate_club_graph()

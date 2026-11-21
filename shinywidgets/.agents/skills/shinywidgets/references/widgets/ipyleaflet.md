@@ -14,6 +14,7 @@ Python. Accepts an `ipyleaflet.Map` (or a subclass, e.g. `leafmap.leafmap.Map`
 import ipyleaflet
 from shinywidgets import render_ipyleaflet
 
+
 @render_ipyleaflet
 def map():
     return ipyleaflet.Map(center=(51.48, 0), zoom=12)
@@ -50,6 +51,7 @@ directly — this is cheap for most traits, but see the gotcha below:
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _recenter():

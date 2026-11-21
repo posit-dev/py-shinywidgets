@@ -14,6 +14,7 @@ works in deployed apps, not just locally.
 from geolibre import Map
 from shinywidgets import render_geolibre
 
+
 @render_geolibre
 def map():
     return Map()
@@ -49,6 +50,7 @@ instead:
 
 ```python
 from shiny import reactive
+
 
 @reactive.extended_task
 async def _fly():

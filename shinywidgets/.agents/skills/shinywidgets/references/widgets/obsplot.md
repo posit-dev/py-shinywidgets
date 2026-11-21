@@ -43,6 +43,7 @@ Assign a new specification to `.widget.spec` (the same dict you'd pass to
 ```python
 from shiny import reactive
 
+
 @reactive.effect
 def _update_spec():
     plot.widget.spec = {"marks": [Plot.dot(new_df, {"x": "x", "y": "y"})]}

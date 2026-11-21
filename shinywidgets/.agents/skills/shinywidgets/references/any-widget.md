@@ -15,6 +15,7 @@ decorator, or when you're building the widget yourself.
 from ipywidgets import IntSlider
 from shinywidgets import render_widget
 
+
 @render_widget
 def slider():
     return IntSlider(value=7, min=0, max=10, description="Threshold:")
@@ -35,6 +36,7 @@ declared with `.tag(sync=True)` syncs both directions automatically:
 import anywidget
 import traitlets
 
+
 class Sparkline(anywidget.AnyWidget):
     _esm = """
     function render({ model, el }) {
@@ -51,9 +53,11 @@ class Sparkline(anywidget.AnyWidget):
 from shiny import reactive
 from shinywidgets import render_widget
 
+
 @render_widget
 def spark():
     return Sparkline(values=[1.0, 3.0, 2.0])
+
 
 @reactive.effect
 def _update():

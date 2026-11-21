@@ -15,6 +15,7 @@ import numpy as np
 import vizarr
 from shinywidgets import render_vizarr
 
+
 @render_vizarr
 def viewer():
     v = vizarr.Viewer()
@@ -43,6 +44,7 @@ replace of existing images):
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _add_layer():

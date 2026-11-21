@@ -16,7 +16,9 @@ updates matter more here than almost anywhere else in the roster.
 import pandas as pd
 from shinywidgets import render_keplergl
 
-cities = pd.DataFrame({"lat": [37.77, 40.71], "lon": [-122.42, -74.01], "city": ["SF", "NYC"]})
+cities = pd.DataFrame(
+    {"lat": [37.77, 40.71], "lon": [-122.42, -74.01], "city": ["SF", "NYC"]}
+)
 
 
 @render_keplergl
@@ -50,6 +52,7 @@ roughly 1,500x smaller than re-sending the full bundle:
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _update_data():

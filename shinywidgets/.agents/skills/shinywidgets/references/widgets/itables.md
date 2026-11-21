@@ -17,6 +17,7 @@ SearchPanes filters.
 from itables.widget import ITable
 from shinywidgets import render_itables
 
+
 @render_itables
 def table():
     return ITable(df, select=True)

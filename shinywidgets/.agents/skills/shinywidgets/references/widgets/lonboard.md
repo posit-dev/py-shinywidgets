@@ -56,6 +56,7 @@ with `map.widget.fly_to(...)`:
 ```python
 from shiny import reactive
 
+
 @reactive.effect
 def _recolor():
     map.widget.layers[0].get_fill_color = new_colors

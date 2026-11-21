@@ -15,6 +15,7 @@ pixel height (512, k3d's default, is treated as unspecified).
 import k3d
 from shinywidgets import render_k3d
 
+
 @render_k3d
 def scene():
     plot = k3d.plot()
@@ -42,6 +43,7 @@ Use `.widget.objects[i].<trait>`:
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _recolor():

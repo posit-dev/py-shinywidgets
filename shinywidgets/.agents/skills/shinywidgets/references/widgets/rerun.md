@@ -12,6 +12,7 @@ import rerun as rr
 from rerun.notebook import Viewer
 from shinywidgets import render_rerun
 
+
 @render_rerun
 def viewer():
     recording = rr.RecordingStream("my_app")
@@ -49,6 +50,7 @@ browser, no re-render needed. Trait updates on `.widget` (e.g.
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _log_more():

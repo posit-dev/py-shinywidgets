@@ -10,7 +10,7 @@ HTML; `Deck.update()` raises), so no ipywidgets bridge can render a live
 
 ## Migration
 
-Bring `pydeck.Layer` objects to [`render_maplibre`](widgets/maplibre.md)'s
+Bring `pydeck.Layer` objects to [`render_maplibre`](maplibre.md)'s
 `add_deck_layers()`:
 
 ```python
@@ -35,10 +35,18 @@ def deck():
 
 @reactive.effect
 def _restyle():
-    deck.widget.set_deck_layers([pdk.Layer(
-        "HexagonLayer", POINTS, id="hex", get_position="-",
-        radius=input.radius(), extruded=True,
-    )])
+    deck.widget.set_deck_layers(
+        [
+            pdk.Layer(
+                "HexagonLayer",
+                POINTS,
+                id="hex",
+                get_position="-",
+                radius=input.radius(),
+                extruded=True,
+            )
+        ]
+    )
 ```
 
 `.widget.set_deck_layers()` restyles in place (the camera stays where the
@@ -47,7 +55,7 @@ or `"clicked"`.
 
 Other options:
 
-- **Large data**: [`render_lonboard`](widgets/lonboard.md) sends binary
+- **Large data**: [`render_lonboard`](lonboard.md) sends binary
   data once and restyles layers without re-sending it.
 - **Static maps only, no interaction needed back to Python**: `@render.ui`
   returning `deck.show()` (a 500px-tall iframe) or

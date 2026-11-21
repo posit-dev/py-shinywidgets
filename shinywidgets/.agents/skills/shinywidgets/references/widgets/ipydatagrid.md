@@ -56,6 +56,7 @@ use `.widget.on_cell_change()` to react to edits:
 ```python
 from shiny import reactive
 
+
 @reactive.effect
 def _clear_selection():
     grid.widget.selections = []

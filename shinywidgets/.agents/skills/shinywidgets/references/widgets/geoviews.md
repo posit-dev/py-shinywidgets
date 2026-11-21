@@ -4,7 +4,7 @@
 
 `pip install 'shinywidgets[holoviews]' geoviews "cartopy<0.26"`. There is
 no dedicated `render_geoviews` — GeoViews maps render through the same
-[`@render_holoviews`](widgets/holoviews.md) decorator as plain
+[`@render_holoviews`](holoviews.md) decorator as plain
 HoloViews/hvPlot. Cartopy-projected, tile-backed Bokeh maps from
 HoloViews/hvPlot elements. The `cartopy<0.26` pin matters: geoviews
 1.15/1.16 raise `KeyError: 'lon_0'` on cartopy 0.26 (fixed upstream,
@@ -23,7 +23,10 @@ hv.extension("bokeh")
 @render_holoviews
 def map():
     points = gv.Points(carshare, kdims=["centroid_lon", "centroid_lat"]).opts(
-        color="car_hours", cmap="viridis", size=8, tools=["hover"],
+        color="car_hours",
+        cmap="viridis",
+        size=8,
+        tools=["hover"],
     )
     return (gv.tile_sources.OSM * points).opts(responsive=True)
 ```

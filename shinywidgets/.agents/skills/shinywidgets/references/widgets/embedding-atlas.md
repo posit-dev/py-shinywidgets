@@ -14,7 +14,9 @@ import pandas as pd
 from embedding_atlas.widget import EmbeddingAtlasWidget
 from shinywidgets import render_embedding_atlas
 
-df = pd.DataFrame({"x": [0.0, 1.0, 0.1], "y": [0.0, 1.0, 0.2], "text": ["alpha", "beta", "gamma"]})
+df = pd.DataFrame(
+    {"x": [0.0, 1.0, 0.1], "y": [0.0, 1.0, 0.2], "text": ["alpha", "beta", "gamma"]}
+)
 
 
 @render_embedding_atlas

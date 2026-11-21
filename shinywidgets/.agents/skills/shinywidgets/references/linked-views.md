@@ -36,6 +36,7 @@ a compatible, Python-settable selection trait:
 import numpy as np
 from shiny import reactive
 
+
 def link(source, target):
     @reactive.effect
     def _():
@@ -43,6 +44,7 @@ def link(source, target):
         with reactive.isolate():
             if not np.array_equal(selection, target.widget.selection):
                 target.widget.selection = selection
+
 
 link(plot_a, plot_b)
 link(plot_b, plot_a)

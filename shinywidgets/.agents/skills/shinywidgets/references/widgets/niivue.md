@@ -17,6 +17,7 @@ control size instead.
 from ipyniivue import NiiVue, SliceType, Volume
 from shinywidgets import render_niivue
 
+
 @render_niivue
 def nv():
     nv = NiiVue(slice_type=SliceType.MULTIPLANAR)
@@ -45,6 +46,7 @@ coordinates from the `location()` payload instead.
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _recolor():

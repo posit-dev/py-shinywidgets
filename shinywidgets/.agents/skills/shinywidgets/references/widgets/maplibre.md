@@ -14,6 +14,7 @@ migration target for deprecated `render_pydeck` (via `add_deck_layers()`).
 from maplibre import Map
 from shinywidgets import render_maplibre
 
+
 @render_maplibre
 def map():
     return Map()
@@ -45,6 +46,7 @@ effect:
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _restyle():

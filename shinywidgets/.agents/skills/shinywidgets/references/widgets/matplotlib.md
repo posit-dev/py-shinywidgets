@@ -18,6 +18,7 @@ shared by every output and session in the process.
 import matplotlib.pyplot as plt
 from shinywidgets import render_matplotlib
 
+
 @render_matplotlib
 def plot():
     fig, ax = plt.subplots()
@@ -47,6 +48,7 @@ this preserves the user's zoom, unlike re-rendering:
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _update_line():

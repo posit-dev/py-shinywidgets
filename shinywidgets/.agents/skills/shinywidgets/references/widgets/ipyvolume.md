@@ -18,6 +18,7 @@ elsewhere can end up shared across sessions.
 import ipyvolume as ipv
 from shinywidgets import render_ipyvolume
 
+
 @render_ipyvolume
 def plot():
     return ipv.quickscatter([0, 1, 2], [0, 1, 0], [1, 0, 1])
@@ -46,6 +47,7 @@ Use `.widget` — any trait on the figure syncs to the browser:
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _recolor():

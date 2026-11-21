@@ -17,6 +17,7 @@ from reactable import Reactable
 from reactable.data import cars_93
 from shinywidgets import render_reactable
 
+
 @render_reactable
 def tbl():
     return Reactable(cars_93, filterable=True, searchable=True)
@@ -51,6 +52,7 @@ syncs:
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _update_data():

@@ -71,6 +71,7 @@ way a spreadsheet formula updates when a cell it reads changes:
 from shiny import req
 from shiny.express import render
 
+
 @render_plotly(listen_to=["selected"])
 def plot():
     fig = px.scatter(df, x="gdpPercap", y="lifeExp", custom_data=[df.index])

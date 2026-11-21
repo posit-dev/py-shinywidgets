@@ -4,7 +4,7 @@
 
 `pip install 'shinywidgets[holoviews]' datashader hvplot`. There is no
 dedicated `render_datashader` — Datashader plots render through
-[`@render_holoviews`](widgets/holoviews.md), the same decorator as any other
+[`@render_holoviews`](holoviews.md), the same decorator as any other
 HoloViews/hvPlot object. Use it to aggregate tens of millions of points into
 a single image-sized grid on the server, so the browser never sees more
 than one plot's worth of pixels no matter how many rows went in.
@@ -22,8 +22,13 @@ ui.page_opts(title="Pickup density", fillable=True)
 @render_holoviews
 def plot():
     return pickups.hvplot.points(
-        "lon", "lat", rasterize=True, cnorm="eq_hist", cmap="fire",
-        responsive=True, colorbar=True,
+        "lon",
+        "lat",
+        rasterize=True,
+        cnorm="eq_hist",
+        cmap="fire",
+        responsive=True,
+        colorbar=True,
     )
 ```
 

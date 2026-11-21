@@ -27,6 +27,7 @@ states, which never changes for that accessor:
 from shiny import req
 from shiny.express import render
 
+
 @render.code
 def clicked_out():
     pt = map.clicked()
@@ -103,10 +104,12 @@ from shinywidgets import render_plotly
 
 df = px.data.tips().reset_index(drop=True)
 
+
 @render_plotly(listen_to=["selected"])
 def plot():
     fig = px.scatter(df, x="total_bill", y="tip", custom_data=[df.index])
     return fig.update_layout(dragmode="select")
+
 
 # elsewhere: plot.selected_rows(df) -- matched back to df by df.index
 ```

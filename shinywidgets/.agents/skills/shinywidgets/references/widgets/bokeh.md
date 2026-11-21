@@ -17,6 +17,7 @@ function.
 from bokeh.plotting import figure
 from shinywidgets import render_bokeh
 
+
 @render_bokeh
 def plot():
     p = figure()
@@ -56,6 +57,7 @@ re-rendering:
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _update_source():

@@ -16,6 +16,7 @@ from plotnine import aes, geom_point, ggplot
 from plotnine.data import penguins
 from shinywidgets import render_plotnine
 
+
 @render_plotnine
 def plot():
     return ggplot(penguins, aes("bill_length_mm", "body_mass_g")) + geom_point()

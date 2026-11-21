@@ -16,6 +16,7 @@ for a fixed pixel size instead.
 import pythreejs as p3
 from shinywidgets import render_pythreejs
 
+
 @render_pythreejs
 def scene():
     mesh = p3.Mesh(p3.BoxGeometry(1, 1, 1), p3.MeshBasicMaterial(color="#1f77b4"))
@@ -45,6 +46,7 @@ Use `.widget` — any trait on any object reachable from `scene.widget`:
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _recolor():

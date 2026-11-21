@@ -52,6 +52,7 @@ swaps rows but doesn't accept a DataFrame).
 ```python
 from shiny import reactive
 
+
 @reactive.effect
 def _stream_rows():
     grid.widget.update(new_rows_df)

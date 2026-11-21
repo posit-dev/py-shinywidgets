@@ -18,6 +18,7 @@ existing bitmap.
 from ipycanvas import Canvas
 from shinywidgets import render_ipycanvas
 
+
 @render_ipycanvas
 def canvas():
     c = Canvas(width=300, height=200)
@@ -42,6 +43,7 @@ browser canvas updates in place:
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _draw():

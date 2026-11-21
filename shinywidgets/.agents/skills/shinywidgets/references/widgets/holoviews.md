@@ -7,8 +7,8 @@ plots — crossfilter several views at once with `hv.link_selections`.
 Accepts a holoviews/hvPlot/geoviews object (rendered through panel) or the
 underlying `jupyter_bokeh.BokehModel`. If you call `.opts()` without
 importing hvplot, call `hv.extension("bokeh")` first. Also renders
-[geoviews](widgets/geoviews.md) objects and
-[datashader](widgets/datashader.md)-rasterized plots — those have their own
+[geoviews](geoviews.md) objects and
+[datashader](datashader.md)-rasterized plots — those have their own
 references for library-specific gotchas.
 
 ## Quick start
@@ -16,6 +16,7 @@ references for library-specific gotchas.
 ```python
 import holoviews as hv
 from shinywidgets import render_holoviews
+
 
 @render_holoviews
 def curve():

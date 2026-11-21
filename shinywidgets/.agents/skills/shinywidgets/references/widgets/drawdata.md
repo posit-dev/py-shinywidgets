@@ -16,6 +16,7 @@ preserving its aspect ratio.
 from drawdata import ScatterWidget
 from shinywidgets import render_drawdata
 
+
 @render_drawdata
 def canvas():
     return ScatterWidget()

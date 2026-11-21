@@ -13,6 +13,7 @@ output. Accepts an `nglview.NGLWidget` (from `nglview.show_file()`,
 import nglview
 from shinywidgets import render_nglview
 
+
 @render_nglview
 def viewer():
     return nglview.show_url("rcsb://1crn")
@@ -37,6 +38,7 @@ sends them from a background thread (requires shiny >= 1.9):
 
 ```python
 from shiny import reactive
+
 
 @reactive.effect
 def _advance_frame():

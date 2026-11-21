@@ -50,6 +50,7 @@ non-matching molecules without re-rendering — positional against the rows
 ```python
 from shiny import reactive
 
+
 @reactive.effect
 def _filter():
     grid.grid.filter(df["solubility"] > input.min_solubility())
