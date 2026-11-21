@@ -233,11 +233,13 @@ def _reject_ipyvolume_string_color_arrays(fig: IpyvolumeFigure) -> None:
     # raises; indexing into a string never raises ("tomato"[0] == "t", then
     # "t"[0] == "t", ...), so a per-point string array infinite-loops and hangs
     # the whole process the first time the widget's state is serialized
+    # (https://github.com/widgetti/ipyvolume/issues/371)
     color_traits: list[Tuple[Widget, str]] = [
         *[(scatter, "color") for scatter in fig.scatters],
         *[(scatter, "color_selected") for scatter in fig.scatters],
         *[(mesh, "color") for mesh in fig.meshes],
     ]
+    first_bad: Optional[Tuple[Widget, str, np.ndarray]] = None
     for mark, trait in color_traits:
         value: object = getattr(mark, trait)
         if not (isinstance(value, np.ndarray) and value.ndim > 0):
@@ -247,15 +249,28 @@ def _reject_ipyvolume_string_color_arrays(fig: IpyvolumeFigure) -> None:
             and value.size > 0
             and isinstance(value.flat[0], str)
         )
-        if is_string_array:
-            raise TypeError(
-                f"ipyvolume `{type(mark).__name__}.{trait}` was given an array "
-                f"of strings (dtype={value.dtype}, shape={value.shape}), which "
-                "ipyvolume's serializer infinite-loops on, hanging the entire "
-                "Shiny app. Pass a single color (e.g., color='red') or "
-                "per-point numeric data (e.g., values to map through a "
-                "colormap, or an (N, 3) RGB float array) instead."
-            )
+        if not is_string_array:
+            continue
+        if first_bad is None:
+            first_bad = (mark, trait, value)
+        # Reset every offending trait, not just the one reported below: the
+        # marks' comm opens were deferred at construction and still serialize
+        # state at the next reactive flush (nothing closes widgets created
+        # during a failed render), so a string array left in place would hang
+        # the process despite the error
+        setattr(mark, trait, None)
+
+    if first_bad is not None:
+        mark, trait, value = first_bad
+        raise TypeError(
+            f"ipyvolume `{type(mark).__name__}.{trait}` was given an array "
+            f"of strings (dtype={value.dtype}, shape={value.shape}), which "
+            "ipyvolume's serializer infinite-loops on, hanging the entire "
+            "Shiny app. Pass a single color (e.g., color='red') or "
+            "per-point numeric data (e.g., values to map through a "
+            "colormap, or an (N, 3) RGB float array) instead. "
+            "The invalid value was reset to None to keep the app running."
+        )
 
 
 def as_widget_lonboard(x: object) -> Widget:
