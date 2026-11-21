@@ -65,10 +65,9 @@ def _restyle():
 
 ## Gotchas
 
-- **Security**: Mosaic runs browser-sent SQL against the widget's
-  connection. By default the renderer locks it down
-  (`enable_external_access = false`, `lock_configuration = true`); pass
-  `allow_unrestricted_connection=True` only for a local, single-user app.
+- **Security**: like quak and embedding-atlas, Mosaic runs browser-sent SQL
+  against the widget's connection — see `../choosing-a-widget.md` for the
+  default lockdown and `allow_unrestricted_connection`.
 - **For a *shared* connection** (`con=`, or a `duckdb` relation in `data=`
   landing on `duckdb.default_connection()`), the lockdown is **permanent
   and database-wide** — it locks every other cursor on that connection too,

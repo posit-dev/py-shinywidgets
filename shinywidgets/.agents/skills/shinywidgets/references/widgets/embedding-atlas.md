@@ -48,13 +48,11 @@ re-render if you need to soften the reset.
 
 ## Gotchas
 
-- **Security**: the explorer runs browser-sent SQL against the widget's own
-  DuckDB connection. By default the renderer locks it down
-  (`enable_external_access = false`, `lock_configuration = true`) so only
-  the data you gave the widget is reachable; pass
-  `allow_unrestricted_connection=True` only for a local, single-user app.
-  Even locked down, a visitor can still send expensive queries that block
-  the Python process while they run.
+- **Security**: like quak and mosaic, the explorer runs browser-sent SQL
+  against its own DuckDB connection — see `../choosing-a-widget.md` for the
+  default lockdown and `allow_unrestricted_connection`. Even locked down, a
+  visitor can still send expensive queries that block the Python process
+  while they run.
 - A bare data frame return doesn't build the widget — you must construct
   `EmbeddingAtlasWidget(df, x=..., y=..., text=...)` yourself.
 

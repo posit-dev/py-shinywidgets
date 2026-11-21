@@ -97,19 +97,15 @@ changed `input.*()`) sends the whole widget back to the browser and resets
 the user's zoom and selection — for a big chart that's slow, and it resends
 the widget's JS too. Writing to `.widget` from a `@reactive.effect` instead
 changes only what's different, keeps the zoom and selection, and is far
-smaller on the wire (recoloring a plotly chart in place: ~36 KB; rebuilding
-it: ~5.5 MB, measured in `performance.md`). Prefer in-place updates whenever
-a `@reactive.effect` can express the change; reach for a full re-render only
-when the change is structural (a different plot type, a different number of
-traces) and `updating-in-place.md` doesn't show a matching call. See that
-reference for the mechanism and the `reactive.isolate()` rule that keeps a
-writing effect from re-triggering itself.
+smaller on the wire. Prefer in-place updates whenever a `@reactive.effect`
+can express the change; reach for a full re-render only when the change is
+structural (a different plot type, a different number of traces) and
+`updating-in-place.md` doesn't show a matching call. See that reference for
+the mechanism, the measured costs, and the `reactive.isolate()` rule that
+keeps a writing effect from re-triggering itself.
 
 ## Common mistakes
 
-- Reading `input.*()` inside the render function to react to it, instead of
-  writing to `.widget` from a `@reactive.effect` — this rebuilds the whole
-  widget and loses zoom/selection on every change.
 - Assuming Core needs different decorators than Express — it doesn't; only
   `output_widget()` placement and the `app_ui`/`server()` scaffolding differ.
 - Worrying that two instances of the same module share widget/accessor

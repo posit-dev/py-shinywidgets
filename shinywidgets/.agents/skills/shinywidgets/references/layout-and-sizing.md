@@ -85,9 +85,8 @@ variables, plus the chrome (not the tile imagery) of ipyleaflet maps. Every
 other widget draws its own colors with no connection to the page theme —
 plotly, altair, bokeh, matplotlib, maplibre, lonboard, and reactable do
 **not** follow `input_dark_mode()` automatically (reactable is actually
-worse in dark mode: its background stays hard-coded white while its text
-switches to Bootstrap's light-gray dark-mode color, which is lower contrast
-than either theme alone — [#460](https://github.com/posit-dev/py-shinywidgets/issues/460)).
+worse in dark mode — see its own reference for the contrast bug,
+[#460](https://github.com/posit-dev/py-shinywidgets/issues/460)).
 
 To make a non-following widget match the toggle anyway, read `input.<id>()`
 in a `@reactive.effect` and re-theme the figure **in place** (update

@@ -40,10 +40,11 @@ see the widget's own reference).
   dropped its live Jupyter widget entirely. Bring `pdk.Layer` objects to
   `render_maplibre`'s `add_deck_layers()` (recommended default) or
   `lonboard`'s native API for very large data.
-- **Security — quak and mosaic**: both run browser-supplied SQL against the
-  widget's DuckDB connection, so by default the renderer locks it down
-  (`enable_external_access = false`, `lock_configuration = true`); pass
-  `allow_unrestricted_connection=True` only for a local, single-user app.
+- **Security — quak, mosaic, and embedding-atlas**: each runs
+  browser-supplied SQL against the widget's DuckDB connection, so by
+  default the renderer locks it down (`enable_external_access = false`,
+  `lock_configuration = true`); pass `allow_unrestricted_connection=True`
+  only for a local, single-user app.
 
 ## Common mistakes
 

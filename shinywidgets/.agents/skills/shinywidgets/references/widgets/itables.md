@@ -47,9 +47,7 @@ so a structural change still needs a re-render).
 - The whole frame ships client-side; itables downsamples past a payload
   size (`maxBytes`) rather than scaling indefinitely — see the itables
   guide for the exact threshold if you're near it.
-- itables is one of two widgets (with bqplot) whose own CSS variables
-  shinywidgets patches onto Bootstrap's, so it follows
-  `ui.input_dark_mode()` automatically — most other table/chart widgets
-  don't.
+- itables is one of the few widgets that follows `ui.input_dark_mode()`
+  automatically — see `../layout-and-sizing.md` for which others do.
 
 **More:** <https://shinywidgets.org/widgets/itables/>

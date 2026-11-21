@@ -43,14 +43,12 @@ still needs a re-render).
 
 ## Gotchas
 
-- **Security**: quak runs browser-sent SQL against the widget's DuckDB
-  connection. By default the renderer locks it down
-  (`enable_external_access = false`, `lock_configuration = true`); pass
-  `allow_unrestricted_connection=True` only for a local, single-user app.
-  If you build the `quak.Widget` yourself from your own DuckDB connection
-  (`quak.Widget(con)`), the lockdown is permanent and database-wide — do any
-  server-side file reads on that connection *before* the first render, or
-  opt out for it.
+- **Security**: like mosaic and embedding-atlas, quak runs browser-sent SQL
+  against the widget's DuckDB connection — see `../choosing-a-widget.md` for
+  the default lockdown and `allow_unrestricted_connection`. If you build the
+  `quak.Widget` yourself from your own DuckDB connection (`quak.Widget(con)`),
+  the lockdown is permanent and database-wide — do any server-side file
+  reads on that connection *before* the first render, or opt out for it.
 - Even locked down, a visitor can still send expensive queries that block
   the Python process while they run.
 
