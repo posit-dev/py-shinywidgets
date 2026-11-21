@@ -20,6 +20,7 @@ import threading
 import urllib.parse
 from collections.abc import Callable
 from pathlib import Path
+from typing import TypedDict
 
 import yaml
 from playwright.sync_api import Browser, Locator, Page, sync_playwright
@@ -269,8 +270,8 @@ def gallery(page: Page, base: str) -> list[str]:
     problems: list[str] = []
     page.goto(base + "gallery/index.html")
     items = page.locator(".quarto-listing .quarto-grid-item")
-    if items.count() != 30:
-        problems.append(f"{items.count()} gallery items, expected 30")
+    if items.count() != 35:
+        problems.append(f"{items.count()} gallery items, expected 35")
     # Cards show a crop of each app's widgets (img/card.webp), not the whole-app screenshot.
     srcs = page.evaluate(
         "[...document.querySelectorAll('.quarto-grid-item img.thumbnail-image')].map(i => i.getAttribute('src'))"
@@ -373,17 +374,18 @@ def landing(page: Page, base: str) -> list[str]:
             problems.append(f"tab {LANDING_TABS[i]}: images failed to load: {broken}")
 
     picker = page.locator("#picker li")
-    if picker.count() != 7:
-        problems.append(f"{picker.count()} showcases in the stage, expected 7")
+    if picker.count() != 6:
+        problems.append(f"{picker.count()} showcases in the stage, expected 6")
     else:
-        picker.nth(5).click()
-        if "Terrain explorer" not in page.locator("#picker li.on").inner_text():
-            problems.append("clicking the 6th showcase doesn't select Terrain explorer")
+        picker.nth(1).click()
+        if "Lending Club" not in page.locator("#picker li.on").inner_text():
+            problems.append("clicking the 2nd showcase doesn't select Lending Club")
         page.wait_for_load_state("networkidle")
         if broken := page.evaluate(IMAGES_LOADED_JS):
             problems.append(f"stage images failed to load: {broken}")
 
-    # Keyboard: stage items are focusable, Enter selects one, and focus pauses autoplay.
+    # Keyboard: stage items are focusable and Enter selects one. (The "stage" check
+    # covers how focus pauses autoplay.)
     page.goto(base + "index.html")
     item = page.locator("#picker li button").nth(2)
     if item.count() == 0:
@@ -391,12 +393,10 @@ def landing(page: Page, base: str) -> list[str]:
     else:
         item.focus()
         page.keyboard.press("Enter")
-        if "World development" not in page.locator("#picker li.on").inner_text():
+        if "Ships slow down for whales" not in page.locator("#picker li.on").inner_text():
             problems.append(
-                "Enter on the 3rd stage item doesn't select World development"
+                "Enter on the 3rd stage item doesn't select the whales showcase"
             )
-        if "paused" not in (page.locator("#stage").get_attribute("class") or ""):
-            problems.append("keyboard focus in the stage doesn't pause autoplay")
 
     # A visitor who picks light on a docs page still gets the dark landing page, and
     # their docs pages stay light.
@@ -432,13 +432,181 @@ def motion(page: Page, base: str) -> list[str]:
     calm.wait_for_timeout(8000)
     if calm.locator("#picker li.on").inner_text() != before:
         problems.append("the stage auto-advances under reduced motion")
+    return problems
 
+
+class StageState(TypedDict):
+    app: int  # index of the active showcase
+    screen: str  # #screen's classes: zoom, gesture, after
+    paused: bool
+    bar: float  # active progress bar, as a fraction of its track
+    s1: float  # opacity of the "after" screenshot
+    idle: list[float]  # inactive bars' fill heights (px)
+
+
+STAGE_JS = """() => {
+  const bar = document.querySelector('#picker li.on .bar i');
+  const px = (el) => parseFloat(getComputedStyle(el).height);
+  return {
+    app: [...document.querySelectorAll('#picker li')].findIndex((l) => l.classList.contains('on')),
+    screen: document.getElementById('screen').className.replace('screen', '').trim(),
+    paused: document.getElementById('stage').classList.contains('paused'),
+    bar: px(bar) / px(bar.parentElement),
+    s1: +getComputedStyle(document.getElementById('s1')).opacity,
+    idle: [...document.querySelectorAll('#picker li:not(.on) .bar i')].map(px),
+  };
+}"""
+
+
+@check("stage")
+def stage(page: Page, base: str) -> list[str]:
+    """The gallery stage's autoplay, through a visitor's whole session with it.
+
+    Each step's timing follows landing.js: a showcase lasts 7s, its gesture caption
+    shows at 1.6s and the "after" screenshot fades in at 2.6s.
+    """
+    problems: list[str] = []
+    state: StageState
     page.set_viewport_size({"width": 1440, "height": 900})
+
+    def at(wait_ms: int) -> StageState:
+        page.wait_for_timeout(wait_ms)
+        result: StageState = page.evaluate(STAGE_JS)
+        if any(result["idle"]):
+            problems.append(f"inactive showcases' bars fill: {result['idle']}")
+        return result
+
+    def expect(ok: bool, problem: str, state: StageState) -> None:
+        if not ok:
+            problems.append(f"{problem} ({state})")
+
+    def held_still(a: StageState, b: StageState) -> bool:
+        return (a["app"], a["screen"], a["s1"]) == (
+            b["app"],
+            b["screen"],
+            b["s1"],
+        ) and (abs(a["bar"] - b["bar"]) < 0.005)
+
+    def leave() -> None:
+        page.mouse.move(5, 5)
+
     page.goto(base + "index.html")
-    first = page.locator("#picker li.on").inner_text()
-    page.wait_for_timeout(8000)
-    if page.locator("#picker li.on").inner_text() == first:
-        problems.append("the stage doesn't auto-advance with motion allowed")
+    state = at(1500)
+    expect(
+        state["bar"] == 0 and state["screen"] == "",
+        "the stage plays before it's in view",
+        state,
+    )
+
+    page.locator("#screen").scroll_into_view_if_needed()
+    state = at(3000)
+    expect(
+        state["app"] == 0 and 0.3 < state["bar"] < 0.6 and "after" in state["screen"],
+        "the stage doesn't play once it's in view",
+        state,
+    )
+
+    # Hovering the screenshot pauses everything where it is.
+    page.locator("#screen").hover()
+    paused = at(0)
+    state = at(2000)
+    expect(
+        state["paused"] and held_still(paused, state),
+        "hovering the screenshot doesn't hold the stage still",
+        state,
+    )
+
+    # Leaving resumes from there: the bar continues, and the showcase ends after the
+    # time it had left rather than a whole new 7s.
+    leave()
+    state = at(500)
+    expect(
+        not state["paused"] and paused["bar"] < state["bar"] < paused["bar"] + 0.15,
+        "leaving the screenshot doesn't resume from where it paused",
+        state,
+    )
+    state = at(4100)
+    expect(state["app"] == 1, "after a pause, the showcase doesn't end on time", state)
+
+    # The app list isn't the screenshot: hovering it doesn't pause.
+    page.locator("#picker li").nth(3).hover()
+    before = at(0)
+    state = at(1000)
+    expect(
+        not state["paused"] and state["bar"] > before["bar"] + 0.1,
+        "hovering the app list pauses the stage",
+        state,
+    )
+
+    # Clicking an app plays it from the start.
+    page.locator("#picker li:not(.on) button").first.click()
+    clicked = at(400)
+    expect(
+        clicked["app"] != state["app"]
+        and clicked["bar"] < 0.15
+        and "after" not in clicked["screen"]
+        and clicked["s1"] == 0,
+        "clicking an app doesn't play it from the start",
+        clicked,
+    )
+    state = at(2600)
+    expect(
+        "after" in state["screen"], "a clicked app doesn't reach its after state", state
+    )
+
+    # After a click, the screenshot still pauses on hover and resumes on leaving.
+    page.locator("#screen").hover()
+    paused = at(0)
+    state = at(1500)
+    expect(
+        state["paused"] and held_still(paused, state),
+        "after a click, hovering the screenshot doesn't pause",
+        state,
+    )
+    leave()
+    state = at(500)
+    expect(
+        not state["paused"] and state["bar"] > paused["bar"],
+        "after a click, leaving the screenshot doesn't resume",
+        state,
+    )
+
+    # Keyboard: focus in the screenshot pauses like the pointer; focus in the list
+    # doesn't.
+    page.locator("#picker li button").last.focus()
+    state = at(300)
+    expect(
+        not state["paused"], "keyboard focus in the app list pauses the stage", state
+    )
+    page.keyboard.press("Tab")
+    focused = page.evaluate("document.activeElement.id")
+    paused = at(0)
+    state = at(1000)
+    expect(
+        focused == "view-src" and state["paused"] and held_still(paused, state),
+        f"keyboard focus on the screenshot's link ({focused!r}) doesn't pause",
+        state,
+    )
+    page.keyboard.press("Shift+Tab")
+    state = at(500)
+    expect(
+        not state["paused"] and state["bar"] > paused["bar"],
+        "moving keyboard focus off the screenshot doesn't resume",
+        state,
+    )
+
+    # Scrolling away and back restarts the current app.
+    page.evaluate("window.scrollTo(0, 0)")
+    away = at(1000)
+    page.locator("#screen").scroll_into_view_if_needed()
+    state = at(400)
+    expect(
+        state["app"] == away["app"]
+        and state["bar"] < 0.15
+        and "after" not in state["screen"],
+        "scrolling back to the stage doesn't restart the current app",
+        state,
+    )
     return problems
 
 

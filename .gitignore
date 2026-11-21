@@ -135,3 +135,7 @@ uv.lock
 website/gallery/showcases/whale-slowdown/data/
 website/gallery/showcases/nearby-stars/data/
 website/gallery/showcases/issue-atlas/data/
+
+# county-clusters commits its small counties.parquet, but caches plotly's public
+# counties GeoJSON (~3 MB) on first run instead
+website/gallery/showcases/county-clusters/data/geojson-counties-fips.json

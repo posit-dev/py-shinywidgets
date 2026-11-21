@@ -77,5 +77,6 @@ Driven end-to-end with Playwright on the hosted parquet: a California brush sele
 cargo+tanker puts the speed mode in the 9.5-10 kn bin (8,940 pings) and a Gulf brush puts
 it at 12 kn, matching the independently computed DuckDB counts (2,683,469 pings from
 11,928 vessels). First paint is ~5.5 s with 43 MB over the websocket; a rapid 30-step
-brush settles within 1 s. See `img/hero.webp`, captured mid-story: California cargo and
-tankers brushed, spike visible just under 10 kn.
+brush settles within 1 s. `img/hero.webp` shows the unfiltered start; `img/after_brush.webp`
+shows a California region + 9-10.5 kn speed brush -- the map flown to the coast, the spike
+highlighted, and the "Didn't slow down" table populated.

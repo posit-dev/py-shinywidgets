@@ -82,12 +82,29 @@
   showTab(0, 1);
 
   // The stage: every DUR ms, play the current app's gesture (caption, crossfade from
-  // before to after), then advance. Hovering pauses it; reduced motion turns it off and
-  // shows each app's "after" state directly.
+  // before to after), then advance. It waits until the screen is in view, and coming
+  // back into view restarts the current app. Hovering the screenshot pauses it
+  // mid-gesture and leaving resumes it; the app list doesn't pause, so a picked app
+  // plays. Reduced motion shows each app's "after" state directly.
   const DUR = 7000;
+  const STEPS = [
+    [1600, () => screen.classList.add("gesture")],
+    [2600, () => screen.classList.add("after")],
+    [5600, () => screen.classList.remove("gesture")],
+    [DUR, () => go((cur + 1) % SHOWCASES.length)],
+  ];
   const picker = $("picker"), screen = $("screen"), stage = $("stage");
-  let cur = 0, timers = [], paused = false;
+  const browser = stage.querySelector(".browser");
+  let cur = 0, timers = [], paused = false, visible = false, started = 0;
+  // While paused mid-gesture: how far into it (ms), and the CSS animations/transitions
+  // frozen with it.
+  let held = null, frozen = [];
   const clear = () => { timers.forEach(clearTimeout); timers = []; };
+  function play(from) {
+    clear();
+    started = performance.now() - from;
+    for (const [t, f] of STEPS) if (t > from) timers.push(setTimeout(f, t - from));
+  }
   SHOWCASES.forEach((s, i) => {
     const li = document.createElement("li");
     li.innerHTML = `<span class="bar"><i></i></span><button type="button"><h3>${s.title}<small>${s.widgets[0]}</small></h3></button><p>${s.blurb}</p>`;
@@ -97,6 +114,12 @@
   function go(i) {
     clear();
     cur = i;
+    // A picked app plays even when the stage was paused (e.g. keyboard-activated
+    // while the pointer rests on the screenshot): without this, the bar's CSS
+    // stays frozen against the new timers, and the next pointer leave restarts
+    // the showcase via resume()'s held === null path.
+    paused = false;
+    stage.classList.remove("paused");
     const s = SHOWCASES[i];
     [...picker.children].forEach((li, j) => {
       li.classList.toggle("on", j === i);
@@ -116,34 +139,66 @@
     $("wchips").innerHTML = s.widgets.map((w) => `<span>${w}</span>`).join("");
     $("meta").textContent = `${s.lines} lines · app.py`;
     $("view-src").href = s.href;
-    if (calm || paused) {
+    // A paused animation outlives the CSS that started it (it would stay frozen, or
+    // keep running on the inactive bar once played), so drop it.
+    frozen.forEach((a) => a.cancel());
+    frozen = [];
+    held = null;
+    if (calm) {
       screen.className = "screen after gesture";
       return;
     }
     screen.className = "screen";
+    if (!visible) return;
     void screen.offsetWidth;
     screen.classList.add("zoom");
-    timers.push(setTimeout(() => screen.classList.add("gesture"), 1600));
-    timers.push(setTimeout(() => screen.classList.add("after"), 2600));
-    timers.push(setTimeout(() => screen.classList.remove("gesture"), 5600));
-    timers.push(setTimeout(() => go((cur + 1) % SHOWCASES.length), DUR));
+    play(0);
   }
-  // Pointer over the stage, or keyboard focus inside it, pauses autoplay.
+  // Pointer over the screenshot, or keyboard focus inside it, pauses autoplay. (Focus
+  // a click leaves on its link doesn't, or it would stay paused off hover.)
   const pause = () => {
     paused = true;
-    clear();
     stage.classList.add("paused");
+    if (!timers.length) return;
+    held = performance.now() - started;
+    clear();
+    // Finished animations are left alone: play() would rewind them.
+    frozen = [
+      ...screen.getAnimations({ subtree: true }),
+      ...picker.querySelector("li.on .bar i").getAnimations(),
+    ].filter((a) => a.playState === "running");
+    frozen.forEach((a) => a.pause());
   };
   const resume = () => {
-    if (stage.matches(":hover") || stage.contains(document.activeElement)) return;
+    if (!paused || browser.matches(":hover") || browser.querySelector(":focus-visible")) return;
     paused = false;
     stage.classList.remove("paused");
-    go(cur);
+    if (held === null) return go(cur);
+    frozen.forEach((a) => a.play());
+    frozen = [];
+    play(held);
+    held = null;
   };
-  stage.addEventListener("mouseenter", pause);
-  stage.addEventListener("mouseleave", resume);
-  stage.addEventListener("focusin", pause);
-  stage.addEventListener("focusout", () => setTimeout(resume));
+  browser.addEventListener("mouseenter", pause);
+  browser.addEventListener("mouseleave", resume);
+  browser.addEventListener("focusin", (e) => {
+    if (e.target.matches(":focus-visible")) pause();
+  });
+  browser.addEventListener("focusout", () => setTimeout(resume));
   if (calm) stage.classList.add("calm");
+  stage.classList.add("offscreen");
   go(0);
+  new IntersectionObserver(([e]) => {
+    // isIntersecting stays true while the ratio falls from 0.5 to 0, so gate on
+    // the ratio itself: otherwise scrolling away restarts the showcase and
+    // autoplay keeps running below the 50% threshold.
+    visible = e.intersectionRatio >= 0.5;
+    stage.classList.toggle("offscreen", !visible);
+    if (visible) {
+      if (!paused) go(cur);
+    } else {
+      clear();
+      held = null;
+    }
+  }, { threshold: 0.5 }).observe(screen);
 })();

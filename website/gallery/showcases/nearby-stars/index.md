@@ -7,7 +7,7 @@ bucket: showcase
 widgets: [jscatter, k3d, ipyaladin]
 hero: img/hero.webp
 run: uv run shiny run app.py
-data: ESA Gaia DR3 (16 MB parquet, downloaded on first run); sky imagery streamed from CDS
+data: ESA Gaia DR3 (16 MB parquet, downloaded on first run); sky imagery streamed from NASA/IRSA
 description: "256k Gaia stars linked across three widget libraries: lasso the jscatter HR diagram and the same stars highlight in k3d 3D and ipyaladin sky views."
 image: "img/card.webp"
 categories: ["Charts", "Scientific", "3D"]
@@ -16,7 +16,7 @@ categories: ["Charts", "Scientific", "3D"]
 A Hertzsprung-Russell diagram of all 256,326 stars within 100 parsecs (jscatter, 256k
 points on a canvas you can lasso), linked to a 3D view of where those stars actually are
 (k3d, with the Sun at the center) and to their positions on the sky (ipyaladin, streaming
-DSS imagery from CDS). One selection drives all three: lasso the white-dwarf sequence on
+DSS imagery). One selection drives all three: lasso the white-dwarf sequence on
 the HR diagram and watch white dwarfs appear scattered through the 3D neighborhood and all
 over the sky -- small, faint, and everywhere. Preset buttons run the linking in the other
 direction: Python computes the selection (white dwarfs by HR position, the Hyades by
@@ -35,7 +35,7 @@ uv run shiny run app.py
 On first run the app downloads `stars.parquet` (~16 MB) from
 [py-shinywidgets-data](https://github.com/cpsievert/py-shinywidgets-data/releases/tag/showcase-v1);
 `prep_data.py` rebuilds it from the Gaia archive's TAP service. The sky panel streams
-imagery from CDS (cds.unistra.fr), so it needs network access -- if CDS is unreachable,
+DSS imagery from NASA/IRSA's mirror of the CDS survey, so it needs network access -- if it is unreachable,
 the markers and fly-tos still work on a grey background. There is no Shinylive link: a
 16 MB download and live tile servers don't belong in a browser tab.
 
