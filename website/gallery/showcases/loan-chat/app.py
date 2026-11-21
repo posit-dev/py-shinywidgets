@@ -165,7 +165,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         df = current_df()
         return plots.fmt_money(float(df["loan_amount"].sum()), millions=True)
 
-    @render_plotly
+    @render_plotly(listen_to=["selected"])
     def scatter_chart():
         return plots.rate_amount_fig(current_df()), {"displayModeBar": False}
 

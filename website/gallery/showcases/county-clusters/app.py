@@ -43,8 +43,10 @@ CENTROIDS = figures.build_centroids(GEOJSON)
 KS = range(2, 11)
 DEFAULT_K = 5
 N_TWINS = 5
-SILHOUETTE = segments.silhouette_by_k(COUNTIES, KS)
 CLUSTERINGS: dict[int, Clustering] = {k: segments.fit(COUNTIES, k) for k in KS}
+SILHOUETTE = pd.Series(
+    {k: c.silhouette for k, c in CLUSTERINGS.items()}, name="silhouette"
+)
 
 
 def muted(text: str, cls: str = "small") -> ui.Tag:

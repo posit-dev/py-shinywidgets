@@ -59,18 +59,6 @@ def fit(df: pd.DataFrame, k: int) -> Clustering:
     )
 
 
-def silhouette_by_k(df: pd.DataFrame, ks: range = range(2, 11)) -> pd.Series:
-    z = standardize(df)
-    scores = {
-        k: silhouette_score(
-            z,
-            KMeans(n_clusters=k, n_init=10, random_state=RANDOM_STATE).fit_predict(z),  # type: ignore[arg-type]
-        )
-        for k in ks
-    }
-    return pd.Series(scores, name="silhouette")
-
-
 def twins(df: pd.DataFrame, fips: str, n: int = 5) -> pd.DataFrame:
     z = standardize(df)
     matches = np.flatnonzero(df["fips"].to_numpy() == fips)

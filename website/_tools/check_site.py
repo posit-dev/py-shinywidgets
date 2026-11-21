@@ -393,9 +393,9 @@ def landing(page: Page, base: str) -> list[str]:
     else:
         item.focus()
         page.keyboard.press("Enter")
-        if "issue atlas" not in page.locator("#picker li.on").inner_text():
+        if "Ships slow down for whales" not in page.locator("#picker li.on").inner_text():
             problems.append(
-                "Enter on the 3rd stage item doesn't select the issue atlas"
+                "Enter on the 3rd stage item doesn't select the whales showcase"
             )
 
     # A visitor who picks light on a docs page still gets the dark landing page, and

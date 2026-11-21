@@ -183,7 +183,10 @@
   stage.classList.add("offscreen");
   go(0);
   new IntersectionObserver(([e]) => {
-    visible = e.isIntersecting;
+    // isIntersecting stays true while the ratio falls from 0.5 to 0, so gate on
+    // the ratio itself: otherwise scrolling away restarts the showcase and
+    // autoplay keeps running below the 50% threshold.
+    visible = e.intersectionRatio >= 0.5;
     stage.classList.toggle("offscreen", !visible);
     if (visible) {
       if (!paused) go(cur);
