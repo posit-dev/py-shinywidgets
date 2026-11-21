@@ -31,7 +31,7 @@ pip install 'shinywidgets[plotly,itables]'
 
 ## Agent skill
 
-shinywidgets ships an agent skill. From a project with a `.venv`, run `uvx library-skills` (add `--claude` for
+shinywidgets ships an agent skill. From a project with a `.venv`, run `uvx library-skills -s shinywidgets` (add `--claude` for
 Claude Code) to link it in. For a global install, link the installed package's `.agents/skills/shinywidgets`
 folder into your agent's skills directory by hand.
 
