@@ -27,7 +27,7 @@ with ui.layout_columns(col_widths=[7, 5]):
 
     with ui.card(full_screen=True):
 
-        @render_plotly(listen_to=["selected"])
+        @render_plotly
         def bars():
             fig = go.Figure(go.Bar(x=top30["pop"], y=top30["country"], orientation="h"))
             fig.update_traces(marker_color="lightgray")
