@@ -65,11 +65,11 @@ def rate_amount_fig(df: pd.DataFrame) -> go.Figure:
     fig = px.scatter(
         plot_df, x="display_amount", y="interest_rate", color="grade",
         category_orders={"grade": present}, color_discrete_map=GRADE_COLORS,
-        custom_data=["loan_id", "loan_amount"], opacity=0.35,
+        custom_data=["loan_id", "loan_amount", "grade"], opacity=0.35,
     )  # fmt: skip
     fig.update_traces(
         marker=dict(size=5, line=dict(width=0.5, color="white")),
-        hovertemplate="Grade %{marker.color}<br>Loan: $%{customdata[1]:,.0f}<br>Rate: %{y:.1f}%<extra></extra>",
+        hovertemplate="Grade %{customdata[2]}<br>Loan: $%{customdata[1]:,.0f}<br>Rate: %{y:.1f}%<extra></extra>",
         selected=dict(marker=dict(opacity=1, size=7)),
         unselected=dict(marker=dict(opacity=0.06)),
         showlegend=False,
@@ -81,7 +81,7 @@ def rate_amount_fig(df: pd.DataFrame) -> go.Figure:
     for grade in present:
         fig.add_trace(
             go.Scatter(
-                x=[None], y=[None], mode="markers", name=grade,
+                x=[None], y=[None], mode="markers", name=grade, legendgroup=grade,
                 marker=dict(size=11, color=GRADE_COLORS[grade]),
                 showlegend=True, hoverinfo="skip",
             )

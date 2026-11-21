@@ -114,6 +114,12 @@
   function go(i) {
     clear();
     cur = i;
+    // A picked app plays even when the stage was paused (e.g. keyboard-activated
+    // while the pointer rests on the screenshot): without this, the bar's CSS
+    // stays frozen against the new timers, and the next pointer leave restarts
+    // the showcase via resume()'s held === null path.
+    paused = false;
+    stage.classList.remove("paused");
     const s = SHOWCASES[i];
     [...picker.children].forEach((li, j) => {
       li.classList.toggle("on", j === i);
