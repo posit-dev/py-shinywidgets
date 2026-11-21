@@ -29,5 +29,11 @@ separate them with commas:
 pip install 'shinywidgets[plotly,itables]'
 ```
 
+## Agent skill
+
+shinywidgets ships an agent skill. From a project with a `.venv`, run `uvx library-skills` (add `--claude` for
+Claude Code) to link it in. For a global install, link the installed package's `.agents/skills/shinywidgets`
+folder into your agent's skills directory by hand.
+
 Deploying an app? List the same extras in its `requirements.txt`; see [Deployment](../deployment/index.md).
 If a widget doesn't show up, see [Troubleshooting](../troubleshooting/index.md).

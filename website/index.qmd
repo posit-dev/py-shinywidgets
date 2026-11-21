@@ -80,6 +80,7 @@ include-after-body:
         dict(text=<span class="str">f"{len(rows)} countries…"</span>, ...)
     ]</pre></a>
   </div>
+  <p class="more"><a href="guide/installation/index.html#agent-skill">shinywidgets also ships an agent skill →</a></p>
 </section>
 
 <section class="gal">
