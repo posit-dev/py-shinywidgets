@@ -58,6 +58,9 @@ def _restyle():
 
 ## Gotchas
 
+- **Pass the projection as a string**: `m.set_projection("vertical-perspective")`.
+  The `ProjectionType` enum isn't JSON-serializable and silently drops every
+  other queued call (sources, layers) for that map (upstream bug).
 - **Upstream bug, lonboard interop**: rendering a lonboard map and a
   maplibre map on the same page crashes lonboard's view (`deck.gl -
   multiple versions detected`, conflicting bundled deck.gl copies) — keep

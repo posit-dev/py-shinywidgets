@@ -95,8 +95,8 @@ look frozen. In order of preference:
 
 Most selection-reporting widgets report their *own* coordinate space (a
 point index, a row position), not a row of your data frame.
-`selected_rows()` (plotly, altair, bokeh, itables, reactable, jscatter,
-bqplot, lonboard) closes that gap:
+`selected_rows()` (plotly, altair, bokeh, jscatter, bqplot, lonboard,
+embedding-atlas) closes that gap:
 
 ```python
 import plotly.express as px
@@ -118,8 +118,8 @@ def plot():
 index label, matched by label (not position), so it survives a filtered or
 re-sorted `df`. Other libraries have their own mechanism: altair replays its
 Vega-Lite selection test against `df`; bokeh reads its plot's own
-`ColumnDataSource`; itables/reactable return row positions already in your
-original data's order. See the relevant widget reference for the exact
+`ColumnDataSource`. itables and reactable need no `selected_rows()`: their
+`selected()` already returns row positions in your original data's order. See the relevant widget reference for the exact
 signature.
 
 ## `.read()` and `reactive_read()`

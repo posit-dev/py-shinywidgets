@@ -13,8 +13,18 @@ than one plot's worth of pixels no matter how many rows went in.
 
 ```python
 import hvplot.pandas  # noqa: F401 -- registers the .hvplot accessor
+import numpy as np
+import pandas as pd
 from shiny.express import ui
 from shinywidgets import render_holoviews
+
+rng = np.random.default_rng(0)
+pickups = pd.DataFrame(
+    {
+        "lon": rng.normal(-73.98, 0.05, 1_000_000),
+        "lat": rng.normal(40.75, 0.05, 1_000_000),
+    }
+)
 
 ui.page_opts(title="Pickup density", fillable=True)
 
@@ -37,8 +47,8 @@ def plot():
 colors it with `cmap`. `cnorm="eq_hist"` (histogram-equalized scaling) keeps
 sparse outskirts visible next to dense cores, which a linear scale would
 wash out. The underlying rows never leave the server — only the rendered
-image does, so the payload stays flat (~2.2 MB at 10K points, ~2.4 MB at
-1M) regardless of point count.
+image does, so the payload stays roughly flat regardless of point count
+(numbers in `../performance.md`).
 
 ## Accessors
 

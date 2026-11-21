@@ -15,9 +15,11 @@ unreleased as of writing).
 ```python
 import geoviews as gv
 import holoviews as hv
+import plotly.express as px
 from shinywidgets import render_holoviews
 
 hv.extension("bokeh")
+carshare = px.data.carshare()
 
 
 @render_holoviews

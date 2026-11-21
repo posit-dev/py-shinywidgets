@@ -16,7 +16,7 @@ reactive graph — never a hidden input or custom JS message bus.
 | See exactly which records are selected | Selection → table | A chart's `selected_rows(df)` → `itables`/`render.data_frame` |
 | Show everything about one clicked thing | Click → detail card | A map/graph/chart's click accessor → a `@render.ui` detail card |
 | Summarize only what's on screen | Viewport → summary | A map's `bounds()`/`view_state()` → a filtered `plotly`/`matplotlib` chart |
-| Drive a chart/map from a row click, in place | Table → plot/map | `itables`'s `selected_rows()` → write the target's `.widget` trait from an effect (not a re-render, or you lose zoom/selection) |
+| Drive a chart/map from a row click, in place | Table → plot/map | `itables`'s `selected()` → write the target's `.widget` trait from an effect (not a re-render, or you lose zoom/selection) |
 | Keep two views of the same selection in sync | Two-way linking | See "Avoiding loops" below |
 | Let several charts narrow down together | Crossfilter | In-widget (altair `transform_filter`, mosaic `filterBy`) vs. through Shiny (read one widget's selection, write another's) |
 | Keep a brush fluid over millions of rows | Brushing large data | Push summaries (rasterized image, aggregate query), never raw points — see below |

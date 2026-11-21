@@ -51,7 +51,8 @@ exactly one data source; `filter_by` defaults to every active selection.
 
 Assign a new spec to `.widget.spec` (resets current selections) rather than
 re-rendering — each re-render creates a new `MosaicWidget`, a new DuckDB
-connection, and re-sends the JS bundle:
+connection, and re-sends the JS bundle. `.widget.params` is read-only in
+practice: assigning it does nothing in the browser.
 
 ```python
 from shiny import reactive

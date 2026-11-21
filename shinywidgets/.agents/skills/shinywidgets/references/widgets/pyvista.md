@@ -2,7 +2,8 @@
 
 ## Overview
 
-`pip install 'shinywidgets[pyvista]'`. Turn a pyvista `Plotter` into an
+`pip install 'shinywidgets[pyvista]'` (Python 3.11–3.14 only; on other
+versions the extra silently installs without pyvista). Turn a pyvista `Plotter` into an
 interactive, client-side 3D view (VTK meshes/volumes/point clouds for
 CFD, geoscience, medical) — rotate, zoom, pan with no server round-trip.
 Accepts a `pyvista.Plotter` (coerced via `jupyter_backend="html"`) or the

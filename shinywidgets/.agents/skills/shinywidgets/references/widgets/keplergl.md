@@ -38,7 +38,7 @@ measures.
 |---|---|---|
 | `config()` | The map's kepler.gl config (layers, filters, viewport, style) | opt-in; see below |
 
-`config()` is opt-in (`listen_to=["config"]`): kepler.gl syncs the whole
+`config()` is opt-in (`@render_keplergl(listen_to=["config"])`): kepler.gl syncs the whole
 config on every store dispatch — per animation frame while panning/zooming,
 with no debounce — so the trait stays muted unless declared. Debounced
 250ms by default once enabled. For a one-off read, or to read

@@ -2,7 +2,8 @@
 
 ## Overview
 
-`pip install 'shinywidgets[rerun]'`. Stream multimodal, time-indexed data
+`pip install 'shinywidgets[rerun]'` (Python 3.11+ only; on 3.10 the extra
+silently installs without rerun-sdk). Stream multimodal, time-indexed data
 (3D scenes, images, plots, text logs) from Python into a scrubbable
 timeline viewer. Accepts a `rerun.notebook.Viewer` (recommended, coerced
 to its inner widget) or a `rerun_notebook.Viewer` directly.

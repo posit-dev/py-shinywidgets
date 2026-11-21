@@ -76,8 +76,7 @@ the DataFrame in the render function instead for that.
 - A `MolGrid` you construct directly must have a unique `name` (mols2grid
   keys selections in a process-global registry) — construct it inside the
   render function, not at module scope.
-- `.as_grid()` is the internal coercion hook that turns a returned
-  DataFrame into a `MolGrid` — you won't normally call it directly; it's
-  there if you need to see how a value became the rendered grid.
+- `as_grid()` is the renderer's coercion hook (DataFrame → `MolGrid`);
+  apps don't call it.
 
 **More:** <https://shinywidgets.org/widgets/mols2grid/>

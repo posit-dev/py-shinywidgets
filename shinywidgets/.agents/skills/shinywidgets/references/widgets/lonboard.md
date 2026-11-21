@@ -64,6 +64,9 @@ def _recolor():
 
 ## Gotchas
 
+- **Per-point colors need a numpy `uint8` array** (e.g. from
+  `apply_continuous_cmap`), not a list of RGB tuples — a list is read as one
+  color and raises a confusing `TraitError`.
 - **Upstream bug: `GlobeView` permanently breaks `view_state()` sync** —
   the browser sends pitch/bearing that `GlobeViewState` has no fields for,
   and the sync throws silently and never recovers. Stick to the default

@@ -2,7 +2,7 @@
 
 ## Overview
 
-`pip install 'shinywidgets[pygwalker]' duckdb sqlglot`. Give users a
+`pip install 'shinywidgets[pygwalker]'`. Give users a
 Tableau-style drag-and-drop explorer over any pandas (or polars, with
 pygwalker >= 0.6) DataFrame, computed server-side — cost stays flat whether
 the frame has 500 or 1,000,000 rows. Accepts a plain DataFrame (coerced

@@ -29,7 +29,7 @@ def grid():
 | Accessor | Returns | Before first interaction |
 |---|---|---|
 | `filter()` | `[[column, op, value], ...]` | `[]` |
-| `view_config()` | Dict with `plugin`, `columns`, `group_by`, `split_by`, `aggregates`, `sort`, `filter`, `expressions` | seeded at render |
+| `view_config()` | Dict with `plugin`, `columns`, `group_by`, `split_by`, `split_rollup_mode`, `aggregates`, `sort`, `filter`, `expressions` | seeded at render |
 
 `view_config()` covers only what determines the *rows* shown — cosmetic
 changes (opening the settings panel, switching the theme) don't re-fire

@@ -33,13 +33,15 @@ constructed figure defaults to a `[0, 1]^3` box with no auto-fit.
 
 | Accessor | Returns | Before first interaction |
 |---|---|---|
-| `camera()` | The figure's live `pythreejs.Camera` | cancels until first render (also cancels if `fig.camera = None`) |
+| `camera()` | The figure's live `pythreejs.Camera` | the figure's camera as constructed (not synced until the first orbit); cancels only if `fig.camera` is `None` |
 
 Readers invalidate when `position`/`quaternion`/`zoom` change (end of each
 orbit) or the camera is replaced. The returned object is the same mutable
 instance across reads — copy what you keep. For selections, register
 `plot.widget.on_selection(fn)` (selections arrive as custom messages, not
-trait changes) and set a `reactive.value` inside it.
+trait changes) and set a `reactive.value` inside it. The payload is
+`{"type": ..., "pixel": [[x, y], ...]}`: screen pixels, not point indices,
+so mapping back to rows means projecting points through the camera yourself.
 
 ## Updating in place
 
@@ -58,6 +60,9 @@ def _recolor():
 
 - **A per-point string color array hangs the entire server process**, not
   just the output — avoid string color arrays on scatters.
+- **Don't drive a changing highlight with `scatter.selected`.** `selected = []`
+  crashes the view, and later assignments never move the highlight (upstream
+  bugs). Bake the highlight into plain `color`/`size` arrays instead.
 - Tens of thousands of GPU-instanced points is the realistic ceiling.
 
 **More:** <https://shinywidgets.org/widgets/ipyvolume/>
