@@ -48,9 +48,9 @@ The docs site is a Quarto project in `website/`: widget guides in `website/widge
 shinywidgets ships an [Agent Skill](https://agentskills.io) at `shinywidgets/.agents/skills/shinywidgets/`: `SKILL.md` (frontmatter + a compact index) plus `references/<concept>.md` and `references/widgets/<slug>.md`, one per concept topic and one per published widget page. It's discovered by installers such as `library-skills`, the same convention py-shiny's bundled skill (`shiny/.agents/skills/shiny-for-python/`) follows.
 
 - **It's user-facing docs distilled from the website**, not a second source of truth: a PR that changes public API or behavior updates the website page **and** the matching reference in the same PR, and a PR that changes a guide page's guidance updates its reference.
-- **`SKILL.md` is an index only** — the concept and widget tables with one-line "use when"/"pick it for" descriptions, not the content itself. Keep it under the word budget (see `tests/unit/test_agent_skill.py`'s budgets, enforced from the plan's Global Constraints).
+- **`SKILL.md` is an index only** — the concept and widget tables with one-line "use when"/"pick it for" descriptions, not the content itself. `tests/unit/test_agent_skill.py` enforces word budgets for it and for each reference.
 - Frontmatter is strict YAML: quote `description` if it contains `: ` or ` #`; `name` must equal the skill directory (`shinywidgets`).
-- `tests/unit/test_agent_skill.py` enforces the frontmatter contract, word budgets, link integrity, that every public renderer/extra/widget page is covered, and that every `python` code block parses and only imports names in `shinywidgets.__all__`. Run it after touching any skill file.
+- `tests/unit/test_agent_skill.py` enforces the frontmatter contract, word budgets, link integrity, that every public renderer, accessor, extra, and widget page is covered, and that every `python` code block parses and only imports names in `shinywidgets.__all__`. Run it after touching any skill file; `make format` also formats the skill's code blocks.
 - Optional manual check: `uvx --from skills-ref agentskills validate shinywidgets/.agents/skills/shinywidgets`.
 
 ## Architecture
