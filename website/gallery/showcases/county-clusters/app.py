@@ -1,6 +1,6 @@
 # Title: Which US counties are alike?
 # Bucket: showcase (~240 lines)
-# Description: K-means segmentation of 3,152 US counties on 8 socioeconomic
+# Description: K-means segmentation of 3,144 US counties on 8 socioeconomic
 #   and health measures. Click a point on the silhouette chart to pick how
 #   many segments to split the country into, and click a county on the map
 #   to see its five closest matches nationwide, drawn as rings and lines
@@ -8,8 +8,9 @@
 # Run: shiny run app.py
 # Data: County Health Rankings 2025 analytic file (University of Wisconsin
 #   Population Health Institute), 260 KB parquet committed in data/; county
-#   boundaries are plotly's public counties GeoJSON, cached under data/ on
-#   first run.
+#   boundaries are plotly's public counties GeoJSON (cached under data/ on
+#   first run) plus current Census TIGER boundaries for the FIPS that file
+#   predates (committed in data/).
 
 import json
 import shutil
@@ -38,6 +39,13 @@ if not GEOJSON_PATH.exists():
     tmp.rename(GEOJSON_PATH)
 with open(GEOJSON_PATH) as f:
     GEOJSON = json.load(f)
+# plotly's counties file predates some county-equivalent changes (notably
+# Connecticut's 2022 switch to planning regions, which is what CHR 2025
+# reports). Merge in current-vintage Census boundaries for those FIPS
+# (prepared and committed by prep_data.py, since the Census endpoint doesn't
+# send CORS headers); shapes the data doesn't reference simply go unused.
+with open(DATA / "geojson-tiger-supplement.json") as f:
+    GEOJSON["features"] += json.load(f)["features"]
 CENTROIDS = figures.build_centroids(GEOJSON)
 
 KS = range(2, 11)

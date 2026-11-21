@@ -1,6 +1,6 @@
 ---
 title: Which US counties are alike?
-summary: K-means segmentation of 3,152 US counties on 8 socioeconomic and health measures
+summary: K-means segmentation of 3,144 US counties on 8 socioeconomic and health measures
   from County Health Rankings — click a point on the silhouette chart to pick how many
   segments to split the country into, and click a county on the map to see its five closest
   matches nationwide.
@@ -9,14 +9,15 @@ widgets: [plotly]
 hero: img/hero.webp
 run: uv run --with scikit-learn shiny run app.py
 data: County Health Rankings 2025 (University of Wisconsin Population Health Institute), 260
-  KB parquet committed in data/; county boundaries are plotly's public counties GeoJSON,
-  cached under data/ on first run
-description: "K-means segmentation of 3,152 US counties on 8 socioeconomic and health measures — click a point on the silhouette chart to pick how many segments, and click a county to see its five closest matches nationwide, highlighted right on the map."
+  KB parquet committed in data/; county boundaries are plotly's public counties GeoJSON
+  (cached under data/ on first run) plus committed Census TIGER boundaries for the FIPS
+  that file predates
+description: "K-means segmentation of 3,144 US counties on 8 socioeconomic and health measures — click a point on the silhouette chart to pick how many segments, and click a county to see its five closest matches nationwide, highlighted right on the map."
 image: "img/card.webp"
 categories: ["Charts", "Maps & geospatial"]
 ---
 
-A model grouped 3,152 US counties into segments by income, age, education, broadband
+A model grouped 3,144 US counties into segments by income, age, education, broadband
 access, insurance coverage, health, and rurality — never by race or ethnicity. The
 silhouette-vs-k chart makes the k-means tradeoff visible instead of hidden behind a single
 "best" number: fewer, broader segments score higher, but more segments reveal finer
@@ -39,7 +40,10 @@ uv run --with scikit-learn shiny run app.py
 
 `data/counties.parquet` is committed (prepared by `prep_data.py` from the County Health
 Rankings 2025 analytic file; see its imputation counts below). On first run the app
-downloads plotly's public counties GeoJSON (~3 MB) and caches it under `data/`.
+downloads plotly's public counties GeoJSON (~3 MB) and caches it under `data/`. That file
+predates some county-equivalent changes — Connecticut's 2022 switch to planning regions,
+among others — so `prep_data.py` also commits current Census TIGER boundaries for the
+affected FIPS, which the app merges in.
 
 Source: [app.py](app.py)
 
