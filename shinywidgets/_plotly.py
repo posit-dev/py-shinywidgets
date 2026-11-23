@@ -33,6 +33,7 @@ from typing import (
 from weakref import ref
 
 from ._accessors import AccessorSpec, Emit
+from ._config import native_events_enabled
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -135,6 +136,10 @@ def watch_for_late_callbacks(
     spec_muted = list(spec_muted)
 
     def resend() -> None:
+        # An app-wide opt-in made after this watch was installed wins; the
+        # next render sends its (empty) muted set
+        if native_events_enabled():
+            return
         w = widget_ref()
         if w is not None and w.comm is not None:
             send_muted_traits(w, session, spec_muted + muted_traits(w))

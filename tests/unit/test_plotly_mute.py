@@ -193,6 +193,33 @@ def test_late_registration_unmutes_without_a_rerender(
     }
 
 
+def test_late_watch_does_not_override_native_events_config(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    with session_context(widget_session):
+        fig = figure()
+
+    r = render_plotly()
+
+    @r
+    def _() -> go.FigureWidget:
+        return fig
+
+    def render() -> None:
+        with session_context(widget_session):
+            asyncio.get_event_loop().run_until_complete(r._render())
+
+    render()
+    config(native_events=True)
+    render()
+    assert mute_requests_in(flush_to_browser())[-1]["traits"] == []
+
+    # Clearing callbacks (on_click(None)) through the watch installed by the
+    # first, muted render must not re-mute what the app opted into
+    fig.data[0].on_click(None)
+    assert mute_requests_in(flush_to_browser())[-1]["traits"] == []
+
+
 def test_no_late_registration_sends_nothing_extra(
     widget_session: Session, flush_to_browser: Flush
 ) -> None:
