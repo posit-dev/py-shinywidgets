@@ -63,6 +63,151 @@ def test_as_widget_errors_helpfully_for_a_bare_scene_object(
             as_widget(scatter)
 
 
+def test_as_widget_rejects_per_point_string_colors(widget_session: Session) -> None:
+    ipv = pytest.importorskip("ipyvolume")
+
+    with session_context(widget_session):
+        fig = ipv.figure()
+        scatter = ipv.scatter(
+            [0.0, 1.0], [0.0, 1.0], [0.0, 1.0], color=["tomato", "seagreen"]
+        )
+        with pytest.raises(TypeError, match=r"Scatter\.color.*array of strings"):
+            as_widget(fig)
+        # The invalid value is sanitized away: a string array left in place
+        # would hang the next flush in ipyvolume's serializer
+        assert scatter.color is None
+
+
+def test_as_widget_rejects_string_colors_from_the_quickscatter_container(
+    widget_session: Session,
+) -> None:
+    ipv = pytest.importorskip("ipyvolume")
+
+    with session_context(widget_session):
+        container = ipv.quickscatter(
+            [0.0, 1.0], [0.0, 1.0], [0.0, 1.0], color=["tomato", "seagreen"]
+        )
+        with pytest.raises(TypeError, match=r"Scatter\.color.*array of strings"):
+            as_widget(container)
+        assert container.figure.scatters[0].color is None
+
+
+def test_as_widget_rejects_string_color_selected(widget_session: Session) -> None:
+    ipv = pytest.importorskip("ipyvolume")
+
+    with session_context(widget_session):
+        fig = ipv.figure()
+        scatter = ipv.scatter([0.0, 1.0], [0.0, 1.0], [0.0, 1.0])
+        scatter.color_selected = ["tomato", "seagreen"]
+        with pytest.raises(
+            TypeError, match=r"Scatter\.color_selected.*array of strings"
+        ):
+            as_widget(fig)
+        assert scatter.color_selected is None
+
+
+def test_as_widget_rejects_mesh_string_colors(widget_session: Session) -> None:
+    ipv = pytest.importorskip("ipyvolume")
+    import numpy as np
+
+    with session_context(widget_session):
+        mesh = ipv.widgets.Mesh(
+            x=np.zeros((2, 2)), y=np.zeros((2, 2)), z=np.zeros((2, 2)), color="red"
+        )
+        mesh.color = ["tomato", "seagreen"]
+        fig = ipv.Figure(meshes=[mesh])
+        with pytest.raises(TypeError, match=r"Mesh\.color.*array of strings"):
+            as_widget(fig)
+        assert mesh.color is None
+
+
+def test_flush_after_string_color_rejection_does_not_hang() -> None:
+    pytest.importorskip("ipyvolume")
+
+    # The coercion error must sanitize the invalid trait: the scatter's
+    # deferred comm open still runs at the next flush (nothing closes widgets
+    # created during a failed render) and would infinite-loop in ipyvolume's
+    # serializer on a leftover string array. Run out-of-process so a
+    # regression fails here instead of hanging the test suite.
+    code = """
+import asyncio
+
+import shinywidgets._shinywidgets as sw
+import ipyvolume as ipv
+from shiny import App, reactive, ui
+from shiny._connection import MockConnection
+from shiny.reactive._reactives import Context
+from shiny.session import session_context
+from shinywidgets import render_ipyvolume
+
+
+async def main():
+    app = App(ui.page_fluid(), lambda input, output, session: None)
+    session = app._create_session(MockConnection())
+    sw.SHINYWIDGETS_CDN_ONLY = True
+
+    r = render_ipyvolume()
+
+    @r
+    def bad():
+        ipv.scatter(
+            [0.0, 1.0], [0.0, 1.0], [0.0, 1.0], color=["tomato", "seagreen"]
+        )
+        return ipv.gcf()
+
+    with session_context(session):
+        ctx = Context()
+        with ctx():
+            try:
+                await r.render()
+            except TypeError:
+                pass
+        await reactive.flush()
+    print("FLUSH OK", flush=True)
+
+
+asyncio.run(main())
+"""
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(
+            "The flush after a rejected string color array hung -- the "
+            "rejected widget's deferred comm open serialized the invalid value"
+        )
+    assert "FLUSH OK" in proc.stdout, proc.stderr
+
+
+def test_as_widget_accepts_a_scalar_string_color(widget_session: Session) -> None:
+    ipv = pytest.importorskip("ipyvolume")
+
+    with session_context(widget_session):
+        fig = ipv.figure()
+        ipv.scatter([0.0, 1.0], [0.0, 1.0], [0.0, 1.0], color="tomato")
+        assert as_widget(fig) is fig
+
+
+def test_as_widget_accepts_numeric_per_point_colors(widget_session: Session) -> None:
+    ipv = pytest.importorskip("ipyvolume")
+    import numpy as np
+
+    with session_context(widget_session):
+        fig = ipv.figure()
+        ipv.scatter(
+            [0.0, 1.0],
+            [0.0, 1.0],
+            [0.0, 1.0],
+            color=np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+        )
+        assert as_widget(fig) is fig
+
+
 def test_vuetify_widget_open_serves_jupyter_vue(
     widget_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
