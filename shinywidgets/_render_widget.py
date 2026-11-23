@@ -130,6 +130,7 @@ else:
     Angle = Latitude = Longitude = SkyCoord = Table = Camera = object
 
 from ipywidgets.widgets import HTML, Box, Layout
+from shiny import Session
 from shiny.render.renderer import Jsonifiable, ValueFn
 from shiny.session import get_current_session
 
@@ -174,7 +175,13 @@ from ._nglview import CAMERA_ORIENTATION as NGLVIEW_CAMERA_ORIENTATION
 from ._niivue import LOCATION
 from ._panel import PARAM_PREFIX, dynamic_accessor_spec
 from ._perspective import PERSPECTIVE_ACCESSORS
-from ._plotly import PLOTLY_ACCESSORS, Point, select_rows
+from ._plotly import (
+    PLOTLY_ACCESSORS,
+    POINTS_CALLBACK_TRAIT,
+    Point,
+    select_rows,
+    watch_for_late_callbacks,
+)
 from ._plotly import muted_traits as plotly_muted_traits
 from ._pythreejs import CAMERA as PYTHREEJS_CAMERA
 from ._quak import QUAK_ACCESSORS
@@ -4955,11 +4962,15 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     click, hover, and selection to the server itself, with an entry for each
     point, so that is off unless something needs it. Trace callbacks
     (``on_click()``, ``on_hover()``, ``on_unhover()``, ``on_selection()``,
-    ``on_deselect()``) registered inside the render function are noticed and
-    keep working. For callbacks registered later, or to read
-    ``.widget.data[i].selectedpoints`` after the user selects, turn native
-    events on app-wide with ``shinywidgets.config(native_events=True)`` (or
-    the ``SHINYWIDGETS_NATIVE_EVENTS=1`` environment variable, e.g. in a
+    ``on_deselect()``) are noticed and keep working whether registered inside
+    the render function or later, e.g. from a ``reactive.effect``. That
+    covers a trace the render function returned; a trace added afterwards
+    (``.widget.add_trace(...)``) needs a callback on an existing trace too,
+    or native events on app-wide. To read ``.widget.data[i].selectedpoints``
+    directly after the user selects, or for a widget shared across sessions
+    (``shared_construction()``/``shared_lifetime()``), turn native events on
+    app-wide with ``shinywidgets.config(native_events=True)`` (or the
+    ``SHINYWIDGETS_NATIVE_EVENTS=1`` environment variable, e.g. in a
     deployment).
 
     **Typing**: no return-type annotation is needed -- the renderer's value
@@ -5091,6 +5102,19 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
 
     def _muted_traits(self, widget: FigureWidget) -> Sequence[str]:
         return plotly_muted_traits(widget)
+
+    def _watch_muted_traits(
+        self, widget: FigureWidget, session: Session, muted: Sequence[str]
+    ) -> None:
+        if POINTS_CALLBACK_TRAIT not in muted:
+            return
+        # _shinywidgets imports _render_widget at module scope; see the same
+        # trick in render_widget_base._render().
+        from ._shinywidgets import send_muted_traits
+
+        watch_for_late_callbacks(
+            widget, session, self._spec_muted_traits(), send_muted_traits
+        )
 
     def clicked(self) -> Optional[pd.DataFrame]:
         """

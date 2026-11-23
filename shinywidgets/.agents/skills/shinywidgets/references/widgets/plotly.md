@@ -92,9 +92,11 @@ def _highlight():
   client-side** with an error logged to the browser console, not a crash.
   Raise it with `shiny run --ws-max-size <bytes>` and set
   `SHINYWIDGETS_WS_MAX_SIZE` to match.
-- Plotly.py's own native events (`on_click()`, etc.) are off by default;
-  turn them on app-wide with `shinywidgets.config(native_events=True)` if
-  you need `.widget.data[i].selectedpoints` after selection.
+- Plotly.py's own native events (`on_click()`, etc.) are muted by default
+  and un-mute automatically once you register one, in the render function or
+  later. Turn them on app-wide with `shinywidgets.config(native_events=True)`
+  for `.widget.data[i].selectedpoints` reads, a callback on a trace added
+  after render, or a widget shared across sessions.
 
 **More:** <https://shinywidgets.org/widgets/plotly/>
 

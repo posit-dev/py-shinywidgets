@@ -166,6 +166,87 @@ def test_rerender_restores_native_events_when_a_callback_is_registered(
     }
 
 
+@pytest.mark.parametrize(
+    "register",
+    ["on_click", "on_hover", "on_unhover", "on_selection", "on_deselect"],
+)
+def test_late_registration_unmutes_without_a_rerender(
+    widget_session: Session, flush_to_browser: Flush, register: str
+) -> None:
+    r = render_plotly()
+
+    @r
+    def _() -> go.FigureWidget:
+        return figure()
+
+    with session_context(widget_session):
+        asyncio.get_event_loop().run_until_complete(r._render())
+    assert mute_requests_in(flush_to_browser()) == [MUTE]
+
+    # Registered from, e.g., a reactive.effect after render returns -- no
+    # re-render happens before the next flush (#479 follow-up)
+    assert r.widget is not None
+    getattr(r.widget.data[0], register)(noop)
+    assert mute_requests_in(flush_to_browser())[-1] == {
+        "shinywidgets": "mute",
+        "traits": [],
+    }
+
+
+def test_no_late_registration_sends_nothing_extra(
+    widget_session: Session, flush_to_browser: Flush
+) -> None:
+    r = render_plotly()
+
+    @r
+    def _() -> go.FigureWidget:
+        return figure()
+
+    with session_context(widget_session):
+        asyncio.get_event_loop().run_until_complete(r._render())
+    assert mute_requests_in(flush_to_browser()) == [MUTE]
+
+    # Nothing registered: a later flush must not add anything extra
+    assert mute_requests_in(flush_to_browser()) == [MUTE]
+
+
+def test_late_registration_on_a_shared_widget_is_not_watched(
+    widget_session: Session,
+    flush_to_browser: Flush,
+    other_session: Session,
+    shared_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    a, b = widget_session, other_session
+    flush_b = session_recorder(b, monkeypatch)
+
+    # A process-global widget has no single session to notify on a late
+    # registration, so it isn't watched -- config(native_events=True) still
+    # applies to it
+    with session_context(a), sw.shared_construction():
+        fig = figure()
+    flush_to_browser()
+
+    def render(session: Session) -> None:
+        r = render_plotly()
+
+        @r
+        def _() -> go.FigureWidget:
+            return fig
+
+        with session_context(session):
+            asyncio.get_event_loop().run_until_complete(r._render())
+
+    render(b)
+    render(a)
+    before_a = mute_requests_in(flush_to_browser())
+    before_b = mute_requests_in(flush_b())
+
+    fig.data[0].on_click(noop)
+    assert mute_requests_in(flush_to_browser()) == before_a
+    assert mute_requests_in(flush_b()) == before_b
+
+
 def test_mute_policy_reaches_only_the_rendering_session(
     widget_session: Session,
     flush_to_browser: Flush,
