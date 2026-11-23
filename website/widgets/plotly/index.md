@@ -1230,6 +1230,12 @@ Verified on current `main` (plotly 6.9.0, shiny 1.9.0):
 - **`.value` is not the live figure.** When the render function returns a `go.Figure`, `.value` is exactly that
   object; `@render_plotly` coerces a *copy* into `.widget`. Mutating `.value` after returning it does nothing
   visible -- always mutate `.widget`.
+- **Plotly.py's own native per-point events are muted by default.** `.widget.data[i].on_click()` (and
+  `on_hover()`, `on_unhover()`, `on_selection()`, `on_deselect()`) un-mute automatically once you register one,
+  whether that happens inside the render function or later, e.g. from a `reactive.effect`. What isn't covered:
+  reading `.widget.data[i].selectedpoints` directly, a callback on a trace added after render (`add_trace()`),
+  and a widget shared across sessions (`shared_construction()`/`shared_lifetime()`) -- those still need
+  `shinywidgets.config(native_events=True)` app-wide.
 
 What we deliberately didn't chase: the old report's performance findings about plotly's ~5MB JS bundle being
 resent on every re-render (a real, measurable cost, but a cross-cutting anywidget/shinywidgets architecture

@@ -22,7 +22,7 @@ from weakref import WeakSet
 
 from htmltools import Tag
 from ipywidgets.widgets import DOMWidget, Layout, Widget
-from shiny import req
+from shiny import Session, req
 from shiny.reactive import Context, isolate
 from shiny.reactive._core import (
     get_current_context,  # pyright: ignore[reportPrivateImportUsage]
@@ -228,6 +228,7 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         # be circular; keep this one function-local instead.
         from ._shinywidgets import (
             foreign_or_closed_widget,
+            is_process_global,
             open_process_global_widgets,
             ownership_error,
             send_muted_traits,
@@ -273,6 +274,12 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         )
         if session is not None and not session.is_stub_session():
             send_muted_traits(widget, session, muted)
+            # Skipped for a process-global widget: its mute policy is
+            # already per-session (session_scoped_send), but a later
+            # callback registration has no single session to notify, so
+            # that case still needs shinywidgets.config(native_events=True).
+            if not is_process_global(widget):
+                self._watch_muted_traits(self._widget, session, muted)
         else:
             # No session to scope to (the Express UI-discovery pass, or a test
             # calling _render() directly): the widget's comm is inert, or
@@ -334,6 +341,20 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         cost a lot to sync and that nothing on the server reads.
         """
         return ()
+
+    def _watch_muted_traits(
+        self, widget: WidgetT, session: Session, muted: Sequence[str]
+    ) -> None:
+        """
+        Hook for a subclass whose `_muted_traits()` depends on Python-side
+        state that can change after this render returns (e.g. plotly.py's
+        trace callbacks, registered from a `reactive.effect`): called once
+        per render, with the muted set just sent, so an override can arrange
+        to resend a fresher one later without a re-render. The base
+        implementation is a no-op. Not called for a process-global widget,
+        which has no single session to notify.
+        """
+        pass
 
     @property
     def value(self) -> ValueT | None:

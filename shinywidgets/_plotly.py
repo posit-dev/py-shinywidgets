@@ -30,12 +30,15 @@ from typing import (
     Union,
     cast,
 )
+from weakref import ref
 
 from ._accessors import AccessorSpec, Emit
+from ._config import native_events_enabled
 
 if TYPE_CHECKING:
     import pandas as pd
     from narwhals.typing import IntoDataFrameT
+    from shiny import Session
 
 Point = Dict[str, Any]
 Trace = Dict[str, Any]
@@ -60,10 +63,14 @@ def muted_traits(widget: Any) -> List[str]:
 
     plotly.py's widget reports every click, hover and selection through
     `_js2py_pointsCallback`, per point, whether or not a plotly.py callback
-    is registered to receive it (#479), so it is muted unless one is.
-    Callbacks registered after the render aren't seen; those, and reads of
-    plotly.py's Python-side `selectedpoints` (which the same trait keeps
-    current), need `shinywidgets.config(native_events=True)`.
+    is registered to receive it (#479), so it is muted unless one is. A
+    callback registered later, from a `reactive.effect`, is covered too (see
+    `watch_for_late_callbacks`) as long as it lands on a trace the widget
+    already had at render time. Reads of plotly.py's Python-side
+    `selectedpoints` (which the same trait keeps current), a callback on a
+    trace added after render (`add_trace()`), and a widget shared across
+    sessions (`shared_construction()`/`shared_lifetime()`) aren't seen, and
+    need `shinywidgets.config(native_events=True)`.
     """
     for trace in widget.data:
         for callbacks in TRACE_CALLBACK_LISTS:
@@ -86,6 +93,81 @@ TRACE_CALLBACK_LISTS = (
     "_select_callbacks",
     "_deselect_callbacks",
 )
+
+# The registration methods themselves, in the same order as the lists above.
+TRACE_CALLBACK_METHODS = (
+    "on_click",
+    "on_hover",
+    "on_unhover",
+    "on_selection",
+    "on_deselect",
+)
+
+# Instance attributes `watch_trace` stashes on a patched trace: the resend
+# closure (refreshed on every render so a later one can re-target a new
+# session) and a marker so a trace already patched isn't wrapped again.
+RESEND_ATTR = "_shinywidgets_late_resend"
+WATCHED_ATTR = "_shinywidgets_late_watched"
+
+
+def watch_for_late_callbacks(
+    widget: Any,
+    session: "Session",
+    spec_muted: Sequence[str],
+    send_muted_traits: Callable[[Any, "Session", Sequence[str]], None],
+) -> None:
+    """
+    Patch `widget`'s current traces so registering an `on_click()`/
+    `on_hover()`/`on_unhover()`/`on_selection()`/`on_deselect()` callback
+    un-mutes `_js2py_pointsCallback` for `session`, without a re-render (#479
+    follow-up: a render-time check alone never sees a callback registered
+    afterwards, e.g. from a `reactive.effect`).
+
+    A no-op if the widget is already unmuted (`muted_traits()` is empty):
+    nothing to watch for. Only traces already on `widget.data` are patched --
+    one added afterwards (`add_trace()` then `on_click()`) isn't covered,
+    since no trace exists yet to attach the watch to; register at least one
+    callback on an existing trace too, or use
+    `shinywidgets.config(native_events=True)`.
+    """
+    if muted_traits(widget) == []:
+        return
+    widget_ref = ref(widget)
+    spec_muted = list(spec_muted)
+
+    def resend() -> None:
+        # An app-wide opt-in made after this watch was installed wins; the
+        # next render sends its (empty) muted set
+        if native_events_enabled():
+            return
+        w = widget_ref()
+        if w is not None and w.comm is not None:
+            send_muted_traits(w, session, spec_muted + muted_traits(w))
+
+    for trace in widget.data:
+        watch_trace(trace, resend)
+
+
+def watch_trace(trace: Any, resend: Callable[[], None]) -> None:
+    # Refreshed on every render, even on an already-watched trace: a later
+    # render's session (and spec-muted set) replaces the one an earlier
+    # render's watch captured.
+    setattr(trace, RESEND_ATTR, resend)
+    if getattr(trace, WATCHED_ATTR, False):
+        return
+    setattr(trace, WATCHED_ATTR, True)
+    for name in TRACE_CALLBACK_METHODS:
+        original = getattr(trace, name)
+
+        def patched(
+            *args: Any, _trace: Any = trace, _original: Any = original, **kwargs: Any
+        ) -> None:
+            _original(*args, **kwargs)
+            current_resend = getattr(_trace, RESEND_ATTR, None)
+            if current_resend is not None:
+                current_resend()
+
+        setattr(trace, name, patched)
 
 
 def points_frame(points: List[Point], *, coordinates: bool = True) -> "pd.DataFrame":
