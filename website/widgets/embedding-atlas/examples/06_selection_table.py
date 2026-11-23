@@ -1,4 +1,4 @@
-# selected() returns the rows passing the current cross-filter, as the same
+# selected_rows() returns the rows passing the current cross-filter, as the same
 # frame type (here pandas) the widget was built from -- a detail table for
 # exactly what the user selected, with no SQL of your own to write.
 from pathlib import Path
@@ -11,7 +11,7 @@ from shinywidgets import render_embedding_atlas
 ISSUES = pd.read_parquet(Path(__file__).parent / "data" / "issues.parquet")
 COLUMNS = ["repo", "language", "state", "title", "text", "projection_x", "projection_y"]  # fmt: skip
 
-ui.page_opts(title="selected() as a detail table", fillable=True)
+ui.page_opts(title="selected_rows() as a detail table", fillable=True)
 
 with ui.layout_columns(col_widths=[7, 5]):
     with ui.card(full_screen=True):
@@ -27,5 +27,5 @@ with ui.layout_columns(col_widths=[7, 5]):
 
         @render.data_frame
         def table():
-            sel = atlas.selected()
+            sel = atlas.selected_rows()
             return sel[["repo", "state", "title"]].reset_index(drop=True)

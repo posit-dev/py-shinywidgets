@@ -1,6 +1,6 @@
 # Read on demand: export the explorer's current selection as a CSV, read
 # only when the user clicks Download -- no warm-up needed, since
-# selected() is live from the moment the explorer renders.
+# selected_rows() is live from the moment the explorer renders.
 from pathlib import Path
 
 import pandas as pd
@@ -29,5 +29,5 @@ with ui.layout_columns(col_widths=[9, 3]):
 
         @render.download_button(filename="issues_selected.csv", label="Download CSV")
         def download():
-            sel = atlas.selected()
+            sel = atlas.selected_rows()
             yield sel[["repo", "state", "title"]].to_csv(index=False)

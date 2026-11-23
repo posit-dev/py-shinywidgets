@@ -39,7 +39,7 @@ Source: [app.py](app.py) · [Open in Shinylive](app.py){.sw-shinylive-link}
 
 - `atlas.predicate()` -- a SQL `WHERE`-clause fragment (as a string) describing the current brush,
   or `None` when nothing is selected. Used here directly in a DuckDB query for a fast count.
-- `atlas.selected()` -- the selected rows as a DataFrame (minus the projection/internal-index
+- `atlas.selected_rows()` -- the selected rows as a DataFrame (minus the projection/internal-index
   columns), ready to display or export.
 
 ## What to change for your own data

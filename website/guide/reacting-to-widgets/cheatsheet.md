@@ -39,7 +39,7 @@ from -- see `render_maplibre`). `render_panel` has one dynamic accessor, `param(
 | Accessor | Returns | Before any interaction | Across re-render | Default rate |
 |---|---|---|---|---|
 | `predicate()` | `Optional[str]` | `None` (unfiltered) | re-seeded | debounce 250ms |
-| `selected()` | native frame (pandas/polars) | all rows | derived from `predicate` | debounce 250ms |
+| `selected_rows()` | native frame (pandas/polars) | all rows | derived from `predicate` | debounce 250ms |
 
 ## render_ipyaladin
 

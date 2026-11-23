@@ -1,6 +1,6 @@
 # Title: Atlas explorer
 # Summary: An embedding atlas next to a stat line (from predicate()) and a
-#     detail table (from selected()). A starting point for "explore an
+#     detail table (from selected_rows()). A starting point for "explore an
 #     embedding with linked stats" apps.
 # Bucket: template
 # Widgets: embedding-atlas
@@ -49,5 +49,5 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.data_frame
         def table():
-            sel = atlas.selected().drop(columns=[X, Y, "__row_index__"])
+            sel = atlas.selected_rows().drop(columns=[X, Y, "__row_index__"])
             return sel.reset_index(drop=True)

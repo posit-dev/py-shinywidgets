@@ -14,7 +14,7 @@ categories: ["Data exploration"]
 
 1,797 handwritten digit images (scikit-learn's bundled digits dataset), PCA-projected to 2D
 and shown in `embedding-atlas`, each with its own image thumbnail. Lassoing a cluster, or
-clicking a bar in the "digit" histogram to crossfilter, narrows `atlas.selected()` to
+clicking a bar in the "digit" histogram to crossfilter, narrows `atlas.selected_rows()` to
 exactly those rows -- and the sidebar reconstructs the *average* image of exactly the
 selected digits, live, from the raw 8x8 pixel arrays. It's a concrete payoff for "Python
 computes on what the user circled": select mostly-3s, and the average image clearly looks
@@ -38,13 +38,13 @@ Source: [app.py](app.py) · [Open in Shinylive](app.py){.sw-shinylive-link}
   **average digit** picture all narrow to just that digit -- and the averaged image visibly
   resembles the chosen digit.
 - Lasso a cluster directly on the embedding (works in any WebGPU-capable browser): same
-  effect, driven by the same `selected()` accessor.
+  effect, driven by the same `selected_rows()` accessor.
 - Watch the **digit breakdown** line: it's computed server-side from the exact same
   selection, every time.
 
 ## Accessors demonstrated
 
-- `atlas.selected()` -- the currently-selected rows as a DataFrame slice (with a
+- `atlas.selected_rows()` -- the currently-selected rows as a DataFrame slice (with a
   `__row_index__` column pointing back into the original data), fired by *either* a canvas
   lasso or a histogram/table crossfilter click -- the same accessor serves both gesture
   families, which is why this showcase works even without a WebGPU-capable browser for the
@@ -58,7 +58,10 @@ Needs one ephemeral package (`scikit-learn`, not in the project's locked venv; u
 from `http://localhost`, a secure context). A real click on the digit-histogram's "3" bar
 narrowed the selection from `1,797 of 1,797` to `183 of 1,797`, and the average-digit image
 visibly changed from a blurry superposition of all ten digits to a recognizable blurry "3" --
-confirmed against the rendered selection-count text, not just a screenshot. See
-`img/hero.webp` and `img/after_lasso.webp`.
+confirmed against the rendered selection-count text, not just a screenshot. The embedding
+canvas's own selection gesture is verified too: arming the toolbar's rectangle-selection mode
+and dragging a box over a cluster narrowed the selection to `684 of 1,797`, with the digit
+breakdown updating to match the selected region (a plain drag pans -- the selection mode must
+be armed first). See `img/hero.webp` and `img/after_lasso.webp`.
 
 Source: promoted from `website/widgets/embedding-atlas/gallery/showcase_digits_atlas.py`.
