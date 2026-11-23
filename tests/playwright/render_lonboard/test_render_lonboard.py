@@ -2,14 +2,11 @@ from __future__ import annotations
 
 from playwright.sync_api import Page, expect
 from tests.playwright.conftest import (
-    ANYWIDGET_INIT_XFAIL,
     assert_no_unexpected_errors,
     client_models,
     collect_errors,
     expose_manager,
 )
-
-pytestmark = ANYWIDGET_INIT_XFAIL
 
 # Each lonboard map bundles its own copy of luma.gl, which logs this (harmless)
 # console error when a page shows more than one map. How many of them have
