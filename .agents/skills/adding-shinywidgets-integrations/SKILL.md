@@ -58,7 +58,7 @@ Per accessor, nail down and document: what it returns (coordinate/index space!),
 
 ## Phase 1: Spike (feasibility)
 
-Use `docs/plans/widget-reports-archive/prompt-template.md` as the brief. The essentials:
+Write the spike brief with these essentials:
 
 1. **Review before testing**: read the library's widget code and any shinywidgets diff; run `make check`.
 2. **Survey the API surface by introspection** (accepted input types, `sync=True` traits, experimental vs stable) — let that drive the test matrix, not guesswork.
@@ -70,7 +70,7 @@ The verdict gates phase 2. A library with no synced traits and no widget (e.g. p
 
 ## Phase 2: Integration + widget guide
 
-Implement the renderer TDD-style (unit tests in `tests/unit/`, a Playwright app fixture in `tests/apps/` driving the key gestures). Then write the guide as verified source material. Structure that has worked (`docs/widget-guides/<slug>/` pattern):
+Implement the renderer TDD-style (unit tests in `tests/unit/`, a Playwright app fixture in `tests/playwright/<app>/` driving the key gestures). Then write the guide as verified source material. Structure that has worked:
 
 - **Quick start** (minimal app + screenshot) → **feature tour** (4–8 highlights, short snippets) → **Reacting to user interaction** (accessor reference table: accessor | returns | before any interaction | across re-render | default rate policy; one verified snippet per accessor) → **Updating from Python** (in-place vs re-render, what's preserved) → **Coordinating multiple views** (2–4 complete linked-view patterns, e.g. lasso → filtered table) → **Layout and sizing** → **Gotchas and limitations** (verified only, no hypotheticals).
 - Every snippet is a runnable file in `examples/`, run in a browser and screenshotted; look at every screenshot before referencing it. Keep a `NOTES.md` verification log (versions, what ran, bugs found, judgment calls).
@@ -78,11 +78,12 @@ Implement the renderer TDD-style (unit tests in `tests/unit/`, a Playwright app 
 
 ## Phase 3: Website article
 
-Turn the guide into `website/widgets/<slug>/`: `index.md` (front matter: `title`, `decorator`, `extra`, `category`, `upstream`, `hero`, `tagline`, `accessors`), `examples/`, `img/`, `gallery/`.
+Turn the guide into `website/widgets/<slug>/`: `index.md` (front matter: `title`, `decorator`, `extra`, `category`, `upstream`, `hero`, `tagline`, `accessors`), plus `website/widgets/<slug>/examples/`, `website/widgets/<slug>/img/`, and `website/widgets/<slug>/gallery/` beside it.
 
 - Add the page to the Widgets sidebar group in `website/_quarto.yml` and the `render_<x>` function to the matching quartodoc `contents:` list; `make docs` re-syncs the landing-page counts automatically.
 - `website/_tools/check_docs.py` must report nothing (snippets match example files byte-for-byte; links resolve). Bump the hardcoded sidebar-link count in `website/_tools/check_site.py` (checked by `make docs-check`).
 - Code blocks name their file: ` ```{.python file="examples/x.py"} `. Reshoot screenshots rather than reusing stale ones.
+- The bundled agent skill ships a matching reference: add `shinywidgets/.agents/skills/shinywidgets/references/widgets/<slug>.md` (end it with a `Written against \`<pkg>\` N.x.` stamp) and a roster row in that skill's `SKILL.md` Widgets table. `tests/unit/test_agent_skill.py` fails until both exist.
 
 ## Common mistakes
 
