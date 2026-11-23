@@ -411,14 +411,15 @@ _LOOPBACK_PROXY_TOKEN_PARAM = "sw_token"
 
 # The only requests a guarded proxy forwards; anything else, including routes
 # and parameters a future localtileserver adds, gets a 403. Each entry is
-# (path prefix, raster-source selector params, every param the route may
-# carry). `/api/tiles/` is the only route `get_leaflet_tile_layer()` layers
-# request from the browser (localtileserver 1.0.0).
+# (full-path pattern, raster-source selector params, every param the route
+# may carry). `/api/tiles/{z}/{x}/{y}.{format}` is the only route
+# `get_leaflet_tile_layer()` layers request from the browser
+# (localtileserver 1.0.0).
 _LOOPBACK_PROXY_ALLOWED_ROUTES: Tuple[
-    Tuple[str, FrozenSet[str], FrozenSet[str]], ...
+    Tuple["re.Pattern[str]", FrozenSet[str], FrozenSet[str]], ...
 ] = (
     (
-        "/api/tiles/",
+        re.compile(r"/api/tiles/\d+/\d+/\d+\.\w+"),
         frozenset({"filename"}),
         frozenset(
             {
@@ -550,7 +551,7 @@ class _LoopbackProxyApp:
 
         if self._allowed_filenames is not None:
             route = next(
-                (r for r in _LOOPBACK_PROXY_ALLOWED_ROUTES if path.startswith(r[0])),
+                (r for r in _LOOPBACK_PROXY_ALLOWED_ROUTES if r[0].fullmatch(path)),
                 None,
             )
             if route is None:
@@ -559,7 +560,10 @@ class _LoopbackProxyApp:
                 )
                 return
             _, selector_params, allowed_params = route
-            params = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+            params = parse_qs(
+                scope.get("query_string", b"").decode("latin-1"),
+                keep_blank_values=True,
+            )
             if any(k not in allowed_params for k in params):
                 await self._simple_response(
                     send, 403, b"Forbidden: parameter not allowed on this route"

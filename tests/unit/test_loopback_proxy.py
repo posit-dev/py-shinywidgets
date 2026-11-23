@@ -327,6 +327,14 @@ def test_tiles_route_ignores_foreign_selector_params(upstream_server: int) -> No
             proxy, "api/tiles/1/2/3.png", query_string=bad_query.encode()
         )
         assert status == 403, bad_query
+    # A blank value still names a parameter the route doesn't declare
+    for blank_query in (f"path=&sw_token={token}", f"path&sw_token={token}"):
+        status, _, _ = _asgi_request(
+            proxy,
+            "api/tiles/1/2/3.png",
+            query_string=f"filename=ok.tif&{blank_query}".encode(),
+        )
+        assert status == 403, blank_query
     # The route's own selector still passes
     status, _, _ = _asgi_request(
         proxy,
@@ -334,6 +342,19 @@ def test_tiles_route_ignores_foreign_selector_params(upstream_server: int) -> No
         query_string=f"filename=ok.tif&sw_token={token}".encode(),
     )
     assert status == 200
+
+
+def test_guard_matches_the_whole_tile_path(upstream_server: int) -> None:
+    # Allowing /api/tiles/{z}/{x}/{y}.{format} mustn't allow every route
+    # under /api/tiles/, even with an authorized source
+    proxy = _LoopbackProxyApp(upstream_server, allowed_filenames={"ok.tif"})
+    for path in (
+        "api/tiles/future-route",
+        "api/tiles/1/2/3.png/extra",
+        "api/tiles/1/2/3.png/../../../metadata",
+    ):
+        status, _, _ = _asgi_request(proxy, path, query_string=b"filename=ok.tif")
+        assert status == 403, path
 
 
 def test_guard_blocks_xarray_routes(upstream_server: int) -> None:

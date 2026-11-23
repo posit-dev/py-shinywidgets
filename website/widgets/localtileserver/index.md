@@ -342,7 +342,7 @@ Forbidden: route not allowed on guarded proxies                 # SSRF attempt v
 ```
 
 Knowing the registered filename is not enough without the token. The guard is deny-by-default: it forwards only
-the one route the shipped feature uses (`/api/tiles/`, with its handful of styling parameters), so every other
+the one route the shipped feature uses (`/api/tiles/{z}/{x}/{y}.{format}`, with its handful of styling parameters), so every other
 route -- including the ones above, and any route or parameter localtileserver might add in a future release --
 is refused outright, not just ones carrying a recognized raster-source parameter.
 
