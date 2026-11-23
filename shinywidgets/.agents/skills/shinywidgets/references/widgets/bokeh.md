@@ -25,9 +25,11 @@ def plot():
     return p
 ```
 
-A `figure` fills its output by default (`sizing_mode="stretch_both"`)
-unless it has an explicit `width`, `height`, `sizing_mode`, or
-`aspect_ratio`.
+A `figure` fills its output by default (`sizing_mode="stretch_both"`). A
+`height` alone fills the available width and keeps that height; a `width`
+alone keeps that width and fills the available height. Giving it both
+`width` and `height`, or an explicit `sizing_mode`/`aspect_ratio`, keeps
+Bokeh's own sizing exactly as written.
 
 ## Accessors
 

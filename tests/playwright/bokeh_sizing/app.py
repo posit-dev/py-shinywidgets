@@ -15,6 +15,8 @@ def line(**kwargs):
 app_ui = ui.page_fluid(
     ui.card(output_widget("stretched"), height="300px"),
     ui.card(output_widget("fixed"), height="300px"),
+    ui.card(output_widget("height_only"), height="300px"),
+    ui.card(output_widget("width_only"), height="300px"),
     output_widget("explicit_height", height="250px"),
     output_widget("hv_explicit_height", height="250px"),
 )
@@ -28,6 +30,14 @@ def server(input, output, session):
     @render_bokeh
     def fixed():
         return line(width=250, height=150)
+
+    @render_bokeh
+    def height_only():
+        return line(height=150)
+
+    @render_bokeh
+    def width_only():
+        return line(width=250)
 
     @render_bokeh
     def explicit_height():

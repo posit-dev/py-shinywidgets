@@ -21,14 +21,32 @@ def output_box(page: Page, output_id: str) -> dict[str, float]:
 def test_unsized_figure_fills_its_card(page: Page, local_app) -> None:
     page.goto(local_app.url)
     plot, out = plot_box(page, "stretched"), output_box(page, "stretched")
-    assert plot["width"] >= out["width"] - 2
-    assert plot["height"] >= out["height"] - 2
+    assert abs(plot["width"] - out["width"]) <= 2
+    assert abs(plot["height"] - out["height"]) <= 2
 
 
 def test_user_sized_figure_keeps_its_size(page: Page, local_app) -> None:
     page.goto(local_app.url)
     plot = plot_box(page, "fixed")
     assert (round(plot["width"]), round(plot["height"])) == (250, 150)
+
+
+def test_height_only_figure_fills_width_and_keeps_its_height(
+    page: Page, local_app
+) -> None:
+    page.goto(local_app.url)
+    plot, out = plot_box(page, "height_only"), output_box(page, "height_only")
+    assert abs(plot["width"] - out["width"]) <= 2
+    assert round(plot["height"]) == 150
+
+
+def test_width_only_figure_keeps_its_width_and_fills_height(
+    page: Page, local_app
+) -> None:
+    page.goto(local_app.url)
+    plot, out = plot_box(page, "width_only"), output_box(page, "width_only")
+    assert round(plot["width"]) == 250
+    assert abs(plot["height"] - out["height"]) <= 2
 
 
 def test_stretched_plots_fill_an_explicit_height_output(page: Page, local_app) -> None:

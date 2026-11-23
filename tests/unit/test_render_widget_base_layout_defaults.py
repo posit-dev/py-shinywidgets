@@ -385,6 +385,34 @@ def test_bokeh_fill_respects_upstream_decision() -> None:
     assert fill is False
 
 
+def test_bokeh_height_only_figure_fills_width_not_fill() -> None:
+    # End-to-end: as_widget_bokeh() sets sizing_mode, and that decision then
+    # drives set_layout_defaults()'s fill choice for the output container.
+    pytest.importorskip("jupyter_bokeh")
+    from bokeh.plotting import figure
+    from shinywidgets._as_widget import as_widget_bokeh
+
+    fig = figure(height=200)
+    widget = as_widget_bokeh(fig)
+    assert widget is not None
+
+    _, fill = rwb.set_layout_defaults(widget)
+    assert fill is False
+
+
+def test_bokeh_width_only_figure_fills_height() -> None:
+    pytest.importorskip("jupyter_bokeh")
+    from bokeh.plotting import figure
+    from shinywidgets._as_widget import as_widget_bokeh
+
+    fig = figure(width=250)
+    widget = as_widget_bokeh(fig)
+    assert widget is not None
+
+    _, fill = rwb.set_layout_defaults(widget)
+    assert fill is True
+
+
 def test_maplibre_default_height_fills() -> None:
     pytest.importorskip("maplibre")
     pytest.importorskip("anywidget")
