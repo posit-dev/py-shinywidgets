@@ -344,6 +344,21 @@ def test_tiles_route_ignores_foreign_selector_params(upstream_server: int) -> No
     assert status == 200
 
 
+def test_guard_forwards_styled_tile_requests(upstream_server: int) -> None:
+    # The styling parameters TileClient.get_tile_url() emits for a restyled
+    # layer (localtileserver 1.0.0) must all pass, or restyles 403
+    proxy = _LoopbackProxyApp(upstream_server, allowed_filenames=set())
+    token = proxy.register_filenames(["ok.tif"])
+    query = (
+        f"filename=ok.tif&indexes=1&indexes=2&colormap=viridis&vmin=0&vmax=1"
+        f"&nodata=0&expression=b1*2&stretch=linear&sw_token={token}"
+    )
+    status, _, _ = _asgi_request(
+        proxy, "api/tiles/3/4/5.png", query_string=query.encode()
+    )
+    assert status == 200
+
+
 def test_guard_matches_the_whole_tile_path(upstream_server: int) -> None:
     # Allowing /api/tiles/{z}/{x}/{y}.{format} mustn't allow every route
     # under /api/tiles/, even with an authorized source
