@@ -47,3 +47,5 @@ re-render.
   server: `FileChooser(path="/safe/directory", sandbox_path="/safe/directory")`.
 
 **More:** <https://shinywidgets.org/widgets/ipyfilechooser/>
+
+Written against `ipyfilechooser` 0.x.

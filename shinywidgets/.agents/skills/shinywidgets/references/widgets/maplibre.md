@@ -69,3 +69,5 @@ def _restyle():
   delivered once the new widget's comm opens, not dropped.
 
 **More:** <https://shinywidgets.org/widgets/maplibre/>
+
+Written against `maplibre` 0.x.

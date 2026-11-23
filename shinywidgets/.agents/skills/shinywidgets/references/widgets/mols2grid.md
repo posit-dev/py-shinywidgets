@@ -80,3 +80,5 @@ the DataFrame in the render function instead for that.
   apps don't call it.
 
 **More:** <https://shinywidgets.org/widgets/mols2grid/>
+
+Written against `mols2grid` 2.x.

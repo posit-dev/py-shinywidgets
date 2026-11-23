@@ -68,3 +68,5 @@ def _update_line():
   `fillable=True`.
 
 **More:** <https://shinywidgets.org/widgets/matplotlib/>
+
+Written against `matplotlib` 3.x.

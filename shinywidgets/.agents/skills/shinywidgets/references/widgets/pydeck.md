@@ -65,3 +65,5 @@ Other options:
   it returns `None`.
 
 **More:** <https://shinywidgets.org/widgets/pydeck/>
+
+Written against `pydeck` 0.x.

@@ -67,3 +67,5 @@ def _recolor():
   ipyniivue syncs that trait silently; use `location()` instead.
 
 **More:** <https://shinywidgets.org/widgets/niivue/>
+
+Written against `ipyniivue` 2.x.

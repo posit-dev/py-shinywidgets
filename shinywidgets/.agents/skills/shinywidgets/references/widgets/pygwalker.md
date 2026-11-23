@@ -69,3 +69,5 @@ PyGWalker's large JS bundle. Avoid unnecessary re-renders.
   pointing at `df.to_pandas()`.
 
 **More:** <https://shinywidgets.org/widgets/pygwalker/>
+
+Written against `pygwalker` 0.x.

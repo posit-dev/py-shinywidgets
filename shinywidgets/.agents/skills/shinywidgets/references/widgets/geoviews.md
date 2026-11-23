@@ -77,3 +77,5 @@ call, and the subscriber is simply never invoked (no error).
   switch to `lonboard.md` if individual points need to stay pickable.
 
 **More:** <https://shinywidgets.org/widgets/geoviews/>
+
+Written against `geoviews` 1.x.

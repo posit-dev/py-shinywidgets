@@ -66,3 +66,5 @@ def _recolor():
 - Tens of thousands of GPU-instanced points is the realistic ceiling.
 
 **More:** <https://shinywidgets.org/widgets/ipyvolume/>
+
+Written against `ipyvolume` 0.x.

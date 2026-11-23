@@ -61,3 +61,5 @@ def _add_layer():
   contrast/channel change, there's no reactive surface for it.
 
 **More:** <https://shinywidgets.org/widgets/vizarr/>
+
+Written against `vizarr` 0.x.

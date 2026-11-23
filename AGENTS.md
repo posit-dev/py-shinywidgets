@@ -50,7 +50,17 @@ shinywidgets ships an [Agent Skill](https://agentskills.io) at `shinywidgets/.ag
 - **It's user-facing docs distilled from the website**, not a second source of truth: a PR that changes public API or behavior updates the website page **and** the matching reference in the same PR, and a PR that changes a guide page's guidance updates its reference.
 - **`SKILL.md` is an index only** — the concept and widget tables with one-line "use when"/"pick it for" descriptions, not the content itself. `tests/unit/test_agent_skill.py` enforces word budgets for it and for each reference.
 - Frontmatter is strict YAML: quote `description` if it contains `: ` or ` #`; `name` must equal the skill directory (`shinywidgets`).
-- `tests/unit/test_agent_skill.py` enforces the frontmatter contract, word budgets, link integrity, that every public renderer, accessor, extra, and widget page is covered, and that every `python` code block parses and only imports names in `shinywidgets.__all__`. Run it after touching any skill file; `make format` also formats the skill's code blocks.
+- `tests/unit/test_agent_skill.py` enforces the frontmatter contract, word budgets, link integrity, that every public renderer, accessor, extra, and widget page is covered, that every `python` code block parses and only imports names in `shinywidgets.__all__`, and that each widget reference's version stamp matches the installed library's major version. Run it after touching any skill file; `make format` also formats the skill's code blocks.
+- Each `references/widgets/<slug>.md` ends with a `Written against \`<pkg>\` N.x.` stamp so an agent reading stale advice can compare it with the installed version and prefer the library's own docs on a mismatch.
+
+### When a widget library releases a new major version
+
+The version-stamp test fails, naming the affected `references/widgets/<slug>.md`. That failure means re-audit the reference, not just bump the stamp:
+
+1. Check the upstream changelog for changes affecting the reference's claims.
+2. Run the reference's quick start and verify it still works.
+3. Update any stale advice — and the matching website page, per the maintenance rule above.
+4. Bump the stamp's major version.
 - Optional manual check: `uvx --from skills-ref agentskills validate shinywidgets/.agents/skills/shinywidgets`.
 
 ## Architecture

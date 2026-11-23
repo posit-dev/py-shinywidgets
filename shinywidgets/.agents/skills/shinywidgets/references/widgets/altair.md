@@ -85,3 +85,5 @@ objects — any observer registered on the old ones silently stops firing.
   faceted, and repeated charts keep their natural size instead.
 
 **More:** <https://shinywidgets.org/widgets/altair/>
+
+Written against `altair` 6.x.

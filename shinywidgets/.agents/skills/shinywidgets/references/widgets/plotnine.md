@@ -56,3 +56,5 @@ matplotlib-artist technique as `matplotlib.md`, reached through `.widget`.
   scale.
 
 **More:** <https://shinywidgets.org/widgets/plotnine/>
+
+Written against `plotnine` 0.x.

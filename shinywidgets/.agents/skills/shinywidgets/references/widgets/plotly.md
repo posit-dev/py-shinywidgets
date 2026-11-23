@@ -97,3 +97,5 @@ def _highlight():
   you need `.widget.data[i].selectedpoints` after selection.
 
 **More:** <https://shinywidgets.org/widgets/plotly/>
+
+Written against `plotly` 6.x.

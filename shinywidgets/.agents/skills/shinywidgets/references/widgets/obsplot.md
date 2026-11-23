@@ -57,3 +57,5 @@ def _update_spec():
   Aggregate before plotting for large data.
 
 **More:** <https://shinywidgets.org/widgets/obsplot/>
+
+Written against `pyobsplot` 0.x.

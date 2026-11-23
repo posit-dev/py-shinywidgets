@@ -65,3 +65,5 @@ def _restyle():
   resize can leave part of the graph outside the visible area.
 
 **More:** <https://shinywidgets.org/widgets/ipycytoscape/>
+
+Written against `ipycytoscape` 1.x.

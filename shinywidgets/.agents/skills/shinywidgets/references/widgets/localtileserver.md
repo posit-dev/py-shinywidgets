@@ -79,3 +79,5 @@ def _restyle():
   every re-render re-opens the file.
 
 **More:** <https://shinywidgets.org/widgets/localtileserver/>
+
+Written against `localtileserver` 1.x.

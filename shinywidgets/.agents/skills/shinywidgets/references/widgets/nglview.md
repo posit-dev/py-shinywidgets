@@ -54,3 +54,5 @@ def _advance_frame():
   `shinywidgets.config(native_events=True)`.
 
 **More:** <https://shinywidgets.org/widgets/nglview/>
+
+Written against `nglview` 4.x.

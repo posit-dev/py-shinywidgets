@@ -73,3 +73,5 @@ doesn't reliably set it).
   0.8.x.
 
 **More:** <https://shinywidgets.org/widgets/ipyaladin/>
+
+Written against `ipyaladin` 0.x.

@@ -53,3 +53,5 @@ still needs a re-render).
   the Python process while they run.
 
 **More:** <https://shinywidgets.org/widgets/quak/>
+
+Written against `quak` 0.x.

@@ -74,3 +74,5 @@ Other props (e.g. `defaultPageSize`) update the same way.
   ([#460](https://github.com/posit-dev/py-shinywidgets/issues/460)).
 
 **More:** <https://shinywidgets.org/widgets/reactable/>
+
+Written against `reactable` 0.x.

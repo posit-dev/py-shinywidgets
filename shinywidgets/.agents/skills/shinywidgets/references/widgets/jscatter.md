@@ -72,3 +72,5 @@ def _recolor():
   at that value).
 
 **More:** <https://shinywidgets.org/widgets/jscatter/>
+
+Written against `jupyter-scatter` 1.x.

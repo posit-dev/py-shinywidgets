@@ -72,3 +72,5 @@ Keep a reference to the `rerun.notebook.Viewer` wrapper (not just
   deployments).
 
 **More:** <https://shinywidgets.org/widgets/rerun/>
+
+Written against `rerun-sdk` 0.x.

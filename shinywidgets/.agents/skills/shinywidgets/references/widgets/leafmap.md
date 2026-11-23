@@ -61,3 +61,5 @@ in-place API otherwise (e.g. maplibre's `set_paint_property`).
   `.value` retains the original leafmap `Map` and its own methods.
 
 **More:** <https://shinywidgets.org/widgets/leafmap/>
+
+Written against `leafmap` 0.x.

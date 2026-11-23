@@ -71,3 +71,5 @@ the synced `project` trait over the `get_*()` query methods.
   ipywidgets' own `Layout` trait); 3.6.1+ renamed it `app_layout`.
 
 **More:** <https://shinywidgets.org/widgets/geolibre/>
+
+Written against `geolibre` 3.x.

@@ -72,3 +72,5 @@ def _update_line():
   `PanZoom` is readable with `fig.read("interaction")`.
 
 **More:** <https://shinywidgets.org/widgets/bqplot/>
+
+Written against `bqplot` 0.x.

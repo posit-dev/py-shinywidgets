@@ -57,3 +57,5 @@ re-render if you need to soften the reset.
   `EmbeddingAtlasWidget(df, x=..., y=..., text=...)` yourself.
 
 **More:** <https://shinywidgets.org/widgets/embedding-atlas/>
+
+Written against `embedding-atlas` 0.x.

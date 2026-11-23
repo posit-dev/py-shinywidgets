@@ -56,3 +56,5 @@ def sigma():
   start going blank.
 
 **More:** <https://shinywidgets.org/widgets/ipysigma/>
+
+Written against `ipysigma` 0.x.

@@ -74,3 +74,5 @@ def _clear_selection():
   expensive on every tick — update a companion view in place instead.
 
 **More:** <https://shinywidgets.org/widgets/ipydatagrid/>
+
+Written against `ipydatagrid` 1.x.

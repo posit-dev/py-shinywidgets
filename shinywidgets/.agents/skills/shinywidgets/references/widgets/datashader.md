@@ -81,3 +81,5 @@ view region.
   Numba-compiled aggregation stays well under 100ms even at 10M points).
 
 **More:** <https://shinywidgets.org/widgets/datashader/>
+
+Written against `datashader` 0.x.

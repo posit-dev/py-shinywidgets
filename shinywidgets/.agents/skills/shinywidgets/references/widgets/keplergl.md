@@ -67,3 +67,5 @@ def _update_data():
   when read via `leafmap.kepler.Map` (see `leafmap.md`).
 
 **More:** <https://shinywidgets.org/widgets/keplergl/>
+
+Written against `keplergl` 0.x.

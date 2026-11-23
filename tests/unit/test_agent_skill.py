@@ -10,6 +10,7 @@ from __future__ import annotations
 import ast
 import re
 import sys
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -122,6 +123,41 @@ def test_reference_relative_links_resolve(path: Path) -> None:
 def test_widget_references_match_published_pages() -> None:
     assert {p.stem for p in (REFERENCES / "widgets").glob("*.md")} == set(
         published_widget_slugs()
+    )
+
+
+STAMP_RE = re.compile(r"^Written against `([\w.-]+)` (\d+)\.x\.$", re.MULTILINE)
+
+
+@pytest.mark.parametrize(
+    "path", sorted((REFERENCES / "widgets").glob("*.md")), ids=lambda p: p.stem
+)
+def test_widget_reference_has_version_stamp(path: Path) -> None:
+    assert STAMP_RE.search(read(path)), (
+        f"{path.name} has no version stamp; add a final line like "
+        "'Written against `plotly` 6.x.'"
+    )
+
+
+@pytest.mark.parametrize(
+    "path", sorted((REFERENCES / "widgets").glob("*.md")), ids=lambda p: p.stem
+)
+def test_version_stamp_matches_installed(path: Path) -> None:
+    match = STAMP_RE.search(read(path))
+    assert match, f"{path.name} has no version stamp"
+    pkg, major = match.groups()
+    try:
+        installed = version(pkg)
+    except PackageNotFoundError:
+        pytest.skip(f"{pkg} is not installed in this environment")
+    assert installed.split(".")[0] == major, (
+        f'{path.name} is stamped "{pkg} {major}.x" but {pkg} {installed} is '
+        "installed. A new major version means this reference needs re-auditing:\n"
+        "1. Check the upstream changelog for changes affecting this page's claims\n"
+        "2. Run the page's quick start and verify it still works\n"
+        "3. Update any stale advice (and the website page, per the maintenance rule)\n"
+        f'4. Bump the stamp to "Written against `{pkg}` {installed.split(".")[0]}.x."\n'
+        'See AGENTS.md "When a widget library releases a new major version".'
     )
 
 

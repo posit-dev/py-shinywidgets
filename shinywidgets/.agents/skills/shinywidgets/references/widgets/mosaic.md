@@ -80,3 +80,5 @@ def _restyle():
   for data that's identical across users.
 
 **More:** <https://shinywidgets.org/widgets/mosaic/>
+
+Written against `mosaic-widget` 0.x.

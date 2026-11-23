@@ -74,3 +74,5 @@ def _update_table():
   interface, return a pane/widget, not a raw value.
 
 **More:** <https://shinywidgets.org/widgets/panel/>
+
+Written against `panel` 1.x.

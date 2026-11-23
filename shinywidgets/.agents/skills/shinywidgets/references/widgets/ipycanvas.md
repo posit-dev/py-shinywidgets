@@ -61,3 +61,5 @@ def _draw():
   built-in undo.
 
 **More:** <https://shinywidgets.org/widgets/ipycanvas/>
+
+Written against `ipycanvas` 0.x.

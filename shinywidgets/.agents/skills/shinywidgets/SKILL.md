@@ -31,7 +31,10 @@ your task — each one is short and has the facts this index leaves out.
 ## Widgets
 
 Each row: widget, the renderer it uses, the install extra, what to pick it
-for, and its reference (accessors and gotchas live there, not here).
+for, and its reference (accessors and gotchas live there, not here). Each
+reference notes the major version of the widget library it was written
+against — if its advice doesn't match what you observe, compare that with
+the installed version, and on a mismatch prefer the library's own docs.
 
 ### Charts
 

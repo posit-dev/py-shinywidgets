@@ -64,3 +64,5 @@ def _recolor():
   to white and overrides `Renderer(background=...)`).
 
 **More:** <https://shinywidgets.org/widgets/pythreejs/>
+
+Written against `pythreejs` 2.x.

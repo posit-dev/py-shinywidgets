@@ -70,3 +70,5 @@ Drive a `DynamicMap` with a stream from a `@reactive.effect` —
   box-select — set `.opts(active_tools=["box_select"])` on each element.
 
 **More:** <https://shinywidgets.org/widgets/holoviews/>
+
+Written against `holoviews` 1.x.

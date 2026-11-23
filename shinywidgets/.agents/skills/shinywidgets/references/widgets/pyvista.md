@@ -58,3 +58,5 @@ those.
   `window_size` instead of filling the container.
 
 **More:** <https://shinywidgets.org/widgets/pyvista/>
+
+Written against `pyvista` 0.x.

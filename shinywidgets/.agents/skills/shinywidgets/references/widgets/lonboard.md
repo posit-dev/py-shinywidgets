@@ -77,3 +77,5 @@ def _recolor():
 - `lonboard.viz()` draws no basemap at all unless passed one explicitly.
 
 **More:** <https://shinywidgets.org/widgets/lonboard/>
+
+Written against `lonboard` 0.x.

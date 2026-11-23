@@ -50,3 +50,5 @@ change `n_bins`, `y_max`, etc.
   (upstream [drawdata#43](https://github.com/koaning/drawdata/issues/43)).
 
 **More:** <https://shinywidgets.org/widgets/drawdata/>
+
+Written against `drawdata` 0.x.

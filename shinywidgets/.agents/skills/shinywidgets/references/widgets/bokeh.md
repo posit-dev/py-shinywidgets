@@ -72,3 +72,5 @@ def _update_source():
   shared (and mutated) by every visitor.
 
 **More:** <https://shinywidgets.org/widgets/bokeh/>
+
+Written against `bokeh` 3.x.

@@ -74,3 +74,5 @@ def _recenter():
   `ui.input_dark_mode()`; the tile imagery itself doesn't.
 
 **More:** <https://shinywidgets.org/widgets/ipyleaflet/>
+
+Written against `ipyleaflet` 0.x.

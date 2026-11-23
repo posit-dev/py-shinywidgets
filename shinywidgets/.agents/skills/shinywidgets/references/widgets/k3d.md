@@ -59,3 +59,5 @@ def _recolor():
   rendering in measured testing.
 
 **More:** <https://shinywidgets.org/widgets/k3d/>
+
+Written against `k3d` 3.x.

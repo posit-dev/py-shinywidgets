@@ -71,3 +71,5 @@ def _stream_rows():
   `clear()` + `update(df)`.
 
 **More:** <https://shinywidgets.org/widgets/perspective/>
+
+Written against `perspective-python` 5.x.

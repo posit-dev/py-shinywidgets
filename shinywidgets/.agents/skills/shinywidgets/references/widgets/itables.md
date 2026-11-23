@@ -51,3 +51,5 @@ so a structural change still needs a re-render).
   automatically — see `../layout-and-sizing.md` for which others do.
 
 **More:** <https://shinywidgets.org/widgets/itables/>
+
+Written against `itables` 2.x.
