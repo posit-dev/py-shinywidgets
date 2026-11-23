@@ -346,8 +346,8 @@ class render_widget_base(Renderer[ValueT], Generic[ValueT, WidgetT]):
         self, widget: WidgetT, session: Session, muted: Sequence[str]
     ) -> None:
         """
-        Hook for a subclass whose `_muted_traits()` depends on state the
-        browser side can change after this render returns (e.g. plotly.py's
+        Hook for a subclass whose `_muted_traits()` depends on Python-side
+        state that can change after this render returns (e.g. plotly.py's
         trace callbacks, registered from a `reactive.effect`): called once
         per render, with the muted set just sent, so an override can arrange
         to resend a fresher one later without a re-render. The base
