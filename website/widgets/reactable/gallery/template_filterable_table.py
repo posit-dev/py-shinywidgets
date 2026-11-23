@@ -48,7 +48,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.ui
         def summary():
-            rows = tbl.selected_rows()
+            rows = tbl.selected()
             req(len(rows) > 0)
             picked = cars.iloc[rows]
             return ui.TagList(

@@ -2,7 +2,7 @@
 # description: A fuller reactable dashboard: a type filter and a grouping
 #     toggle re-render the table; page size updates in place; row selection
 #     drives a comparison card; the search box drives a small chart of what's
-#     currently visible. Exercises selected_rows(), search(), an in-place prop
+#     currently visible. Exercises selected(), search(), an in-place prop
 #     update, grouping/aggregation, a JS cell renderer, and theming together.
 # bucket: showcase
 # run: uv run --no-sync --with reactable shiny run website/widgets/reactable/gallery/showcase_cars_dashboard.py
@@ -101,7 +101,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.ui
         def detail():
-            rows = tbl.selected_rows()
+            rows = tbl.selected()
             req(len(rows) > 0)
             picked = visible_data().iloc[rows]
             return ui.TagList(

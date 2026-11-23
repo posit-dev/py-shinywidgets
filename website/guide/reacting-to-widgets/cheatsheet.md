@@ -269,13 +269,13 @@ broke every one of these (missing leading underscore, `shinywidgets/_render_widg
 
 | Accessor | Returns | Before any interaction | Across re-render | Default rate |
 |---|---|---|---|---|
-| `selected_rows()` | `List[int]` | cancels until the browser first reports | re-seeded | none |
+| `selected()` | `List[int]` | cancels until the browser first reports | re-seeded | none |
 | `page()` | `int` | cancels until the browser first reports | re-seeded | none |
 | `sorted()` | `List[{"id","desc"}]` | cancels until the browser first reports | re-seeded | none |
 | `filtered()` | `List[{"id","value"}]` | cancels until the browser first reports | re-seeded | debounce 250ms |
 | `search()` | `str` | cancels until the browser first reports | re-seeded | debounce 250ms |
 
-All five share "0-based, *data*-ordered positions survive sort/filter/paging" for `selected_rows()` and
+All five share "0-based, *data*-ordered positions survive sort/filter/paging" for `selected()` and
 `page()`/`sorted()`/`filtered()`'s own semantics. **[docs]**: the class docstring says in-place `props["data"]`
 updates have no effect; verified they work and preserve sort/filter/page/selection (reactable-py's mounted
 component doesn't memoize data).

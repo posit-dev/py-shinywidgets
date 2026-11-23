@@ -23,14 +23,14 @@ with ui.layout_columns(col_widths=[8, 4]):
 
     with ui.card():
         ui.card_header("Export")
-        ui.p("Check some rows, then download -- no need to read selected_rows() anywhere else first.")
+        ui.p("Check some rows, then download -- no need to read selected() anywhere else first.")
 
-        # selected_rows() is live from the moment the table renders, whether
+        # selected() is live from the moment the table renders, whether
         # or not anything has read it yet, so this handler can read it cold,
         # the instant the user clicks download: no warm-up reader required.
         @render.download_button(filename="selected_cars.csv", label="Download selected as CSV")
         def download_csv():
-            rows = tbl.selected_rows()
+            rows = tbl.selected()
             buf = io.StringIO()
             cars.iloc[rows].to_csv(buf, index=False)
             yield buf.getvalue()

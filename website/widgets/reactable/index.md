@@ -6,7 +6,7 @@ category: Tables & grids
 upstream: https://machow.github.io/reactable-py/
 hero: img/05_custom_cells.webp
 tagline: A polished, R-reactable-style data table -- sorting, filtering, grouping/aggregation, expandable details, and custom cell renderers -- with zero round-trips for interaction.
-accessors: [selected_rows, page, sorted, filtered, search]
+accessors: [selected, page, sorted, filtered, search]
 description: "A polished, R-reactable-style data table -- sorting, filtering, grouping/aggregation, expandable details, and custom cell renderers -- with zero round-trips for interaction."
 image: "img/05_custom_cells.webp"
 ---
@@ -25,7 +25,7 @@ table is unstyled without it), sanitizes NaN/inf values in your data to nulls (r
 serialization error), and treats a `height=` you set on `Reactable(...)` as an explicit height that opts out of
 Shiny's fill layout.
 
-The headline addition in this release is a set of reactive accessors -- `.selected_rows()`, `.page()`,
+The headline addition in this release is a set of reactive accessors -- `.selected()`, `.page()`,
 `.sorted()`, `.filtered()`, and `.search()` -- that read the table's live state back into Python, bridged from
 the same state API R's reactable uses for `Shiny.onInputChange`. Nothing is sent to the server until you call
 one of them.
@@ -353,7 +353,7 @@ then.
 
 | Accessor | Returns | Before any interaction | Across re-render | Default rate policy |
 |---|---|---|---|---|
-| `selected_rows()` | `list[int]` (0-based, data-space positions, like `df.iloc`) | cancels until the browser's first state report | re-seeded from the new table (starts `[]`) | none |
+| `selected()` | `list[int]` (0-based, data-space positions, like `df.iloc`) | cancels until the browser's first state report | re-seeded from the new table (starts `[]`) | none |
 | `page()` | `int` (0-based) | cancels until the browser's first state report | re-seeded from the new table (starts `0`) | none |
 | `sorted()` | `list[{"id": str, "desc": bool}]` | cancels until the browser's first state report | re-seeded from the new table (starts `[]`) | none |
 | `filtered()` | `list[{"id": str, "value": str}]` | cancels until the browser's first state report | re-seeded from the new table (starts `[]`) | debounce, 250ms |
@@ -364,10 +364,10 @@ once, shortly after the table first renders -- read them with `req()` semantics 
 output simply not render until then. All five describe the table's *own* state (not a record of a past click),
 so a re-render re-seeds every one of them from the new table rather than carrying over the old table's values.
 Sort/page/selection are click-driven and unthrottled; filter/search are per-keystroke streams and debounced by
-default. Positions from `selected_rows()` stay in data coordinates: sorting or paging the table doesn't change
+default. Positions from `selected()` stay in data coordinates: sorting or paging the table doesn't change
 them.
 
-### Selection: `selected_rows()`
+### Selection: `selected()`
 
 Requires `selection="multiple"` (or `"single"`) on the table. Position indices are stable across sort and page.
 [`08_selected_rows.py`](examples/08_selected_rows.py):
@@ -378,7 +378,7 @@ from reactable.data import cars_93
 from shiny.express import render, ui
 from shinywidgets import render_reactable
 
-ui.page_opts(title="selected_rows()", fillable=True)
+ui.page_opts(title="selected()", fillable=True)
 
 cars = cars_93.to_pandas()[["manufacturer", "model", "price"]].head(8)
 
@@ -390,17 +390,17 @@ with ui.layout_columns(col_widths=[8, 4]):
             return Reactable(cars, selection="multiple", default_page_size=8)
 
     with ui.card():
-        ui.card_header("tbl.selected_rows()")
+        ui.card_header("tbl.selected()")
 
         @render.code
         def selected():
-            return str(tbl.selected_rows())
+            return str(tbl.selected())
 ```
 
 Before selecting any rows, after checking the 1st and 3rd:
 
-![selected_rows before](img/08_selected_rows_before.webp)
-![selected_rows after](img/08_selected_rows_after.webp)
+![selected before](img/08_selected_rows_before.webp)
+![selected after](img/08_selected_rows_after.webp)
 
 ### Where the user is: `page()` and `sorted()`
 
@@ -498,14 +498,14 @@ with ui.layout_columns(col_widths=[8, 4]):
 
     with ui.card():
         ui.card_header("Export")
-        ui.p("Check some rows, then download -- no need to read selected_rows() anywhere else first.")
+        ui.p("Check some rows, then download -- no need to read selected() anywhere else first.")
 
-        # selected_rows() is live from the moment the table renders, whether
+        # selected() is live from the moment the table renders, whether
         # or not anything has read it yet, so this handler can read it cold,
         # the instant the user clicks download: no warm-up reader required.
         @render.download_button(filename="selected_cars.csv", label="Download selected as CSV")
         def download_csv():
-            rows = tbl.selected_rows()
+            rows = tbl.selected()
             buf = io.StringIO()
             cars.iloc[rows].to_csv(buf, index=False)
             yield buf.getvalue()
@@ -571,7 +571,7 @@ accessors already cover reactable's entire user-facing state surface.
 
 ### Rate limiting
 
-`filtered()` and `search()` debounce at 250ms by default, since both stream on every keystroke; `selected_rows()`,
+`filtered()` and `search()` debounce at 250ms by default, since both stream on every keystroke; `selected()`,
 `page()`, and `sorted()` are click-driven and unthrottled. Override with `rate_policy`/`rate_delay` on the
 decorator -- this changes the policy only for accessors that already debounce (it doesn't add a limit to
 click-driven ones). [`11_rate_limiting.py`](examples/11_rate_limiting.py):
@@ -669,7 +669,7 @@ data should be treated as a different table.
 
 ### Selection drives a detail card
 
-`selected_rows()` gives positions in the currently-rendered data, so `df.iloc[rows]` gets you the selected
+`selected()` gives positions in the currently-rendered data, so `df.iloc[rows]` gets you the selected
 records. `on_click="select"` lets a row click toggle selection (in addition to the checkbox).
 [`14_selection_to_detail.py`](examples/14_selection_to_detail.py):
 
@@ -704,7 +704,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.ui
         def detail():
-            rows = tbl.selected_rows()
+            rows = tbl.selected()
             req(len(rows) > 0)
             car = cars.iloc[rows[0]]
             return ui.TagList(
@@ -831,7 +831,7 @@ A searchable, filterable table whose selection drives a small summary card -- a 
 
 A fuller dashboard: a vehicle-type filter and a grouping toggle re-render the table; page size updates in place;
 row selection drives a comparison card; the search box drives a chart of what's currently visible. Exercises
-`selected_rows()`, `search()`, an in-place prop update, grouping/aggregation (with the `mean` workaround above), a
+`selected()`, `search()`, an in-place prop update, grouping/aggregation (with the `mean` workaround above), a
 JS cell renderer, and theming together. [`gallery/showcase_cars_dashboard.py`](gallery/showcase_cars_dashboard.py)
 
 ![gallery showcase, flat view](img/gallery_showcase_cars_dashboard_flat.webp)
