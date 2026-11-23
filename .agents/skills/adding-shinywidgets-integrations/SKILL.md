@@ -46,6 +46,7 @@ Per accessor, nail down and document: what it returns (coordinate/index space!),
 - `kind="state"` retains the last value across re-renders (the user-facing norm); `kind="event"` resets to `None` (internal plumbing, e.g. bokeh's `source_data`).
 - `priority="input"` dedups identical values; `"event"` republishes (repeated identical clicks each fire).
 - Names can't be `value` or start with `_`.
+- Make an accessor opt-in (`AccessorSpec(opt_in=True)`) when its payload scales with the data or streams continuously (per-point click/selection events, hover): apps then pay that cost only when they pass `listen_to=["name"]`, and reading the accessor without opting in raises a helpful error.
 - An accessor computed from the widget itself must read `self.widget`, not `self._widget`, so readers follow a re-render.
 - Verify **every accessor with a real Playwright gesture** (click, drag, lasso, scroll-zoom) and confirm the Python side saw it (e.g. render the value in a `@render.code` output, screenshot it). A plain `@reactive.effect` reading `widget.trait` does NOT refire on trait changes — use `reactive_read()`/`.observe()` when testing sync.
 
