@@ -348,7 +348,7 @@ def test_all_accessors_are_retained_and_bind_at_render() -> None:
     # Every accessor is retained last-interaction state and binds at render:
     # the browser only reports an event with a listener, and an interaction
     # made before the first read is not lost.
-    r, w = rendered("selected", "selecting", "hover")
+    r, w = rendered("selected", "selecting", "brushing", "hover")
     for spec in sp.PLOTLY_ACCESSORS:
         assert spec.kind == "state", spec.name
     assert w.sent == [
@@ -393,6 +393,31 @@ def test_all_accessors_are_retained_and_bind_at_render() -> None:
             "events": ["plotly_restyle", "plotly_update", "plotly_redraw"],
         },
     ]
+
+
+def test_brushing_is_not_bound_without_opting_in() -> None:
+    # Without listen_to=["brushing"], plotly_selecting must not be bound at
+    # all (no per-mouse-move traffic from a default app that never reads it).
+    r, w = rendered()
+    with pytest.raises(RuntimeError, match="listen_to"):
+        r.brushing()
+    bound_events = [e for sent in w.sent for e in sent["events"]]
+    assert "plotly_selecting" not in [
+        e if isinstance(e, str) else e["name"] for e in bound_events
+    ]
+
+
+def test_brushing_updates_during_a_drag_when_listened_to() -> None:
+    # rate_delay=0: the debounce is pinned separately on the spec, and the
+    # limiter would need a running event loop here
+    from shinywidgets import render_plotly
+
+    r = render_plotly(rate_delay=0, listen_to=["brushing"])
+    w = FakeFigureWidget()
+    r._accessors.on_render(w)
+    assert r.brushing() is None
+    w.message(event("plotly_selecting", points=[], range={"x": [0, 1]}))
+    assert r.brushing() == {"range": {"x": [0, 1]}}
 
 
 def test_selection_reported_before_first_read_survives() -> None:
@@ -469,7 +494,7 @@ def test_selected_binds_points_payload_and_is_opt_in() -> None:
 
 
 def test_brushed_binds_region_payload_and_is_default_on() -> None:
-    assert not sp.BRUSHED.opt_in and not sp.BRUSHING.opt_in
+    assert not sp.BRUSHED.opt_in
     w = FakeFigureWidget()
     sp.BRUSHED.attach(w, lambda v: None)
     assert w.sent == [
@@ -481,6 +506,12 @@ def test_brushed_binds_region_payload_and_is_default_on() -> None:
             ],
         }
     ]
+
+
+def test_brushing_is_opt_in() -> None:
+    # Unlike brushed(), brushing() streams the region on every mouse move of
+    # a drag, so it follows selecting()/hover() in requiring listen_to.
+    assert sp.BRUSHING.opt_in
 
 
 def test_hover_is_opt_in() -> None:
