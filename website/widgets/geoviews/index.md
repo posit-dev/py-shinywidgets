@@ -1,7 +1,7 @@
 ---
 title: GeoViews
 decorator: render_holoviews
-extra: shinywidgets[holoviews]
+extra: shinywidgets[geoviews]
 category: Maps & geospatial
 upstream: https://geoviews.org
 hero: img/07_inplace_before.webp
@@ -42,12 +42,11 @@ styling with a Mapbox GL / MapLibre style spec, see [maplibre](../maplibre/index
 ## Installation
 
 ```sh
-pip install 'shinywidgets[holoviews]' geoviews "cartopy<0.26"
+pip install 'shinywidgets[geoviews]'
 ```
 
-There is no separate `shinywidgets[geoviews]` extra -- GeoViews renders through the same `holoviews` extra
-(`holoviews`, `panel`, `jupyter_bokeh>=4.1`), the same way the HoloViews guide has you add `hvplot` yourself. Add
-`geoviews` and `cartopy` on top. **The `cartopy<0.26` pin matters**: geoviews 1.15/1.16 raise `KeyError: 'lon_0'`
+The `geoviews` extra pulls in the `holoviews` extra (GeoViews renders through the same renderer) plus `geoviews`
+and a **pinned `cartopy<0.26`**: geoviews 1.15/1.16 raise `KeyError: 'lon_0'`
 from `project_extents` on cartopy 0.26 (fixed upstream in geoviews, not yet released as of this writing). This
 pass was verified with geoviews 1.16.0 and cartopy 0.25.0, where the pin is still necessary. Call
 `hv.extension("bokeh")` (or `gv.extension("bokeh")`) once per app, same as plain HoloViews, if you aren't also
