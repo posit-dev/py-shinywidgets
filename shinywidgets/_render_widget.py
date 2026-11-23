@@ -7348,18 +7348,25 @@ class render_vitessce(render_widget_base[VitessceValueT, VitessceWidget]):
     so calcs on it invalidate at that rate -- keep them cheap and gate
     expensive work behind explicit input.
 
-    **Python-to-browser updates**: assigning ``.widget._config`` takes
-    effect via a remount of the viewer, which is keyed on the config's
-    top-level ``uid``. ``VitessceConfig.to_dict()`` doesn't emit one, but
-    the viewer adds a ``uid`` on mount and echoes it back to ``_config``,
-    so in practice any config you read from the widget has one and the
-    bump is required: deep-copy the config, edit the
-    ``coordinationSpace``, set a fresh ``uid``, and reassign. The remount
-    resets the view state (zoom, selections) and re-fetches data (warm
-    from cache), so it's unsuitable for high-frequency updates. Don't
-    reach for ``config.widget(remount_on_uid_change=False)`` to avoid the
-    reset: with it, the viewer never adopts a new config, so Python-side
-    writes become no-ops. Also don't write ``_config`` from an immediate
+    **Python-to-browser updates**: reassigning ``.widget._config`` only
+    takes effect when the config's top-level ``uid`` changes (the viewer
+    keys on it). ``VitessceConfig.to_dict()`` doesn't emit one, but the
+    viewer adds a ``uid`` on mount and echoes it back to ``_config``, so
+    any config you read back from the widget has one: deep-copy the
+    synced config, edit the ``coordinationSpace``, set a fresh ``uid``,
+    and reassign. By default the new config is adopted with a full
+    remount of the viewer, resetting the view state (zoom, selections).
+    With ``config.widget(remount_on_uid_change=False)`` the viewer
+    instead adopts the new config *in place*, preserving the viewport --
+    the better pattern for coordination edits like recoloring by a
+    selected gene. Three caveats to the in-place pattern: derive the edit
+    from the *synced* ``_config`` (a pristine, never-mounted config can
+    crash the in-place adoption path -- upstream bug
+    [vitessce/vitessce#2684](https://github.com/vitessce/vitessce/issues/2684));
+    the whole config is replaced, so a user interaction landing between
+    your read and the write-back is silently dropped; and every ``uid``
+    bump re-keys the viewer's data cache, so views refetch their data on
+    each update. Either way, don't write ``_config`` from an immediate
     effect at render time: the viewer echoes an upgraded config back on
     mount, which can clobber an early write -- write on user input
     instead.
@@ -7405,6 +7412,7 @@ class render_vitessce(render_widget_base[VitessceValueT, VitessceWidget]):
     from shiny import App, ui
     from shinywidgets import output_widget, render_vitessce
     from vitessce import VitessceConfig
+    from vitessce import ViewType as vt
 
     app_ui = ui.page_fluid(output_widget("vit"))
 
@@ -7417,10 +7425,19 @@ class render_vitessce(render_widget_base[VitessceValueT, VitessceWidget]):
                 url="https://data-1.vitessce.io/0.0.33/main/human-lymph-node-10x-visium/human_lymph_node_10x_visium.h5ad.zarr",
                 file_type="anndata.zarr",
                 # Where the spatial view finds its spot coordinates (as in the
-                # official human_lymph_node_10x_visium demo config)
-                options={"obsLocations": {"path": "obsm/spatial"}},
+                # official human_lymph_node_10x_visium demo config). Visium
+                # spots render from obsSegmentations, not just obsLocations --
+                # without it, the view mounts but draws nothing.
+                options={
+                    "obsLocations": {"path": "obsm/spatial"},
+                    "obsSegmentations": {"path": "obsm/segmentations"},
+                    "obsSets": [{"name": "Leiden Cluster", "path": "obs/clusters"}],
+                },
             )
-            vc.add_view("spatial", dataset=dataset)
+            spatial = vc.add_view(vt.SPATIAL, dataset=dataset)
+            sets = vc.add_view(vt.OBS_SETS, dataset=dataset)
+            # Without .layout(), each view defaults to 1/12 of the grid width
+            vc.layout(spatial | sets)
             return vc
 
 
