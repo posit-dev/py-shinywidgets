@@ -48,7 +48,10 @@ pip install 'shinywidgets[geoviews]'
 The `geoviews` extra pulls in the `holoviews` extra (GeoViews renders through the same renderer) plus `geoviews`
 and a **pinned `cartopy<0.26`**: geoviews 1.15/1.16 raise `KeyError: 'lon_0'`
 from `project_extents` on cartopy 0.26 (fixed upstream in geoviews, not yet released as of this writing). This
-pass was verified with geoviews 1.16.0 and cartopy 0.25.0, where the pin is still necessary. Call
+pass was verified with geoviews 1.16.0 and cartopy 0.25.0, where the pin is still necessary. Because
+cartopy 0.25 has no Python 3.14 wheels, the extra installs `geoviews` and `cartopy` only on Python
+3.10-3.13 -- on 3.14+ you get just the HoloViews stack and `import geoviews` fails, so stay on 3.13 or
+earlier until geoviews supports cartopy 0.26. Call
 `hv.extension("bokeh")` (or `gv.extension("bokeh")`) once per app, same as plain HoloViews, if you aren't also
 importing `hvplot.pandas`.
 
