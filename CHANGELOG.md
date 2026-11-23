@@ -90,7 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * shinywidgets now requires shiny 1.9.0 or newer. With it, widget updates made from a background thread (e.g., nglview's, or your own `threading.Thread`) reach the browser right away instead of waiting for the next unrelated input. (#377)
 * shinywidgets now requires plotly 5.12 or newer for plotly widgets. With an older plotly, you now get an error explaining how to upgrade instead of a blank output. (#332)
 * `render_plotly` no longer sends plotly.py's per-point click/hover/selection reports to Python unless the app uses them — they fired on every interaction with an entry per point, whether or not anything read them (#479, #488). Trace callbacks (`on_click()`, `on_hover()`, etc.) are detected automatically and keep working, whether registered inside the render function or later (e.g. from a `reactive.effect`). To turn plotly.py's native events on app-wide — needed to read `.widget.data[i].selectedpoints` directly, for a callback on a trace added after render (`add_trace()`), or for a widget shared across sessions — use the new `shinywidgets.config(native_events=True)` setting (or the `SHINYWIDGETS_NATIVE_EVENTS=1` environment variable).
-* Returning a widget from a `@reactive.calc` to a `@render_widget`-family output can now raise an error that didn't happen before, if the render re-runs for a reason the calc doesn't share:
+* Returning a widget from a `@reactive.calc` to a `@render_widget`-family output can now raise an error that didn't happen before, if the render re-runs while the calc doesn't (e.g. it also reads another input):
 
   ```python
   @reactive.calc
@@ -103,7 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       return base_map()
   ```
 
-  The widget is still owned by whichever render first constructed it, and that render closes it on its own next re-render or invalidation, even though the calc keeps returning the same (now-closed) object to anything else that calls it. Once `calc_map` re-renders, it now raises `Map was closed (its render was invalidated, or it was closed explicitly), so it can't be displayed again...` instead of continuing to show the map, as it did on 0.8.2. Build the widget inside `with session_lifetime():` so its lifetime isn't tied to any one render. (#258, #262)
+  The re-run closes the widgets its previous run built, including the one the calc cached, so it now raises `Map was closed (its render was invalidated, or it was closed explicitly), so it can't be displayed again...` instead of showing the map, as 0.8.2 did. Build the widget inside `with session_lifetime():` in the calc. (#258, #262)
 
 ### Deprecated
 

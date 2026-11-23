@@ -95,11 +95,12 @@ other lifetimes exist:
   arrived most recently — not scoped to the reading session. Don't use it
   for state that should mean something different per user.
 
-Caching in a `@reactive.calc` alone isn't enough: a widget the calc builds directly is still owned by
-whichever render first called it, and that render closes it on its next re-render or invalidation — a
-different render that just returns the calc's value then raises `... was closed (its render was invalidated,
-or it was closed explicitly), so it can't be displayed again...`. Build the widget inside
-`with session_lifetime():` (below) to decouple it.
+Caching in a `@reactive.calc` alone isn't enough: a widget the calc builds is owned by whichever render
+first called it. If that render re-runs for a reason the calc doesn't share (e.g. it also reads another
+input), its re-run closes the widgets it built last time, including the one the calc cached — so the calc
+hands back an already-closed widget, raising `... was closed (its render was invalidated, or it was closed
+explicitly), so it can't be displayed again...`. Build the widget inside `with session_lifetime():` (below)
+to decouple it.
 
 ```python
 from shiny import reactive
