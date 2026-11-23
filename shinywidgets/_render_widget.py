@@ -390,8 +390,8 @@ def warn_if_unrestricted_sql_widget(widget: Optional[Widget]) -> None:
     Warn when a SQL-executing widget (see `SQL_WIDGET_CONNECTIONS`) is
     rendered without its DuckDB connection locked down: the browser can
     otherwise run arbitrary SQL on it (e.g., read server files). A connection
-    the author already locked is left unwarned: its owner took control of its
-    settings (possibly keeping external access on deliberately).
+    the author locked down completely (configuration locked and external
+    access off) is left unwarned: its owner took control of its settings.
     """
     if widget is None:
         return
