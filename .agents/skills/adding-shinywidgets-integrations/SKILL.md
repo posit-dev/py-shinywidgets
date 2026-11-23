@@ -53,7 +53,7 @@ Per accessor, nail down and document: what it returns (coordinate/index space!),
 
 - Trait changes on `renderer.widget` sync to the browser. The canonical pattern is a `@reactive.effect` that sets traits in place, with `reactive.isolate()` where needed to avoid re-render loops.
 - Document when in-place beats re-render: it preserves view state (zoom, camera, selection) and avoids re-sending the widget's full state (for anywidgets the `_esm` module alone can be ~98% of the payload).
-- Know the trap: messages sent before the comm opens are dropped (bit k3d and mapwidget). If the library queues calls at construction time, test first render carefully.
+- Regression check: sends made before the comm opens used to be dropped (bit k3d and mapwidget); they're now queued and replayed when the comm opens (`flush_queued_sends()` in `shinywidgets/_comm.py`). If the library queues calls at construction time, still test first render carefully so this keeps working.
 - Don't add a second lifecycle/sweep mechanism — browser-created models are handled by the existing `claim_browser_created()` sweep (see `_shinywidgets.py`).
 
 ## Phase 1: Spike (feasibility)
@@ -80,7 +80,7 @@ Implement the renderer TDD-style (unit tests in `tests/unit/`, a Playwright app 
 
 Turn the guide into `website/widgets/<slug>/`: `index.md` (front matter: `title`, `decorator`, `extra`, `category`, `upstream`, `hero`, `tagline`, `accessors`), plus `website/widgets/<slug>/examples/`, `website/widgets/<slug>/img/`, and `website/widgets/<slug>/gallery/` beside it.
 
-- Add the page to the Widgets sidebar group in `website/_quarto.yml` and the `render_<x>` function to the matching quartodoc `contents:` list; `make docs` re-syncs the landing-page counts automatically.
+- Add the page to the Widgets sidebar group in `website/_quarto.yml` and the `render_<x>` function to the matching quartodoc `contents:` list; a new sidebar group also needs a matching category card in `website/index.qmd` (`make docs` fails the build when the groups and cards don't match).
 - `website/_tools/check_docs.py` must report nothing (snippets match example files byte-for-byte; links resolve). Bump the hardcoded sidebar-link count in `website/_tools/check_site.py` (checked by `make docs-check`).
 - Code blocks name their file: ` ```{.python file="examples/x.py"} `. Reshoot screenshots rather than reusing stale ones.
 - The bundled agent skill ships a matching reference: add `shinywidgets/.agents/skills/shinywidgets/references/widgets/<slug>.md` (end it with a `Written against \`<pkg>\` N.x.` stamp) and a roster row in that skill's `SKILL.md` Widgets table. `tests/unit/test_agent_skill.py` fails until both exist.
