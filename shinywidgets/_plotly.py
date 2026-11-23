@@ -355,6 +355,7 @@ BRUSHING = AccessorSpec(
     kind="state",
     attach=bridge_attach("plotly_selecting", region_of, (DESELECT,), payload="region"),
     rate_policy="debounce",
+    opt_in=True,
 )
 RELAYOUT = AccessorSpec(
     name="relayout",

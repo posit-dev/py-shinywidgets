@@ -4887,7 +4887,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     * ``selected()``: the points of a box or lasso selection, once the drag ends
       (``selecting()``: the same, while the user drags). Both are opt-in
       (``listen_to=["selected", "selecting"]``; see below).
-    * ``brushed()``: the selected region itself (``brushing()``: while dragging).
+    * ``brushed()``: the selected region itself (``brushing()``: while
+      dragging; opt-in with ``listen_to=["brushing"]``, since it streams on
+      every mouse move of the drag).
     * ``relayout()``: the axis ranges after a zoom, pan, or autoscale.
     * ``double_clicked()``: a pulse on every double-click (e.g. a view reset).
     * ``legend_clicked()``: the traces of the most recent legend click.
@@ -4923,10 +4925,11 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     * The streaming ones, ``hover()``, ``selecting()``, and ``brushing()``,
       update at most once the user pauses for 250 ms (see ``rate_policy`` and
       ``rate_delay``).
-    * ``selected()``, ``selecting()``, and ``hover()`` are opt-in: their
-      payloads grow with the selection (or stream continuously), so pass
-      ``listen_to=["selected"]`` (etc.) to the decorator to enable them.
-      Reading one that wasn't declared raises an error naming it.
+    * ``selected()``, ``selecting()``, ``brushing()``, and ``hover()`` are
+      opt-in: their payloads grow with the selection (or stream
+      continuously), so pass ``listen_to=["selected"]`` (etc.) to the
+      decorator to enable them. Reading one that wasn't declared raises an
+      error naming it.
     * They can't be read inside this output's own render function, which builds
       a new plot each time it runs. To change the plot in response to a click,
       modify ``.widget`` from a ``@reactive.effect`` instead (see the example).
@@ -5186,8 +5189,9 @@ class render_plotly(render_widget_base[PlotlyValueT, FigureWidget]):
     def brushing(self) -> Optional[Dict[str, Any]]:
         """
         Like :meth:`brushed`, but updates while the user drags the selection.
-        Debounced (250 ms) by default; see the ``rate_policy`` and
-        ``rate_delay`` parameters.
+        Opt in with ``listen_to=["brushing"]`` (it streams on every mouse
+        move of the drag). Debounced (250 ms) by default; see the
+        ``rate_policy`` and ``rate_delay`` parameters.
         """
         return cast(Optional[Dict[str, Any]], self._read_accessor("brushing"))
 

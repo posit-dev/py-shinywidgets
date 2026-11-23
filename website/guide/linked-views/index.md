@@ -1346,7 +1346,7 @@ with ui.layout_columns(col_widths=[6, 6]):
     with ui.card():
         ui.card_header("Magnitude (brush to filter)")
 
-        @render_plotly
+        @render_plotly(listen_to=["brushing"])
         def mag_hist():
             fig = go.Figure(go.Bar(x=MAG_CENTERS, y=mag_counts(gaia), marker_color="#4c78a8"))
             fig.update_layout(dragmode="select", height=260, margin=dict(l=40, r=10, t=10, b=30))
@@ -1355,7 +1355,7 @@ with ui.layout_columns(col_widths=[6, 6]):
     with ui.card():
         ui.card_header("Parallax (brush to filter)")
 
-        @render_plotly
+        @render_plotly(listen_to=["brushing"])
         def plx_hist():
             fig = go.Figure(go.Bar(x=PLX_CENTERS, y=plx_counts(gaia), marker_color="#f58518"))
             fig.update_layout(dragmode="select", height=260, margin=dict(l=40, r=10, t=10, b=30))

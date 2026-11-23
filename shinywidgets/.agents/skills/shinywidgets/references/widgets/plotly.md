@@ -28,7 +28,7 @@ def plot():
 
 Every accessor returns `None` until the interaction happens — check with
 `req(pts is not None)`, not `req(pts)` (a DataFrame has no truth value).
-`selected()`, `selecting()`, and `hover()` are opt-in: pass
+`selected()`, `selecting()`, `brushing()`, and `hover()` are opt-in: pass
 `listen_to=["selected", "hover"]` to the decorator (their payloads grow
 with the selection, or stream continuously); reading an undeclared one
 raises.
@@ -39,7 +39,7 @@ raises.
 | `selected()` | DataFrame of points in a box/lasso selection (opt-in) | `None` |
 | `selecting()` | Like `selected()`, live while dragging (opt-in, debounced 250ms) | `None` |
 | `brushed()` | `{"range": {...}}` or `{"lassoPoints": {...}}` region dict | `None` |
-| `brushing()` | Like `brushed()`, live while dragging (debounced 250ms) | `None` |
+| `brushing()` | Like `brushed()`, live while dragging (opt-in, debounced 250ms) | `None` |
 | `relayout()` | Axis-range delta from the most recent zoom/pan/autoscale | `None` |
 | `hover()` | DataFrame of points under the mouse (opt-in, debounced 250ms) | `None` |
 | `double_clicked()` | `True`/`None` pulse on every double-click | `None` |

@@ -176,12 +176,13 @@ registration needed. Call an accessor from any reactive context (a `@render.*` f
 `@reactive.effect`); it invalidates that context whenever the interaction changes, the same way `input.x()`
 does.
 
-Three accessors are **opt-in**: `selected()`, `selecting()`, and `hover()` -- plus `selected_rows()`, which
-reads `selected()` under the hood. A selection payload grows with the number of points caught, and a hover
-can stream continuously, so shinywidgets doesn't send them to Python unless the renderer declares them:
-pass `listen_to=["selected"]` (and/or `"selecting"`, `"hover"`) to `@render_plotly`. Reading one without
-declaring it raises an error pointing at `listen_to`. Once declared, the accessor behaves like any other --
-the declaration is per renderer, not per read.
+Four accessors are **opt-in**: `selected()`, `selecting()`, `brushing()`, and `hover()` -- plus
+`selected_rows()`, which reads `selected()` under the hood. A selection payload grows with the number of
+points caught, and `selecting()`/`brushing()`/`hover()` can stream continuously (a lasso drag reports on
+every mouse move), so shinywidgets doesn't send them to Python unless the renderer declares them: pass
+`listen_to=["selected"]` (and/or `"selecting"`, `"brushing"`, `"hover"`) to `@render_plotly`. Reading one
+without declaring it raises an error pointing at `listen_to`. Once declared, the accessor behaves like any
+other -- the declaration is per renderer, not per read.
 
 Accessors are inputs that remember. Each one attaches the moment the figure renders and records what the user
 does whether or not anything has read it yet -- there's no "warm-up" read needed to arm it. A re-render gives
@@ -203,7 +204,7 @@ selected, so they go back to `None`/empty once it reports).
 | `selected()` (opt-in) | points `DataFrame` | `None` | re-seeded | none |
 | `selecting()` (opt-in) | points `DataFrame` | `None` | kept | debounce 250 ms |
 | `brushed()` | region `dict` (`range` or `lassoPoints`) | `None` | re-seeded | none |
-| `brushing()` | region `dict` | `None` | kept | debounce 250 ms |
+| `brushing()` (opt-in) | region `dict` | `None` | kept | debounce 250 ms |
 | `relayout()` | axis-range `dict` | `None` | kept | none |
 | `double_clicked()` | `True` (a pulse) | `None` | kept | none |
 | `legend_clicked()` | traces `DataFrame` | `None` | kept | none |
@@ -365,7 +366,7 @@ ui.page_opts(title="Lasso some bubbles", fillable=True)
 with ui.layout_columns(col_widths=[7, 5]):
     with ui.card(full_screen=True):
 
-        @render_plotly
+        @render_plotly(listen_to=["brushing"])
         def plot():
             fig = px.scatter(df, x="gdpPercap", y="lifeExp", color="continent", log_x=True)
             fig.update_layout(dragmode="lasso")
