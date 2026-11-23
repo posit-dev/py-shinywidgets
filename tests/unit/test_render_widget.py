@@ -694,6 +694,24 @@ def test_render_widget_no_warning_for_self_locked_connection(widget_session) -> 
             assert asyncio.run(r._render()) is not None
 
 
+def test_render_widget_warns_for_nested_sql_widget(widget_session) -> None:
+    quak = pytest.importorskip("quak")
+    pa = pytest.importorskip("pyarrow")
+    from ipywidgets import VBox
+
+    r = rw.render_widget()
+
+    @r
+    def _():  # noqa: ANN202
+        # The quak widget's comm still accepts browser-sent SQL when it's
+        # nested in a layout, so the warning must reach past the root
+        return VBox([quak.Widget(pa.table({"a": [1]}), table="mytable")])
+
+    with session_context(widget_session):
+        with pytest.warns(UserWarning, match="render_quak"):
+            assert asyncio.run(r._render()) is not None
+
+
 def test_render_widget_warns_for_partially_locked_connection(widget_session) -> None:
     pytest.importorskip("quak")
     import duckdb

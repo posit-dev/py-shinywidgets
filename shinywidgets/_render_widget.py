@@ -395,36 +395,45 @@ def warn_if_unrestricted_sql_widget(widget: Optional[Widget]) -> None:
     """
     if widget is None:
         return
-    entry: Optional[Tuple[str, str]] = None
-    for cls in type(widget).__mro__:
-        entry = SQL_WIDGET_CONNECTIONS.get(widget_pkg(cls))
-        if entry is not None:
-            break
-    if entry is None:
-        return
-    attr, renderer = entry
-    con = getattr(widget, attr, None)
-    if con is not None:
-        try:
-            external_access, locked = duckdb_settings(con)
-        except Exception:
-            # Not (or no longer) a DuckDB connection: warn below, as if the
-            # attribute were missing
-            external_access, locked = True, False
-        # An author that locked the connection down themselves took control
-        # of its settings. Locking the configuration alone still allows
-        # read_csv() etc., so only a complete lockdown is left unwarned
-        if locked and not external_access:
-            return
-    warnings.warn(
-        f"A `{type(widget).__name__}` rendered with `@render_widget` has a "
-        "DuckDB connection that isn't locked down: any visitor can run SQL on "
-        "it that reads server files. Use `@shinywidgets."
-        f"{renderer}` instead, which locks the connection down by default, or "
-        "lock it down yourself (`SET enable_external_access = false`, then "
-        "`SET lock_configuration = true`) before returning the widget.",
-        stacklevel=2,
-    )
+    # A SQL-executing widget nested in the returned widget (e.g., a VBox
+    # child) has its own live comm the browser can send SQL over, so check
+    # every reachable widget, not just the root. Local import: _shinywidgets
+    # imports this module.
+    from ._shinywidgets import walk_widget_tree
+
+    for w in walk_widget_tree((widget,)):
+        entry: Optional[Tuple[str, str]] = None
+        for cls in type(w).__mro__:
+            entry = SQL_WIDGET_CONNECTIONS.get(widget_pkg(cls))
+            if entry is not None:
+                break
+        if entry is None:
+            continue
+        attr, renderer = entry
+        con = getattr(w, attr, None)
+        if con is not None:
+            try:
+                external_access, locked = duckdb_settings(con)
+            except Exception:
+                # Not (or no longer) a DuckDB connection: warn below, as if
+                # the attribute were missing
+                external_access, locked = True, False
+            # An author that locked the connection down themselves took
+            # control of its settings. Locking the configuration alone still
+            # allows read_csv() etc., so only a complete lockdown is left
+            # unwarned
+            if locked and not external_access:
+                continue
+        warnings.warn(
+            f"A `{type(w).__name__}` rendered with `@render_widget` has a "
+            "DuckDB connection that isn't locked down: any visitor can run "
+            "SQL on it that reads server files. Use `@shinywidgets."
+            f"{renderer}` instead, which locks the connection down by default, "
+            "or lock it down yourself (`SET enable_external_access = false`, "
+            "then `SET lock_configuration = true`) before returning the "
+            "widget.",
+            stacklevel=2,
+        )
 
 
 class render_drawdata(render_widget_base[DrawdataWidgetT, DrawdataWidgetT]):
