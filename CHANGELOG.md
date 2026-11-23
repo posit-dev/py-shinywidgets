@@ -64,6 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   `@render_plotly` has `clicked()`, `hover()`, `selected()`, `brushed()`, `relayout()`, `double_clicked()`, `legend_clicked()`, and `visible_traces()`. `@render_altair` has `selected(name)` and `selected_rows(name)`. `@render_bokeh` has `selected()`, `selected_rows()`, `tapped()`, and `zoomed()`. Many of the new renderers have their own (see above). Accessors keep their value across re-renders. Continuous streams, such as a selection while the user drags, are debounced by 250 ms by default; adjust this with the decorator's `rate_policy` and `rate_delay` parameters. Accessors whose payloads can grow without bound or stream continuously — plotly's `selected()`, `selecting()`, `brushing()`, and `hover()` — are opt-in: pass `listen_to=["selected"]` (etc.) to the renderer, and reading one you didn't declare raises an error pointing at `listen_to`. Plotly's `selected()`/`selecting()` frames report `trace_index`, `point_index`, and `customdata`, without `x`/`y` columns (you already have the coordinates in your data, so selection messages stay small). `.read(name)` reads an accessor, or any widget trait, by name. (#379, #437, #443, #459)
 
+  **Experimental**: accessor names, return shapes, and which accessors are opt-in may change in a future release without a deprecation cycle.
+
 * Added `shinywidgets.config()`, a single front door for app-wide settings — currently `native_events` (see the breaking change below) and the CDN settings (`cdn`, `cdn_only`, `extension_warning`). Every setting can also be set with a `SHINYWIDGETS_*` environment variable, which remains the deployment-time alternative.
 
 * Added per-renderer extras, so you can install a decorator's widget dependencies in one command (e.g., `pip install 'shinywidgets[plotly]'` or `'shinywidgets[maplibre,bokeh]'`). See the README for the full list.
@@ -88,6 +90,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * shinywidgets now requires shiny 1.9.0 or newer. With it, widget updates made from a background thread (e.g., nglview's, or your own `threading.Thread`) reach the browser right away instead of waiting for the next unrelated input. (#377)
 * shinywidgets now requires plotly 5.12 or newer for plotly widgets. With an older plotly, you now get an error explaining how to upgrade instead of a blank output. (#332)
 * `render_plotly` no longer sends plotly.py's per-point click/hover/selection reports to Python unless the app uses them — they fired on every interaction with an entry per point, whether or not anything read them (#479, #488). Trace callbacks (`on_click()`, `on_hover()`, etc.) are detected automatically and keep working, whether registered inside the render function or later (e.g. from a `reactive.effect`). To turn plotly.py's native events on app-wide — needed to read `.widget.data[i].selectedpoints` directly, for a callback on a trace added after render (`add_trace()`), or for a widget shared across sessions — use the new `shinywidgets.config(native_events=True)` setting (or the `SHINYWIDGETS_NATIVE_EVENTS=1` environment variable).
+* Returning a widget from a `@reactive.calc` to a `@render_widget`-family output can now raise an error that didn't happen before, if the render re-runs for a reason the calc doesn't share:
+
+  ```python
+  @reactive.calc
+  def base_map():
+      return ipyleaflet.Map(center=(51.5, -0.09), zoom=4)
+
+  @render_widget
+  def calc_map():
+      input.rerender()  # the render depends on something the calc doesn't
+      return base_map()
+  ```
+
+  The widget is still owned by whichever render first constructed it, and that render closes it on its own next re-render or invalidation, even though the calc keeps returning the same (now-closed) object to anything else that calls it. Once `calc_map` re-renders, it now raises `Map was closed (its render was invalidated, or it was closed explicitly), so it can't be displayed again...` instead of continuing to show the map, as it did on 0.8.2. Build the widget inside `with session_lifetime():` so its lifetime isn't tied to any one render. (#258, #262)
 
 ### Deprecated
 
@@ -104,7 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * Re-showing a widget output hidden by `@render.ui` (or removed with `remove_ui()` and re-inserted) no longer hangs for 30 seconds if the widget changed while hidden. (#260)
   * Re-rendering an ipyleaflet map no longer throws page errors. (#260)
   * Re-rendering a widget constructed with an explicit `model_id` no longer leaves the output blank. (#263)
-  * Returning a widget that belongs to another session (e.g., one cached in a module-level variable) now raises a clear error pointing to `session_lifetime()` and `shared_lifetime()`, instead of a blank output after 30 seconds. Returning a widget closed by an earlier render raises a similar error. (#258, #262)
+  * Returning a widget that belongs to another session (e.g., one cached in a module-level variable) now raises a clear error pointing to `session_lifetime()` and `shared_lifetime()`, instead of a blank output after 30 seconds. Returning a widget closed by an earlier render raises a similar error (see the breaking change above for the common case of a `@reactive.calc`-cached widget). (#258, #262)
   * Re-rendering stays fast with many concurrent sessions or large widgets (e.g., large GeoJSON payloads or Altair specs). (#261)
 * Widgets built on [ipyreact](https://github.com/widgetti/ipyreact) now work. Previously, importing such a package after shinywidgets raised "shinywidgets requires that all ipywidgets be constructed within an active Shiny session". (#160)
 * Widget subclasses defined directly in your app module (e.g., `class ConfettiButton(ipyreact.ValueWidget)` in `app.py`) now load their JavaScript dependencies correctly. Previously, subclassing a widget whose `_model_module` doesn't match its nbextension registration (ipyreact being the known example) silently produced a broken widget with no Python-side error. (#414)

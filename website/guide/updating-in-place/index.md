@@ -192,6 +192,14 @@ cases that need to outlive a single render:
   once for the whole *process*, before -- or outside -- any session, and show it to every session that
   connects. Every user sees (and can change) the same object; it is never freed.
 
+**Caching in a `@reactive.calc` alone isn't enough.** A widget the calc builds directly (not inside
+`session_lifetime()`) is still owned by whichever render first called the calc, and that render closes the
+widget when it re-runs or is invalidated -- even though the calc keeps returning the same (now-closed) Python
+object to any other render that calls it afterward. The symptom is an error like `Map was closed (its render
+was invalidated, or it was closed explicitly), so it can't be displayed again...` from a render that did
+nothing but return the calc's value. `with session_lifetime():` inside the calc (as `cached_map_calc()` does
+below) is what actually decouples the widget from any one render.
+
 `examples/03_lifetimes.py` renders one map each way, plus a "Re-render" button for the first two:
 
 ```{.python file="examples/03_lifetimes.py" files="globals.py"}
