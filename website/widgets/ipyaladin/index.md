@@ -777,10 +777,9 @@ Verified on current `main` (shinywidgets, ipyaladin 0.8.1, astropy 8.0.2):
   problem is that the name doesn't exist.
 - **Name resolution (`target="some name"`) is a blocking HTTP call to CDS's Sesame service**, including at
   *construction* time -- `Aladin(target="M31")` blocks the render function on that request. If CDS is slow
-  or unreachable, this raises `WidgetNotReadyError`/`NameResolveError` and the render fails outright (verified
-  this pass: CDS's Sesame endpoints were unreachable from this machine for the entire verification session,
-  and every example that named a target directly in the constructor failed until changed to a coordinate
-  string). Prefer coordinates (or a pre-resolved lookup table, as in every example above) for anything set
+  or unreachable, this raises `WidgetNotReadyError`/`NameResolveError` and the render fails outright (verified:
+  with Sesame unreachable, every example that named a target directly in the constructor raised until changed
+  to a coordinate string). Prefer coordinates (or a pre-resolved lookup table, as in every example above) for anything set
   programmatically, and reserve name strings for a user-driven search box where the occasional network
   round trip is expected.
 - **Constructor `fov` is approximate.** Aladin Lite applies it before the container reaches its final
