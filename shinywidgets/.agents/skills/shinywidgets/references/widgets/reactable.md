@@ -56,7 +56,8 @@ from shiny import reactive
 
 @reactive.effect
 def _update_data():
-    tbl.widget.props = {**tbl.widget.props, "data": new_df.to_dict(orient="records")}
+    # props["data"] is column-oriented: {column: [values...]}
+    tbl.widget.props = {**tbl.widget.props, "data": new_df.to_dict(orient="list")}
 ```
 
 Other props (e.g. `defaultPageSize`) update the same way.
