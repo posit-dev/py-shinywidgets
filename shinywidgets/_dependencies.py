@@ -409,37 +409,11 @@ def geolibre_app_mount(w: Widget, session: Session) -> None:
 # Query parameter carrying a `_LoopbackProxyApp` capability token
 _LOOPBACK_PROXY_TOKEN_PARAM = "sw_token"
 
-# Routes (and their parameters) a guarded proxy forwards -- everything else
-# gets a flat 403, including routes and parameters localtileserver doesn't
-# define yet. `/api/tiles/` is the *only* route the shipped feature
-# (`localtileserver_layer_proxy()`, backing `get_leaflet_tile_layer()`
-# layers) ever sends to the browser: confirmed against localtileserver
-# 1.0.0's route table (web/routers/*.py) and empirically, by capturing the
-# requests an ordinary layer and a restyled layer
-# (`TileClient.get_tile_url()`, including an `expression` restyle) make
-# while running examples/localtileserver/ in a browser.
-#
-# Each entry is (path prefix, selector parameter(s), every parameter the
-# route may carry). The selector parameter(s) name the raster source
-# (checked below against the registered allowlist/capability token); the
-# rest (`indexes`/`colormap`/`vmin`/`vmax`/`nodata`/`expression`/`stretch`)
-# only style the already-selected raster and can't themselves name a file or
-# URL (`colormap` is validated server-side against a fixed palette/registry;
-# the rest are numbers or short enum-like strings) -- but an unrecognized
-# parameter is refused rather than forwarded, so a future localtileserver
-# version can't quietly turn a new parameter into another raster-source
-# selector.
-#
-# Left out deliberately (not reachable through a guarded proxy, since
-# nothing the feature does requires them): every other raster-reading route
-# localtileserver 1.0.0 defines (`/api/metadata`, `/api/bounds`,
-# `/api/validate`, `/api/statistics`, `/api/thumbnail.*`, `/api/part.*`,
-# `/api/feature.*`, and the `/api/mosaic/*`/`/api/stac/*` routers -- none of
-# which `TileClient`/`get_leaflet_tile_layer()` ever sends to the browser);
-# `/api/xarray/*` (reads from a server-side in-memory registry with no
-# per-dataset authorization to check); the Cesium viewer pages (`/`,
-# `/split/`, `/split/form/` -- which themselves read a raster to build their
-# template context); and the OpenAPI/Swagger/Redoc/static docs routes.
+# The only requests a guarded proxy forwards; anything else, including routes
+# and parameters a future localtileserver adds, gets a 403. Each entry is
+# (path prefix, raster-source selector params, every param the route may
+# carry). `/api/tiles/` is the only route `get_leaflet_tile_layer()` layers
+# request from the browser (localtileserver 1.0.0).
 _LOOPBACK_PROXY_ALLOWED_ROUTES: Tuple[
     Tuple[str, FrozenSet[str], FrozenSet[str]], ...
 ] = (
