@@ -133,8 +133,12 @@ write idempotent setup there — anything that must happen exactly once (a
 lock, an unsettable flag) needs its own guard. Also keep a
 `shared_lifetime()` cache module in its own directory: Express auto-imports
 a directory's `globals.py` before running *any* app file in that directory,
-so every app there pays the shared widget's payload on first load, even
-apps that never display it ([#461](https://github.com/posit-dev/py-shinywidgets/issues/461)).
+so every app there *constructs* the shared widget in the process (memory
+and startup cost), even apps that never display it. Delivery itself is
+lazy — a session is only *sent* a shared widget it displays or references,
+except for eagerly-shared packages (`ipyvue`, `ipyvuetify`, `nglview`),
+which open at session start
+([#461](https://github.com/posit-dev/py-shinywidgets/issues/461)).
 
 ## Common mistakes
 

@@ -13,11 +13,16 @@ import rerun as rr
 from rerun.notebook import Viewer
 from shinywidgets import render_rerun
 
+# Session-scoped holder (module level in Express; inside server() in Core)
+# so later effects can keep logging — see "Updating in place"
+recordings: list[rr.RecordingStream] = []
+
 
 @render_rerun
 def viewer():
     recording = rr.RecordingStream("my_app")
     recording.log("points", rr.Points2D([[0, 0], [1, 1]]))
+    recordings[:] = [recording]
     return Viewer(recording=recording)
 ```
 
@@ -55,7 +60,9 @@ from shiny import reactive
 
 @reactive.effect
 def _log_more():
-    recording.log("points", rr.Points2D(new_points))
+    if not recordings:
+        return
+    recordings[0].log("points", rr.Points2D(new_points))
 ```
 
 Keep a reference to the `rerun.notebook.Viewer` wrapper (not just

@@ -57,9 +57,12 @@ def _recolor():
 
 - **`mesh.rotation` (Euler) updates don't render** (upstream pythreejs
   bug) — rotate via `mesh.quaternion` instead.
-- **Give lights an explicit `target` and `shadow`** — pythreejs creates
-  defaults for them in the browser otherwise, and browser-created widgets
-  live until the session ends, so every re-render leaks 3 models per light.
+- **Give lights an explicit `target` and `shadow` in shared
+  (process-global) scenes** — pythreejs creates defaults for them in the
+  browser otherwise. Per-session scenes claim browser-created models and
+  close them with the render that named them, but a browser-created model
+  can't be shared across sessions, so a shared scene needs the defaults
+  created Python-side.
 - Set `pythreejs.Scene(background=...)` for the scene background (defaults
   to white and overrides `Renderer(background=...)`).
 

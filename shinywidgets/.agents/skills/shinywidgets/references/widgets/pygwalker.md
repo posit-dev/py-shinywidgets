@@ -19,10 +19,12 @@ import pandas as pd
 import pygwalker
 from shinywidgets import render_pygwalker
 
-# Required before rendering (see Security below)
-duckdb.execute("SET TimeZone = 'UTC'")
-duckdb.execute("SET enable_external_access = false")
-duckdb.execute("SET lock_configuration = true")
+# Required before rendering (see Security below). Guarded because Express
+# re-runs top-level code when a session connects, and SET raises once locked.
+if not duckdb.execute("SELECT current_setting('lock_configuration')").fetchone()[0]:
+    duckdb.execute("SET TimeZone = 'UTC'")
+    duckdb.execute("SET enable_external_access = false")
+    duckdb.execute("SET lock_configuration = true")
 
 pygwalker.GlobalVarManager.set_privacy("offline")
 
