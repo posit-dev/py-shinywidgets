@@ -431,7 +431,9 @@ def warn_if_unrestricted_sql_widget(widget: Optional[Widget]) -> None:
             f"{renderer}` instead, which locks the connection down by default, "
             "or lock it down yourself (`SET enable_external_access = false`, "
             "then `SET lock_configuration = true`) before returning the "
-            "widget.",
+            "widget. If you already locked the configuration, recreate the "
+            "connection first: a locked connection rejects further SET "
+            "commands.",
             stacklevel=2,
         )
 
@@ -1082,10 +1084,11 @@ def restrict_duckdb_connection(con: duckdb.DuckDBPyConnection) -> None:
                 "This widget's DuckDB connection has `lock_configuration = true` "
                 "but `enable_external_access` is still on, so SQL sent by the "
                 "browser can still read server files (e.g., `read_csv()`). "
-                "Shinywidgets leaves author-locked connections untouched; if "
-                "keeping external access on isn't deliberate, run `SET "
-                "enable_external_access = false` before locking the "
-                "configuration.",
+                "Shinywidgets leaves author-locked connections untouched, and "
+                "a locked connection rejects further SET commands, so if "
+                "keeping external access on isn't deliberate, recreate the "
+                "connection and run `SET enable_external_access = false` "
+                "before locking its configuration.",
                 stacklevel=2,
             )
         return
