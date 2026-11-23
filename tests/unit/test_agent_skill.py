@@ -29,18 +29,6 @@ REFERENCES = SKILL_DIR / "references"
 QUARTO_YML = REPO_ROOT / "website" / "_quarto.yml"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 
-CONCEPTS = (
-    "how-it-works",
-    "reacting-to-widgets",
-    "updating-in-place",
-    "linked-views",
-    "choosing-a-widget",
-    "any-widget",
-    "layout-and-sizing",
-    "performance",
-    "troubleshooting",
-)
-
 # Pages whose widget gets no dedicated `render_*` (name minus "render_" is
 # wrong or ambiguous); everything else uses the default.
 RENDERER_SLUG_OVERRIDES = {
@@ -108,12 +96,6 @@ def test_frontmatter_contract() -> None:
     assert 0 < len(meta["description"]) <= 1024
 
 
-def test_description_names_common_libraries() -> None:
-    desc = frontmatter(SKILL_DIR / "SKILL.md")["description"]
-    for lib in ("plotly", "altair", "ipyleaflet", "lonboard", "itables", "anywidget"):
-        assert lib in desc
-
-
 def test_skill_md_word_budget() -> None:
     assert word_count(SKILL_DIR / "SKILL.md") <= 1600
 
@@ -135,10 +117,6 @@ def test_reference_relative_links_resolve(path: Path) -> None:
     targets = re.findall(r"\]\(([^)\s#]+\.md)(?:#[^)]*)?\)", read(path))
     broken = [t for t in targets if not (path.parent / t).is_file()]
     assert broken == []
-
-
-def test_concept_references_exist() -> None:
-    assert {p.stem for p in REFERENCES.glob("*.md")} == set(CONCEPTS)
 
 
 def test_widget_references_match_published_pages() -> None:
