@@ -149,7 +149,8 @@ def test_render_mosaic_widget_respects_author_locked_connection(
     con = duckdb.connect()
     # An author that locks the configuration themselves (here, deliberately
     # leaving external access on) keeps their configuration: a locked
-    # connection rejects further SET commands
+    # connection rejects further SET commands. Locking without disabling
+    # external access still allows read_csv() etc., so it earns a warning
     con.execute("SET lock_configuration = true")
 
     r = rw.render_mosaic_widget()
@@ -159,7 +160,8 @@ def test_render_mosaic_widget_respects_author_locked_connection(
         return MosaicWidget(SPEC, con=con)
 
     with session_context(widget_session):
-        assert asyncio.run(r._render()) is not None
+        with pytest.warns(UserWarning, match="enable_external_access"):
+            assert asyncio.run(r._render()) is not None
 
     assert _duckdb_settings(con, "enable_external_access", "lock_configuration") == {
         "enable_external_access": "true",

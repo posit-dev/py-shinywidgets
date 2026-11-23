@@ -1,6 +1,7 @@
 import asyncio
 import subprocess
 import sys
+import warnings
 
 import pytest
 import shinywidgets._render_widget as rw
@@ -148,13 +149,15 @@ def test_render_embedding_atlas_respects_author_locked_connection(
         widget = EmbeddingAtlasWidget(df, x="x", y="y", connection=con)
         # An author that locks the configuration themselves (here, deliberately
         # leaving external access on) keeps their configuration: a locked
-        # connection rejects further SET commands
+        # connection rejects further SET commands. Locking without disabling
+        # external access still allows read_csv() etc., so it earns a warning
         con.execute("SET lock_configuration = true")
         return widget
 
-    widget = _render_embedding_atlas_widget(
-        rw.render_embedding_atlas(), make_widget, widget_session
-    )
+    with pytest.warns(UserWarning, match="enable_external_access"):
+        widget = _render_embedding_atlas_widget(
+            rw.render_embedding_atlas(), make_widget, widget_session
+        )
 
     assert _duckdb_settings(
         widget._connection, "enable_external_access", "lock_configuration"
@@ -593,6 +596,8 @@ def test_render_quak_respects_author_locked_connection(widget_session) -> None:
 
     con = duckdb.connect()
     con.execute("CREATE TABLE df AS SELECT 1 AS a")
+    # Locked, but with external access deliberately left on: the connection is
+    # respected (left untouched), but the incomplete lockdown earns a warning
     con.execute("SET lock_configuration = true")
 
     r = rw.render_quak()
@@ -602,11 +607,195 @@ def test_render_quak_respects_author_locked_connection(widget_session) -> None:
         return quak.Widget(con)
 
     with session_context(widget_session):
-        assert asyncio.run(r._render()) is not None
+        with pytest.warns(UserWarning, match="enable_external_access"):
+            assert asyncio.run(r._render()) is not None
 
     assert _duckdb_settings(
         r.widget._conn, "enable_external_access", "lock_configuration"
     ) == {"enable_external_access": "true", "lock_configuration": "true"}
+
+
+def test_render_widget_warns_for_unrestricted_quak_widget(widget_session) -> None:
+    quak = pytest.importorskip("quak")
+    pa = pytest.importorskip("pyarrow")
+
+    r = rw.render_widget()
+
+    @r
+    def _():  # noqa: ANN202
+        return quak.Widget(pa.table({"a": [1]}), table="mytable")
+
+    with session_context(widget_session):
+        with pytest.warns(UserWarning, match="render_quak"):
+            assert asyncio.run(r._render()) is not None
+
+    # A warning, not an error: the widget still renders, connection untouched
+    assert _duckdb_settings(r.widget._conn, "lock_configuration") == {
+        "lock_configuration": "false"
+    }
+
+
+def test_render_widget_warns_for_unrestricted_mosaic_widget(widget_session) -> None:
+    mosaic_widget = pytest.importorskip("mosaic_widget")
+
+    r = rw.render_widget()
+
+    @r
+    def _():  # noqa: ANN202
+        return mosaic_widget.MosaicWidget(
+            {"plot": [{"mark": "dot", "data": {"from": "t"}, "x": "x", "y": "y"}]}
+        )
+
+    with session_context(widget_session):
+        with pytest.warns(UserWarning, match="render_mosaic_widget"):
+            assert asyncio.run(r._render()) is not None
+
+
+def test_render_widget_warns_for_unrestricted_embedding_atlas_widget(
+    widget_session,
+) -> None:
+    pytest.importorskip("embedding_atlas")
+    import pandas as pd
+    from embedding_atlas.widget import EmbeddingAtlasWidget
+
+    r = rw.render_widget()
+
+    @r
+    def _():  # noqa: ANN202
+        df = pd.DataFrame({"x": [0.0, 1.0], "y": [1.0, 0.0]})
+        return EmbeddingAtlasWidget(df, x="x", y="y")
+
+    with session_context(widget_session):
+        with pytest.warns(UserWarning, match="render_embedding_atlas"):
+            assert asyncio.run(r._render()) is not None
+
+
+def test_render_widget_no_warning_for_self_locked_connection(widget_session) -> None:
+    pytest.importorskip("quak")
+    import duckdb
+    import quak
+
+    con = duckdb.connect()
+    con.execute("CREATE TABLE df AS SELECT 1 AS a")
+    # An author that locked the connection down themselves took control of the
+    # connection's settings, so there's nothing to warn about
+    con.execute("SET enable_external_access = false")
+    con.execute("SET lock_configuration = true")
+
+    r = rw.render_widget()
+
+    @r
+    def _():  # noqa: ANN202
+        return quak.Widget(con)
+
+    with session_context(widget_session):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert asyncio.run(r._render()) is not None
+
+
+def test_lockdown_preserves_pending_connection_result(widget_session) -> None:
+    pytest.importorskip("quak")
+    import duckdb
+    import quak
+
+    con = duckdb.connect()
+    con.execute("CREATE TABLE df AS SELECT 1 AS a")
+
+    r = rw.render_quak()
+
+    @r
+    def _():  # noqa: ANN202
+        widget = quak.Widget(con)
+        # An app-owned connection may hold a pending result another callback
+        # fetches later; the lockdown's own queries must not consume it
+        con.execute("SELECT 42 AS pending")
+        return widget
+
+    with session_context(widget_session):
+        assert asyncio.run(r._render()) is not None
+
+    assert con.fetchone() == (42,)
+
+
+def test_render_widget_warning_preserves_pending_connection_result(
+    widget_session,
+) -> None:
+    pytest.importorskip("quak")
+    import duckdb
+    import quak
+
+    con = duckdb.connect()
+    con.execute("CREATE TABLE df AS SELECT 1 AS a")
+
+    r = rw.render_widget()
+
+    @r
+    def _():  # noqa: ANN202
+        widget = quak.Widget(con)
+        con.execute("SELECT 42 AS pending")
+        return widget
+
+    with session_context(widget_session):
+        with pytest.warns(UserWarning, match="render_quak"):
+            assert asyncio.run(r._render()) is not None
+
+    assert con.fetchone() == (42,)
+
+
+def test_render_widget_warns_for_nested_sql_widget(widget_session) -> None:
+    quak = pytest.importorskip("quak")
+    pa = pytest.importorskip("pyarrow")
+    from ipywidgets import VBox
+
+    r = rw.render_widget()
+
+    @r
+    def _():  # noqa: ANN202
+        # The quak widget's comm still accepts browser-sent SQL when it's
+        # nested in a layout, so the warning must reach past the root
+        return VBox([quak.Widget(pa.table({"a": [1]}), table="mytable")])
+
+    with session_context(widget_session):
+        with pytest.warns(UserWarning, match="render_quak"):
+            assert asyncio.run(r._render()) is not None
+
+
+def test_render_widget_warns_for_partially_locked_connection(widget_session) -> None:
+    pytest.importorskip("quak")
+    import duckdb
+    import quak
+
+    con = duckdb.connect()
+    con.execute("CREATE TABLE df AS SELECT 1 AS a")
+    # lock_configuration alone still allows read_csv() etc., so this
+    # likely-accidental misconfig earns the warning
+    con.execute("SET lock_configuration = true")
+
+    r = rw.render_widget()
+
+    @r
+    def _():  # noqa: ANN202
+        return quak.Widget(con)
+
+    with session_context(widget_session):
+        with pytest.warns(UserWarning, match="render_quak"):
+            assert asyncio.run(r._render()) is not None
+
+
+def test_render_widget_no_warning_for_plain_widget(widget_session) -> None:
+    from ipywidgets import IntSlider
+
+    r = rw.render_widget()
+
+    @r
+    def _():  # noqa: ANN202
+        return IntSlider(value=5)
+
+    with session_context(widget_session):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert asyncio.run(r._render()) is not None
 
 
 def test_render_mosaic_widget_is_render_widget_base() -> None:
