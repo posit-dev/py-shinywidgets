@@ -118,7 +118,7 @@ Reach for a dedicated table widget only when you need one of these specific thin
 
 | Need | Widget | Why |
 |---|---|---|
-| Zero-config global search, export (CSV/Excel), faceted SearchPanes filters | [itables](../../widgets/itables/index.md) | `selected_rows()`; richest "classic DataTables" feature catalog of the three client-side tables |
+| Zero-config global search, export (CSV/Excel), faceted SearchPanes filters | [itables](../../widgets/itables/index.md) | `selected()`; richest "classic DataTables" feature catalog of the three client-side tables |
 | Rectangular cell-block selection, in-cell bars/heatmaps, editable cells | [ipydatagrid](../../widgets/ipydatagrid/index.md) | `selected()`, `clicked_cell()`, `edited_cell()`, `visible_data()` -- the only one with real cell-block (not just row) selection |
 | Grouping/aggregation, expandable detail rows, custom cell renderers, theming | [reactable](../../widgets/reactable/index.md) | richest display/theming feature set; `selected()`, `page()`, `sorted()`, `filtered()`, `search()` |
 | User-driven pivot/BI exploration: drag-and-drop group-by, a dozen chart plugins | [perspective](../../widgets/perspective/index.md) | `filter()`, `view_config()` round-trip the user's own query as a dict |
@@ -530,7 +530,7 @@ with ui.layout_columns():
 
         @render.code
         def sel_itables():
-            n = len(table_itables.selected_rows())
+            n = len(table_itables.selected())
             return f"{n} row(s) selected (click to search/select)"
 
     with ui.card(full_screen=True):

@@ -29,11 +29,11 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.data_frame
         def selected():
-            return current_rows().iloc[table.selected_rows()]
+            return current_rows().iloc[table.selected()]
 
 
 # The current (possibly continent-filtered) rows. Positions from
-# table.selected_rows() are only meaningful against whatever data frame is
+# table.selected() are only meaningful against whatever data frame is
 # currently shown, so track it here (ITable.update(df) doesn't expose its
 # current data frame for reading it back).
 current_rows = reactive.value(countries)
@@ -52,7 +52,7 @@ def _filter():
         # Positions are into `shown`, so re-map the current selection by a
         # stable key (country name) instead of keeping the old positions,
         # which would now point at different rows (or be out of range).
-        kept = set(current_rows().iloc[table.selected_rows()]["country"])
+        kept = set(current_rows().iloc[table.selected()]["country"])
         remapped = [i for i, c in enumerate(shown["country"]) if c in kept]
         table.widget.update(shown, selected_rows=remapped, **TABLE_OPTS)
         current_rows.set(shown)

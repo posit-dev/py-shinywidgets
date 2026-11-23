@@ -1,7 +1,7 @@
 # title: Atlas + live stats + detail table
 # bucket: template
 # description: A reusable starting point: an embedding atlas next to a stat
-#   line (from predicate()) and a detail table (from selected()). Swap DATA,
+#   line (from predicate()) and a detail table (from selected_rows()). Swap DATA,
 #   COLUMNS and the x/y/text columns for your own data.
 # run: uv run --with shinywidgets[embedding_atlas] shiny run gallery/template_atlas_explorer.py
 # data: docs/showcase/issues/data/issues.parquet (6,088 real GitHub issues
@@ -44,5 +44,5 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.data_frame
         def table():
-            sel = atlas.selected().drop(columns=[X, Y, "__row_index__"])
+            sel = atlas.selected_rows().drop(columns=[X, Y, "__row_index__"])
             return sel.reset_index(drop=True)

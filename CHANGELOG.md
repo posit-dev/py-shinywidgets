@@ -80,6 +80,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * `@render_plotly` (and `@render_widget`) now warn when given a figure with animation frames, which `FigureWidget` silently drops. The warning points to a `@render.ui` + `fig.to_html()` workaround. (#156)
 
+* There's now a `shinywidgets[geoviews]` extra for the [GeoViews guide](https://shinywidgets.org/widgets/geoviews/)'s install line; it combines the `holoviews` extra with `geoviews` and the `cartopy<0.26` pin geoviews currently needs.
+
 ### Breaking changes
 
 * shinywidgets now requires ipywidgets 8.1 or newer, and the bundled JavaScript widget manager was upgraded to `@jupyter-widgets/html-manager` 1.0. Together these fix many long-standing issues with ipywidgets 8 (see the bug fixes below). (#237, #259)

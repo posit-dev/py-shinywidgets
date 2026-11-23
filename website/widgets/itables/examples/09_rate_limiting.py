@@ -12,7 +12,7 @@ countries = px.data.gapminder().query("year == 2007")[
 
 ui.page_opts(title="Rate limiting", fillable=True)
 
-# selected_rows() fires once per click, not a continuous stream, so there's
+# selected() fires once per click, not a continuous stream, so there's
 # nothing to smooth there: rate_policy/rate_delay has no effect on it. They
 # rate-limit reactive_read() on the widget instead -- useful if several rapid
 # clicks (e.g. shift-click across many rows) would otherwise each trigger an
@@ -31,7 +31,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @reactive.effect
         def _count_accessor():
-            table.selected_rows()
+            table.selected()
             with reactive.isolate():
                 accessor_count.set(accessor_count() + 1)
 
@@ -45,6 +45,6 @@ with ui.layout_columns(col_widths=[8, 4]):
         @render.code
         def counts():
             return (
-                f"table.selected_rows(): {accessor_count()}\n"
+                f"table.selected(): {accessor_count()}\n"
                 f"reactive_read() debounced 1s: {read_count()}"
             )

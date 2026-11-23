@@ -1,4 +1,4 @@
-# Pattern: selected() -> a one-line summary of what the user circled. This
+# Pattern: selected_rows() -> a one-line summary of what the user circled. This
 # guide can't call a real LLM (no API keys), so `stub_summary()` below ranks
 # keywords by frequency as a stand-in. The release showcase
 # (docs/showcase/issues/summarize.py) wires the same selection into a real
@@ -40,7 +40,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.text
         def summary():
-            sel = atlas.selected()
+            sel = atlas.selected_rows()
             if len(sel) == len(ISSUES):
                 return "Select a region to summarize it."
             return stub_summary(sel["title"].tolist())

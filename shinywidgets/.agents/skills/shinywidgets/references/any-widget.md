@@ -104,6 +104,29 @@ an unstyled canvas gets stretched and blurred. Pin `style.width`/
 resizes the buffer and redraws when the container's size genuinely should
 scale.
 
+## For widget-library authors
+
+Two reactive-context traps, both with the same symptom — an output that
+re-renders for no reason, or an infinite re-render loop. Shiny tracks the
+currently-executing reactive context in a `ContextVar`, so a reactive read
+made *while your code runs inside someone else's render or effect*
+silently registers that context as a dependent.
+
+- **Fire construction-time callbacks under `reactive.isolate()`.** If your
+  library synchronously invokes user callbacks while a widget is being
+  constructed or coerced (holoviews' `get_plot()` fires `Stream.trigger()`
+  subscribers), dispatch them inside `with reactive.isolate():` — a
+  subscriber that reads a reactive value otherwise registers the
+  in-progress `@render_*` as its dependent. shinywidgets already isolates
+  its own seams (`as_widget()` coercion, layout defaults); callbacks your
+  library fires elsewhere are yours to isolate.
+- **A detached `asyncio.create_task()` inherits the live reactive
+  context** (it copies the current contextvars), so a reactive read in the
+  task mis-registers silently. For tasks you don't await, run the
+  reactive-reading parts under `reactive.isolate()`, or read values before
+  spawning and pass them in. (py-shiny's `@extended_task` goes further:
+  its body *raises* on any reactive read.)
+
 ## Gotchas
 
 - **`ipydeck`'s accessor properties need a literal `@@=` prefix**

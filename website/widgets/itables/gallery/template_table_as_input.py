@@ -39,7 +39,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.ui
         def summary():
-            rows = table.selected_rows()
+            rows = table.selected()
             subset = countries.iloc[rows] if rows else countries
             label = f"{len(rows)} selected" if rows else "All 142 countries"
             return ui.TagList(

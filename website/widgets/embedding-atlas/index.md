@@ -6,7 +6,7 @@ category: Data exploration
 upstream: https://apple.github.io/embedding-atlas/
 hero: img/quickstart.webp
 tagline: A full embedding explorer -- GPU map, auto-generated charts, a searchable table, and SQL cross-filtering -- from one data frame, with the user's selection flowing back to Python as exact rows or a DuckDB predicate.
-accessors: [predicate, selected]
+accessors: [predicate, selected_rows]
 description: "A full embedding explorer -- GPU map, auto-generated charts, a searchable table, and SQL cross-filtering -- from one data frame, with the user's selection flowing back to Python as exact rows or a DuckDB predicate."
 image: "img/quickstart.webp"
 ---
@@ -25,7 +25,7 @@ columns hold the projection, text, and so on). The renderer applies shinywidgets
 card, or keep the library's own 650px height when space isn't fillable) and, critically, **locks down the
 widget's DuckDB connection before display** so that the SQL the browser sends can't reach your server's files --
 see the security gotcha below before deploying this. Two accessors turn the explorer's cross-filter into reactive
-values: `predicate()` gives you the live filter as a SQL `WHERE` expression, and `selected()` gives you the
+values: `predicate()` gives you the live filter as a SQL `WHERE` expression, and `selected_rows()` gives you the
 matching rows directly, both debounced so a dragging lasso or brush doesn't flood your server with DuckDB queries.
 
 Choose Embedding Atlas over a sibling in this roster when the point is semantic/cluster exploration of a column
@@ -285,7 +285,7 @@ of your own.
 
 Every chart click, shift-drag box, lasso, and typed SQL predicate the user builds in the explorer funnels into one
 place: the widget's (upstream-internal) `_predicate` trait, a DuckDB `WHERE` expression. `predicate()` exposes
-that expression directly; `selected()` re-runs it against the widget's own DuckDB connection and hands you the
+that expression directly; `selected_rows()` re-runs it against the widget's own DuckDB connection and hands you the
 matching rows. Both read from the same debounced, published value, so they always describe the same filter --
 even mid-debounce, before the widget's own live trait has settled.
 
@@ -294,7 +294,7 @@ even mid-debounce, before the widget's own live trait has settled.
 | accessor | returns | before any interaction | across re-render | default rate policy |
 |---|---|---|---|---|
 | `predicate()` | `str \| None` (a DuckDB boolean expression) | seeded `None`: nothing is filtered | re-seeded from the new explorer | debounce, 250 ms |
-| `selected()` | the same frame type (pandas/polars/pyarrow) the widget was built from, plus a `__row_index__` column | seeded; **all rows** while nothing is filtered (library semantics) | re-seeded, following `predicate()` | debounce, 250 ms (shares `predicate()`'s window) |
+| `selected_rows()` | the same frame type (pandas/polars/pyarrow) the widget was built from, plus a `__row_index__` column | seeded; **all rows** while nothing is filtered (library semantics) | re-seeded, following `predicate()` | debounce, 250 ms (shares `predicate()`'s window) |
 
 Both accessors raise `RuntimeError` with a specific message if you try to read them inside their own render
 function (see Gotchas) and otherwise behave like `reactive_read()`-backed values: reading one before the explorer
@@ -363,10 +363,10 @@ Before any filter, and after clicking the "closed" bar in the `state` chart:
 ![before filtering](img/predicate_before.webp)
 ![after clicking "closed"](img/predicate_after.webp)
 
-### `selected()`: the filtered rows, as a detail table
+### `selected_rows()`: the filtered rows, as a detail table
 
 ```{.python file="examples/06_selection_table.py"}
-# selected() returns the rows passing the current cross-filter, as the same
+# selected_rows() returns the rows passing the current cross-filter, as the same
 # frame type (here pandas) the widget was built from -- a detail table for
 # exactly what the user selected, with no SQL of your own to write.
 from pathlib import Path
@@ -379,7 +379,7 @@ from shinywidgets import render_embedding_atlas
 ISSUES = pd.read_parquet(Path(__file__).parent / "data" / "issues.parquet")
 COLUMNS = ["repo", "language", "state", "title", "text", "projection_x", "projection_y"]  # fmt: skip
 
-ui.page_opts(title="selected() as a detail table", fillable=True)
+ui.page_opts(title="selected_rows() as a detail table", fillable=True)
 
 with ui.layout_columns(col_widths=[7, 5]):
     with ui.card(full_screen=True):
@@ -395,7 +395,7 @@ with ui.layout_columns(col_widths=[7, 5]):
 
         @render.data_frame
         def table():
-            sel = atlas.selected()
+            sel = atlas.selected_rows()
             return sel[["repo", "state", "title"]].reset_index(drop=True)
 ```
 
@@ -404,7 +404,7 @@ Before any filter (all 6,088 rows), and after clicking the "py-shinywidgets" bar
 ![before selecting](img/selection_table_before.webp)
 ![after selecting py-shinywidgets](img/selection_table_after.webp)
 
-`selected()` runs a DuckDB query every time it's read, so read it once into a `@reactive.calc` if several
+`selected_rows()` runs a DuckDB query every time it's read, so read it once into a `@reactive.calc` if several
 outputs need the same selection (as the gallery template does), rather than calling it from each one.
 
 ### Driving it from the map itself
@@ -429,7 +429,7 @@ widget -- prefer it over calling `reactive_read(atlas.widget, "_state")` directl
 ### Rate limiting
 
 Both accessors debounce at 250 ms by default, because a dragging box or lasso streams many intermediate filter
-values, and each one costs a DuckDB query if you're reading `selected()`. Pass `rate_policy="throttle"` to
+values, and each one costs a DuckDB query if you're reading `selected_rows()`. Pass `rate_policy="throttle"` to
 `@render_embedding_atlas(...)` for a steady trickle of updates during a long drag instead of one at the end, or
 `rate_delay=0` to react to every intermediate value (only worth it for cheap downstream work). Both keyword
 arguments also apply to `atlas.read()`/`reactive_read()` on the widget's own traits, including `_state`.
@@ -581,11 +581,11 @@ Before (all languages), and after clicking the "shinychat" bar (which is 100% Ch
 
 ### Selection as linked detail cards
 
-[`examples/09_selection_to_cards.py`](examples/09_selection_to_cards.py) -- `selected()` feeding `ui.a()` links
+[`examples/09_selection_to_cards.py`](examples/09_selection_to_cards.py) -- `selected_rows()` feeding `ui.a()` links
 instead of a plain table, for a richer linked panel:
 
 ```{.python file="examples/09_selection_to_cards.py"}
-# Pattern: lasso/filter -> a linked detail list, built from selected()
+# Pattern: lasso/filter -> a linked detail list, built from selected_rows()
 # instead of a plain data_frame so each row can carry a live link.
 from pathlib import Path
 
@@ -613,7 +613,7 @@ with ui.layout_columns(col_widths=[7, 5]):
 
         @render.ui
         def cards():
-            sel = atlas.selected()
+            sel = atlas.selected_rows()
             if len(sel) == len(ISSUES):
                 return ui.p("Select a region or click a bar to see issues here.")
             rows = sel.sort_values("state").head(15)
@@ -638,14 +638,14 @@ Before any selection, and after clicking the "shinytest2" bar:
 ### Selection summary (a stand-in for an LLM call)
 
 [`examples/10_selection_summary_stub.py`](examples/10_selection_summary_stub.py). The release showcase
-(`docs/showcase/issues/app.py` and `summarize.py`) wires a real selection into Claude: it reads `selected()`'s
+(`docs/showcase/issues/app.py` and `summarize.py`) wires a real selection into Claude: it reads `selected_rows()`'s
 titles, sends them to `chatlas.ChatAnthropic(...).chat_async(prompt)`, and shows "what these issues have in
 common" in a couple of sentences. This guide can't call a real LLM (no API keys), so this example keeps the exact
-shape -- `selected()` in, a one-line text summary out -- with a keyword-frequency stand-in in place of the model
+shape -- `selected_rows()` in, a one-line text summary out -- with a keyword-frequency stand-in in place of the model
 call ([`examples/10_selection_summary_stub.py`](examples/10_selection_summary_stub.py)):
 
 ```{.python file="examples/10_selection_summary_stub.py"}
-# Pattern: selected() -> a one-line summary of what the user circled. This
+# Pattern: selected_rows() -> a one-line summary of what the user circled. This
 # guide can't call a real LLM (no API keys), so `stub_summary()` below ranks
 # keywords by frequency as a stand-in. The release showcase
 # (docs/showcase/issues/summarize.py) wires the same selection into a real
@@ -687,7 +687,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.text
         def summary():
-            sel = atlas.selected()
+            sel = atlas.selected_rows()
             if len(sel) == len(ISSUES):
                 return "Select a region to summarize it."
             return stub_summary(sel["title"].tolist())
@@ -701,7 +701,7 @@ which is a fair one-line description of what bslib's issues are actually about:
 
 ### Export the current selection, read on demand
 
-Every pattern above reads `selected()` continuously, re-rendering as the user filters. A download handler
+Every pattern above reads `selected_rows()` continuously, re-rendering as the user filters. A download handler
 instead reads it **on demand**: it's live from the moment the explorer renders, so the handler needs no earlier
 read to "arm" it, and no warm-up effect, even on the very first click
 ([`examples/12_export_selection.py`](examples/12_export_selection.py)):
@@ -709,7 +709,7 @@ read to "arm" it, and no warm-up effect, even on the very first click
 ```{.python file="examples/12_export_selection.py"}
 # Read on demand: export the explorer's current selection as a CSV, read
 # only when the user clicks Download -- no warm-up needed, since
-# selected() is live from the moment the explorer renders.
+# selected_rows() is live from the moment the explorer renders.
 from pathlib import Path
 
 import pandas as pd
@@ -738,7 +738,7 @@ with ui.layout_columns(col_widths=[9, 3]):
 
         @render.download_button(filename="issues_selected.csv", label="Download CSV")
         def download():
-            sel = atlas.selected()
+            sel = atlas.selected_rows()
             yield sel[["repo", "state", "title"]].to_csv(index=False)
 ```
 
@@ -834,7 +834,7 @@ with ui.layout_columns(col_widths=[8, 4]):
   stale, not `None`, and nothing marks it as such. I verified this by instrumenting three consecutive renders
   directly. Keep the previous state you need in a `reactive.value` written by a separate `@reactive.effect` (as
   `examples/07_update_in_place.py` does), not by reading `.widget` from inside the render function that's about
-  to replace it. `predicate()` and `selected()` are safer here: calling either inside `atlas`'s own render
+  to replace it. `predicate()` and `selected_rows()` are safer here: calling either inside `atlas`'s own render
   function raises a `RuntimeError` naming the problem, rather than returning something stale.
 - **The `labels=` option's documented `"automatic"`/`"disabled"` strings don't work.** The class docstring (and
   `EmbeddingAtlasWidget`'s own) says to pass `labels="automatic"` for auto-labels or `labels="disabled"` to turn
@@ -867,7 +867,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 ### Template: atlas + live stats + detail table
 
 [`gallery/template_atlas_explorer.py`](gallery/template_atlas_explorer.py) -- a minimal, adaptable starting point:
-an atlas next to a `predicate()`-driven count and a `selected()`-driven table, with the data frame and column
+an atlas next to a `predicate()`-driven count and a `selected_rows()`-driven table, with the data frame and column
 names pulled to the top as constants to swap for your own.
 
 Before any selection, and after clicking the "py-shinywidgets" bar:
@@ -880,7 +880,7 @@ Before any selection, and after clicking the "py-shinywidgets" bar:
 [`gallery/showcase_digits_atlas.py`](gallery/showcase_digits_atlas.py) -- 1,797 of sklearn's bundled handwritten
 digit images, PCA-projected to 2D, each with an image thumbnail (see "Images in the explorer" above). Filter to
 any digit via the auto-generated bar chart and the sidebar reconstructs the **average image of exactly that
-selection** from `selected()`'s `__row_index__` column -- a concrete, visual payoff for "Python computes on what
+selection** from `selected_rows()`'s `__row_index__` column -- a concrete, visual payoff for "Python computes on what
 the user circled." It works through the chart crossfilter alone, so it's fully exercised even without a
 WebGPU-capable browser for the lasso.
 

@@ -26,7 +26,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.data_frame
         def selected():
-            return countries.iloc[table.selected_rows()]
+            return countries.iloc[table.selected()]
 
 
 @reactive.effect

@@ -1,4 +1,4 @@
-# Pattern: lasso/filter -> a linked detail list, built from selected()
+# Pattern: lasso/filter -> a linked detail list, built from selected_rows()
 # instead of a plain data_frame so each row can carry a live link.
 from pathlib import Path
 
@@ -26,7 +26,7 @@ with ui.layout_columns(col_widths=[7, 5]):
 
         @render.ui
         def cards():
-            sel = atlas.selected()
+            sel = atlas.selected_rows()
             if len(sel) == len(ISSUES):
                 return ui.p("Select a region or click a bar to see issues here.")
             rows = sel.sort_values("state").head(15)

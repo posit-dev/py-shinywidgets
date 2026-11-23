@@ -590,7 +590,7 @@ with ui.card(full_screen=True):
         return f"field of view: {sky.fov().deg:.3f} deg"
 ```
 
-Zoomed to a custom 0.205 deg field of view, then after "Update in place" (target changed to M31, **field of
+Zoomed to a custom 0.434 deg field of view, then after "Update in place" (target changed to M31, **field of
 view unchanged**):
 
 ![custom zoom, before either button](img/update_in_place_before.webp)
@@ -777,10 +777,9 @@ Verified on current `main` (shinywidgets, ipyaladin 0.8.1, astropy 8.0.2):
   problem is that the name doesn't exist.
 - **Name resolution (`target="some name"`) is a blocking HTTP call to CDS's Sesame service**, including at
   *construction* time -- `Aladin(target="M31")` blocks the render function on that request. If CDS is slow
-  or unreachable, this raises `WidgetNotReadyError`/`NameResolveError` and the render fails outright (verified
-  this pass: CDS's Sesame endpoints were unreachable from this machine for the entire verification session,
-  and every example that named a target directly in the constructor failed until changed to a coordinate
-  string). Prefer coordinates (or a pre-resolved lookup table, as in every example above) for anything set
+  or unreachable, this raises `WidgetNotReadyError`/`NameResolveError` and the render fails outright (verified:
+  with Sesame unreachable, every example that named a target directly in the constructor raised until changed
+  to a coordinate string). Prefer coordinates (or a pre-resolved lookup table, as in every example above) for anything set
   programmatically, and reserve name strings for a user-driven search box where the occasional network
   round trip is expected.
 - **Constructor `fov` is approximate.** Aladin Lite applies it before the container reaches its final
@@ -799,13 +798,9 @@ Verified on current `main` (shinywidgets, ipyaladin 0.8.1, astropy 8.0.2):
   handling does. If your app reads `target()` for a "what's in view" computation, expect it to change on
   plain sky clicks too, not just drags.
 - **The viewer needs live network access.** Its JavaScript loads from a CDN (esm.sh) and imagery streams
-  from CDS tile servers at render time; there's no offline or bundled-tile mode. During this guide's
-  verification, CDS's own servers (`alasky*.unistra.fr`, `simbad.cds.unistra.fr`,
-  `vizier.cds.unistra.fr`) were unreachable from the build machine for the full session -- every screenshot
-  in this guide shows the viewer's UI, markers, and overlays rendering correctly, but with imagery stuck at
-  "loading..." rather than actual sky tiles. This is an external network condition, not a shinywidgets or
-  ipyaladin defect (the renderer, accessors, and overlay machinery all worked exactly as documented); retry
-  from a machine with CDS access if you want to confirm imagery itself loads.
+  from CDS tile servers at render time; there's no offline or bundled-tile mode. If CDS's servers are
+  slow or unreachable, the viewer's UI, markers, and overlays still render, but the imagery sits at
+  "loading..." -- an external network condition, not a shinywidgets or ipyaladin defect.
 
 ## Gallery candidates
 

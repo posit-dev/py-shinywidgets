@@ -2,8 +2,8 @@
 # of MY data frame". Plotly (like most selection-reporting widgets) reports
 # points of the figure, not rows of a data frame, so each point must carry
 # its row's identity as `customdata` -- here, the pandas index, via
-# `custom_data=[df.index]`. altair/bokeh/itables/reactable each have their
-# own version of this contract; see their guides' selection sections.
+# `custom_data=[df.index]`. altair/bokeh each have their
+# own version of this contract; see their guides' `selected_rows()` sections.
 import plotly.express as px
 from shiny.express import render, ui
 from shinywidgets import render_plotly

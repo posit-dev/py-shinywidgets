@@ -23,7 +23,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.ui
         def detail():
-            rows = table.selected_rows()
+            rows = table.selected()
             if not rows:
                 return ui.p("Click a row to see its detail.")
             row = countries.iloc[rows[-1]]

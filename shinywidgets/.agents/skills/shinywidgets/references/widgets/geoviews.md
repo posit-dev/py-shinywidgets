@@ -2,13 +2,15 @@
 
 ## Overview
 
-`pip install 'shinywidgets[holoviews]' geoviews "cartopy<0.26"`. There is
+`pip install 'shinywidgets[geoviews]'`. There is
 no dedicated `render_geoviews` — GeoViews maps render through the same
 [`@render_holoviews`](holoviews.md) decorator as plain
 HoloViews/hvPlot. Cartopy-projected, tile-backed Bokeh maps from
-HoloViews/hvPlot elements. The `cartopy<0.26` pin matters: geoviews
+HoloViews/hvPlot elements. The extra pins `cartopy<0.26`: geoviews
 1.15/1.16 raise `KeyError: 'lon_0'` on cartopy 0.26 (fixed upstream,
-unreleased as of writing).
+unreleased as of writing). Since cartopy 0.25 has no Python 3.14 wheels,
+the extra installs `geoviews`/`cartopy` only on Python 3.10–3.13 — on
+3.14+ you get just the HoloViews stack.
 
 ## Quick start
 

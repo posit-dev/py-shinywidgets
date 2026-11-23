@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from lonboard import ScatterplotLayer
 from shiny import App, reactive, render, ui
-from shinywidgets import output_widget, reactive_read, render_lonboard
+from shinywidgets import output_widget, render_lonboard
 
 rng = np.random.default_rng(0)
 
@@ -118,9 +118,7 @@ def server(input, output, session):
 
     @render.text
     def view_state():
-        state = reactive_read(map.widget, "view_state")
-        if state is None:
-            return "(not yet known)"
+        state = map.view_state()
         return (
             f"longitude: {state.longitude:.3f}\n"
             f"latitude: {state.latitude:.3f}\n"
@@ -129,7 +127,7 @@ def server(input, output, session):
 
     @render.text
     def clicked():
-        index = reactive_read(layer(), "selected_index")
+        index = map.selected()
         if index is None:
             return "Click a point on the map"
         row = data().iloc[index]

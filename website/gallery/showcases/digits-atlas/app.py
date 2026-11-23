@@ -3,7 +3,7 @@
 # description: 1,797 handwritten digits (sklearn's bundled digit images,
 #   PCA-projected to 2D), each with an image thumbnail. Lasso or click-filter
 #   a cluster and the sidebar reconstructs the *average* image of exactly
-#   those digits from selected() -- a concrete payoff for "Python computes
+#   those digits from selected_rows() -- a concrete payoff for "Python computes
 #   on what the user circled," and it works through the bar/table crossfilter
 #   even without a WebGPU-capable browser for the lasso itself.
 # run: uv run --with scikit-learn shiny run app.py
@@ -55,13 +55,13 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.text
         def count():
-            sel = atlas.selected()
+            sel = atlas.selected_rows()
             return f"{len(sel):,} of {len(docs):,} digits selected"
 
         @render.ui
         def average_digit():
-            sel = atlas.selected()
-            # __row_index__ is the position in `docs` selected() was built
+            sel = atlas.selected_rows()
+            # __row_index__ is the position in `docs` selected_rows() was built
             # from, not the result's own (fresh) row index
             idx = sel["__row_index__"].to_numpy()
             mean_pixels = digits.images[idx].mean(axis=0)
@@ -71,7 +71,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.ui
         def digit_breakdown():
-            sel = atlas.selected()
+            sel = atlas.selected_rows()
             counts = sel["digit"].value_counts().sort_index()
             return ui.p(
                 " · ".join(f"{d}: {n}" for d, n in counts.items()),
