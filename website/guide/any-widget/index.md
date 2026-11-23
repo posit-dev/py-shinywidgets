@@ -1177,9 +1177,11 @@ contextvars context, so a task spawned inside a render or effect carries that co
 reactive read in the task registers on it -- invisibly, with no warning. py-shiny's own `@extended_task` takes
 the strong stance: it wraps its body in a `DenialContext` that *raises* on any reactive read from the
 detached task. Raw `asyncio.create_task()` does the opposite -- it mis-registers silently. This pure-Shiny
-repro shows an effect re-running purely because a detached task read a value the effect itself never read:
+repro shows an effect re-running purely because a detached task read a value the effect itself never read
+(it also lives in `examples/13_detached_task_context.py`, next to this guide):
 
-```{.python file="examples/13_detached_task_context.py"}
+<!-- snippet: skip -->
+```python
 # A detached asyncio.create_task() inherits the live reactive context (it
 # copies the current contextvars), so a reactive read inside the task
 # registers the spawning effect as a dependent -- and the effect re-runs
