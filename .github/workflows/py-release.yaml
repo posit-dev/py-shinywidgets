@@ -45,6 +45,9 @@ jobs:
       - name: Build package
         run: uv build
 
+      - name: Check wheel bundles the agent skill
+        run: unzip -l dist/*.whl | grep -q 'shinywidgets/.agents/skills/shinywidgets/SKILL.md'
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:

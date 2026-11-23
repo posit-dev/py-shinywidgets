@@ -41,7 +41,27 @@ The docs site is a Quarto project in `website/`: widget guides in `website/widge
 - `website/_tools/check_landing_cards.py` checks the landing page's category cards against the Widgets sidebar groups in `_quarto.yml`; `make docs` runs it before rendering, so adding a sidebar group without a matching card (or vice versa) fails the build.
 - Example code blocks name their file: ` ```{.python file="examples/x.py" files="helper.py" collapse="true"} ` (`files` = extra files the app needs, `collapse` defaults to expanded). `website/_filters/example-header/` renders the header bar (open / copy / Shinylive) and turns prose links to example `.py` files into Shinylive links. Shinylive installs the page's `extra` front matter; set `shinylive-requirements: [...]` on pages without one.
 - Landing images are generated from the pages' own screenshots by `website/_tools/make_landing_images.py`; re-run it after re-shooting a screenshot it uses.
-- vitessce's guide is `draft: true` until `render_vitessce` ships. To publish it, remove `draft`, add it to the Scientific sidebar group and the quartodoc sections in `website/_quarto.yml`, and bump the sidebar-link count in `website/_tools/check_site.py`.
+- vitessce's guide is `draft: true` until `render_vitessce` ships. To publish it, remove `draft`, add it to the Scientific sidebar group and the quartodoc sections in `website/_quarto.yml`, bump the sidebar-link count in `website/_tools/check_site.py`, and add its skill reference and roster row.
+
+## Bundled Agent Skill
+
+shinywidgets ships an [Agent Skill](https://agentskills.io) at `shinywidgets/.agents/skills/shinywidgets/`: `SKILL.md` (frontmatter + a compact index) plus `references/<concept>.md` and `references/widgets/<slug>.md`, one per concept topic and one per published widget page. It's discovered by installers such as `library-skills`, the same convention py-shiny's bundled skill (`shiny/.agents/skills/shiny-for-python/`) follows.
+
+- **It's user-facing docs distilled from the website**, not a second source of truth: a PR that changes public API or behavior updates the website page **and** the matching reference in the same PR, and a PR that changes a guide page's guidance updates its reference.
+- **`SKILL.md` is an index only** — the concept and widget tables with one-line "use when"/"pick it for" descriptions, not the content itself. `tests/unit/test_agent_skill.py` enforces word budgets for it and for each reference.
+- Frontmatter is strict YAML: quote `description` if it contains `: ` or ` #`; `name` must equal the skill directory (`shinywidgets`).
+- `tests/unit/test_agent_skill.py` enforces the frontmatter contract, word budgets, link integrity, that every public renderer, accessor, extra, and widget page is covered, that every `python` code block parses and only imports names in `shinywidgets.__all__`, and that each widget reference's version stamp matches the installed library's major version. Run it after touching any skill file; `make format` also formats the skill's code blocks.
+- Each `references/widgets/<slug>.md` ends with a `Written against \`<pkg>\` N.x.` stamp so an agent reading stale advice can compare it with the installed version and prefer the library's own docs on a mismatch.
+
+### When a widget library releases a new major version
+
+The version-stamp test fails, naming the affected `references/widgets/<slug>.md`. That failure means re-audit the reference, not just bump the stamp:
+
+1. Check the upstream changelog for changes affecting the reference's claims.
+2. Run the reference's quick start and verify it still works.
+3. Update any stale advice — and the matching website page, per the maintenance rule above.
+4. Bump the stamp's major version.
+- Optional manual check: `uvx --from skills-ref agentskills validate shinywidgets/.agents/skills/shinywidgets`.
 
 ## Architecture
 
@@ -100,6 +120,7 @@ When adding a `@render_*` decorator for a third-party widget package, add a matc
 - Point the decorator's docstring and install-error messages at `pip install 'shinywidgets[<extra>]'`
 - Keep example-specific data packages in the example's own `requirements.txt` (which should use `shinywidgets[<extra>]`, not the raw widget package)
 - Accessor reads (`_read_accessor()`) don't depend on the render, so a re-render that reports an unchanged value doesn't re-run readers. An accessor method that computes its result from the widget itself (e.g. `visible_data()`, `camera()`) must read `self.widget`, not `self._widget`, so its readers follow a re-render
+- Add `shinywidgets/.agents/skills/shinywidgets/references/widgets/<slug>.md` and a roster row in `SKILL.md`'s Widgets table (see "Bundled Agent Skill" above)
 
 ## Key Files
 

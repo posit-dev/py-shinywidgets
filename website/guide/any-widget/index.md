@@ -1126,7 +1126,8 @@ custom widget. Nothing about the custom widget needs to know it's being driven b
 `highlight` trait, and anything that can compute a list of indices can set it.
 
 (These two patterns generalize directly to the roster's own widgets: swap `render.data_frame` for
-`render_plotly`/`render_itables`/`render_reactable` and their own `selected_rows()` accessors are drop-in
+`render_plotly`/`render_itables`/`render_reactable` and their selection accessors (`selected_rows()`, or
+`selected()` for reactable) are drop-in
 replacements for `table.cell_selection()["rows"]`; swap the custom `Sparkline` for any roster widget's `.widget`
 and the same "read one side, write the other's trait in place" shape applies.)
 

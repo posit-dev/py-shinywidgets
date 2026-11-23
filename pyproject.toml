@@ -333,8 +333,11 @@ test = [
   # vtk (a pyvista dependency) doesn't publish wheels for Python 3.15+ yet
   "pyvista[jupyter]; python_version >= '3.11' and python_version < '3.15'",
   "trame-pyvista>=0.3; python_version >= '3.11' and python_version < '3.15'",
+  "pyyaml",
   "quak; python_version < '3.15'",
   "rerun-sdk[notebook]>=0.40; python_version >= '3.11'",
+  # tomllib is stdlib from 3.11+; tomli backports it for 3.10
+  "tomli; python_version < '3.11'",
   "tox-uv>=1",
 ]
 dev = [

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### New features
 
+* shinywidgets now ships an [Agent Skill](https://agentskills.io) that teaches coding agents (Claude, etc.) how to render widgets, read selections/clicks back as reactive accessors, and update a widget in place instead of re-rendering it. Install it into a project with `uvx library-skills -s shinywidgets` (add `--claude` for Claude Code).
 * Added more than 30 new `@render_*` decorators, bringing many more visualization and widget ecosystems into Shiny. Unless noted, each output fills its container in filling layouts and respects an explicit `output_widget(height=...)`, and the methods listed are reactive accessors (see the next item). Install each one's dependencies with its extra, e.g., `pip install 'shinywidgets[holoviews]'` (see the README for the full list).
   * `@render_bqplot` for [bqplot](https://bqplot.github.io/bqplot/) figures, including those built with `bqplot.pyplot`. Figures follow Shiny's light/dark theme. Accessors: `selected()`, `brush()`, and `selected_rows()` (the selected rows of a data frame at a mark's selected positions, ready for a table or download). (#278)
   * `@render_drawdata` for [drawdata](https://github.com/koaning/drawdata) drawing canvases. Users draw a dataset (or sculpt histogram bars), and Python sees every stroke via `reactive_read(widget, "data")`. See `examples/drawdata`. (#278)

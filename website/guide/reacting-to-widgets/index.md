@@ -20,7 +20,7 @@ accessors are the API that turns that stream into something you already know how
 render output that reads like a Shiny input -- `plot.clicked()` called in a reactive context behaves exactly
 like `input.my_slider()`, down to invalidating whatever reads it when the user interacts.
 
-`plot.clicked()`, `chart.selected_rows()`, `map.view_state()`, `tbl.selected_rows()`,
+`plot.clicked()`, `chart.selected_rows()`, `map.view_state()`, `tbl.selected()`,
 `grid.edited_cell()` -- every `@render_*` decorator that wraps a widget with user interaction worth reading
 has a handful of these. This article is the cross-cutting reference for what they all have in common: the
 mental model, what they read before the first interaction, what a re-render keeps versus re-seeds, reading a
@@ -703,7 +703,7 @@ independently measured example of the *effective* (declares-a-default) case.
 
 Most widgets that report a selection report it in *their own* coordinate space -- a point index into a
 trace, a row position in a currently-sorted table -- not a row of the data frame you built the chart from.
-`selected_rows()` (plotly, altair, bokeh, itables, reactable, jscatter, bqplot, lonboard) exists to close that gap. Plotly's version is the most explicit about the mechanism,
+`selected_rows()` (plotly, altair, bokeh, itables, jscatter, bqplot, lonboard) exists to close that gap. Plotly's version is the most explicit about the mechanism,
 because it has the least to go on: a point only carries whatever you told it to.
 
 ```{.python file="examples/05_rows_of_data.py"}
@@ -712,7 +712,7 @@ because it has the least to go on: a point only carries whatever you told it to.
 # points of the figure, not rows of a data frame, so each point must carry
 # its row's identity as `customdata` -- here, the pandas index, via
 # `custom_data=[df.index]`. altair/bokeh/itables/reactable each have their
-# own version of this contract; see their guides' `selected_rows()` sections.
+# own version of this contract; see their guides' selection sections.
 import plotly.express as px
 from shiny.express import render, ui
 from shinywidgets import render_plotly
@@ -761,7 +761,7 @@ for both forms verified end to end. The same idea, different mechanics per libra
 - **lonboard**: `selected_rows(df=None)` is the picked row of `df`, defaulting to a frame rebuilt from the
   pickable layer's own data (fresh `RangeIndex`; the default needs exactly one pickable layer and
   geopandas) -- see the [lonboard guide](../../widgets/lonboard/index.md#reacting-to-user-interaction).
-- **itables** / **reactable**: `selected_rows()` returns row *positions*, already in your original data's
+- **itables** / **reactable**: itables' `selected_rows()` and reactable's `selected()` return row *positions*, already in your original data's
   order (itables: data order, survives sort/search; reactable: data order, survives sort/filter/paging) --
   no customdata contract needed, because the table is rendered straight from the frame. See the
   [itables](../../widgets/itables/index.md) and [reactable](../../widgets/reactable/index.md) guides.
