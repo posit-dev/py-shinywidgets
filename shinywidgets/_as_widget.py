@@ -158,10 +158,19 @@ def as_widget_bokeh(x: object) -> Optional[Widget]:
     # Make a figure fill its output, unless the user sized it. This has to
     # happen before BokehModel() snapshots the document: changes made after
     # that are only sent as patches over the comm, which isn't open yet.
-    if isinstance(x, figure) and not BOKEH_SIZING_PROPS & set(
-        x.properties_with_values(include_defaults=False)
-    ):
-        x.sizing_mode = "stretch_both"
+    if isinstance(x, figure):
+        sizing_props = BOKEH_SIZING_PROPS & set(
+            x.properties_with_values(include_defaults=False)
+        )
+        if not sizing_props:
+            x.sizing_mode = "stretch_both"
+        elif sizing_props == {"height"}:
+            # A height alone almost always means "fill the width, be this
+            # tall" -- bokeh's own default width (600px) otherwise overflows
+            # the output's container.
+            x.sizing_mode = "stretch_width"
+        elif sizing_props == {"width"}:
+            x.sizing_mode = "stretch_height"
 
     return bokeh_model_class(context="bokeh")(cast("LayoutDOM", x))
 

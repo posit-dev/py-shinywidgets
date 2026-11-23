@@ -116,7 +116,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * `@render_plotly` outputs with an explicit height (e.g., `output_widget("fig", height="300px")`) now use that height instead of 360px, and the compact default margins now survive an in-place template change (e.g., `fig.widget.update_layout(template="plotly_dark")`). (#401)
 * Plotly widgets no longer render as a blank output when an outdated copy of the plotly JavaScript is installed in another Jupyter data directory (e.g., `/usr/local/share/jupyter`). (#332)
 * Fixed several sizing issues with bokeh-based outputs (`@render_bokeh`, `@render_panel`, and `@render_holoviews`):
-  * A bokeh `figure` given an explicit `width`, `height`, `sizing_mode`, or `aspect_ratio` now keeps that size instead of always stretching to fill its output.
+  * A bokeh `figure` given an explicit `width` and `height` (or a `sizing_mode`/`aspect_ratio`) now keeps that size instead of always stretching to fill its output. A `figure` given only a `height` fills the available width and keeps that height; one given only a `width` keeps that width and fills the available height.
   * A plot that stretches to fill no longer collapses to a sliver inside an output with an explicit height.
   * Content with its own size no longer reserves empty space below it in non-filling layouts.
 * An Altair chart in an output with an explicit height no longer collapses to a sliver.

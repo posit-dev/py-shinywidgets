@@ -20,9 +20,10 @@ widgets -- works without a separate server.
 
 `@render_bokeh` accepts a `bokeh.plotting.figure`, a layout (`row`, `column`, `gridplot`), any other `LayoutDOM`
 (a `Div`, a Bokeh widget), or a `jupyter_bokeh.BokehModel` you built yourself. It fills its card by default: a bare
-`figure()` gets `sizing_mode="stretch_both"` unless you give it a `width`, `height`, `sizing_mode`, or
-`aspect_ratio`, in which case Bokeh's own sizing takes over. BokehJS loads automatically, including for outputs
-created dynamically inside `@render.ui`.
+`figure()` gets `sizing_mode="stretch_both"`. Give it only a `height` and it fills the available width instead,
+keeping that height; give it only a `width` and it keeps that width, filling the available height. Give it both
+`width` and `height` (or an explicit `sizing_mode`/`aspect_ratio`) and Bokeh's own sizing applies exactly as
+written. BokehJS loads automatically, including for outputs created dynamically inside `@render.ui`.
 
 The four accessors below (`selected()`, `selected_rows()`, `tapped()`, `zoomed()`) read the single most common
 things apps need from a plot: its selection, its last click, and its current view. For anything else, Bokeh's own
@@ -925,9 +926,12 @@ doesn't fit even on the GPU as raw points, see [datashader](../datashader/index.
 
 ## Layout and sizing
 
-- A bare `figure()` fills its output; giving it `width`, `height`, `sizing_mode`, or `aspect_ratio` opts out, and
-  Bokeh's own sizing applies instead (verified: the output's `fill` only stays on when the figure's
-  `sizing_mode` is one of `stretch_both`/`stretch_height`/`scale_both`/`scale_height`).
+- A bare `figure()` fills its output (`sizing_mode="stretch_both"`). A `height` alone fills the available width
+  and keeps that height (`sizing_mode="stretch_width"`); a `width` alone keeps that width and fills the available
+  height (`sizing_mode="stretch_height"`). Giving it both `width` and `height`, or an explicit `sizing_mode` or
+  `aspect_ratio`, opts out of all of this -- Bokeh's own sizing applies exactly as written (verified: the output's
+  `fill` only stays on when the figure's `sizing_mode` is one of `stretch_both`/`stretch_height`/`scale_both`/
+  `scale_height`).
 - For a layout (`row`, `column`, `gridplot`), set `sizing_mode="stretch_both"` on **both** the layout and each
   child figure. Setting it only on the outer layout (not the children) leaves the children at Bokeh's own
   default size, and the layout's flex box then divides space unevenly between them rather than splitting it

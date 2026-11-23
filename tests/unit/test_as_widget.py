@@ -246,11 +246,11 @@ def test_as_widget_bokeh_stretches_unsized_figure(
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"height": 200},
-        {"width": 250},
+        {"width": 250, "height": 150},
         {"width": 250, "height": 150, "sizing_mode": "fixed"},
         {"height": 200, "sizing_mode": "stretch_width"},
         {"aspect_ratio": 2},
+        {"height": 200, "aspect_ratio": 2},
     ],
 )
 def test_as_widget_bokeh_respects_user_sizing(
@@ -265,6 +265,35 @@ def test_as_widget_bokeh_respects_user_sizing(
     assert fig.sizing_mode == kwargs.get("sizing_mode")
     for name, value in kwargs.items():
         assert getattr(fig, name) == value
+
+
+def test_as_widget_bokeh_fills_width_when_only_height_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Setting only a height almost always means "fill the width, be this
+    # tall" -- bokeh's own default width (600px) otherwise overflows the
+    # output's container.
+    from bokeh.plotting import figure
+
+    _fake_jupyter_bokeh(monkeypatch)
+
+    fig = figure(height=200)
+    as_widget_bokeh(fig)
+    assert fig.sizing_mode == "stretch_width"
+    assert fig.height == 200
+
+
+def test_as_widget_bokeh_fills_height_when_only_width_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bokeh.plotting import figure
+
+    _fake_jupyter_bokeh(monkeypatch)
+
+    fig = figure(width=250)
+    as_widget_bokeh(fig)
+    assert fig.sizing_mode == "stretch_height"
+    assert fig.width == 250
 
 
 def test_as_widget_plotly_success_and_type_check_with_fakes(

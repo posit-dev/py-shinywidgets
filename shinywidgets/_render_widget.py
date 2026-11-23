@@ -3974,9 +3974,12 @@ class render_bokeh(render_widget_base[ValueT, BokehModel]):
     'shinywidgets[bokeh]'``).
 
     A `figure` fills its output by default (i.e., it gets
-    ``sizing_mode="stretch_both"``), unless you give it a ``width``, ``height``,
-    ``sizing_mode``, or ``aspect_ratio``, in which case bokeh's own sizing applies.
-    Other models (e.g., a `column` or `row` layout) fill only if their
+    ``sizing_mode="stretch_both"``). Give it only a ``height`` and it fills the
+    width instead, keeping that height; give it only a ``width`` and it keeps
+    that width, filling the height where the output has one. Give it both
+    ``width`` and ``height``, or an explicit ``sizing_mode`` or
+    ``aspect_ratio``, and bokeh's own sizing applies exactly as written. Other
+    models (e.g., a `column` or `row` layout) fill only if their
     ``sizing_mode`` stretches vertically (e.g., ``sizing_mode="stretch_both"`` on the
     layout and its children).
 
