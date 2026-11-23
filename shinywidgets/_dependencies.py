@@ -406,45 +406,36 @@ def geolibre_app_mount(w: Widget, session: Session) -> None:
 
 # Hop-by-hop headers (plus Host/Accept-Encoding, which http.client manages
 # itself) that the loopback proxy must not forward in either direction.
-# Query parameters localtileserver 1.0.0 endpoints read raster sources from:
-# `filename` (tiles/metadata/... and the `/` viewer), `files`
-# (comma-separated, mosaic endpoints), `url` (server-side-fetched STAC URL,
-# i.e. an SSRF vector), and `filenameA`/`filenameB` (the `/split/` viewer in
-# web/fastapi_app.py). Guarded proxies refuse requests whose values aren't
-# authorized.
-_LOOPBACK_PROXY_SOURCE_PARAMS = ("filename", "url", "filenameA", "filenameB")
-
-# The xarray endpoints read datasets from a server-side in-memory registry
-# (with implicit selection of a sole dataset) rather than from a checked
-# selector. Nothing in localtileserver 1.0.0 populates that registry (it's a
-# manual extension point), and there is no per-dataset authorization to key
-# off, so guarded proxies refuse the whole prefix until one exists.
-_LOOPBACK_PROXY_BLOCKED_PREFIX = "/api/xarray/"
-
-# Raster-reading route prefixes in localtileserver 1.0.0 (web/routers/*.py)
-# mapped to the source selector each actually consumes. A request that lacks
-# the route's own selector falls back *upstream* to a default source — the
-# public SF Bay sample dataset, or `app.state.mosaic_assets` (another
-# session's registered mosaic) — even when it carries some *other* selector
-# the endpoint ignores, so on guarded proxies these routes require an
-# authorized value of their own selector. Selector-free access is only safe
-# on the remaining routes (palette/colormap lists, docs, viewer HTML), which
-# read no rasters.
-_LOOPBACK_PROXY_ROUTE_SELECTORS = (
-    ("/api/mosaic/", ("files",)),
-    ("/api/stac/", ("url",)),
-    ("/api/tiles/", ("filename",)),
-    ("/api/metadata", ("filename",)),
-    ("/api/bounds", ("filename",)),
-    ("/api/validate", ("filename",)),
-    ("/api/statistics", ("filename",)),
-    ("/api/thumbnail.", ("filename",)),
-    ("/api/part.", ("filename",)),
-    ("/api/feature.", ("filename",)),
-)
-
 # Query parameter carrying a `_LoopbackProxyApp` capability token
 _LOOPBACK_PROXY_TOKEN_PARAM = "sw_token"
+
+# The only requests a guarded proxy forwards; anything else, including routes
+# and parameters a future localtileserver adds, gets a 403. Each entry is
+# (full-path pattern, raster-source selector params, every param the route
+# may carry). `/api/tiles/{z}/{x}/{y}.{format}` is the only route
+# `get_leaflet_tile_layer()` layers request from the browser
+# (localtileserver 1.0.0).
+_LOOPBACK_PROXY_ALLOWED_ROUTES: Tuple[
+    Tuple["re.Pattern[str]", FrozenSet[str], FrozenSet[str]], ...
+] = (
+    (
+        re.compile(r"/api/tiles/\d+/\d+/\d+\.\w+"),
+        frozenset({"filename"}),
+        frozenset(
+            {
+                "filename",
+                "indexes",
+                "colormap",
+                "vmin",
+                "vmax",
+                "nodata",
+                "expression",
+                "stretch",
+                _LOOPBACK_PROXY_TOKEN_PARAM,
+            }
+        ),
+    ),
+)
 
 _LOOPBACK_PROXY_DROP_HEADERS = frozenset(
     {
@@ -489,21 +480,21 @@ class _LoopbackProxyApp:
 
     def __init__(self, port: int, allowed_filenames: Optional[set[str]] = None) -> None:
         """
-        `allowed_filenames`: when a set is given, any request carrying a
-        raster-source query parameter (`filename`, `files` — comma-separated —
-        `url`, `filenameA`/`filenameB`: the selectors localtileserver 1.0.0's
-        endpoints read files from) whose value is not authorized is refused
-        with a 403, as is any request under `/api/xarray/` (see
-        `_LOOPBACK_PROXY_BLOCKED_PREFIX`). A value is
-        authorized if it is in the (app-wide) set, or if the request's
-        `sw_token` parameter is a capability token registered for it via
-        `register_filenames()` — the per-registration alternative to the
-        app-wide set, so one session's users can't read another session's
-        rasters by knowing or guessing their paths. Requests without any
-        selector parameter pass (every file-reading endpoint requires one).
-        `None` (the default) forwards everything, the right model for servers
-        that token their own file routes (geolibre) — the same exposure model
-        as jupyter-server-proxy.
+        `allowed_filenames`: when a set is given, the proxy is *guarded* and
+        deny-by-default: only requests matching a route in
+        `_LOOPBACK_PROXY_ALLOWED_ROUTES` are forwarded, everything else gets
+        a 403 -- including routes and query parameters localtileserver
+        itself doesn't define (yet). On an allowed route, every query
+        parameter must be one that route declares, and the route's
+        raster-source selector (e.g. `filename`) must be present and
+        authorized: either its value is in the (app-wide) set, or the
+        request's `sw_token` parameter is a capability token registered for
+        it via `register_filenames()` -- the per-registration alternative to
+        the app-wide set, so one session's users can't read another
+        session's rasters by knowing or guessing their paths. `None` (the
+        default) forwards everything, the right model for servers that
+        token their own file routes (geolibre) -- the same exposure model as
+        jupyter-server-proxy.
         """
         self._port = port
         self._allowed_filenames = allowed_filenames
@@ -559,25 +550,36 @@ class _LoopbackProxyApp:
             path = "/" + path
 
         if self._allowed_filenames is not None:
-            if path.startswith(_LOOPBACK_PROXY_BLOCKED_PREFIX):
+            route = next(
+                (r for r in _LOOPBACK_PROXY_ALLOWED_ROUTES if r[0].fullmatch(path)),
+                None,
+            )
+            if route is None:
                 await self._simple_response(
-                    send, 403, b"Forbidden: route blocked on guarded proxies"
+                    send, 403, b"Forbidden: route not allowed on guarded proxies"
                 )
                 return
-            params = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+            _, selector_params, allowed_params = route
+            params = parse_qs(
+                scope.get("query_string", b"").decode("latin-1"),
+                keep_blank_values=True,
+            )
+            if any(k not in allowed_params for k in params):
+                await self._simple_response(
+                    send, 403, b"Forbidden: parameter not allowed on this route"
+                )
+                return
+            sources: List[str] = [v for p in selector_params for v in params.get(p, [])]
+            if not sources:
+                await self._simple_response(
+                    send,
+                    403,
+                    b"Forbidden: raster route requires a source selector",
+                )
+                return
             token_set = self._capabilities.get(
                 params.get(_LOOPBACK_PROXY_TOKEN_PARAM, [""])[0], frozenset()
             )
-            sources: List[str] = []
-            by_param: Dict[str, List[str]] = {}
-            for k, vs in params.items():
-                if k == "files":  # comma-separated (localtileserver mosaics)
-                    by_param[k] = [v for part in vs for v in part.split(",")]
-                elif k in _LOOPBACK_PROXY_SOURCE_PARAMS:
-                    by_param[k] = vs
-                else:
-                    continue
-                sources.extend(by_param[k])
             if any(
                 s not in self._allowed_filenames and s not in token_set for s in sources
             ):
@@ -585,16 +587,6 @@ class _LoopbackProxyApp:
                     send, 403, b"Forbidden: unregistered raster source"
                 )
                 return
-            for prefix, route_params in _LOOPBACK_PROXY_ROUTE_SELECTORS:
-                if path.startswith(prefix) and not any(
-                    by_param.get(p) for p in route_params
-                ):
-                    await self._simple_response(
-                        send,
-                        403,
-                        b"Forbidden: raster route requires a source selector",
-                    )
-                    return
         # Re-encode: `path` is percent-decoded, so forwarding it verbatim
         # would let an escaped `?` (%3F) smuggle a query string past the
         # guard above into the upstream URL.

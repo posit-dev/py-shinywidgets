@@ -227,13 +227,13 @@ def test_guard_blocks_unregistered_filenames(upstream_server: int) -> None:
     proxy = _LoopbackProxyApp(upstream_server, allowed_filenames={"ok.tif"})
 
     status, _, body = _asgi_request(
-        proxy, "api/metadata", query_string=b"filename=ok.tif"
+        proxy, "api/tiles/0/0/0.png", query_string=b"filename=ok.tif"
     )
     assert status == 200
-    assert body == b"/api/metadata?filename=ok.tif"
+    assert body == b"/api/tiles/0/0/0.png?filename=ok.tif"
 
     status, _, body = _asgi_request(
-        proxy, "api/metadata", query_string=b"filename=%2Fetc%2Fpasswd"
+        proxy, "api/tiles/0/0/0.png", query_string=b"filename=%2Fetc%2Fpasswd"
     )
     assert status == 403
     assert body == b"Forbidden: unregistered raster source"
@@ -241,60 +241,135 @@ def test_guard_blocks_unregistered_filenames(upstream_server: int) -> None:
     # SSRF via /vsicurl/-style remote URLs is blocked too
     status, _, _ = _asgi_request(
         proxy,
-        "api/metadata",
+        "api/tiles/0/0/0.png",
         query_string=b"filename=https%3A%2F%2Fevil.example%2Fx.tif",
     )
     assert status == 403
 
-    # Requests without a source selector pass (colormap lists, docs, etc.);
-    # every file-reading endpoint requires one
-    status, _, _ = _asgi_request(proxy, "api/colormaps")
-    assert status == 200
-
     # Any bad value in a repeated parameter is refused
     status, _, _ = _asgi_request(
-        proxy, "api/tiles", query_string=b"filename=ok.tif&filename=%2Fetc%2Fpasswd"
+        proxy,
+        "api/tiles/0/0/0.png",
+        query_string=b"filename=ok.tif&filename=%2Fetc%2Fpasswd",
     )
     assert status == 403
 
 
-def test_guard_covers_every_source_selector(upstream_server: int) -> None:
-    # localtileserver 1.0.0 also reads rasters from `files` (comma-separated,
-    # mosaic endpoints), `url` (server-side-fetched STAC URL, i.e. SSRF), and
-    # `filenameA`/`filenameB` (the /split/ viewer in web/fastapi_app.py);
-    # a filename-only guard would leave those wide open
-    proxy = _LoopbackProxyApp(upstream_server, allowed_filenames={"a.tif", "b.tif"})
+def test_guard_denies_routes_the_feature_does_not_need(upstream_server: int) -> None:
+    # Only /api/tiles/ is forwarded: the shipped feature
+    # (localtileserver_layer_proxy(), i.e. get_leaflet_tile_layer() layers)
+    # never sends any other route to the browser, so a guarded proxy denies
+    # the rest by default -- even routes localtileserver 1.0.0 itself
+    # defines (metadata/bounds/validate/statistics/thumbnail/part/feature,
+    # the mosaic and STAC routers, the cesium viewer pages, and the
+    # docs/openapi routes) -- and even with an authorized filename/token.
+    proxy = _LoopbackProxyApp(upstream_server, allowed_filenames={"ok.tif"})
+    token = proxy.register_filenames(["ok.tif"])
+    for path, query in [
+        ("api/metadata", "filename=ok.tif"),
+        ("api/bounds", "filename=ok.tif"),
+        ("api/thumbnail.png", "filename=ok.tif"),
+        ("api/part.png", "filename=ok.tif&bbox=0,0,1,1"),
+        ("api/mosaic/tiles/0/0/0.png", "files=ok.tif"),
+        ("api/stac/info", "url=ok.tif"),
+        ("api/palettes", ""),
+        ("", "filename=ok.tif"),
+        ("split/", "filenameA=ok.tif"),
+        ("swagger/", ""),
+        ("openapi.json", ""),
+        ("static/x.js", ""),
+    ]:
+        full_query = f"{query}&sw_token={token}" if query else f"sw_token={token}"
+        status, _, _ = _asgi_request(proxy, path, query_string=full_query.encode())
+        assert status == 403, path
 
+
+def test_guard_denies_unknown_future_route_and_parameter(
+    upstream_server: int,
+) -> None:
+    # The scenario that motivated the allowlist: a route or parameter
+    # localtileserver 1.0.0 doesn't define (so no denylist entry could have
+    # anticipated it) must still be refused by a guarded proxy.
+    proxy = _LoopbackProxyApp(upstream_server, allowed_filenames={"ok.tif"})
     status, _, _ = _asgi_request(
-        proxy, "api/mosaic/tiles/0/0/0.png", query_string=b"files=a.tif,b.tif"
+        proxy, "api/future-route", query_string=b"path=/etc/secret.tif"
+    )
+    assert status == 403
+    status, _, _ = _asgi_request(
+        proxy,
+        "api/future-route",
+        query_string=b"source=/vsicurl/http://169.254.169.254/",
+    )
+    assert status == 403
+    # An unrecognized parameter on an otherwise-allowed route is refused too
+    # -- it could become a new source selector in a future localtileserver
+    # release
+    status, _, _ = _asgi_request(
+        proxy,
+        "api/tiles/0/0/0.png",
+        query_string=b"filename=ok.tif&path=/etc/secret.tif",
+    )
+    assert status == 403
+
+
+def test_tiles_route_ignores_foreign_selector_params(upstream_server: int) -> None:
+    # `url`/`files`/`filenameA` select rasters on routes a guarded proxy
+    # doesn't forward; the tiles route doesn't read them, so they're refused
+    # as unrecognized parameters rather than silently ignored
+    proxy = _LoopbackProxyApp(upstream_server, allowed_filenames=set())
+    token = proxy.register_filenames(["ok.tif"])
+    for bad_query in (
+        f"url=ok.tif&sw_token={token}",
+        f"files=ok.tif&sw_token={token}",
+        f"filenameA=ok.tif&sw_token={token}",
+    ):
+        status, _, _ = _asgi_request(
+            proxy, "api/tiles/1/2/3.png", query_string=bad_query.encode()
+        )
+        assert status == 403, bad_query
+    # A blank value still names a parameter the route doesn't declare
+    for blank_query in (f"path=&sw_token={token}", f"path&sw_token={token}"):
+        status, _, _ = _asgi_request(
+            proxy,
+            "api/tiles/1/2/3.png",
+            query_string=f"filename=ok.tif&{blank_query}".encode(),
+        )
+        assert status == 403, blank_query
+    # The route's own selector still passes
+    status, _, _ = _asgi_request(
+        proxy,
+        "api/tiles/1/2/3.png",
+        query_string=f"filename=ok.tif&sw_token={token}".encode(),
     )
     assert status == 200
 
-    status, _, _ = _asgi_request(
-        proxy,
-        "api/mosaic/tiles/0/0/0.png",
-        query_string=b"files=a.tif,%2Fetc%2Fpasswd",
-    )
-    assert status == 403
 
-    status, _, _ = _asgi_request(
-        proxy,
-        "api/stac/info",
-        query_string=b"url=https%3A%2F%2Fevil.example%2Fitem.json",
+def test_guard_forwards_styled_tile_requests(upstream_server: int) -> None:
+    # The styling parameters TileClient.get_tile_url() emits for a restyled
+    # layer (localtileserver 1.0.0) must all pass, or restyles 403
+    proxy = _LoopbackProxyApp(upstream_server, allowed_filenames=set())
+    token = proxy.register_filenames(["ok.tif"])
+    query = (
+        f"filename=ok.tif&indexes=1&indexes=2&colormap=viridis&vmin=0&vmax=1"
+        f"&nodata=0&expression=b1*2&stretch=linear&sw_token={token}"
     )
-    assert status == 403
-
-    # The /split/ viewer's filenameA/filenameB
-    status, _, _ = _asgi_request(proxy, "split/", query_string=b"filenameA=a.tif")
+    status, _, _ = _asgi_request(
+        proxy, "api/tiles/3/4/5.png", query_string=query.encode()
+    )
     assert status == 200
-    status, _, _ = _asgi_request(
-        proxy, "split/", query_string=b"filenameA=a.tif&filenameB=%2Fetc%2Fpasswd"
-    )
-    assert status == 403
-    status, _, _ = _asgi_request(
-        proxy, "split/", query_string=b"filenameA=http%3A%2F%2Fevil.example%2Fx.tif"
-    )
-    assert status == 403
+
+
+def test_guard_matches_the_whole_tile_path(upstream_server: int) -> None:
+    # Allowing /api/tiles/{z}/{x}/{y}.{format} mustn't allow every route
+    # under /api/tiles/, even with an authorized source
+    proxy = _LoopbackProxyApp(upstream_server, allowed_filenames={"ok.tif"})
+    for path in (
+        "api/tiles/future-route",
+        "api/tiles/1/2/3.png/extra",
+        "api/tiles/1/2/3.png/../../../metadata",
+    ):
+        status, _, _ = _asgi_request(proxy, path, query_string=b"filename=ok.tif")
+        assert status == 403, path
 
 
 def test_guard_blocks_xarray_routes(upstream_server: int) -> None:
@@ -313,64 +388,21 @@ def test_guard_blocks_xarray_routes(upstream_server: int) -> None:
 
 
 def test_guard_requires_selector_on_raster_routes(upstream_server: int) -> None:
-    # Selector-free requests to raster-reading routes fall back *upstream* to
-    # a default source (the public SF Bay sample, or app.state.mosaic_assets —
-    # another session's registered mosaic), so guarded proxies refuse them;
-    # selector-free access is only for non-reading routes (palettes, docs)
+    # A selector-free request to the one route a guarded proxy allows falls
+    # back *upstream* to a default source (the public SF Bay sample), so it
+    # is refused -- even with a capability token: tokens authorize sources,
+    # not defaults
     proxy = _LoopbackProxyApp(upstream_server, allowed_filenames={"ok.tif"})
-    for path in (
-        "api/tiles/1/2/3.png",
-        "api/metadata",
-        "api/thumbnail.png",
-        "api/mosaic/tiles/1/2/3.png",
-        "api/stac/info",
-    ):
-        status, _, _ = _asgi_request(proxy, path)
-        assert status == 403, path
-    # ...even with a capability token: tokens authorize sources, not defaults
+    status, _, _ = _asgi_request(proxy, "api/tiles/1/2/3.png")
+    assert status == 403
     token = proxy.register_filenames(["ok.tif"])
     status, _, _ = _asgi_request(
         proxy, "api/tiles/1/2/3.png", query_string=b"sw_token=" + token.encode()
     )
     assert status == 403
-    # Non-reading routes still pass selector-free
-    status, _, _ = _asgi_request(proxy, "api/palettes")
-    assert status == 200
-    # And an authorized selector still passes
+    # An authorized selector still passes
     status, _, _ = _asgi_request(
         proxy, "api/tiles/1/2/3.png", query_string=b"filename=ok.tif"
-    )
-    assert status == 200
-
-
-def test_guard_requires_the_routes_own_selector(upstream_server: int) -> None:
-    # Endpoints ignore selectors they don't consume and fall back to a
-    # default source, so an authorized selector for the WRONG route must not
-    # satisfy the guard: /api/mosaic/ needs `files`, /api/stac/ needs `url`,
-    # the single-file routes need `filename`
-    proxy = _LoopbackProxyApp(upstream_server, allowed_filenames=set())
-    token = proxy.register_filenames(["ok.tif"])
-    q = b"filename=ok.tif&sw_token=" + token.encode()
-
-    # filename is authorized, but the mosaic route reads `files` -- without
-    # it, upstream would serve app.state.mosaic_assets (another session's
-    # registered mosaic)
-    status, _, _ = _asgi_request(proxy, "api/mosaic/tiles/1/2/3.png", query_string=q)
-    assert status == 403
-    # stac routes need `url`, single-file routes need `filename`
-    status, _, _ = _asgi_request(proxy, "api/stac/info", query_string=q)
-    assert status == 403
-    status, _, _ = _asgi_request(
-        proxy,
-        "api/tiles/1/2/3.png",
-        query_string=b"url=ok.tif&sw_token=" + token.encode(),
-    )
-    assert status == 403
-    # The route's own authorized selector passes
-    status, _, _ = _asgi_request(
-        proxy,
-        "api/mosaic/tiles/1/2/3.png",
-        query_string=b"files=ok.tif&sw_token=" + token.encode(),
     )
     assert status == 200
 
@@ -378,19 +410,22 @@ def test_guard_requires_the_routes_own_selector(upstream_server: int) -> None:
 def test_guard_escaped_question_mark_cannot_smuggle_query(
     upstream_server: int,
 ) -> None:
-    # A request to /proxy/{port}/api/metadata%3Ffilename=... reaches the proxy
-    # with the (decoded) `?` in scope["path"] and an empty query string, so
-    # the guard sees no selector; forwarding the decoded path verbatim would
-    # turn it back into a query string upstream, bypassing the guard
+    # A request to /proxy/{port}/api/tiles/0/0/0.png%3Ffilename=... reaches
+    # the proxy with the (decoded) `?` in scope["path"] and an empty query
+    # string, so the guard sees no selector; forwarding the decoded path
+    # verbatim would turn it back into a query string upstream, bypassing
+    # the guard
     proxy = _LoopbackProxyApp(upstream_server, allowed_filenames={"ok.tif"})
-    # A raster route with no real selector is refused outright...
-    status, _, _ = _asgi_request(proxy, "api/metadata?filename=/etc/passwd")
+    status, _, _ = _asgi_request(proxy, "api/tiles/0/0/0.png?filename=/etc/passwd")
     assert status == 403
-    # ...and on non-raster routes, where the request is forwarded, the
-    # upstream receives an opaque encoded path, not a smuggled query
-    status, _, body = _asgi_request(proxy, "api/palettes?filename=/etc/passwd")
+
+    # The re-encoding step applies unconditionally -- even on an unguarded
+    # proxy (which forwards everything), the upstream receives an opaque
+    # encoded path, not a smuggled query
+    unguarded = _LoopbackProxyApp(upstream_server)
+    status, _, body = _asgi_request(unguarded, "api/anything?filename=/etc/passwd")
     assert status == 200
-    assert body.startswith(b"/api/palettes%3Ffilename%3D")
+    assert body.startswith(b"/api/anything%3Ffilename%3D")
     assert b"?" not in body
 
 
@@ -400,7 +435,7 @@ def test_guard_matches_url_encoded_filenames(upstream_server: int) -> None:
     )
     status, _, _ = _asgi_request(
         proxy,
-        "api/tiles",
+        "api/tiles/0/0/0.png",
         query_string=b"filename=%2Ftmp%2Fmy%20dir%2Fsome%20file.tif",
     )
     assert status == 200
@@ -428,7 +463,7 @@ def test_capability_tokens_authorize_exactly_their_files(
     assert proxy.register_filenames(["/home/alice/private.tif"]) == token_a
 
     def req(query: bytes) -> int:
-        status, _, _ = _asgi_request(proxy, "api/tiles", query_string=query)
+        status, _, _ = _asgi_request(proxy, "api/tiles/0/0/0.png", query_string=query)
         return status
 
     # A valid token reads exactly its own file...
@@ -452,7 +487,7 @@ def test_capability_can_be_registered_in_another_proxy(upstream_server: int) -> 
     assert other.register_filenames(["/tmp/x.tif"], token=token) == token
     status, _, _ = _asgi_request(
         other,
-        "api/tiles",
+        "api/tiles/0/0/0.png",
         query_string=b"filename=/tmp/x.tif&sw_token=" + token.encode(),
     )
     assert status == 200

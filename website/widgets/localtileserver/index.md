@@ -334,15 +334,17 @@ $ curl --get "http://127.0.0.1:9944/proxy/64772/api/tiles/11/581/879.webp" \
 Forbidden: unregistered raster source                           # same file, no token: refused
 
 $ curl --get "http://127.0.0.1:9944/proxy/64772/api/metadata" --data-urlencode "filename=/etc/passwd"
-Forbidden: unregistered raster source                           # arbitrary path: refused
+Forbidden: route not allowed on guarded proxies                 # arbitrary path, wrong route: refused
 
 $ curl --get "http://127.0.0.1:9944/proxy/64772/api/stac/tiles/0/0/0.webp" \
        --data-urlencode "url=https://169.254.169.254/latest/meta-data/"
-Forbidden: unregistered raster source                           # SSRF attempt via url=: refused
+Forbidden: route not allowed on guarded proxies                 # SSRF attempt via url=: refused
 ```
 
-Knowing the registered filename is not enough without the token, and the guard covers every raster-source
-selector the tile API reads (`filename`, `files`, `url`, `filenameA`/`filenameB`), not just the obvious one.
+Knowing the registered filename is not enough without the token. The guard is deny-by-default: it forwards only
+the one route the shipped feature uses (`/api/tiles/{z}/{x}/{y}.{format}`, with its handful of styling parameters), so every other
+route -- including the ones above, and any route or parameter localtileserver might add in a future release --
+is refused outright, not just ones carrying a recognized raster-source parameter.
 
 **Verified behind a path prefix.** Posit Connect and shinyapps.io serve an app under a sub-path of the public
 URL (e.g. `https://connect.example.com/content/app1/`), not at the domain root. Mounting the same Shiny app
