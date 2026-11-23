@@ -121,6 +121,10 @@ def test_reference_relative_links_resolve(path: Path) -> None:
 
 
 def test_widget_references_match_published_pages() -> None:
+    if not QUARTO_YML.exists():
+        pytest.skip(
+            "website/_quarto.yml is not available (e.g., running from an sdist)"
+        )
     assert {p.stem for p in (REFERENCES / "widgets").glob("*.md")} == set(
         published_widget_slugs()
     )

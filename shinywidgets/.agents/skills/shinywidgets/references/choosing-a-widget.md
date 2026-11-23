@@ -44,7 +44,10 @@ see the widget's own reference).
   browser-supplied SQL against the widget's DuckDB connection, so by
   default the renderer locks it down (`enable_external_access = false`,
   `lock_configuration = true`); pass `allow_unrestricted_connection=True`
-  only for a local, single-user app.
+  only for a local, single-user app. One gap: a connection you locked
+  yourself is left untouched (a locked connection rejects further `SET`
+  commands), so disable external access *before* locking it yourself —
+  otherwise browser-supplied SQL keeps the file access you left on.
 
 ## Common mistakes
 

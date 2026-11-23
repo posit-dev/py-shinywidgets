@@ -37,14 +37,22 @@ with ui.card():
         return px.scatter(df, x="gdpPercap", y="lifeExp", log_x=True)
 ```
 
-Three equivalent ways to give a widget an explicit height, any of which
-flips the per-render `fill` flag to `False`:
+Giving a widget an explicit height is two separate decisions, not one:
 
-1. The decorator's or `output_widget()`'s own `height=` — sizes the output
-   container.
-2. The widget's own constructor height, when the library has one
-   (`Scatter(height=300)`, `k3d.plot(height=250)`, ...).
-3. A plain `ipywidgets.Layout(height=...)` assigned to `.layout`.
+1. **The output container**: the decorator's or `output_widget()`'s own
+   `height=` sizes the container and flips *its* `fill`/`fillable`
+   defaults to `False`. It says nothing about how the widget sizes itself
+   inside the container.
+2. **The widget**: its own constructor height, when the library has one
+   (`Scatter(height=300)`, `k3d.plot(height=250)`, ...), or a plain
+   `ipywidgets.Layout(height=...)` assigned to `.layout`, flips the
+   per-render `fill` flag in the render payload to `False`, so the widget
+   keeps its own height instead of filling its container.
+
+To fill a fixed-height container you need both:
+`output_widget("id", height="450px", fillable=True)` — without
+`fillable=True` a plotly figure, say, falls back to its own 360px default
+regardless of the output's height.
 
 **A library's own default height often can't be told apart from a real
 one.** lonboard (500px), maplibre/rerun (400/640px), k3d (512px), jscatter

@@ -40,10 +40,26 @@ setting traits on `.widget` afterwards doesn't update the browser. To
 change what's shown, re-render, passing forward any state you want to keep
 (`layout=`, `camera_state=`) to the new `Sigma`:
 
+Reading `camera_state` in the render function itself raises (`read()`
+rejects reads from the renderer currently executing, even under
+`reactive.isolate()`), so mirror it into a reactive value from an effect
+and read *that* under isolation:
+
 ```python
+camera = reactive.value({"x": 0.5, "y": 0.5, "ratio": 1, "angle": 0})
+
+
+@reactive.effect
+def _track_camera():
+    req(sigma.widget)
+    camera.set(sigma.read("camera_state"))
+
+
 @render_ipysigma
 def sigma():
-    return Sigma(new_graph, camera_state=sigma.read("camera_state"))
+    with reactive.isolate():
+        cam = camera.get()
+    return Sigma(new_graph, camera_state=cam)
 ```
 
 ## Gotchas
