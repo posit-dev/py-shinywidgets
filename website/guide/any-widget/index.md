@@ -1153,6 +1153,77 @@ case is specific to the generic path, and worth knowing before you build your ow
   (ideally by `window.devicePixelRatio`) and redraws whenever the container's size changes -- not built in this
   guide's examples, but worth knowing if your widget needs to fill a resizable card.
 
+## For widget-library authors
+
+If you maintain a widget library (or an adapter that builds widgets, like holoviews' or panel's), two
+reactive-context traps are worth designing around. Both produce the same symptom -- an output that re-renders
+for no apparent reason, or an infinite re-render loop with no user interaction -- and both come from the same
+mechanism: Shiny tracks the currently-executing reactive context in a `ContextVar`, so any reactive read that
+happens *while your code runs inside someone else's render or effect* silently registers that context as a
+dependent, even though the render body itself never read the value.
+
+**Fire construction-time callbacks under `reactive.isolate()`.** If your library synchronously invokes user
+callbacks while a widget is being constructed or coerced (the real-world case: holoviews' `get_plot()` fires
+`Stream.trigger()` subscribers, and a subscriber that reads a reactive value would register the in-progress
+`@render_*` as its dependent -- its own write then invalidated the render mid-flight, looping forever),
+dispatch those callbacks inside `with reactive.isolate():`. shinywidgets already isolates the two seams it
+controls -- the `as_widget()` coercion and layout-defaults application in `render_widget_base._render()` --
+but callbacks your library fires at any other time are your responsibility. A same-task synchronous read is
+indistinguishable from an ordinary read in the render body, so only the dispatching library can isolate it;
+no framework-side fix is possible.
+
+**A detached `asyncio.create_task()` inherits the live reactive context.** `create_task()` copies the current
+contextvars context, so a task spawned inside a render or effect carries that context with it, and any
+reactive read in the task registers on it -- invisibly, with no warning. py-shiny's own `@extended_task` takes
+the strong stance: it wraps its body in a `DenialContext` that *raises* on any reactive read from the
+detached task. Raw `asyncio.create_task()` does the opposite -- it mis-registers silently. This pure-Shiny
+repro shows an effect re-running purely because a detached task read a value the effect itself never read:
+
+```{.python file="examples/13_detached_task_context.py"}
+# A detached asyncio.create_task() inherits the live reactive context (it
+# copies the current contextvars), so a reactive read inside the task
+# registers the spawning effect as a dependent -- and the effect re-runs
+# even though its body never read that value. Run: python 13_detached_task_context.py
+import asyncio
+
+from shiny import reactive
+
+val = reactive.value(0)
+runs = 0
+
+
+@reactive.effect
+def _():
+    global runs
+    runs += 1
+
+    async def reader():
+        # Registers the *effect's* context as a dependent of `val`, even
+        # though the effect body never reads `val`.
+        val()
+
+    asyncio.create_task(reader())
+
+
+async def main():
+    await reactive.flush()
+    await asyncio.sleep(0.1)  # let the detached task run
+    assert runs == 1, runs
+    val.set(1)  # nothing the effect does depends on val ...
+    await reactive.flush()
+    print(f"effect runs after unrelated val.set(): {runs} (expected 1)")
+
+
+asyncio.run(main())
+# Prints: effect runs after unrelated val.set(): 2 (expected 1)
+```
+
+(Verified against shiny 1.9.0 and py-shiny `main`.) Contextvars inheritance is correct for child tasks the
+effect actually *awaits* -- those reads are genuine dependencies -- and detached-vs-awaited is unknowable at
+`create_task()` time, so this can't be fixed framework-side either: if your library dispatches work onto
+tasks it doesn't await, run the reactive-reading parts under `reactive.isolate()`, or read the values you
+need *before* spawning the task and pass them in.
+
 ## Gotchas and limitations
 
 Verified on current `main` (commit `d882da46`):
