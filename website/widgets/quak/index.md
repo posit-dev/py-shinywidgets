@@ -523,7 +523,8 @@ deploy.
 Pass `allow_unrestricted_connection=True` to opt out, for a local, single-user app where you'd rather quak's
 SQL reach the filesystem (or you've already locked the connection's configuration yourself -- a connection
 whose configuration is already locked is left untouched, since locking it is what the renderer would have
-done anyway):
+done anyway, though it warns if external access is still on, since `lock_configuration` alone doesn't stop
+`read_csv()` and friends):
 
 ```{.python file="examples/10_security_lockdown.py"}
 from __future__ import annotations

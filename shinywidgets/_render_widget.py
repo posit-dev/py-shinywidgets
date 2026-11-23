@@ -366,6 +366,66 @@ class render_widget(render_widget_base[WidgetT, WidgetT]):
     defined).
     """
 
+    async def _render(self) -> Jsonifiable | None:
+        res = await super()._render()
+        warn_if_unrestricted_sql_widget(self._widget)
+        return res
+
+
+# Widgets that execute browser-sent SQL on a DuckDB connection, keyed by
+# widget_pkg() (matched over the widget's MRO, as in _LAYOUT_DEFAULTS). The
+# dedicated renderers lock the connection down (restrict_duckdb_connection());
+# plain @render_widget can't, so it warns instead. Values are the attribute
+# holding the connection (as in restrict_*_connection()) and the dedicated
+# renderer to point the user at.
+SQL_WIDGET_CONNECTIONS: Dict[str, Tuple[str, str]] = {
+    "quak": ("_conn", "render_quak"),
+    "mosaic_widget": ("con", "render_mosaic_widget"),
+    "embedding_atlas": ("_connection", "render_embedding_atlas"),
+}
+
+
+def warn_if_unrestricted_sql_widget(widget: Optional[Widget]) -> None:
+    """
+    Warn when a SQL-executing widget (see `SQL_WIDGET_CONNECTIONS`) is
+    rendered without its DuckDB connection locked down: the browser can
+    otherwise run arbitrary SQL on it (e.g., read server files). A connection
+    the author already locked is left unwarned: its owner took control of its
+    settings (possibly keeping external access on deliberately).
+    """
+    if widget is None:
+        return
+    entry: Optional[Tuple[str, str]] = None
+    for cls in type(widget).__mro__:
+        entry = SQL_WIDGET_CONNECTIONS.get(widget_pkg(cls))
+        if entry is not None:
+            break
+    if entry is None:
+        return
+    attr, renderer = entry
+    con = getattr(widget, attr, None)
+    if con is not None:
+        try:
+            external_access, locked = duckdb_settings(con)
+        except Exception:
+            # Not (or no longer) a DuckDB connection: warn below, as if the
+            # attribute were missing
+            external_access, locked = True, False
+        # An author that locked the connection down themselves took control
+        # of its settings. Locking the configuration alone still allows
+        # read_csv() etc., so only a complete lockdown is left unwarned
+        if locked and not external_access:
+            return
+    warnings.warn(
+        f"A `{type(widget).__name__}` rendered with `@render_widget` has a "
+        "DuckDB connection that isn't locked down: any visitor can run SQL on "
+        "it that reads server files. Use `@shinywidgets."
+        f"{renderer}` instead, which locks the connection down by default, or "
+        "lock it down yourself (`SET enable_external_access = false`, then "
+        "`SET lock_configuration = true`) before returning the widget.",
+        stacklevel=2,
+    )
+
 
 class render_drawdata(render_widget_base[DrawdataWidgetT, DrawdataWidgetT]):
     """
@@ -836,7 +896,8 @@ class render_embedding_atlas(
     display (``SET enable_external_access = false``; ``SET lock_configuration =
     true``), so that only the data you gave the widget is reachable. If you locked
     the connection's configuration yourself (``SET lock_configuration = true``),
-    the renderer leaves your configuration untouched. Pass
+    the renderer leaves your configuration untouched (warning if external access
+    is still on, since that alone doesn't stop ``read_csv()`` and friends). Pass
     ``allow_unrestricted_connection=True`` to opt out of the lockdown (e.g., for a
     local, single-user app).
 
@@ -998,11 +1059,24 @@ def restrict_duckdb_connection(con: duckdb.DuckDBPyConnection) -> None:
     """
     Lock down a DuckDB connection, so SQL run on it can't reach server files or
     change the connection's configuration. A connection whose configuration is
-    already locked is left untouched: its owner took control of its settings
-    (possibly keeping external access on deliberately), and a locked connection
-    rejects further SET commands.
+    already locked is left untouched: its owner took control of its settings,
+    and a locked connection rejects further SET commands. A locked connection
+    that still allows external access (`read_csv()` etc. still work) is likely
+    an accidental misconfiguration, though, so it earns a warning.
     """
-    if duckdb_settings(con)[1]:
+    external_access, locked = duckdb_settings(con)
+    if locked:
+        if external_access:
+            warnings.warn(
+                "This widget's DuckDB connection has `lock_configuration = true` "
+                "but `enable_external_access` is still on, so SQL sent by the "
+                "browser can still read server files (e.g., `read_csv()`). "
+                "Shinywidgets leaves author-locked connections untouched; if "
+                "keeping external access on isn't deliberate, run `SET "
+                "enable_external_access = false` before locking the "
+                "configuration.",
+                stacklevel=2,
+            )
         return
     con.execute("SET enable_external_access = false")
     con.execute("SET lock_configuration = true")
@@ -3446,7 +3520,9 @@ class render_mosaic_widget(render_widget_base[MosaicWidget, MosaicWidget]):
     display (``SET enable_external_access = false``; ``SET lock_configuration =
     true``); pass ``allow_unrestricted_connection=True`` to opt out (e.g., a
     local, single-user app). A connection whose configuration is already locked
-    is left untouched (its owner took control of its settings). This lockdown
+    is left untouched (its owner took control of its settings), with a warning
+    if external access is still on, since that alone doesn't stop
+    ``read_csv()`` and friends. This lockdown
     can reach a connection the app is still using elsewhere: DuckDB's lockdown
     is permanent (it can't be undone) and database-wide (it also locks every
     other cursor on the same database, not just the one it was set on). So for
@@ -5890,7 +5966,8 @@ class render_quak(render_widget_base[ValueT, QuakWidget]):
     lock_configuration = true``); pass ``allow_unrestricted_connection=True`` to
     opt out (e.g., a local, single-user app). A connection whose configuration
     is already locked is left untouched (its owner took control of its
-    settings). If you build the `quak.Widget` yourself from a DuckDB connection
+    settings), with a warning if external access is still on, since that alone
+    doesn't stop ``read_csv()`` and friends. If you build the `quak.Widget` yourself from a DuckDB connection
     (``quak.Widget(con)``), the widget uses that connection directly, and
     DuckDB's lockdown is permanent (it can't be undone) and database-wide, so
     the first render locks it for every other use in the process: do any
