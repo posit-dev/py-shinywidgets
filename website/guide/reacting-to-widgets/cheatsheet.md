@@ -67,7 +67,7 @@ plotly, ...) raises `TypeError` pointing at `reactive_read()`.
 
 | Accessor | Returns | Before any interaction | Across re-render | Default rate |
 |---|---|---|---|---|
-| `selected_rows()` | `List[int]` | `[]`. Requires `select=True` | re-seeded | none |
+| `selected()` | `List[int]` | `[]`. Requires `select=True` | re-seeded | none |
 
 ## render_jscatter
 

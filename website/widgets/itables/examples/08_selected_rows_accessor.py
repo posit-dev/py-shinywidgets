@@ -9,7 +9,7 @@ countries = px.data.gapminder().query("year == 2007")[
     ["country", "continent", "lifeExp", "pop", "gdpPercap"]
 ].reset_index(drop=True)
 
-ui.page_opts(title="selected_rows()", fillable=True)
+ui.page_opts(title="selected()", fillable=True)
 
 with ui.layout_columns(col_widths=[8, 4]):
     with ui.card(full_screen=True):
@@ -19,14 +19,14 @@ with ui.layout_columns(col_widths=[8, 4]):
             return ITable(countries, select=True)
 
     with ui.card():
-        ui.card_header("table.selected_rows()")
+        ui.card_header("table.selected()")
 
         @render.code
         def rows():
-            return str(table.selected_rows())
+            return str(table.selected())
 
         @render.data_frame
         def selected():
             # Positions are into the data, not the display: they survive
             # sorting and searching.
-            return countries.iloc[table.selected_rows()]
+            return countries.iloc[table.selected()]

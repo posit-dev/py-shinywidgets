@@ -6,7 +6,7 @@ category: Tables & grids
 upstream: https://itables.org
 hero: img/gallery_showcase_gapminder_dashboard_after.webp
 tagline: Turn a pandas or polars data frame into a searchable, sortable, exportable DataTable that drives the rest of your app.
-accessors: [selected_rows]
+accessors: [selected]
 description: "Turn a pandas or polars data frame into a searchable, sortable, exportable DataTable that drives the rest of your app."
 image: "img/gallery_showcase_gapminder_dashboard_after.webp"
 ---
@@ -19,7 +19,7 @@ card and scroll its rows, and a fix for a conflict between itables' bundled jQue
 The decorated function returns either a plain data frame (coerced to a default `ITable`) or an
 `itables.widget.ITable` constructed with options -- `select=True` for row selection, `buttons=[...]` for
 export, `column_filters="header"` for per-column search, and the rest of DataTables' extension catalog
-(SearchPanes, SearchBuilder, RowGroup, and more). `table.selected_rows()` reads the selected row positions
+(SearchPanes, SearchBuilder, RowGroup, and more). `table.selected()` reads the selected row positions
 reactively, like a Shiny input; `table.widget` lets you update the table in place from Python, including setting
 the selection programmatically.
 
@@ -197,7 +197,7 @@ renders its computed HTML and inline styles unchanged -- gradients, bold, custom
 
 ### polars, unchanged
 
-`ITable` accepts a polars `DataFrame` directly -- no conversion to pandas. `selected_rows()` still returns
+`ITable` accepts a polars `DataFrame` directly -- no conversion to pandas. `selected()` still returns
 plain positions, so index the polars frame the usual way (`pl_df[rows]`).
 
 ```{.python file="examples/07_polars.py"}
@@ -225,7 +225,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @render.data_frame
         def selected():
-            return countries[table.selected_rows()]
+            return countries[table.selected()]
 ```
 
 ![polars](img/07_polars.webp)
@@ -236,13 +236,13 @@ with ui.layout_columns(col_widths=[8, 4]):
 
 | accessor | returns | before any interaction | across re-render | default rate policy |
 |---|---|---|---|---|
-| `selected_rows()` | `list[int]` | seeded `[]` (the widget's initial `selected_rows` trait) | re-seeded from the new table (starts `[]` unless the new `ITable(...)` is constructed with `selected_rows=` set) | not rate-limited -- fires once per click |
+| `selected()` | `list[int]` | seeded `[]` (the widget's initial `selected_rows` trait) | re-seeded from the new table (starts `[]` unless the new `ITable(...)` is constructed with `selected_rows=` set) | not rate-limited -- fires once per click |
 
-### `selected_rows()`
+### `selected()`
 
 Positions are into the table's **data**, not its current display: they survive sorting, searching, and paging.
 They don't survive the data itself changing, in either of the two ways it can: a **re-render** (a new
-`ITable(...)` from the decorated function) resets `selected_rows()` to the new table's own selection (`[]`
+`ITable(...)` from the decorated function) resets `selected()` to the new table's own selection (`[]`
 unless you set one), so there's no stale-position risk there; `.widget.update(df)` (in place, same widget) is the
 risky one -- the *old* positions carry over unchanged, now pointing into the *new* frame, which silently selects
 the wrong rows if the position happens to still be in range. Either way, a plain integer position is only
@@ -260,17 +260,17 @@ with ui.layout_columns(col_widths=[8, 4]):
             return ITable(countries, select=True)
 
     with ui.card():
-        ui.card_header("table.selected_rows()")
+        ui.card_header("table.selected()")
 
         @render.code
         def rows():
-            return str(table.selected_rows())
+            return str(table.selected())
 
         @render.data_frame
         def selected():
             # Positions are into the data, not the display: they survive
             # sorting and searching.
-            return countries.iloc[table.selected_rows()]
+            return countries.iloc[table.selected()]
 ```
 
 Click two rows, then sort by life expectancy and click the new first row -- the position tracks the row, not the
@@ -308,14 +308,14 @@ with ui.layout_columns(col_widths=[8, 4]):
 
     with ui.card():
         ui.card_header("Export")
-        ui.p("Click some rows, then download -- no need to read selected_rows() anywhere else first.")
+        ui.p("Click some rows, then download -- no need to read selected() anywhere else first.")
 
-        # selected_rows() is live from the moment the table renders, whether
+        # selected() is live from the moment the table renders, whether
         # or not anything has read it yet, so this handler can read it cold,
         # the instant the user clicks download: no warm-up reader required.
         @render.download_button(filename="selected_countries.csv", label="Download selected as CSV")
         def download_csv():
-            rows = table.selected_rows()
+            rows = table.selected()
             buf = io.StringIO()
             countries.iloc[rows].to_csv(buf, index=False)
             yield buf.getvalue()
@@ -332,12 +332,12 @@ two rows, read cold at click time:
 `ITable` has little else worth reading reactively: `selected_rows` is the only trait a user interaction changes.
 `caption` and the DataTables options are write side (set from Python, not read back), and the data itself isn't
 a trait at all. `table.read("selected_rows")` (or `reactive_read(table.widget, "selected_rows")`) behaves
-identically to `table.selected_rows()` except for rate limiting (next section) -- there's no other synced trait
+identically to `table.selected()` except for rate limiting (next section) -- there's no other synced trait
 worth reaching for `read()` or `reactive_read()` over the named accessor.
 
 ### Rate limiting
 
-`selected_rows()` fires once per click, not a continuous stream, so there's nothing to smooth: the renderer's
+`selected()` fires once per click, not a continuous stream, so there's nothing to smooth: the renderer's
 `rate_policy`/`rate_delay` kwargs have **no effect on the accessor**. They rate-limit `reactive_read()` on the
 widget instead (any trait, not just `selected_rows`) -- useful if a burst of clicks (e.g. Shift-clicking across
 many rows) would otherwise each trigger an expensive recompute downstream.
@@ -357,7 +357,7 @@ with ui.layout_columns(col_widths=[8, 4]):
 
         @reactive.effect
         def _count_accessor():
-            table.selected_rows()
+            table.selected()
             with reactive.isolate():
                 accessor_count.set(accessor_count() + 1)
 
@@ -371,7 +371,7 @@ with ui.layout_columns(col_widths=[8, 4]):
         @render.code
         def counts():
             return (
-                f"table.selected_rows(): {accessor_count()}\n"
+                f"table.selected(): {accessor_count()}\n"
                 f"reactive_read() debounced 1s: {read_count()}"
             )
 ```
@@ -436,14 +436,14 @@ see [Coordinating multiple views](#coordinating-multiple-views) for keeping the 
 
 ### Selection highlights a plot
 
-Read `table.selected_rows()` in an effect and write the result into another widget's trait in place (inside
+Read `table.selected()` in an effect and write the result into another widget's trait in place (inside
 `reactive.isolate()`, so the write doesn't re-trigger the effect). The plot keeps its zoom/pan state across every
 selection change, unlike re-rendering it each time.
 
 ```{.python file="examples/11_selection_updates_plot.py"}
 @reactive.effect
 def _highlight_selection():
-    selected = set(table.selected_rows())
+    selected = set(table.selected())
     with reactive.isolate():
         # In place: the scatter keeps its zoom/pan state across selections,
         # instead of rebuilding (and resending) the whole figure.
@@ -460,13 +460,13 @@ settable trait.)*
 
 ### Click row for detail
 
-A single `@render.ui` reading `table.selected_rows()` is enough for a master-detail layout -- handle the
+A single `@render.ui` reading `table.selected()` is enough for a master-detail layout -- handle the
 "nothing selected yet" case explicitly, since that's the state on first load.
 
 ```{.python file="examples/12_selection_detail_card.py"}
         @render.ui
         def detail():
-            rows = table.selected_rows()
+            rows = table.selected()
             if not rows:
                 return ui.p("Click a row to see its detail.")
             row = countries.iloc[rows[-1]]
@@ -490,7 +490,7 @@ back:
 
 ```{.python file="examples/14_filter_preserves_selection.py"}
 # The current (possibly continent-filtered) rows. Positions from
-# table.selected_rows() are only meaningful against whatever data frame is
+# table.selected() are only meaningful against whatever data frame is
 # currently shown, so track it here (ITable.update(df) doesn't expose its
 # current data frame for reading it back).
 current_rows = reactive.value(countries)
@@ -509,7 +509,7 @@ def _filter():
         # Positions are into `shown`, so re-map the current selection by a
         # stable key (country name) instead of keeping the old positions,
         # which would now point at different rows (or be out of range).
-        kept = set(current_rows().iloc[table.selected_rows()]["country"])
+        kept = set(current_rows().iloc[table.selected()]["country"])
         remapped = [i for i, c in enumerate(shown["country"]) if c in kept]
         table.widget.update(shown, selected_rows=remapped, **TABLE_OPTS)
         current_rows.set(shown)
@@ -577,7 +577,7 @@ Verified on current main (shinywidgets, itables 2.9.1):
   text selectable, so clicking it doesn't sort -- only the small arrow does. Pass
   `text_in_header_can_be_selected=False` to make the whole header clickable.
 - **A plain `@render_widget` works too.** `@render_widget` returning an `ITable` gets the same fill defaults and
-  the jQuery fix as `@render_itables`; use `@render_itables` for the typed `.selected_rows()` accessor and the
+  the jQuery fix as `@render_itables`; use `@render_itables` for the typed `.selected()` accessor and the
   narrower `ImportError` message.
 
 Fixed since the earlier PR-era evaluation (`docs/widget-reports/itables/`), confirmed on current main:

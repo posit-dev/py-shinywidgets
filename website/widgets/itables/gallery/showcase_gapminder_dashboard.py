@@ -69,7 +69,7 @@ with ui.card():
     @render.data_frame
     def selected():
         shown = current_rows()
-        return shown.iloc[table.selected_rows()]
+        return shown.iloc[table.selected()]
 
 
 # The current (possibly continent-filtered) rows, tracked outside the table
@@ -90,7 +90,7 @@ def _filter_by_continent():
         )
         # Re-map the selection by country name: the old row *positions* would
         # otherwise point at different rows (or be out of range) in `shown`.
-        kept = set(current_rows().iloc[table.selected_rows()]["country"])
+        kept = set(current_rows().iloc[table.selected()]["country"])
         remapped = [i for i, c in enumerate(shown["country"]) if c in kept]
         table.widget.update(shown, selected_rows=remapped, **TABLE_OPTS)
         current_rows.set(shown)
@@ -99,7 +99,7 @@ def _filter_by_continent():
 @reactive.effect
 def _highlight_selection():
     shown = current_rows()
-    selected_idx = set(table.selected_rows())
+    selected_idx = set(table.selected())
     with reactive.isolate():
         colors = ["#e41a1c" if i in selected_idx else "#bbb" for i in range(len(shown))]
         sizes = [12 if i in selected_idx else 8 for i in range(len(shown))]

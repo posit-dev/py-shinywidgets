@@ -675,7 +675,7 @@ with ui.layout_columns(col_widths=[6, 6]):
 
 @reactive.effect
 def _highlight_selection():
-    selected = set(table.selected_rows())
+    selected = set(table.selected())
     with reactive.isolate():
         # In place: the scatter keeps its zoom/pan state across selections,
         # instead of rebuilding (and resending) the whole figure.

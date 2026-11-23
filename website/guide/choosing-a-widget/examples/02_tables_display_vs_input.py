@@ -38,7 +38,7 @@ with ui.layout_columns():
 
         @render.code
         def sel_itables():
-            n = len(table_itables.selected_rows())
+            n = len(table_itables.selected())
             return f"{n} row(s) selected (click to search/select)"
 
     with ui.card(full_screen=True):

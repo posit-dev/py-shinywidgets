@@ -703,7 +703,7 @@ independently measured example of the *effective* (declares-a-default) case.
 
 Most widgets that report a selection report it in *their own* coordinate space -- a point index into a
 trace, a row position in a currently-sorted table -- not a row of the data frame you built the chart from.
-`selected_rows()` (plotly, altair, bokeh, itables, jscatter, bqplot, lonboard) exists to close that gap. Plotly's version is the most explicit about the mechanism,
+`selected_rows()` (plotly, altair, bokeh, jscatter, bqplot, lonboard -- itables and reactable call theirs `selected()`) exists to close that gap. Plotly's version is the most explicit about the mechanism,
 because it has the least to go on: a point only carries whatever you told it to.
 
 ```{.python file="examples/05_rows_of_data.py"}
@@ -711,8 +711,8 @@ because it has the least to go on: a point only carries whatever you told it to.
 # of MY data frame". Plotly (like most selection-reporting widgets) reports
 # points of the figure, not rows of a data frame, so each point must carry
 # its row's identity as `customdata` -- here, the pandas index, via
-# `custom_data=[df.index]`. altair/bokeh/itables/reactable each have their
-# own version of this contract; see their guides' selection sections.
+# `custom_data=[df.index]`. altair/bokeh each have their
+# own version of this contract; see their guides' `selected_rows()` sections.
 import plotly.express as px
 from shiny.express import render, ui
 from shinywidgets import render_plotly
@@ -761,7 +761,7 @@ for both forms verified end to end. The same idea, different mechanics per libra
 - **lonboard**: `selected_rows(df=None)` is the picked row of `df`, defaulting to a frame rebuilt from the
   pickable layer's own data (fresh `RangeIndex`; the default needs exactly one pickable layer and
   geopandas) -- see the [lonboard guide](../../widgets/lonboard/index.md#reacting-to-user-interaction).
-- **itables** / **reactable**: itables' `selected_rows()` and reactable's `selected()` return row *positions*, already in your original data's
+- **itables** / **reactable**: `selected()` returns row *positions*, already in your original data's
   order (itables: data order, survives sort/search; reactable: data order, survives sort/filter/paging) --
   no customdata contract needed, because the table is rendered straight from the frame. See the
   [itables](../../widgets/itables/index.md) and [reactable](../../widgets/reactable/index.md) guides.
