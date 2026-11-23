@@ -694,6 +694,55 @@ def test_render_widget_no_warning_for_self_locked_connection(widget_session) -> 
             assert asyncio.run(r._render()) is not None
 
 
+def test_lockdown_preserves_pending_connection_result(widget_session) -> None:
+    pytest.importorskip("quak")
+    import duckdb
+    import quak
+
+    con = duckdb.connect()
+    con.execute("CREATE TABLE df AS SELECT 1 AS a")
+
+    r = rw.render_quak()
+
+    @r
+    def _():  # noqa: ANN202
+        widget = quak.Widget(con)
+        # An app-owned connection may hold a pending result another callback
+        # fetches later; the lockdown's own queries must not consume it
+        con.execute("SELECT 42 AS pending")
+        return widget
+
+    with session_context(widget_session):
+        assert asyncio.run(r._render()) is not None
+
+    assert con.fetchone() == (42,)
+
+
+def test_render_widget_warning_preserves_pending_connection_result(
+    widget_session,
+) -> None:
+    pytest.importorskip("quak")
+    import duckdb
+    import quak
+
+    con = duckdb.connect()
+    con.execute("CREATE TABLE df AS SELECT 1 AS a")
+
+    r = rw.render_widget()
+
+    @r
+    def _():  # noqa: ANN202
+        widget = quak.Widget(con)
+        con.execute("SELECT 42 AS pending")
+        return widget
+
+    with session_context(widget_session):
+        with pytest.warns(UserWarning, match="render_quak"):
+            assert asyncio.run(r._render()) is not None
+
+    assert con.fetchone() == (42,)
+
+
 def test_render_widget_warns_for_nested_sql_widget(widget_session) -> None:
     quak = pytest.importorskip("quak")
     pa = pytest.importorskip("pyarrow")

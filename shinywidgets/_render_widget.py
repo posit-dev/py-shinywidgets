@@ -1054,7 +1054,9 @@ def duckdb_settings(
     """
     import duckdb  # pyright: ignore[reportMissingImports]
 
-    target = duckdb if con is None else con
+    # Read via a cursor: results on `con` itself would clobber (be clobbered
+    # by) a pending result the app left there for another callback to fetch
+    target = duckdb if con is None else con.cursor()
     settings = target.execute(
         "SELECT current_setting('enable_external_access'),"
         " current_setting('lock_configuration')"
@@ -1087,8 +1089,11 @@ def restrict_duckdb_connection(con: duckdb.DuckDBPyConnection) -> None:
                 stacklevel=2,
             )
         return
-    con.execute("SET enable_external_access = false")
-    con.execute("SET lock_configuration = true")
+    # SET via a cursor for the same reason duckdb_settings() reads through
+    # one; the settings apply to (and lock) the connection itself
+    cur = con.cursor()
+    cur.execute("SET enable_external_access = false")
+    cur.execute("SET lock_configuration = true")
 
 
 class render_ipyaladin(render_widget_base[ValueT, Aladin]):
