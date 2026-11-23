@@ -210,7 +210,7 @@ def clicked_out():
 // Images: img/show-<id>-{0,1}.webp.
 const SHOWCASES = [
   { id: "counties", title: "Which US counties are alike?", widgets: ["plotly"], lines: 240,
-    blurb: "k-means groups 3,152 counties; click one and its closest matches light up, often a continent away.",
+    blurb: "k-means groups 3,144 counties; click one and its closest matches light up, often a continent away.",
     gesture: "Click King County, WA", href: "gallery/showcases/county-clusters/index.html" },
   { id: "loans", title: "Lending Club loans, in plain English", widgets: ["plotly"], lines: 242,
     blurb: "10,000 loans you filter by asking; lasso a band on the scatter and Claude describes exactly those loans.",
