@@ -45,6 +45,12 @@ re-render.
 - **Unsandboxed, a visitor can browse anything the server process can
   read.** Sandbox it to a directory before pointing it at a multi-tenant
   server: `FileChooser(path="/safe/directory", sandbox_path="/safe/directory")`.
+  The sandbox is enforced server-side for *browsing* (listings are
+  computed in Python, behind the check), but the *selection* is only
+  validated in the UI — a hostile client can send widget messages
+  directly and make `.selected` point outside the sandbox. If you read
+  or serve the selected file, validate `os.path.realpath(selected)`
+  stays inside the sandbox yourself.
 
 **More:** <https://shinywidgets.org/widgets/ipyfilechooser/>
 

@@ -126,9 +126,28 @@ Python. Verified with Playwright against a `sandbox_path` that has a real file o
 ![sandbox escape blocked](img/sandbox_escape_blocked.webp)
 
 Typing `../secret.txt` leaves the Select button disabled (grayed out); Playwright's own `.click()` times out with
-"element is not enabled". Calling `FileChooser` methods directly in Python (bypassing the browser) can still
-construct an out-of-sandbox `selected` path -- the enforcement lives in the button's disabled state, not in
-`_apply_selection()` itself -- but that's not a path a Shiny user can reach through the rendered UI.
+"element is not enabled".
+
+Note what that enforcement *is*, though: the disabled state of a button in the browser. `_apply_selection()` never
+re-validates the filename (or checks the result against `sandbox_path`), and the filename is an ordinary synced
+text trait. A user clicking around in the rendered UI can't escape the sandbox -- but a hostile client isn't
+limited to clicking. Widget state is just messages on the session's websocket, and nothing server-side stops a
+script from setting the filename trait to `../secret.txt` and dispatching the button's click message directly,
+landing an out-of-sandbox path in `.selected`. So the sandbox is real server-side enforcement for *browsing*
+(the listings are computed in Python, behind the check), but `.selected` is still client-influenced input. If
+your app reads the selected file and serves its contents back, validate the resolved path yourself:
+
+<!-- snippet: skip -->
+```python
+import os
+
+sandbox = os.path.realpath("/safe/directory")
+
+
+def inside_sandbox(path: str) -> bool:
+    resolved = os.path.realpath(path)
+    return resolved == sandbox or resolved.startswith(sandbox + os.sep)
+```
 
 Also sandbox-relevant: `show_only_dirs=True` (pair with a directory-listing app, below) and hiding dotfiles by
 default (`show_hidden=False`, the default) keep a sandboxed browser from casually surfacing `.env`-style files.
