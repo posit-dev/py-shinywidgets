@@ -10,6 +10,9 @@ accessor attaches the moment its output renders (not on first read) and
 records the interaction whether or not anything has read it yet, so it's
 always safe to read later, on demand.
 
+**Experimental**: accessor names, return shapes, and which accessors are
+opt-in may change in a future release without a deprecation cycle.
+
 ## Before the first interaction
 
 Reading an accessor before its output has ever rendered cancels silently

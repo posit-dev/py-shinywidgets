@@ -31,6 +31,9 @@ its own accessors in detail; this page is where the patterns that repeat across 
 companion [cheat sheet](cheatsheet.md) lists every accessor on every renderer, generated from the current
 source.
 
+**Experimental**: accessor names, return shapes, and which accessors are opt-in may change in a future
+release without a deprecation cycle.
+
 ## The mental model: accessors are inputs that remember
 
 Every accessor follows one behavior, regardless of which widget or which gesture it reports:
