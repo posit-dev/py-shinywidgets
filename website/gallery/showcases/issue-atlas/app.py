@@ -1,5 +1,5 @@
 # Title: The Shiny issue atlas
-# Bucket: example (no gallery page)
+# Bucket: showcase (~207 lines)
 # Description: 6,088 GitHub issues from 9 Shiny-ecosystem repos, embedded
 #   with sentence-transformers and projected with embedding-atlas. Select a
 #   region to see Python issues sitting next to an older R twin asking the
@@ -63,6 +63,11 @@ app_ui = ui.page_sidebar(
         ui.hr(class_="my-2"),
         ui.output_ui("summarize_button"),
         ui.output_ui("summary"),
+        ui.p(
+            "Drag on the map to select a region (shift + drag, or toggle the "
+            "rectangle/lasso tool below the map).",
+            class_="text-secondary small mt-auto mb-0",
+        ),
         width=420,
         gap="0.5rem",
     ),
@@ -75,10 +80,11 @@ app_ui = ui.page_sidebar(
     ),
     ui.tags.style(
         """
+        .sidebar-content { display: flex; flex-direction: column; height: 100%; }
         .twin { font-size: .85rem; line-height: 1.25; padding: .35rem 0; border-bottom: 1px solid var(--bs-border-color); }
         .twin a { text-decoration: none; }
         .twin .meta { color: var(--bs-secondary-color); }
-        #asked_twice { max-height: 34vh; overflow-y: auto; }
+        #asked_twice { display: block; max-height: 34vh; overflow-y: auto; }
         #summary { font-size: .9rem; }
         """
     ),

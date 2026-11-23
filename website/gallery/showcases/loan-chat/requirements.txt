@@ -1,0 +1,8 @@
+# shinywidgets[plotly] is already in the base install; querychat, chatlas,
+# and anthropic are the ones that need adding explicitly.
+shinywidgets[plotly]
+querychat
+chatlas
+anthropic
+pandas
+pyarrow

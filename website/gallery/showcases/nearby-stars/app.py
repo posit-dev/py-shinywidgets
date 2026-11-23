@@ -7,7 +7,8 @@
 # Run: shiny run app.py
 # Data: ESA Gaia DR3 (16 MB parquet, downloaded on first run; rebuild from
 #   the Gaia archive with prep_data.py). The sky panel streams DSS imagery
-#   from CDS (cds.unistra.fr), so it needs network access.
+#   (CDS's DSS2 color survey, served from NASA/IRSA's mirror), so it needs
+#   network access.
 
 import shutil
 import time
@@ -41,7 +42,7 @@ if not DATA.exists():
         shutil.copyfileobj(resp, f, length=1 << 20)
     tmp.rename(DATA)
 DEBOUNCE_S = 0.3
-SURVEY = "https://alaskybis.unistra.fr/DSS/DSSColor"
+SURVEY = "https://irsa.ipac.caltech.edu/data/hips/CDS/DSS2/color"
 SKY_ALL = {"target": "66.75 15.87", "fov": 360.0}
 HYADES_SKY = {"target": "66.75 15.87", "fov": 20.0}
 
